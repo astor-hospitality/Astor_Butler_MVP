@@ -1,7 +1,6 @@
 # Claude Project Instructions
 
-Claude works in this repository as a focused frontend/UX assistant.
-Codex remains the primary agent for backend, FSM, infrastructure, Telegram logic, database work, and production readiness.
+Claude may assist Egor (`BryxOG`) with backend implementation as well as frontend/UX work. This grants repository editing scope, not production-server or secret access.
 
 ## Default Scope
 
@@ -12,6 +11,15 @@ Claude may work without extra approval in:
 - frontend assets and UI copy
 - frontend-oriented documentation explicitly assigned by the user
 
+When working with Egor on an assigned backend task, Claude may also edit:
+
+- `src/main/**`
+- `src/test/**`
+- Liquibase migrations
+- `docker-compose*.yml`
+
+Backend changes must be made on a separate branch and submitted through a pull request. Do not push directly to `main` or deploy production as a side effect of editing code.
+
 Claude must treat these files as context/source of truth, but must not edit them unless the user explicitly asks:
 
 - `docs/README.md`
@@ -21,18 +29,15 @@ Claude must treat these files as context/source of truth, but must not edit them
 - `docs/contracts/KAFKA_TOPICS.md`
 - `docs/fsm/TABLE_BOOKING.md`
 - `docs/obsidian/**`
-- `docker-compose.yml`
-- `src/main/**`
 - `.env`, `.env.*`
-- Liquibase migrations
-- backend tests
+- backend, database, Telegram and Docker files outside the explicit Egor-assisted scope above
 
 ## Hard Rules
 
 1. Do not delete project documentation.
-2. Do not rewrite backend/FSM/infrastructure files without explicit permission.
+2. Do not rewrite backend/FSM/infrastructure files unless the work is explicitly assigned with Egor and falls within the scope above, or the user separately authorizes it.
 3. Do not commit or expose secrets, `.env`, build artifacts, IDE files, or local caches.
-4. If a task touches backend, databases, Telegram bot behavior, Kafka, Docker, or production readiness, stop and recommend handing it to Codex.
+4. For backend, database, Telegram, Kafka and Docker tasks outside the explicit Egor-assisted scope, stop and recommend handing the work to Codex. Production operations always require separate authorization and access.
 5. Before editing, state which files will be changed and why.
 6. After work, list changed files and call out any forbidden-scope file that was touched.
 
