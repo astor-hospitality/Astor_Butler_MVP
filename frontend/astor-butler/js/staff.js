@@ -228,7 +228,7 @@
     const item = el("li");
     const card = button("", "task-card", () => openTask(task.taskId));
     card.setAttribute("aria-label", "Стол " + task.tableCode + ": " + task.title + ". " + STATUS_LABELS[task.status]);
-    // Styling hooks: the card itself shows that someone needs help or that the task is urgent.
+    // Styling hooks for the line along the bottom edge of help, urgent and done cards.
     card.dataset.status = task.status.toLowerCase().replace("_", "-");
     if (task.priority === "HIGH" && !isFinal(task)) card.dataset.priority = "high";
     card.append(headRow(task), el("p", "task-title", task.title), el("p", "task-meta", metaText(task)));
@@ -270,10 +270,7 @@
       const onShift = person.shift === "OPEN";
       const line = onShift ? "На смене · поручений: " + open.length : "Смена закрыта";
       item.append(el("p", "staff-meta" + (onShift ? "" : " is-off"), line));
-      if (open.some((task) => task.status === "HELP_REQUESTED")) {
-        item.dataset.help = "true";
-        item.append(el("span", "chip chip-help-requested", "Просит помощь"));
-      }
+      if (open.some((task) => task.status === "HELP_REQUESTED")) item.append(el("span", "chip chip-help-requested", "Просит помощь"));
       return item;
     }));
   }

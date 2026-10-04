@@ -265,7 +265,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
    Loudness ladder, loudest first:
    help > urgent > done > in progress > accepted > assigned > cancelled.
    Solid fill is reserved for the first four. The card itself stays
-   calm: help gets a pulsing line along its bottom edge, urgent a rail.
+   calm: help, urgent and done get a line along the bottom edge in the
+   chip colour, and only the help line moves.
 
    Token values are literals on purpose: a token declared on :root
    that pointed at var(--paper) would keep the dark value in the
@@ -340,29 +341,35 @@ body.light-theme {
 
 /* ---------- Status at card level ---------- */
 
-/* Urgent: a 3px rail in the solid chip colour. No border, no wash. */
-.task-card[data-priority="high"] {
-  box-shadow: inset 3px 0 0 var(--status-high-bg);
-}
-
-/* Help: the card is not recoloured. A line in the chip colour runs along
-   its bottom edge and breathes; it is the only motion on the screen, so
-   motion means "someone needs help". Same line on the staff tile.
-   Drawn as a border so it survives forced-colors mode. */
-.task-card[data-status="help-requested"],
-.staff[data-help="true"] {
+/* Help, urgent and done: the card is not recoloured. A line in the chip
+   colour runs along its bottom edge. Drawn as a border so it survives
+   forced-colors mode. Help is declared last: a card that is both urgent
+   and asking for help shows the help line. */
+.task-card[data-priority="high"],
+.task-card[data-status="done"],
+.task-card[data-status="help-requested"] {
   position: relative;
   overflow: hidden;
 }
 
-.task-card[data-status="help-requested"]::after,
-.staff[data-help="true"]::after {
+.task-card[data-priority="high"]::after,
+.task-card[data-status="done"]::after,
+.task-card[data-status="help-requested"]::after {
   content: "";
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  border-bottom: 4px solid var(--status-help-bg);
+  border-bottom: 4px solid var(--status-line-color);
+}
+
+.task-card[data-priority="high"] { --status-line-color: var(--status-high-bg); }
+.task-card[data-status="done"] { --status-line-color: var(--status-done-bg); }
+.task-card[data-status="help-requested"] { --status-line-color: var(--status-help-bg); }
+
+/* Only the help line breathes: it is the one motion on the screen,
+   so motion means "someone needs help". */
+.task-card[data-status="help-requested"]::after {
   animation: help-pulse 1.8s ease-in-out infinite;
 }
 
@@ -552,6 +559,5 @@ textarea {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
   /* The help line stays, fully visible and still. */
-  .task-card[data-status="help-requested"]::after,
-  .staff[data-help="true"]::after { animation: none; }
+  .task-card[data-status="help-requested"]::after { animation: none; }
 }
