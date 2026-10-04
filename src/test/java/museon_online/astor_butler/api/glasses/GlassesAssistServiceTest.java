@@ -8,12 +8,53 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class GlassesAssistServiceTest {
+    private final GlassesAccess.Scope scope = new GlassesAccess.Scope("unit-venue", "unit-staff");
+
+    @Test void s3DocumentsGroundAnswerAndStorageRetryDoesNotRepeatModelCall() {
+        var gateway = mock(ModelGateway.class);
+        var storage = mock(GlassesS3Storage.class);
+        var voice = mock(GlassesVoice.class);
+        when(storage.context(scope)).thenReturn("Учебная подсказка из S3.");
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Ответ.", "test", "test", Duration.ZERO));
+        String id = UUID.randomUUID().toString();
+        doThrow(new GlassesFailure(503, "STORAGE_UNAVAILABLE", "Private material storage unavailable"))
+                .doNothing().when(storage).archive(eq(scope), eq(id), eq("text"), any(), eq("Ответ."));
+        var service = new GlassesAssistService(gateway, voice, storage, true, 1000);
+        try {
+            assertThatThrownBy(() -> service.assist(scope, id, "вопрос")).satisfies(e ->
+                    assertThat(((GlassesFailure)e).code).isEqualTo("STORAGE_UNAVAILABLE"));
+            assertThat(service.assist(scope, id, "вопрос")).isEqualTo("Ответ.");
+            verify(gateway, times(1)).generateText(argThat(r -> r.prompt().contains("Учебная подсказка из S3.")));
+            verify(storage, times(2)).archive(eq(scope), eq(id), eq("text"), any(), eq("Ответ."));
+        } finally { service.close(); }
+    }
+
+    @Test void noSpeechDoesNotCallModelOrArchiveAndPreservesPreviousTextReadiness() {
+        var gateway = mock(ModelGateway.class);
+        var storage = mock(GlassesS3Storage.class);
+        var voice = mock(GlassesVoice.class);
+        when(storage.context(scope)).thenReturn("");
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Ответ.", "test", "test", Duration.ZERO));
+        when(voice.transcribe(any())).thenThrow(new GlassesFailure(400, "NO_SPEECH", "Record again"));
+        var service = new GlassesAssistService(gateway, voice, storage, true, 1000);
+        try {
+            service.assist("first question");
+            assertThat(service.capabilities().text()).isTrue();
+            assertThatThrownBy(() -> service.assistAudio(scope, UUID.randomUUID().toString(), "", new byte[]{1}))
+                    .satisfies(e -> assertThat(((GlassesFailure)e).code).isEqualTo("NO_SPEECH"));
+            assertThat(service.capabilities().text()).isTrue();
+            verify(gateway, times(1)).generateText(any());
+            verify(storage, never()).archive(any(), any(), any(), any(), any());
+        } finally { service.close(); }
+    }
+
     @Test void disabledTextNeverCallsProvider() {
         var gateway = mock(ModelGateway.class);
         try (var ignored = new ServiceCloser(new GlassesAssistService(gateway, false, 50))) {
@@ -60,6 +101,43 @@ class GlassesAssistServiceTest {
             release.countDown();
             service.close();
         }
+    }
+
+    @Test void lateModelResultAfterTimeoutIsNotArchivedOrReused() throws Exception {
+        var gateway = mock(ModelGateway.class);
+        var storage = mock(GlassesS3Storage.class);
+        var release = new CountDownLatch(1);
+        var finished = new CountDownLatch(1);
+        when(storage.context(scope)).thenReturn("");
+        when(gateway.generateText(any())).thenAnswer(invocation -> {
+            while (true) {
+                try { release.await(); break; }
+                catch (InterruptedException ignored) { /* emulate a provider that ignores cancellation */ }
+            }
+            finished.countDown();
+            return ModelTextResponse.text("late", "test", "test", Duration.ZERO);
+        });
+        String id = UUID.randomUUID().toString();
+        var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), storage, true, 100);
+        try {
+            assertThatThrownBy(() -> service.assist(scope, id, "question"))
+                    .satisfies(e -> assertThat(((GlassesFailure)e).status).isEqualTo(503));
+            release.countDown();
+            assertThat(finished.await(1, TimeUnit.SECONDS)).isTrue();
+            // Wait until the single worker has returned, then retry the same request.
+            assertThatCode(() -> {
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+                while (true) {
+                    try { assertThat(service.assist(scope, id, "question")).isEqualTo("late"); break; }
+                    catch (GlassesFailure e) {
+                        if (!e.code.equals("BUSY") || System.nanoTime() >= deadline) throw e;
+                        Thread.sleep(5);
+                    }
+                }
+            }).doesNotThrowAnyException();
+            verify(gateway, times(2)).generateText(any());
+            verify(storage, times(1)).archive(eq(scope), eq(id), eq("text"), any(), eq("late"));
+        } finally { release.countDown(); service.close(); }
     }
 
     private record ServiceCloser(GlassesAssistService service) implements AutoCloseable {

@@ -1036,3 +1036,11 @@ sequenceDiagram
 - Booking domain в `main` еще не вынесен как первый production-домен; его нужно строить после User/service/data layer.
 
 Публичный frontend Astor `/astor/` использует отдельный anonymous WEB relay `/api/astor/messages`: bounded body/response, фиксированный WEB channel/site, без client identity/tenant/chatId/commands, без tools. Relay вызывает основной message gateway только как гостевой WEB lead; staff/admin portal этим не реализован.
+
+## Astor Glass: приватный S3 и повторы — 2026-10-04
+
+Изолированный informational assist получает документы только из server-bound tenant prefix приватного S3 bucket. Документ UTF-8 ограничен 32 KiB, кешируется на 60 секунд и используется как справочные данные; это не команда на изменение FSM. Первый источник — явно учебный бизнес-ланч и ограничения пилота, не утверждённое меню/регламент конкретного ресторана.
+
+Успешные материалы и ответ сохраняются под server-bound tenant/staff hash и UUID requestId. Cloud/S3 credentials остаются на сервере; helper STT их не наследует, клиент не выбирает object key/URL. Runtime имеет только GetObject для документов и PutObject для материалов. Медиа удаляются lifecycle policy; документы сохраняются отдельно.
+
+Повтор того же UUID и payload использует ограниченный memory cache ответа (32 записи, 120 секунд); изменённый payload с тем же UUID даёт 409. Кеш не является persistent idempotency для staff commands и теряется при рестарте. Тишина даёт 400 NO_SPEECH, не подменяя ошибку провайдера. Очки и S3 не подтверждают завершение реальных задач.

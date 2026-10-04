@@ -448,3 +448,10 @@ Runbook: `docs/operations/TELEGRAM_WIREGUARD_EGRESS_RUNBOOK.md`.
 - Добавлены smoke scripts:
   - `scripts/probe_yandex_reply.mjs`;
   - `scripts/smoke_system_logging.mjs`.
+
+
+## 2026-10-04: S3 documents and glasses backend hardening
+
+Михаил подтвердил оба S3 назначения: материалы очков и документы для ответа. Отдельная ветка `codex/glasses-backend-hardening` от PR #11; фронт Ромы/ограниченный SSH остаются в PR #12. S3 bucket `astor-glasses-pilot-b1gug0tmrgmsq5pfsvhs`: private, max 1 GiB, отдельный SA, только конкретный document GET и scoped materials PUT, lifecycle materials 1 day (daily processing), без folder roles/ключей в git. Bucket ACL задаёт базовые права; policy ограничивает действия/пути. Live static-key GET/PUT PASS; material GET, doc PUT, чужой scope PUT, list, DELETE и anonymous GET 403. Учебный документ business lunch, реальное меню/назначения отсутствуют.
+
+API: memory reply retry 32 entries/120s, payload conflict 409, cached answer survives a storage failure to retry archive, late model result after timeout not reused; silence 400 NO_SPEECH, successful STT readiness preserved. All work remains informational, outside FSM/task ACK. Full Maven package: 309 tests, 0 failures/errors/skipped; real decoder 6 PASS + cached Whisper silence PASS. Graph updated. Runtime rollout/HTTPS smoke and PR CI are separate completion signals; physical acceptance stays with chat «Проверить интеграцию ИИ с очками». Operational details: `docs/operations/GLASSES_S3_STORAGE.md`.

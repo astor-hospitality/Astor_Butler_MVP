@@ -121,6 +121,24 @@ class GlassesControllerTest {
         verifyNoInteractions(gateway);
     }
 
+    @Test void identicalNetworkRetryReusesReplyButChangedInputIsConflict() throws Exception {
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Ответ для повтора.", "test", "test", Duration.ZERO));
+        String body = json(Map.of("text", "повтори"));
+        for (int i = 0; i < 2; i++) {
+            mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer " + TOKEN)
+                            .contentType("application/json").content(body))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.text").value("Ответ для повтора."));
+        }
+        mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer " + TOKEN)
+                        .contentType("application/json").content(json(Map.of("text", "другой вопрос"))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.requestId").value(ID))
+                .andExpect(jsonPath("$.error.code").value("REQUEST_ID_CONFLICT"));
+        mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer wrong")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isUnauthorized());
+        verify(gateway, times(1)).generateText(any());
+    }
+
     @ParameterizedTest @ValueSource(strings = {"", "   "})
     void blankProviderResponseIsUnavailable(String response) throws Exception {
         when(gateway.generateText(any())).thenReturn(ModelTextResponse.text(response, "test", "test", Duration.ZERO));

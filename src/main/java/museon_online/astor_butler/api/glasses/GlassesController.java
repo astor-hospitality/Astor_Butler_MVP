@@ -51,7 +51,7 @@ public class GlassesController {
     public ResponseEntity<?> assist(HttpServletRequest request) {
         String requestId = null;
         try {
-            access.check(request.getHeader("Authorization"));
+            var scope = access.check(request.getHeader("Authorization"));
             service.checkRate();
             if (request.getContentLengthLong() > BODY_LIMIT) throw tooLarge();
             if (request.getContentType() == null
@@ -85,17 +85,18 @@ public class GlassesController {
                 }
                 long boxSize = Integer.toUnsignedLong(ByteBuffer.wrap(media).getInt());
                 if (boxSize < 16 || boxSize > media.length) throw malformed();
-                String answer = service.assistAudio(media);
+                String answer = service.assistAudio(scope, requestId, text, media);
                 return success(requestId, answer);
             }
             if (image != null) {
                 if (!"image/jpeg".equals(imageMime)) throw malformed();
-                validateJpeg(decode(image));
-                String answer = service.assistImage(text, image);
+                byte[] media = decode(image);
+                validateJpeg(media);
+                String answer = service.assistImage(scope, requestId, text, media);
                 return success(requestId, answer);
             }
             if (text.isBlank()) throw malformed();
-            String answer = service.assist(text);
+            String answer = service.assist(scope, requestId, text);
             return success(requestId, answer);
         } catch (GlassesFailure e) {
             return error(requestId, e);
