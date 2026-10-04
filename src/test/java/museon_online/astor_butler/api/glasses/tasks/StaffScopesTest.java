@@ -1,8 +1,11 @@
 package museon_online.astor_butler.api.glasses.tasks;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,5 +83,30 @@ class StaffScopesTest {
         claims.put("realm_access", "astor-manager");
         claims.put("resource_access", List.of("astor-manager"));
         refused(() -> scopes.from(claims), 403);
+    }
+
+    /**
+     * Claims of access tokens that a local Keycloak 26.4 issued from astor-realm.draft.json through the
+     * authorization code flow with PKCE. Accounts were throwaway; the file holds claims, not tokens.
+     */
+    private static Map<String, Object> issued(String account) throws IOException {
+        try (var input = StaffScopesTest.class.getResourceAsStream("/glasses/keycloak-26-token-claims.json")) {
+            Map<String, Map<String, Object>> all = new ObjectMapper().readValue(input, new TypeReference<>() { });
+            return all.get(account);
+        }
+    }
+
+    @Test void tokensIssuedFromTheDraftRealmMapToScopes() throws IOException {
+        assertThat(scopes.from(issued("waiter")))
+                .isEqualTo(new StaffScope("AERIS", "47000a59-87ed-4c7b-997a-9534c922d479", StaffScope.Role.WAITER));
+        assertThat(scopes.from(issued("waiter-phone-client")).role()).isEqualTo(StaffScope.Role.WAITER);
+        assertThat(scopes.from(issued("manager-with-waiter-role")).role()).isEqualTo(StaffScope.Role.MANAGER);
+    }
+
+    @Test void issuedTokensWithoutVenueRoleOrAudienceAreRefused() throws IOException {
+        refused(() -> scopes.from(issued("no-venue")), 403);
+        refused(() -> scopes.from(issued("no-staff-role")), 403);
+        // Same realm, same signing keys, same person, but signed in through the account console.
+        refused(() -> scopes.from(issued("another-client-of-the-realm")), 401);
     }
 }
