@@ -966,3 +966,7 @@ Worktree `~/.codex/worktrees/fb4b/Astor_Butler_MVP`, branch `codex/glasses-voice
 ## 2026-10-04: Astor Glass runtime и фронт для передачи Роме
 
 Михаил разрешил Astor production/pлатные Yandex calls и координацию iPhone теста с отдельным чатом. Real cached Whisper AAC validation + YandexGPT text/voice + Qwen JPEG работают в standalone runtime без component scan/FSM/DB/Telegram startup. Public HTTPS smoke 200 для text/voice/vision, scoped bearer 12h; front `/astor/`, Butler page и WEB-only relay. Telegram proxy scoped restart восстановил getMe, основной бот не рестартовали. Maven 297 tests PASS, decoder 6 PASS. См. `docs/operations/ASTOR_GLASS_ROMA_HANDOFF.md` и runbook; физический HFP acceptance и GitHub CI/review отдельно. Приглашение 0xLaki write отправлено (пока pending); root-owned limited wrapper установлен, SSH key/отчёт destination ещё нужны. Не выдавать shared-host Docker/root или cloud keys Claude/клиенту.
+
+## 2026-10-04: отдельная ветка Claude для Ромы
+
+По прямому поручению Михаила создан отдельный managed checkout и `codex/roma-astor-glass` от готового pilot `56e6b9c` (PR #11). Start guide: `docs/operations/ROMA_CLAUDE_START.md`. Локальный Claude Code запускается первым read-only проходом по документам; чужой аккаунт Роме не передаётся. GitHub write invitation pending, публичного SSH key Ромы в GitHub нет. Production сервисы уже запущены и остаются рабочими; физическая приёмка/guest dialog/review отдельно. Изолированный scope Astor и запрет shared-host Docker/root остаются в силе.
