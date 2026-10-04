@@ -264,8 +264,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
    Status styling: tokens, chips, card and staff emphasis.
    Loudness ladder, loudest first:
    help > urgent > done > in progress > accepted > assigned > cancelled.
-   Solid fill is reserved for the first four. Only help changes the
-   card itself; urgent gets a rail, everything else stays quiet.
+   Solid fill is reserved for the first four. The card itself stays
+   calm: help gets a pulsing line along its bottom edge, urgent a rail.
 
    Token values are literals on purpose: a token declared on :root
    that pointed at var(--paper) would keep the dark value in the
@@ -276,10 +276,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   /* help: loudest. Saturated red, dark ink (same polarity as .btn-primary). */
   --status-help-bg: #ff4a4a;
   --status-help-fg: #140202;
-  /* Red wash of the help card. Alpha of --status-help-bg; always painted
-     over --ink-2 (the help hover rule keeps --ink-2 and swaps the wash). */
-  --status-help-tint: rgba(255,74,74,0.12);
-  --status-help-tint-hover: rgba(255,74,74,0.17);
   /* urgent: second */
   --status-high-bg: #bf7900;
   --status-high-fg: #140c00;
@@ -297,8 +293,6 @@ body.light-theme {
   /* light theme polarity: deep fill, white text */
   --status-help-bg: #b01c2a;
   --status-help-fg: #ffffff;
-  --status-help-tint: rgba(176,28,42,0.07);
-  --status-help-tint-hover: rgba(176,28,42,0.09);
   --status-high-bg: #995700;
   --status-high-fg: #ffffff;
   --status-done-bg: #297a52;
@@ -346,64 +340,35 @@ body.light-theme {
 
 /* ---------- Status at card level ---------- */
 
-/* Urgent: a 3px rail in the solid chip colour. No border, no wash.
-   :not() keeps it off help cards whatever the source order. */
-.task-card[data-priority="high"]:not([data-status="help-requested"]) {
+/* Urgent: a 3px rail in the solid chip colour. No border, no wash. */
+.task-card[data-priority="high"] {
   box-shadow: inset 3px 0 0 var(--status-high-bg);
 }
 
-/* Help: red frame + 4px rail + red wash. Same look for the staff tile.
-   The wash is a background-image layer over the element's own
-   background-color (--ink-2). */
+/* Help: the card is not recoloured. A line in the chip colour runs along
+   its bottom edge and breathes; it is the only motion on the screen, so
+   motion means "someone needs help". Same line on the staff tile.
+   Drawn as a border so it survives forced-colors mode. */
 .task-card[data-status="help-requested"],
 .staff[data-help="true"] {
-  border-color: var(--status-help-bg);
-  background-image: linear-gradient(var(--status-help-tint), var(--status-help-tint));
-  box-shadow: inset 4px 0 0 var(--status-help-bg);
+  position: relative;
+  overflow: hidden;
 }
 
-/* Help card hover. `.task-card:hover { background: var(--ink-3) }` is a
-   shorthand: it would drop the wash and lighten the base. This rule is
-   more specific, keeps the base at --ink-2 and shows a stronger wash,
-   so the wash is never stacked over --ink-3. Nothing is animated:
-   the wash swaps instantly and background-color does not change. */
-.task-card[data-status="help-requested"]:hover {
-  background-color: var(--ink-2);
-  background-image: linear-gradient(var(--status-help-tint-hover), var(--status-help-tint-hover));
-}
-
-/* Forced colours drop fills, gradients and shadows. Keep help findable:
-   system-colour frame plus an inner outline (no size or layout change).
-   :not(:focus-visible) leaves the focus ring of the card alone. */
-@media (forced-colors: active) {
-  .task-card[data-status="help-requested"],
-  .staff[data-help="true"] { border-color: Highlight; }
-
-  .task-card[data-status="help-requested"]:not(:focus-visible),
-  .staff[data-help="true"] {
-    outline: 2px solid Highlight;
-    outline-offset: -5px;
-  }
-}
-
-/* Help also moves: a short bar under the chip breathes in the chip's own
-   colour. Nothing else on the screen is animated, so motion means "help". */
-.chip-help-requested { position: relative; }
-.chip-help-requested::after {
+.task-card[data-status="help-requested"]::after,
+.staff[data-help="true"]::after {
   content: "";
   position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: -6px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--status-help-bg);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-bottom: 4px solid var(--status-help-bg);
   animation: help-pulse 1.8s ease-in-out infinite;
 }
 
 @keyframes help-pulse {
-  0%, 100% { opacity: 0.3; transform: scaleX(0.5); }
-  50% { opacity: 1; transform: scaleX(1); }
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
 }
 
 .task-title {
@@ -586,6 +551,7 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
-  /* The help bar stays, fully visible and still. */
-  .chip-help-requested::after { animation: none; }
+  /* The help line stays, fully visible and still. */
+  .task-card[data-status="help-requested"]::after,
+  .staff[data-help="true"]::after { animation: none; }
 }
