@@ -34,6 +34,18 @@ claude
 
 ## Доступ и проверка
 
-GitHub write invitation `0xLaki` ещё требует принятия. Для scoped SSH нужен его публичный ключ. Установленный root-owned `astor-glasses-admin` позволяет только согласованные операции Astor. Общий Docker/root, arbitrary shell/deploy и доступ к VEDAL/C3AG не входят в scope. Работу Claude можно начинать локально с public repo до получения серверного доступа.
+GitHub write invitation `0xLaki` ещё требует принятия. 2026-10-04 Михаил передал публичный SSH key; создан отдельный пользователь `astor-roma`. Подключение принудительно проходит через root-owned `astor-glasses-ssh` и `astor-glasses-admin`: только help/version/status/health/restart-glasses/restart-frontend. Shell, SFTP, PTY, forwarding, Docker socket/group и произвольный sudo запрещены. Home и authorized_keys принадлежат root; пользователь не может менять ограничения. Адрес сервера и его host-key fingerprint Михаил передаёт приватно.
+
+```bash
+# Указать сервер и собственный приватный ключ; приватный ключ никуда не отправлять.
+ssh -T -p 2222 -i "$HOME/.ssh/id_ed25519" "astor-roma@$ASTOR_SSH_HOST" status
+ssh -T -p 2222 -i "$HOME/.ssh/id_ed25519" "astor-roma@$ASTOR_SSH_HOST" health
+```
+
+`health` проверяет HTTPS frontend 200 и unauthenticated Glass API 401 (живой маршрут требует bearer). Это не проверка model readiness или физической цепочки очков. `restart-glasses` и `restart-frontend` перезапускают только фиксированные контейнеры Astor; сначала сообщить пользователю причину и ожидать его поручения. Произвольный deploy/image/ref не разрешён.
+
+Проверены SSH dispatcher и ограничения с временным тестовым ключом, который удалён сразу после проверки; в authorized_keys остался только предоставленный operator key. Первый вход с его приватным ключом выполняет сам владелец. Общий Docker/root и доступ к VEDAL/C3AG не входят в scope.
+
+Первый локальный запуск Claude Code остановился на 401: истёк OAuth token. Штатный повторный вход открыл страницу оформления подписки; действующий аккаунт Claude Code должен выбрать/авторизовать сам владелец. Ветка и продукт доступны независимо от локальной авторизации Claude.
 
 Новые изменения проверяются собственными тестами и CI, затем review. Стартовый PR может быть stacked относительно pilot branch; перед merge сверить base после принятия PR #11. Не объединять PR в main с обходом review.
