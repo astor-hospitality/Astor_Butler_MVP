@@ -285,7 +285,7 @@
     chatWidget.classList.add("open");
     if (!greeted) {
       greeted = true;
-      addBubble("Добрый вечер. Чем могу быть полезен: стол, меню или особая просьба?", "butler");
+      addBubble("Здравствуйте. Расскажите о заведении или задайте вопрос о внедрении Astor.", "butler");
     }
     chatInput.focus();
   }
@@ -306,7 +306,10 @@
   chatForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const text = chatInput.value.trim();
-    if (!text) return;
+    if (!text || chatForm.dataset.pending === "true") return;
+    chatForm.dataset.pending = "true";
+    const sendButton = chatForm.querySelector("button[type=submit]");
+    if (sendButton) sendButton.disabled = true;
     chatInput.value = "";
     addBubble(text, "guest");
     const typing = addTyping();
@@ -316,7 +319,10 @@
       addBubble(reply.text, "butler");
     } catch (err) {
       typing.remove();
-      addBubble("Прошу прощения, связь с рестораном сейчас недоступна. Попробуйте Telegram — там я всегда на месте.", "butler");
+      addBubble("Сейчас не удалось получить ответ. Повторите сообщение чуть позже или откройте Telegram-демо.", "butler");
+    } finally {
+      chatForm.dataset.pending = "false";
+      if (sendButton) sendButton.disabled = false;
     }
   });
 })();

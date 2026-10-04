@@ -11,10 +11,8 @@
       local stub — no network calls are made.
    ============================================================ */
 
-window.AstorChatConfig = {
-  endpoint: isLocalhost()
-    ? "http://localhost:8080/api/messages"
-    : "https://excess-magnet-ultimately-highways.trycloudflare.com/api/messages",
+window.AstorChatConfig = window.AstorChatConfig || {
+  endpoint: "/api/astor/messages",
   channel: "WEB",
   site: "astor-butler-commercial",
 };
@@ -56,10 +54,13 @@ window.AstorChatConfig = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(25000),
       });
       if (!res.ok) throw new Error("Widget backend error: " + res.status);
       const data = await res.json();
-      return { text: data.text || data.reply || data.message || "…" };
+      const text = data.text || data.reply || data.message;
+      if (typeof text !== "string" || !text.trim()) throw new Error("Widget received an empty reply");
+      return { text };
     }
 
     // Mock mode: friendly stub with a small "thinking" delay.
@@ -73,7 +74,4 @@ window.AstorChatConfig = {
   // Expose for main.js and for future backend integration tests.
   window.AstorChat = { submitMessage, sessionId };
 
-  function isLocalhost() {
-    return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-  }
 })();

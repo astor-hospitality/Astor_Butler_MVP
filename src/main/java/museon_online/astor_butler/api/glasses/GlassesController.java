@@ -79,28 +79,34 @@ public class GlassesController {
             if (audio != null) {
                 if (!"audio/mp4".equals(audioMime)) throw malformed();
                 byte[] media = decode(audio);
-                // Container signature only. No voice provider is enabled: codec/duration decoding is gated.
+                // Cheap signature check precedes bounded decoder/codec/rate/duration validation in GlassesVoice.
                 if (media.length < 16 || !"ftyp".equals(new String(media, 4, 4, StandardCharsets.US_ASCII))) {
                     throw malformed();
                 }
                 long boxSize = Integer.toUnsignedLong(ByteBuffer.wrap(media).getInt());
                 if (boxSize < 16 || boxSize > media.length) throw malformed();
-                throw new GlassesFailure(503, "VOICE_UNAVAILABLE", "AAC transcription provider is not verified");
+                String answer = service.assistAudio(media);
+                return success(requestId, answer);
             }
             if (image != null) {
                 if (!"image/jpeg".equals(imageMime)) throw malformed();
                 validateJpeg(decode(image));
-                throw new GlassesFailure(503, "VISION_UNAVAILABLE", "Vision provider is not configured");
+                String answer = service.assistImage(text, image);
+                return success(requestId, answer);
             }
             if (text.isBlank()) throw malformed();
             String answer = service.assist(text);
-            return ResponseEntity.ok().header("Cache-Control", "no-store")
-                    .body(new AssistResponse(requestId, answer, service.capabilities()));
+            return success(requestId, answer);
         } catch (GlassesFailure e) {
             return error(requestId, e);
         } catch (IOException | IllegalArgumentException e) {
             return error(requestId, malformed());
         }
+    }
+
+    private ResponseEntity<?> success(String requestId, String answer) {
+        return ResponseEntity.ok().header("Cache-Control", "no-store")
+                .body(new AssistResponse(requestId, answer, service.capabilities()));
     }
 
     public record AssistResponse(String requestId, String text, GlassesAssistService.Capabilities capabilities) { }

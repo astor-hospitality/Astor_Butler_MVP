@@ -1,55 +1,41 @@
-# Astor Glasses: информационный backend adapter
+# Astor Glass: информационный пилот
 
-Дата: 2026-10-04. Ветка `codex/glasses-voice-adapter`, отдельный worktree. Это локальная подготовка P0 по [issue #9](https://github.com/astor-hospitality/Astor_Butler_MVP/issues/9), назначенной BryxOG. На момент проверки открытого PR с glasses API нет. Перед интеграцией сверить работу BryxOG и выбрать один adapter; не внедрять параллельный маршрут. Production, VM, основной checkout и Astor_Glasses_Spike не изменялись; телефон не использовался.
+Дата: 2026-10-04. Ветка `codex/glasses-voice-adapter`, [issue #9](https://github.com/astor-hospitality/Astor_Butler_MVP/issues/9). Михаил разрешил запуск Astor, облачные вызовы и координацию физического теста с чатом «Проверить интеграцию ИИ с очками». Изолированный runtime не запускает Telegram, DB, Kafka, FSM или startup notifications основного монолита.
 
-## Реализованный контракт
+## Контракт
 
-- `POST /api/glasses/assist`, `Content-Type: application/json`, `Authorization: Bearer …`.
-- JSON: canonical UUID `requestId`, `text` (до 4000 Unicode code points); опционально одна пара `audioBase64` + `audioMimeType: audio/mp4` либо `imageBase64` + `imageMimeType: image/jpeg`. Для аудио `text` может быть пустым. Не принимать client staff/tenant/chatId, URL или неизвестные поля. JSON null для опциональных полей трактуется как отсутствие.
-- Body до 5 MiB, media до 2 MiB decoded. Base64 проверяется до обращения к провайдеру. JPEG: сигнатура, reader, размеры до 1280 px без декодирования растра и записи на диск. Аудио: лишь MP4 `ftyp` header/box sanity; codec/channels/rate/duration ещё не проверяются, так как весь голосовой путь выключен. Заголовок не является доказательством валидного AAC.
-- Успех `200`: `{ "requestId": "тот же UUID", "text": "непустой ответ", "capabilities": { ... } }`. Text включается отдельно и вызывает только существующий ModelGateway; blank/fallback/exception/timeout дают 503. Не передаются гостевые идентификаторы, RAG/tenant context пока отсутствует. Ответ информационный, не ACK действия.
-- Голос всегда `503 VOICE_UNAVAILABLE`; изображение всегда `503 VISION_UNAVAILABLE`, даже если текст есть. Не вызываются STT или text-only analyzeImage fallback. Нет временных файлов и медиа в persistent storage, нечего удалять при ошибке/таймауте.
-- `GET /api/glasses/capabilities` с тем же доступом: `text/voice/vision`, `maxAudioSeconds:30`, `maxAudioBytes:2097152`, `maxImageBytes:2097152`, `maxImageDimension:1280`, `maxTextChars:4000`, `maxBodyBytes:5242880`.
-- Text readiness — успешный реальный gateway response за последние 60 секунд. До первого text smoke — false, даже при text-enabled. Text POST всё равно можно выполнить, если включены попытки. Ошибка провайдера сбрасывает readiness. Это краткоживущее наблюдение, не гарантия следующего запроса. Voice/vision остаются false.
-- Ошибка: `{ "requestId": "UUID или null", "error": { "code": "…", "message": "…" } }`, без `text`. Если отказ до чтения/валидации requestId (доступ, body limit, rate), ID null. Известный валидный ID сохраняется для ошибок media/provider.
-- 400 malformed/MIME/signature/unknown fields; 401 missing/invalid bearer; 403 expired/missing staff scope; 413 limits; 429 busy/rate; 503 unconfigured access/text/voice/vision. `Cache-Control: no-store`, `WWW-Authenticate: Bearer` для 401, `Retry-After:60` для 429.
-- Пилот: один server-bound staff/tenant credential, до 10 авторизованных POST-попыток в фиксированную минуту, один gateway call одновременно, без очереди, timeout по умолчанию 10 секунд (максимум 30). Если gateway игнорирует interrupt, слот остаётся занятым до реального завершения; новые запросы получают 429, не запускают новые потоки. Эти лимиты локальны одному JVM, не являются распределённым rate limiter.
+- `POST /api/glasses/assist`, JSON, `Authorization: Bearer …`. Canonical UUID `requestId`, `text` до 4000 Unicode code points; опционально одна пара `audioBase64`/`audioMimeType:audio/mp4` или `imageBase64`/`imageMimeType:image/jpeg`. Для аудио текст может быть пустым. URL, client tenant/staff/chatId и неизвестные поля отвергаются.
+- Body до 5 MiB, decoded media до 2 MiB. JPEG signature/reader/header dimensions до 1280 px без записи на диск. MP4 header проверяется до запуска helper; PyAV полностью декодирует единственный AAC stream 16kHz/mono, проверяет metadata и реальное число samples до 30 секунд. Допускается один AAC frame padding, который отрезается перед STT. MPEG/PCM/stereo/44.1kHz/лишние streams не принимаются.
+- Voice: cached local faster-whisper base, CPU/int8, Russian; затем реальный YandexGPT. Text: YandexGPT. Vision: Qwen3.6-35b-a3b с JPEG data URL; без подмены анализа изображения текстовым ответом. Cloud request отключает data logging и не содержит tools.
+- `200`: `{requestId,text,capabilities}`, только непустой полный ответ провайдера. Informational assist не подтверждает и не выполняет задания, брони или FSM-переходы. Контекст ресторана/RAG и staff task feed пока отсутствуют.
+- `GET /api/glasses/capabilities`: тот же bearer; text/voice/vision, maxAudioSeconds=30, maxAudioBytes=maxImageBytes=2097152, maxImageDimension=1280, maxTextChars=4000, maxBodyBytes=5242880. Readiness означает успешный вызов за последние 300 секунд; до первого запроса и после ошибки false. Разрешённый POST может прогреть провайдер при false.
+- Ошибки `{requestId:UUID|null,error:{code,message}}`: 400 malformed; 401 missing/invalid bearer; 403 expired/missing scope; 413 limits; 429 busy/rate; 503 unavailable/provider timeout. RequestId сохраняется после валидации; отказ до чтения body имеет null. Cache-Control:no-store, WWW-Authenticate для 401, Retry-After для 429.
+- Один server-bound tenant/staff credential, 10 авторизованных попыток в минуту, один pipeline без очереди. Runtime timeout 45 секунд, STT 20 секунд; лимиты локальны одной JVM. Busy provider остаётся занятым до фактического окончания, новые потоки не накапливаются.
 
-## Настройки после отдельного решения об интеграции
+## Процесс и файлы
 
-Новые настройки можно передавать через стандартный Spring environment binding; `.env` не изменён и credentials не созданы:
+Helper вызывается argv без shell. Environment очищается от cloud/Telegram/DB credentials; HF offline, модель заранее загружена. stdout/stderr одновременно дренируются с лимитом 64 KiB, diagnostic stderr не публикуется. Temp request directory 0700, файл 0600, Docker /tmp — ограниченный tmpfs. Success/error/timeout удаляют файл только после завершения процесса и захваченных потомков. Если завершение подтвердить нельзя, ответ 503, private файл остаётся в карантине до остановки контейнера; не удалять файл под работающим процессом. Raw media/transcripts/keys не логируются.
 
-| Environment | Значение/назначение |
-| --- | --- |
-| `ASTOR_GLASSES_TOKEN_SHA256` | Hex SHA-256 высокоэнтропийного bearer, отдельно выданного через безопасный канал. Сам токен не хранить в git/docs/логах |
-| `ASTOR_GLASSES_TENANT` | Server-side venue scope пилота |
-| `ASTOR_GLASSES_STAFF` | Server-side staff identity пилота |
-| `ASTOR_GLASSES_EXPIRES_AT` | Обязательный ISO-8601 Instant, например дата окончания смены |
-| `ASTOR_GLASSES_TEXT_ENABLED` | false по умолчанию; true разрешает text attempts |
-| `ASTOR_GLASSES_TIMEOUT_MS` | 10000 по умолчанию, bounded 1..30000 |
+## Runtime
 
-SHA-256 token configuration immutable in running bean: отзыв/ротация — замена server config и перезагрузка adapter при отдельно разрешённом deployment. Expiry проверяется на каждый запрос без рестарта. Для P1 нужен штатный identity/session revocation, а не этот однотокенный пилот. Bearer не добавляет прав в существующие API; глобальный permitAll вне glasses не исправлялся и требует отдельной работы.
+`docker/glasses/Dockerfile`, reviewed runtime shape `docker/glasses/compose.yaml`, pinned `requirements.txt`, standalone `GlassesPilotApplication`, boot jar через PropertiesLauncher. Контейнер `astor_glasses_api`: nonroot 10001, read-only rootfs, cap-drop ALL, no-new-privileges, bounded CPU/RAM/PIDs, модели read-only, без публичного host port. API публикуется узким HTTPS route `/api/glasses/` через существующий gateway с валидным сертификатом c3ag.ru. Старый frontend C3AG и сервисы VEDAL не заменяются.
 
-Не запускать весь Spring application для этого локального теста: это может включить Telegram/startup notifications. Использовать isolated MockMvc/unit suite. Доступный HTTPS URL и тестовый доступ в этом проходе не выдавались.
+Server-only settings: ASTOR_GLASSES_TOKEN_SHA256, TENANT, STAFF, EXPIRES_AT, TEXT_ENABLED, VOICE_ENABLED, TIMEOUT_MS, STT_TIMEOUT_MS, PYTHON, STT_SCRIPT, STT_MODEL_DIR, WORK_DIR; ASTOR_GLASSES_YANDEX_API_KEY/FOLDER, TEXT_MODEL, VISION_MODEL. Secret env лежит вне git, root 0600. SHA-256 hash не является мобильным токеном. Отзыв/ротация — замена server config и restart только isolated adapter; expiry проверяется на каждом запросе.
 
-## Точные блокеры голосового запуска P0
+Отдельный service account `astor-glasses-runtime`: только `ai.languageModels.user`, API key scope `yc.ai.foundationModels.execute`, срок ключа до 2026-10-11 18:00 UTC. Мобильный доступ до 2026-10-04 22:20 UTC; bearer передаётся только приватно и сохраняется в Keychain. Мобильный клиент не получает cloud key. Этот однотокенный пилот не заменяет P1 identity/session revocation.
 
-1. Supported STT runtime: существующий ExternalCommandSpeechToTextService + scripts/stt_faster_whisper.py — потенциальный порт, но readiness AAC не доказана. Нужны явно выбранные Python/ffmpeg/PyAV/faster-whisper версии, cached local model, RU transcription smoke на настоящем HFP m4a. Для облачного STT отдельно нужны server-side credentials, quota и разрешение paid calls.
-2. До включения voice реализовать проверку контейнера/codec AAC/16kHz/mono/длительности ≤30s по actual media metadata, bounded decoder, secure temp file и удаление success/error/timeout. Не доверять client duration. Настроить таймауты и ограничение output/stdout/stderr процесса; прекратить и дождаться process tree до удаления файла.
-3. У существующего ExternalCommand STT есть raw stdout/stderr logging, diagnostic metadata и ожидание process до drain pipe; риск раскрытия transcript и deadlock на заполненном pipe. Для glasses не вызывать этот сервис, пока не устранены утечки и не проверены timeout/cleanup. В этой ветке Telegram STT поведение не менялось.
-4. Согласовать с BryxOG интеграцию маршрута #9; затем отдельно разрешённые code review/deploy и HTTPS с валидным сертификатом, scoped credential и его expiry. Нужна проверка text runtime readiness, не только health200.
-5. Физический acceptance: microphone glasses → iPhone m4a → real STT → informational text → HFP TTS. Отдельно cancellation/timeout/offline/reconnect/lock/call interruptions. Здесь hardware/e2e/production readiness не подтверждались.
+## Фронт и Telegram
 
-## Backlog Михаилу
+Презентационный фронт `frontend/astor-butler` публикуется отдельно по `/astor/`. Widget обращается к `/api/astor/messages`, который через bounded anonymous-WEB-only relay обращается к основному `/api/messages`; это гостевой WEB lead transport, а не staff/admin portal. Устранены ошибка cold load из-за недоступного isLocalhost и пустой fallback reply. Действующий бот — `@astor_butler_bot`; polling transport использует отдельный WireGuard proxy. 2026-10-04 перезапущен только proxy service, подтверждены getMe и отсутствие tunnel/polling ошибок в свежем окне; бот/DB не перезапускались. Полный Telegram диалог требует отдельного smoke.
 
-- P0: real STT, media validation/temp lifecycle, HTTPS/access/text/voice smoke и короткий ответ для TTS. Vision необязателен для короткого голосового цикла и остаётся честно unavailable.
-- P1: настоящий staff identity/tenant/shift, feed только назначенных задач, server task/order/table/stage/version, инструкции из разрешённого контекста, evidence upload/storage/retention, отдельные commands с permissions/assignment/version/idempotency, ACK/replay/offline. Две задачи разных столов, foreign tenant/assignment, stale version и duplicate event — обязательная приёмка. Informational assist никогда не завершает задачу.
-- P2: import, event-bound photo coaching, настройки, delivery/lock-screen, APNs/signing. Video/live-stream не нужен для P0; firmware capabilities не обещают его поддержку.
+## Проверки и приёмка
 
-## Проверки
+Локальный Maven suite: 297 tests, 0 failures/errors/skipped. `scripts/test_glasses_audio.py`: 6 настоящих decoder fixtures, включая 30/31 секунды, stereo, 44.1kHz и испорченный контейнер. Синтетическая русская речь прошла реальный Whisper и YandexGPT; синтетический JPEG прошёл реальный Qwen. Это backend smoke, не физический HFP acceptance.
 
-`JAVA_HOME=<локальный JDK 25> mvn -Dtest=GlassesControllerTest,GlassesAssistServiceTest test`
+Физический тест делает отдельный чат: очки microphone → iPhone AAC m4a → API → STT → ответ → HFP TTS. Проверить cancel/timeout/offline/reconnect/lock/call interruptions, requestId и отсутствие task ACK. Не объявлять Astor Glass полностью готовым до этого теста и required GitHub CI/review.
 
-Isolated tests используют mocked ModelGateway и синтетические container/image fixtures: это проверки контракта, доступа, границ, honest unavailable, readiness, provider errors, timeout/busy и rate limiting, не реальные STT или cloud calls. Дополнительный полный Maven suite отдельно отражается в handoff; ничего не считать deployed по локальным тестам.
+P1: реальные staff/tenant/shift, назначенные задачи и авторизованный context, task/order/table/stage/version, evidence retention, отдельные commands с permissions/idempotency/version, ACK/replay/offline. P2: event-bound photo coaching, APNs/signing и delivery. Video/live-stream не реализован; текущий vision — один JPEG на запрос.
 
-Проверено локально на JDK 25: compile PASS; 25 новых glasses tests PASS; вместе с ModelGatewayProviderTest, YandexAiStudioAgentModelGatewayTest и ExternalCommandSpeechToTextServiceTest — 33 tests, 0 failures/errors/skipped. Полный repository suite и GitHub CI в этом проходе не запускались. `graphify update .` завершён: 6839 nodes/15051 edges; code graph актуализирован, HTML graph visualization пропущена CLI из-за лимита 5000 nodes.
+### Воспроизводимая сборка
+
+Backend release staging должен содержать `app.jar` (готовый Maven boot jar), `glasses_stt.py`, `requirements.txt`, `Dockerfile`. Перед docker build дождаться завершения копирования JAR и сверить SHA-256 source/staging/image; частичный JAR не запускать. Frontend staging: `site/` из `frontend/astor-butler`, `Dockerfile` из frontend.Dockerfile, `frontend.nginx.conf`. Собрать `astor-glasses:v1` и `astor-presentation:v1`; root оператор запускает `docker compose -f docker/glasses/compose.yaml up -d`. Credentials/model cache готовятся отдельно; `docker compose config` не публиковать, он может раскрыть env. После замены контейнеров проверить DNS upstream, `nginx -t` и graceful reload gateway. Для rollback использовать сохранённые immutable image IDs и прежнюю config из backup, не перестраивать старый образ из плавающего tag.

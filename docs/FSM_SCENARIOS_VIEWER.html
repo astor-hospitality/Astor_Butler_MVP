@@ -745,7 +745,7 @@ flowchart LR
 
   <section id="glasses-assist">
     <h2>Astor Glasses: информационный пилот (2026-10-04)</h2>
-    <p><code>/api/glasses/assist</code> и <code>/api/glasses/capabilities</code> защищены отдельным пилотным bearer-доступом со staff/tenant scope и expiry. Text обращается только к ModelGateway; voice/vision пока возвращают явный 503. Нет перехода в guest FSM, изменения задач/бронирований, записи evidence или уведомлений. Staff feed, команды и ACK требуют отдельного доменного контракта. Детали: <a href="operations/GLASSES_ASSIST_PILOT.md">контракт и блокеры</a>.</p>
+    <p><code>/api/glasses/assist</code> и <code>/api/glasses/capabilities</code> защищены отдельным пилотным bearer-доступом со staff/tenant scope и expiry. Text обращается только к ModelGateway; voice валидирует AAC 16kHz mono и использует локальный Whisper; vision передаёт отдельный JPEG настоящей мультимодальной модели Yandex AI Studio. Не настроенный/не готовый провайдер возвращает явный 503. Нет перехода в guest FSM, изменения задач/бронирований, записи evidence или уведомлений. Staff feed, команды и ACK требуют отдельного доменного контракта. Детали: <a href="operations/GLASSES_ASSIST_PILOT.md">контракт и блокеры</a>.</p>
   </section>
 
   <section id="model-gateway">

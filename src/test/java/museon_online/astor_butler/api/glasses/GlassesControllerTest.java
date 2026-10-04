@@ -191,7 +191,10 @@ class GlassesControllerTest {
 
     @Test void jpegDimensionsAreCheckedButVisionIsNeverFaked() throws Exception {
         rejects(json(Map.of("imageBase64", jpeg(1281), "imageMimeType", "image/jpeg")), 413, "PAYLOAD_TOO_LARGE");
-        rejects(json(Map.of("imageBase64", jpeg(32), "imageMimeType", "image/jpeg")), 503, "VISION_UNAVAILABLE");
+        var result = controller.assist(request(json(Map.of("imageBase64", jpeg(32), "imageMimeType", "image/jpeg"))));
+        assertThat(result.getStatusCode().value()).isEqualTo(503);
+        verify(gateway).analyzeImage(any());
+        verify(gateway, never()).generateText(any());
     }
 
     private String jpeg(int width) throws Exception {

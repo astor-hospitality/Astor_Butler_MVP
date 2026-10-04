@@ -1,0 +1,35 @@
+# Build images first from the reviewed release staging directory. No secrets in this file.
+services:
+  glasses:
+    image: astor-glasses:${ASTOR_GLASS_VERSION:-v1}
+    container_name: astor_glasses_api
+    restart: unless-stopped
+    env_file: ${ASTOR_GLASS_ENV_FILE:-/opt/astor-glasses/private/runtime.env}
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    cpus: 1.5
+    pids_limit: 128
+    tmpfs: [/tmp:rw,noexec,nosuid,size=256m]
+    volumes:
+      - ${ASTOR_GLASS_MODEL_DIR:-/opt/astor-glasses/models}:/models:ro
+    networks: [astor]
+  frontend:
+    image: astor-presentation:${ASTOR_GLASS_VERSION:-v1}
+    container_name: astor_presentation
+    restart: unless-stopped
+    user: "101:101"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    tmpfs: [/tmp:rw,nosuid,size=8m]
+    networks: [astor]
+networks:
+  astor:
+    external: true
+    name: astor-butler_default

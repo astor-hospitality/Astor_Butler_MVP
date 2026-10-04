@@ -19,11 +19,11 @@ class TelegramVoiceEnrichmentGuardTest {
     void failsOpenWhenVoiceEnrichmentTimesOut() {
         TelegramVoiceTranscriptionService transcriptionService = mock(TelegramVoiceTranscriptionService.class);
         TelegramVoiceEnrichmentGuard guard = new TelegramVoiceEnrichmentGuard(transcriptionService);
-        ReflectionTestUtils.setField(guard, "enrichmentTimeoutMs", 25L);
+        ReflectionTestUtils.setField(guard, "enrichmentTimeoutMs", 250L);
         IncomingMessage incoming = telegramVoice();
 
         when(transcriptionService.enrich(any(), any())).thenAnswer(invocation -> {
-            TimeUnit.MILLISECONDS.sleep(250);
+            TimeUnit.MILLISECONDS.sleep(1000);
             return invocation.getArgument(0);
         });
 
