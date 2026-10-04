@@ -142,6 +142,14 @@ Service chats внутри Telegram (`TELEGRAM_ADMIN_CHAT_ID`, `TELEGRAM_ANALYTI
 
 Каналы с региональными, юридическими или сетевыми ограничениями подключаются только через официальные API/интеграционные контуры, доступные заказчику и инфраструктуре проекта. Если провайдер требует отдельный egress region, это решается на уровне integration gateway, а не внутри FSM.
 
+### Astor Glasses Informational Pilot (2026-10-04)
+
+`GlassesController` exposes `/api/glasses/assist` and `/api/glasses/capabilities` with a separate, expiring pilot bearer credential bound server-side to one staff member and venue. Authorization is checked inside both handlers before reading the body; the existing global `permitAll` does not grant glasses access. The credential is limited to these informational routes and cannot authorize guest/staff domain mutations.
+
+The adapter bounds JSON/media sizes, rejects unknown identity/URL fields, limits the pilot to 10 attempts/minute and one provider call in flight, and returns structured errors without provider diagnostics. Text calls only `ModelGateway.generateText`; readiness is true for 60 seconds after a nonempty, nonfallback response. There is no tenant data retrieval yet. Voice and vision are explicitly unavailable (503), with no STT invocation, image gateway fallback, media persistence or temporary files. Audio container signature checking is not codec/duration validation; full validation is required before enabling voice.
+
+No `MessageGatewayService`, FSM, booking, staff-task or notification service is invoked. Staff assignments, evidence and actions/ACK belong to a separate future scoped domain adapter. Pilot configuration and acceptance blockers: `docs/operations/GLASSES_ASSIST_PILOT.md`. This is local preparation, not a deployed endpoint or a completed hardware voice cycle.
+
 ### Telephony Intake
 
 Телефония рассматривается как отдельный transport adapter, а не как отдельная бизнес-логика.

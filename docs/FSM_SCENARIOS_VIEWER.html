@@ -743,6 +743,11 @@ flowchart LR
     </table>
   </section>
 
+  <section id="glasses-assist">
+    <h2>Astor Glasses: информационный пилот (2026-10-04)</h2>
+    <p><code>/api/glasses/assist</code> и <code>/api/glasses/capabilities</code> защищены отдельным пилотным bearer-доступом со staff/tenant scope и expiry. Text обращается только к ModelGateway; voice/vision пока возвращают явный 503. Нет перехода в guest FSM, изменения задач/бронирований, записи evidence или уведомлений. Staff feed, команды и ACK требуют отдельного доменного контракта. Детали: <a href="operations/GLASSES_ASSIST_PILOT.md">контракт и блокеры</a>.</p>
+  </section>
+
   <section id="model-gateway">
     <h2>1.6 Model Gateway / органы восприятия</h2>
     <p>Целевой AI-слой Astor Butler строится как набор сменных способностей, а не как прямые вызовы к одной модели. Локально используются Qwen/Ollama, <code>qwen2.5vl:3b</code>, <code>nomic-embed-text</code> и faster-whisper, а в production при необходимости можно включить OpenAI/API-провайдера. FSM остается центром принятия решений.</p>

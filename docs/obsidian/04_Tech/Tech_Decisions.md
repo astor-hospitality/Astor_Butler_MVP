@@ -654,3 +654,11 @@ FSM управляет состоянием диалога, разрешенны
 - `/Users/michaelwelly/Obsidian/Astor_Butler_Knowledge/03_FSM/FIRST_TOUCH_FSM.md`
 - `/Users/michaelwelly/Obsidian/Astor_Butler_Knowledge/04_Tech/Event_Taxonomy.md`
 - `/Users/michaelwelly/Obsidian/Astor_Butler_Knowledge/04_Tech/Local_Runbook.md`
+
+## Astor Glasses informational pilot — 2026-10-04
+
+- В отдельной ветке `codex/glasses-voice-adapter` подготовлен локальный `/api/glasses/assist` + `/capabilities`; #9 остаётся назначенной BryxOG, интеграцию сверить с его работой.
+- Одно server-bound staff/tenant bearer credential с hash и expiry; bounded request, 10 attempts/minute, один provider call, honest errors. Text только ModelGateway, без FSM/бронирований/уведомлений. Staff context пока отсутствует.
+- Voice/vision всегда false/503. Existing command STT не используется: AAC readiness, metadata validation, transcript-safe logging и process/temp lifecycle ещё требуют реализации/проверки. Никакого фиктивного transcript/vision fallback.
+- Text readiness true только 60s после nonempty/nonfallback gateway response; конфигурация сама по себе не доказывает готовность.
+- Production/VM/телефон/основной checkout/Astor_Glasses_Spike не затрагивались. Контракт, настройки, блокеры и P0/P1/P2 backlog: `docs/operations/GLASSES_ASSIST_PILOT.md`.
