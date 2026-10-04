@@ -17,9 +17,13 @@ frontend/astor-butler/
 ├── index.html          # общая титулка Astor: выбор Butler / Concierge
 ├── astor_butler/       # продуктовая страница для ресторанов и отелей
 ├── astor_concierge/    # продуктовая страница для событий и городских программ
+│   └── feed/           # лента заведений Concierge: Telegram Mini App и обычная страница
 ├── css/style.css       # вся стилистика (dark + gold, Playfair Display + Inter — синхронно с C3FLEX)
 ├── js/main.js          # курсор-ключ, рябь, дверь, scroll reveal, optional chat UI
 ├── js/widget.js        # transport layer виджета: submitMessage(payload), mock/backend режимы
+├── css/feed.css        # стили ленты (те же токены, без интро-эффектов)
+├── js/feed.js          # лента: закреплённые заведения, остальные по среднему рейтингу Яндекс Карт и 2ГИС
+├── data/venues.json    # данные ленты; рейтинги вносятся вручную, фото — только с разрешения заведения
 ├── assets/             # favicon.svg, og-image.png
 └── docs/               # коммерческий пакет как HTML-страницы
     ├── offer.html      # КП (из docs/commercial/COMMERCIAL_OFFER_RU.md)

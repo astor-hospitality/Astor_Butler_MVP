@@ -1,0 +1,24 @@
+{
+  "city": "Екатеринбург",
+  "ratingsUpdatedAt": "2026-10-04",
+  "venues": [
+    {
+      "id": "aeris",
+      "name": "AERIS",
+      "pinned": true,
+      "badge": "Выбор Astor",
+      "category": "Гастробар",
+      "cuisine": "Средиземноморская кухня",
+      "address": "ул. Мамина-Сибиряка, 58",
+      "connected": true,
+      "bookingUrl": "https://t.me/astor_butler_bot",
+      "siteUrl": "https://aeris.bar/",
+      "photos": [],
+      "ratings": { "yandex": 4.8, "gis": 4.8 },
+      "mapUrls": {
+        "yandex": "https://yandex.ru/maps/org/aeris/103837967593/",
+        "gis": "https://2gis.ru/ekaterinburg/firm/70000001085768632"
+      }
+    }
+  ]
+}
