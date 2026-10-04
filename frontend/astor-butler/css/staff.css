@@ -15,7 +15,6 @@
   --surface-strong: rgba(244,247,249,0.09);
   --on-accent: #080a0d;
   --ok: #7cc79a;
-  --warn: #e4b05e;
   --danger: #ea8f80;
   --focus: #2aabee;
   --font-body: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
@@ -34,7 +33,6 @@ body.light-theme {
   --surface-strong: rgba(17,22,28,0.075);
   --on-accent: #f5f7f8;
   --ok: #23703f;
-  --warn: #8a5a08;
   --danger: #a93c2d;
 }
 
@@ -137,6 +135,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   display: grid;
   gap: 24px;
 }
+
+.layout > * { min-width: 0; }
 
 @media (min-width: 900px) {
   .layout { grid-template-columns: 260px minmax(0, 1fr); align-items: start; }
@@ -260,11 +260,151 @@ button, input, select, textarea { font: inherit; color: inherit; }
   font-weight: 600;
 }
 
-.chip-accepted,
-.chip-in-progress { color: var(--paper); }
-.chip-done { border-color: currentColor; color: var(--ok); }
-.chip-help-requested { border-color: currentColor; color: var(--danger); }
-.chip-high { border-color: currentColor; color: var(--warn); }
+/* ============================================================
+   Status styling: tokens, chips, card and staff emphasis.
+   Loudness ladder, loudest first:
+   help > urgent > done > in progress > accepted > assigned > cancelled.
+   Solid fill is reserved for the first four. Only help changes the
+   card itself; urgent gets a rail, everything else stays quiet.
+
+   Token values are literals on purpose: a token declared on :root
+   that pointed at var(--paper) would keep the dark value in the
+   light theme. Text colours that must follow the theme are taken
+   from var(--paper) / var(--paper-dim) directly in the chip rules.
+   ============================================================ */
+:root {
+  /* help: loudest. Saturated red, dark ink (same polarity as .btn-primary). */
+  --status-help-bg: #ff4a4a;
+  --status-help-fg: #140202;
+  /* Red wash of the help card. Alpha of --status-help-bg; always painted
+     over --ink-2 (the help hover rule keeps --ink-2 and swaps the wash). */
+  --status-help-tint: rgba(255,74,74,0.12);
+  --status-help-tint-hover: rgba(255,74,74,0.17);
+  /* urgent: second */
+  --status-high-bg: #bf7900;
+  --status-high-fg: #140c00;
+  /* done: positive but calm, a deeper shade of --ok */
+  --status-done-bg: #42926d;
+  --status-done-fg: #020d07;
+  /* in progress: neutral tonal fill */
+  --status-progress-bg: #2f3843;
+  /* outlines of the unfilled chips */
+  --status-line-strong: rgba(226,232,238,0.45);
+  --status-line-quiet: rgba(226,232,238,0.26);
+}
+
+body.light-theme {
+  /* light theme polarity: deep fill, white text */
+  --status-help-bg: #b01c2a;
+  --status-help-fg: #ffffff;
+  --status-help-tint: rgba(176,28,42,0.07);
+  --status-help-tint-hover: rgba(176,28,42,0.09);
+  --status-high-bg: #995700;
+  --status-high-fg: #ffffff;
+  --status-done-bg: #297a52;
+  --status-done-fg: #ffffff;
+  --status-progress-bg: #d8dee4;
+  --status-line-strong: rgba(17,22,28,0.50);
+  --status-line-quiet: rgba(17,22,28,0.26);
+}
+
+/* ---------- Status chips ---------- */
+
+/* Unfilled: nothing to act on. Assigned and cancelled keep the base
+   .chip text colour (--paper-dim); cancelled is dashed. */
+.chip-assigned,
+.chip-cancelled { border-color: var(--status-line-quiet); }
+.chip-cancelled { border-style: dashed; }
+.chip-accepted { border-color: var(--status-line-strong); color: var(--paper); }
+
+/* Filled. The 1px border stays (transparent, the fill shows through it),
+   so the pill keeps its size and still has an edge in forced-colors mode. */
+.chip-in-progress,
+.chip-done,
+.chip-high,
+.chip-help-requested { border-color: transparent; }
+
+.chip-in-progress { background: var(--status-progress-bg); color: var(--paper); }
+.chip-done { background: var(--status-done-bg); color: var(--status-done-fg); }
+.chip-high { background: var(--status-high-bg); color: var(--status-high-fg); }
+.chip-help-requested {
+  background: var(--status-help-bg);
+  color: var(--status-help-fg);
+  white-space: nowrap;
+}
+
+/* Non-colour cue for help only: a dot before the label. Drawn with a
+   border (not a background) so it survives forced-colors mode. */
+.chip-help-requested::before {
+  content: "";
+  display: inline-block;
+  margin-right: 0.45em;
+  border: 0.25em solid currentColor;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+/* ---------- Status at card level ---------- */
+
+/* Urgent: a 3px rail in the solid chip colour. No border, no wash.
+   :not() keeps it off help cards whatever the source order. */
+.task-card[data-priority="high"]:not([data-status="help-requested"]) {
+  box-shadow: inset 3px 0 0 var(--status-high-bg);
+}
+
+/* Help: red frame + 4px rail + red wash. Same look for the staff tile.
+   The wash is a background-image layer over the element's own
+   background-color (--ink-2). */
+.task-card[data-status="help-requested"],
+.staff[data-help="true"] {
+  border-color: var(--status-help-bg);
+  background-image: linear-gradient(var(--status-help-tint), var(--status-help-tint));
+  box-shadow: inset 4px 0 0 var(--status-help-bg);
+}
+
+/* Help card hover. `.task-card:hover { background: var(--ink-3) }` is a
+   shorthand: it would drop the wash and lighten the base. This rule is
+   more specific, keeps the base at --ink-2 and shows a stronger wash,
+   so the wash is never stacked over --ink-3. Nothing is animated:
+   the wash swaps instantly and background-color does not change. */
+.task-card[data-status="help-requested"]:hover {
+  background-color: var(--ink-2);
+  background-image: linear-gradient(var(--status-help-tint-hover), var(--status-help-tint-hover));
+}
+
+/* Forced colours drop fills, gradients and shadows. Keep help findable:
+   system-colour frame plus an inner outline (no size or layout change).
+   :not(:focus-visible) leaves the focus ring of the card alone. */
+@media (forced-colors: active) {
+  .task-card[data-status="help-requested"],
+  .staff[data-help="true"] { border-color: Highlight; }
+
+  .task-card[data-status="help-requested"]:not(:focus-visible),
+  .staff[data-help="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -5px;
+  }
+}
+
+/* Help also moves: a short bar under the chip breathes in the chip's own
+   colour. Nothing else on the screen is animated, so motion means "help". */
+.chip-help-requested { position: relative; }
+.chip-help-requested::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -6px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--status-help-bg);
+  animation: help-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes help-pulse {
+  0%, 100% { opacity: 0.3; transform: scaleX(0.5); }
+  50% { opacity: 1; transform: scaleX(1); }
+}
 
 .task-title {
   margin-top: 8px;
@@ -446,4 +586,6 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
+  /* The help bar stays, fully visible and still. */
+  .chip-help-requested::after { animation: none; }
 }
