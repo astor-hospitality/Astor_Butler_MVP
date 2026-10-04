@@ -274,14 +274,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
    from var(--paper) / var(--paper-dim) directly in the chip rules.
    ============================================================ */
 :root {
-  /* help: loudest. Saturated red, dark ink (same polarity as .btn-primary). */
-  --status-help-bg: #ff4a4a;
+  /* The three key fills use the soft status colours of this palette
+     (same values as --danger, amber and --ok), with dark ink on top. */
+  --status-help-bg: #ea8f80;
   --status-help-fg: #140202;
   /* urgent: second */
-  --status-high-bg: #bf7900;
+  --status-high-bg: #e4b05e;
   --status-high-fg: #140c00;
-  /* done: positive but calm, a deeper shade of --ok */
-  --status-done-bg: #42926d;
+  /* done: the same green as the finished stage circles */
+  --status-done-bg: #7cc79a;
   --status-done-fg: #020d07;
   /* in progress: neutral tonal fill */
   --status-progress-bg: #2f3843;
@@ -292,11 +293,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 body.light-theme {
   /* light theme polarity: deep fill, white text */
-  --status-help-bg: #b01c2a;
+  --status-help-bg: #a93c2d;
   --status-help-fg: #ffffff;
-  --status-high-bg: #995700;
+  --status-high-bg: #8a5a08;
   --status-high-fg: #ffffff;
-  --status-done-bg: #297a52;
+  --status-done-bg: #23703f;
   --status-done-fg: #ffffff;
   --status-progress-bg: #d8dee4;
   --status-line-strong: rgba(17,22,28,0.50);
