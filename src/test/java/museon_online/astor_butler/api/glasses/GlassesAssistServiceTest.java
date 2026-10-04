@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -30,7 +31,7 @@ class GlassesAssistServiceTest {
         try {
             assertThatThrownBy(() -> service.assist(scope, id, "вопрос")).satisfies(e ->
                     assertThat(((GlassesFailure)e).code).isEqualTo("STORAGE_UNAVAILABLE"));
-            assertThat(service.assist(scope, id, "вопрос")).isEqualTo("Ответ.");
+            assertThat(whenSlotAvailable(() -> service.assist(scope, id, "вопрос"))).isEqualTo("Ответ.");
             verify(gateway, times(1)).generateText(argThat(r -> r.prompt().contains("Учебная подсказка из S3.")));
             verify(storage, times(2)).archive(eq(scope), eq(id), eq("text"), any(), eq("Ответ."));
         } finally { service.close(); }
@@ -47,7 +48,8 @@ class GlassesAssistServiceTest {
         try {
             service.assist("first question");
             assertThat(service.capabilities().text()).isTrue();
-            assertThatThrownBy(() -> service.assistAudio(scope, UUID.randomUUID().toString(), "", new byte[]{1}))
+            String id = UUID.randomUUID().toString();
+            assertThatThrownBy(() -> whenSlotAvailable(() -> service.assistAudio(scope, id, "", new byte[]{1})))
                     .satisfies(e -> assertThat(((GlassesFailure)e).code).isEqualTo("NO_SPEECH"));
             assertThat(service.capabilities().text()).isTrue();
             verify(gateway, times(1)).generateText(any());
@@ -124,20 +126,27 @@ class GlassesAssistServiceTest {
                     .satisfies(e -> assertThat(((GlassesFailure)e).status).isEqualTo(503));
             release.countDown();
             assertThat(finished.await(1, TimeUnit.SECONDS)).isTrue();
-            // Wait until the single worker has returned, then retry the same request.
-            assertThatCode(() -> {
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
-                while (true) {
-                    try { assertThat(service.assist(scope, id, "question")).isEqualTo("late"); break; }
-                    catch (GlassesFailure e) {
-                        if (!e.code.equals("BUSY") || System.nanoTime() >= deadline) throw e;
-                        Thread.sleep(5);
-                    }
-                }
-            }).doesNotThrowAnyException();
+            assertThat(whenSlotAvailable(() -> service.assist(scope, id, "question"))).isEqualTo("late");
             verify(gateway, times(2)).generateText(any());
             verify(storage, times(1)).archive(eq(scope), eq(id), eq("text"), any(), eq("late"));
         } finally { release.countDown(); service.close(); }
+    }
+
+    // A completed Future may wake its caller just before the SynchronousQueue worker becomes idle.
+    // BUSY is allowed during that handoff; do not confuse it with the failure under test.
+    private static String whenSlotAvailable(Supplier<String> call) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
+        while (true) {
+            try { return call.get(); }
+            catch (GlassesFailure e) {
+                if (!e.code.equals("BUSY") || System.nanoTime() >= deadline) throw e;
+                try { Thread.sleep(5); }
+                catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(interrupted);
+                }
+            }
+        }
     }
 
     private record ServiceCloser(GlassesAssistService service) implements AutoCloseable {
