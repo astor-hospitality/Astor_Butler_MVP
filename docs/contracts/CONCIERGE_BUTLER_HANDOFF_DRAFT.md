@@ -2,7 +2,7 @@
 
 Дата: 2026-10-04. Автор: Рома (`0xLaki`). Для Димы (сторона Saby), для стороны Concierge и для ревью Михаила.
 
-Документ описывает, что уже есть в коде Butler, и что нужно доделать, чтобы внешний Concierge мог оформить бронь, а Saby получил её как внешняя система ресторана. Всё взято из чтения кода (`api/booking/BookingController`, `domain/booking/TableReservationService`, `domain/booking/TableReservationRepository`, `integration/saby/*`). **Запросы ниже не выполнялись на работающем сервере:** локально стек не поднимался. Перед использованием их нужно прогнать.
+Документ описывает, что уже есть в коде Butler, и что нужно доделать, чтобы внешний Concierge мог оформить бронь, а Saby получил её как внешняя система ресторана. Описание взято из кода (`api/booking/BookingController`, `domain/booking/TableReservationService`, `domain/booking/TableReservationRepository`, `integration/saby/*`) и проверено вживую 2026-10-04: Butler поднят локально на чистой базе, запросы из раздела 1 выполнены, ответы ниже настоящие. Telegram при проверке был выключен, поэтому карточка хостес не отправлялась, а решение принималось запросом `confirm`. Чистая база потребовала исправления миграций, см. раздел 5.
 
 Адрес в примерах — локальный gateway `http://localhost:8080`. Время передаётся в UTC: 14:00 в Екатеринбурге это `09:00Z`.
 
@@ -16,12 +16,12 @@
 curl "http://localhost:8080/api/bookings/tables/availability?venueCode=AERIS&from=2026-10-07T09:00:00Z&to=2026-10-07T11:00:00Z&partySize=2"
 ```
 
-Ответ `200`: список свободных столов. В примерах ответов поля сокращены, значения условные.
+Ответ `200`: список свободных столов, на чистой базе их 20. Ответы в примерах настоящие, часть полей опущена.
 
 ```json
 [
   {
-    "table": { "id": 1, "venueCode": "AERIS", "tableCode": "1", "displayName": "Table 1", "zone": "MAIN_HALL", "capacityMin": 1, "capacityMax": 4 },
+    "table": { "id": 4, "venueCode": "AERIS", "tableCode": "4", "displayName": "Стол 4 · у окна", "zone": "WINDOW", "capacityMin": 1, "capacityMax": 5, "bookable": true, "active": true },
     "available": true,
     "reason": "AVAILABLE"
   }
@@ -39,7 +39,7 @@ curl -X POST http://localhost:8080/api/bookings/table-reservations -H "Content-T
 | `chatId` | да | Сейчас это чат гостя с ботом в Telegram |
 | `requestedStartAt`, `requestedEndAt` | да | Конец позже начала |
 | `partySize` | да | Не меньше 1 |
-| `venueCode` | фактически да | Без него свободный стол не найдётся |
+| `venueCode` | нет | Без него берётся `AERIS`: заявка без заведения создалась на стол AERIS |
 | `tableCode` | нет | Если не указан, берётся первый свободный стол, сначала в `preferredZone` |
 | `preferredZone`, `seatingPreference`, `guestName`, `guestPhone`, `guestComment` | нет | Попадают в карточку хостес |
 
@@ -47,15 +47,19 @@ curl -X POST http://localhost:8080/api/bookings/table-reservations -H "Content-T
 
 ```json
 {
-  "id": 11,
+  "id": 1,
   "chatId": 123456,
-  "tableCode": "1",
-  "tableDisplayName": "Table 1",
+  "tableId": 4,
+  "tableCode": "4",
+  "tableDisplayName": "Стол 4 · у окна",
   "status": "AWAITING_MANAGER_CONFIRMATION",
   "requestedStartAt": "2026-10-07T09:00:00Z",
   "requestedEndAt": "2026-10-07T11:00:00Z",
   "partySize": 2,
   "guestName": "Michael",
+  "guestPhone": "+79990000000",
+  "managerTelegramId": 876857557,
+  "hostessChatId": null,
   "sbisExternalId": null
 }
 ```
@@ -63,7 +67,7 @@ curl -X POST http://localhost:8080/api/bookings/table-reservations -H "Content-T
 ### Шаг 3. Решение
 
 ```bash
-curl http://localhost:8080/api/bookings/table-reservations/11
+curl http://localhost:8080/api/bookings/table-reservations/1
 ```
 
 Статус меняется на `CONFIRMED` или `REJECTED`. Решение принимает хостес кнопкой в Telegram; то же делают `POST /api/bookings/table-reservations/{id}/confirm` и `/reject`. Кнопки работают только из чата, записанного в `TELEGRAM_HOSTESS_CHAT_ID`.
@@ -85,10 +89,10 @@ curl http://localhost:8080/api/bookings/table-reservations/11
 | Пробел | Что происходит сейчас | Что нужно |
 | --- | --- | --- |
 | Ответ гостю | Подтверждение и отказ уходят сообщением в Telegram по `chatId`. Гость, пришедший через Concierge, мог не запускать бота Butler | Канал ответа для внешнего источника: обратный вызов Concierge или его опрос |
-| Источник заявки | При вставке жёстко пишется `source = 'TELEGRAM'` | Поле источника в запросе и в ответе |
-| Повторы | Повтор запроса без `tableCode` удержит второй стол: получится двойная бронь | Ключ идемпотентности от Concierge |
+| Источник заявки | При вставке жёстко пишется `source = 'TELEGRAM'`. Проверено: все три тестовые заявки, созданные через API, записаны как `TELEGRAM` | Поле источника в запросе и в ответе |
+| Повторы | Повтор запроса без `tableCode` удерживает второй стол. Проверено: первая заявка получила стол 4, точно такая же вторая — стол 5 | Ключ идемпотентности от Concierge |
 | Согласие гостя | В Telegram гость сначала отдаёт контакт и согласие. Заявка через API эту проверку обходит | Ссылка на согласие, полученное на стороне Concierge |
-| Срок удержания | Срок записывается, но нигде не проверяется: до ответа хостес стол занят | Истечение удержания и статус `EXPIRED` |
+| Срок удержания | В удержание записывается срок: начало брони плюс 15 минут. Код, который бы по нему освобождал стол, не найден; истечение вживую не проверялось | Истечение удержания и статус `EXPIRED` |
 | Доступ | `SecurityConfig` разрешает всё. Подтвердить чужую бронь может любой, кто дотянется до адреса | Авторизация до того, как API станет доступен снаружи |
 | Уведомление Concierge | Нет | Обратный вызов или событие о смене статуса |
 
@@ -134,10 +138,31 @@ SABY_API_TOKEN или SABY_CLIENT_ID + SABY_CLIENT_SECRET + SABY_REFRESH_TOKEN
 
 ## 4. Предлагаемый порядок работ
 
-1. Поднять стек и прогнать три запроса из раздела 1, записать фактические ответы.
+1. Сделано 2026-10-04: стек поднят локально, три запроса выполнены, ответы внесены в раздел 1.
 2. Добавить источник заявки и ключ идемпотентности в создание брони, с тестами.
 3. Подключить `ExternalReservationProvider` в `TableReservationService` за выключенным по умолчанию флагом.
 4. Реализовать два вызова Saby после получения доступа от Димы.
 5. Закрыть доступ к API до публикации наружу.
 
 Пункты 2, 3 и 5 меняют основной бэкенд Butler. Это зона, которую Михаил согласует отдельно (PR #8).
+
+## 5. Что показала проверка вживую
+
+Локальный запуск: PostgreSQL, Redis, MongoDB и Kafka в Docker, приложение из исходников, Telegram и внешние модели выключены.
+
+| Проверка | Результат |
+| --- | --- |
+| Свободные столы на 07.10, 14:00–16:00 по Екатеринбургу, 2 гостя | `200`, 20 столов |
+| Заявка без указания стола | `201`, стол 4, `AWAITING_MANAGER_CONFIRMATION` |
+| Та же заявка повторно | `201`, стол 5: вторая бронь вместо отказа |
+| Заявка на уже удержанный стол 4 | `409`, `Table already has an active hold for this time window` |
+| `confirm` | `200`, `CONFIRMED`; повторный `confirm` — `409` |
+| `reject` | `200`, `REJECTED`, удержание снято |
+| Без `chatId` | `400`, `chatId is required` |
+| Несуществующий стол | `404`, `Requested table was not found` |
+| Несуществующая заявка | `404`, `Table reservation was not found` |
+| `POST /api/bookings` | `201` со случайным номером и статусом `DRAFT`, в базу ничего не пишется |
+
+**Миграции базы.** На чистой базе приложение стартовало, отвечало `UP` на проверку состояния и не имело ни одной таблицы: все запросы к базе возвращали `500`. После перехода на Spring Boot 4 в проекте остался только `liquibase-core`, а автозапуск миграций в этой версии вынесен в отдельный модуль. Исправление и тест лежат в ветке `codex/roma-liquibase-boot4-fix`. До него на чистой базе этот документ не воспроизводится. Перед выкладкой исправления нужно проверить таблицу `databasechangelog` на боевой базе: после выкладки приложение начнёт сверять и применять миграции при старте.
+
+**Образы хранилища файлов.** `minio/minio` и `minio/mc` с тегами из `docker-compose.yml` больше не скачиваются с Docker Hub. Для брони хранилище не нужно, но полный стек по текущему compose-файлу на новой машине не поднимется.
