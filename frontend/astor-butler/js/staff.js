@@ -132,8 +132,12 @@
         record(task, "VOICED", "очки");
         return { ok: true }; // delivery is tracked separately and does not change the version
       case "ACCEPT":
-        if (!task.deliveredAt) return reject("Поручение ещё не доставлено сотруднику.");
         if (task.status !== "ASSIGNED") return reject("Принять можно только назначенное поручение.");
+        // Accepting proves the task reached the person, even if the delivery mark was lost on the way.
+        if (!task.deliveredAt) {
+          task.deliveredAt = Date.now();
+          record(task, "DELIVERED", "телефон сотрудника");
+        }
         task.status = "ACCEPTED";
         record(task, "ACCEPT", waiter);
         break;
