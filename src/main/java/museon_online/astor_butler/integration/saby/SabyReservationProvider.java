@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Saby Presto booking adapter. Availability comes from {@code retail/hall/list}; creating and cancelling
@@ -36,7 +37,9 @@ public class SabyReservationProvider implements ExternalReservationProvider {
     static final String HALL_LIST_PATH = "/retail/hall/list";
     static final String POINT_LIST_PATH = "/retail/point/list";
     static final String ORDER_CREATE_PATH = "/retail/order/create";
+    static final String ORDER_PATH = "/retail/order/";
     static final String RESULT_UNKNOWN = "PROVIDER_RESULT_UNKNOWN";
+    private static final Pattern EXTERNAL_ID = Pattern.compile("[A-Za-z0-9-]{1,64}");
     private static final DateTimeFormatter SABY_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final SabyReservationProperties properties;
@@ -164,6 +167,72 @@ public class SabyReservationProvider implements ExternalReservationProvider {
             return null;
         });
         return cached != null ? cached : notCached[0];
+    }
+
+    /** Reads the booking status. The meaning of the raw codes is not documented yet (B5), so nothing is mapped. */
+    public SabyOrderResult state(String externalId) {
+        SabyOrderResult precheck = orderPrecheck(externalId, false);
+        if (precheck != null) {
+            return precheck;
+        }
+        JsonNode response;
+        try {
+            response = client.get(ORDER_PATH + externalId + "/state", Map.of());
+        } catch (SabyApiException exception) {
+            log.warn("Saby booking state failed: {} (HTTP {})", exception.kind(), exception.httpStatus());
+            return SabyOrderResult.failure(externalId, failureStatus(exception), exception.getMessage());
+        }
+        Integer state = intOrNull(response, "state");
+        if (state == null) {
+            return SabyOrderResult.failure(externalId, "PROVIDER_INVALID_RESPONSE",
+                    "Saby order state response has no state.");
+        }
+        return new SabyOrderResult(true, "SABY_STATE_" + state, externalId, state,
+                intOrNull(response, "productState"), intOrNull(response, "payState"),
+                "Raw Saby booking state; its meaning is not mapped yet.");
+    }
+
+    /** Requests cancellation. Never retried; check {@link #state(String)} afterwards. */
+    public SabyOrderResult cancel(String externalId) {
+        SabyOrderResult precheck = orderPrecheck(externalId, true);
+        if (precheck != null) {
+            return precheck;
+        }
+        try {
+            client.put(ORDER_PATH + externalId + "/cancel");
+        } catch (SabyApiException exception) {
+            log.warn("Saby booking cancel failed: {} (HTTP {})", exception.kind(), exception.httpStatus());
+            String status = switch (exception.kind()) {
+                case AUTH_FAILED -> "PROVIDER_AUTH_FAILED";
+                case HTTP_ERROR -> exception.httpStatus() < 500 ? "PROVIDER_REJECTED" : RESULT_UNKNOWN;
+                case TIMEOUT, INVALID_RESPONSE -> RESULT_UNKNOWN;
+            };
+            return SabyOrderResult.failure(externalId, status, exception.getMessage());
+        }
+        return new SabyOrderResult(true, "CANCEL_REQUESTED", externalId, null, null, null,
+                "Saby accepted the cancellation request; check the booking state to confirm.");
+    }
+
+    private SabyOrderResult orderPrecheck(String externalId, boolean write) {
+        ExternalReservationStatus status = status();
+        if (!status.configured()) {
+            return SabyOrderResult.failure(externalId, "PROVIDER_NOT_CONFIGURED",
+                    "Saby provider is not configured.");
+        }
+        if (write && !properties.isWriteEnabled()) {
+            return SabyOrderResult.failure(externalId, "SABY_WRITE_DISABLED",
+                    "Saby booking write is not enabled.");
+        }
+        if (externalId == null || !EXTERNAL_ID.matcher(externalId).matches()) {
+            return SabyOrderResult.failure(externalId, "INVALID_EXTERNAL_ID",
+                    "Saby booking id must be a UUID-like value.");
+        }
+        return null;
+    }
+
+    private static Integer intOrNull(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        return value.isNumber() ? value.asInt() : null;
     }
 
     private ExternalReservationResult createOrder(TableReservationCommand command, String idempotencyKey) {

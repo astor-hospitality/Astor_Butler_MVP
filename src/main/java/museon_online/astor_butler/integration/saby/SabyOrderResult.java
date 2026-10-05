@@ -1,0 +1,19 @@
+package museon_online.astor_butler.integration.saby;
+
+/**
+ * Outcome of a Saby call on an existing booking ({@code state}, {@code cancel}).
+ * Raw {@code state}/{@code productState} codes are kept as is until their meaning is confirmed (blocker B5).
+ */
+public record SabyOrderResult(
+        boolean ok,
+        String status,
+        String externalId,
+        Integer state,
+        Integer productState,
+        Integer payState,
+        String message
+) {
+    static SabyOrderResult failure(String externalId, String status, String message) {
+        return new SabyOrderResult(false, status, externalId, null, null, null, message);
+    }
+}
