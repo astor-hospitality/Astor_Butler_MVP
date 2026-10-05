@@ -4,7 +4,7 @@
 
 ## Where it stands
 
-The iPhone client reaches the glasses through the vendor's licensed AIBuds SDK. No Android build of that SDK is in this repository and none was found publicly, so on Android the glasses are used the only way that needs no SDK: as a Bluetooth headset, microphone and speaker.
+The iPhone client reaches the glasses through the vendor's AIBuds SDK. The vendor publishes that SDK for iOS only, see "Getting the glasses features on Android" below. So on Android the glasses are used the one way that needs no SDK: as a Bluetooth headset, microphone and speaker.
 
 | Works now | Waits for the vendor's Android SDK |
 | --- | --- |
@@ -17,6 +17,21 @@ The iPhone client reaches the glasses through the vendor's licensed AIBuds SDK. 
 Not ported and not blocked by the SDK: the wake word «Астор» (needs on-device Russian speech recognition on Android), assistant shortcuts, the upload queue for `/api/glasses/media`.
 
 The seam for the SDK is `core/.../GlassesDevice.java`: an adapter over the Android SDK implements it, the rules behind it are already here and tested.
+
+## Getting the glasses features on Android
+
+Found on 2026-10-05:
+
+- The vendor is TopStep. Its iOS SDK is public: [topstepsmart/AIBuds-SDK-iOS](https://github.com/topstepsmart/AIBuds-SDK-iOS), MIT licence, version 1.0.1-beta.11, the one the iPhone client uses. It is prebuilt frameworks with public headers and a demo application, not source code.
+- No Android SDK is published. The vendor's organisation has no Android repository, the Flutter plugin inside the iOS repository is iOS-only, and the chip maker's public repositories hold firmware SDKs.
+- The vendor's own Android application exists (Google Play, `com.topstep.aibuds`), so an Android implementation exists inside the vendor. That application is proprietary; the MIT licence does not cover it.
+- The published interface of the device layer (`ABMate`) names only the frame kinds (request, response, notify) and error codes. The commands themselves are inside the binary.
+
+Ways forward, cheapest first:
+
+1. Ask in public: an issue in the vendor's repository requesting the Android SDK. The repository is young and active, and an empty `WearKit-Flutter-Plugin` repository suggests more is being published.
+2. Write our own Android implementation of the device protocol. Two sources carry no licence problem: the MIT-licensed iOS SDK, and the Bluetooth traffic of our own glasses talking to an official application. Every step needs the physical glasses, it is days of work, and a firmware update can break it.
+3. Not an option: taking the library out of the vendor's Android application and shipping it inside ours. That is someone else's proprietary code, and an application built on it cannot be published.
 
 ## Layout
 
