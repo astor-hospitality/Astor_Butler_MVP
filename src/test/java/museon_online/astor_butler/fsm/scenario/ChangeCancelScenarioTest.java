@@ -28,6 +28,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -247,6 +248,19 @@ class ChangeCancelScenarioTest {
         assertThat(outgoing.removeKeyboard()).isTrue();
         verify(changeDraftStorage).clear(incoming.chatId());
         verify(fsmStorage).setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+    }
+
+    @Test
+    void asksForTheDateAgainWhenTheDayDoesNotExist() {
+        IncomingMessage incoming = telegram("32.13");
+        when(changeDraftStorage.find(incoming.chatId()))
+                .thenReturn(Optional.of(new ChangeCancelDraftStorage.Draft(44L, "CHANGE_DATE")));
+        when(tableReservationService.getReservation(44L)).thenReturn(activeReservation());
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+        assertThat(outgoing.text()).isNotBlank();
     }
 
     @Test
