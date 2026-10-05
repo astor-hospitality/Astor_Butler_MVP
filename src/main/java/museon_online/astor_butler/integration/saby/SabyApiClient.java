@@ -52,10 +52,28 @@ class SabyApiClient {
             }
         });
         URI uri = builder.encode().build().toUri();
-        return authorizedCall(HttpMethod.GET, uri, path, true);
+        return authorizedCall(HttpMethod.GET, uri, null, path, true);
     }
 
-    private JsonNode authorizedCall(HttpMethod method, URI uri, String operation, boolean retryable) {
+    /** Never retried: a repeated create may book a second table. */
+    JsonNode post(String path, Object body) {
+        return authorizedCall(HttpMethod.POST, uri(path), toJson(body), path, false);
+    }
+
+    /** Never retried; an empty response body is returned as a missing node. */
+    JsonNode put(String path) {
+        return authorizedCall(HttpMethod.PUT, uri(path), null, path, false);
+    }
+
+    private URI uri(String path) {
+        return UriComponentsBuilder.fromUriString(trimTrailingSlash(properties.getBaseUrl()))
+                .path(path)
+                .encode()
+                .build()
+                .toUri();
+    }
+
+    private JsonNode authorizedCall(HttpMethod method, URI uri, String requestBody, String operation, boolean retryable) {
         boolean reauthenticated = false;
         int attempts = retryable ? 1 + Math.max(0, properties.getMaxRetries()) : 1;
         int attempt = 0;
@@ -64,8 +82,15 @@ class SabyApiClient {
             HttpHeaders headers = new HttpHeaders();
             headers.setAccept(List.of(MediaType.APPLICATION_JSON));
             headers.set(TOKEN_HEADER, token());
+            if (requestBody != null) {
+                headers.setContentType(MediaType.APPLICATION_JSON);
+            }
             try {
-                String body = restTemplate.exchange(uri, method, new HttpEntity<>(headers), String.class).getBody();
+                String body = restTemplate.exchange(uri, method, new HttpEntity<>(requestBody, headers), String.class)
+                        .getBody();
+                if (method == HttpMethod.PUT && (body == null || body.isBlank())) {
+                    return objectMapper.missingNode();
+                }
                 return parse(body, operation);
             } catch (RestClientResponseException exception) {
                 int status = exception.getStatusCode().value();
@@ -147,7 +172,8 @@ class SabyApiClient {
                 if (attempt < attempts) {
                     continue;
                 }
-                throw new SabyApiException(SabyApiException.Kind.TIMEOUT, 0,
+                // AUTH_FAILED, not TIMEOUT: the business request was never sent.
+                throw new SabyApiException(SabyApiException.Kind.AUTH_FAILED, 0,
                         "Saby service auth did not respond in time");
             }
         }
