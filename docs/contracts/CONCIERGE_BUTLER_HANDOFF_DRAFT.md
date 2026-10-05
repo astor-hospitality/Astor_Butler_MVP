@@ -102,6 +102,8 @@ curl http://localhost:8080/api/bookings/table-reservations/1
 
 Сейчас Saby в бронировании не участвует.
 
+Методы Saby Presto по официальной документации, решения для adapter и блокеры — в [SABY_PRESTO_BOOKING_API.md](../integrations/SABY_PRESTO_BOOKING_API.md), план работ — в [SABY_INTEGRATION_PLAN.md](../integrations/SABY_INTEGRATION_PLAN.md).
+
 - Интерфейс `ExternalReservationProvider` описывает четыре действия: `providerId`, `status`, `checkAvailability(запрос)`, `reserve(команда, ключ идемпотентности)`.
 - `SabyReservationProvider` — заглушка. Без настроек отвечает «не настроено», с настройками — «не реализовано».
 - `TableReservationService` этот интерфейс не вызывает. Свободные столы и удержания считаются по собственной базе Butler.
