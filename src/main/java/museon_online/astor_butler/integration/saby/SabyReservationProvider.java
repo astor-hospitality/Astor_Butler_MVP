@@ -29,6 +29,7 @@ public class SabyReservationProvider implements ExternalReservationProvider {
     public static final String PROVIDER_ID = "SABY";
 
     static final String HALL_LIST_PATH = "/retail/hall/list";
+    static final String POINT_LIST_PATH = "/retail/point/list";
     private static final DateTimeFormatter SABY_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final SabyReservationProperties properties;
@@ -129,6 +130,17 @@ public class SabyReservationProvider implements ExternalReservationProvider {
                 List.of(),
                 Map.of()
         );
+    }
+
+    /**
+     * Setup diagnostic: lists Presto booking points to find {@code SABY_POINT_ID} and halls on the first run.
+     * Needs only credentials, not a point id. Throws {@link SabyApiException} on failure.
+     */
+    public JsonNode listPoints() {
+        Map<String, Object> query = new LinkedHashMap<>();
+        query.put("product", "restaurant");
+        query.put("pageSize", 100);
+        return client.get(POINT_LIST_PATH, query);
     }
 
     private List<Map<String, Object>> freeTables(JsonNode halls, int partySize) {
