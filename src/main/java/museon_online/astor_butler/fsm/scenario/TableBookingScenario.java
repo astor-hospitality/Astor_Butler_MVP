@@ -327,8 +327,7 @@ public class TableBookingScenario implements FsmScenario {
                  TABLE_BOOKING_COLLECT_PARTY_SIZE,
                  TABLE_BOOKING_COLLECT_SEATING_PREFERENCE,
                  TABLE_BOOKING_SHOW_PLAN,
-                 TABLE_BOOKING_WAIT_TABLE_SELECTION,
-                 TABLE_BOOKING_CHANGE_REQUESTED -> true;
+                 TABLE_BOOKING_WAIT_TABLE_SELECTION -> true;
             default -> false;
         };
     }
