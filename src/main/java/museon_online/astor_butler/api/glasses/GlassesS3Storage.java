@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.errors.ErrorResponseException;
 import okhttp3.OkHttpClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,7 @@ public class GlassesS3Storage {
     private final String bucket;
     private volatile Document document;
     private volatile Instant mediaReadyUntil = Instant.MIN;
+    private boolean mediaArchiveEnabled;
 
     @Autowired
     public GlassesS3Storage(@Value("${astor.glasses.s3-enabled:false}") boolean enabled,
@@ -46,6 +48,64 @@ public class GlassesS3Storage {
 
     GlassesS3Storage(MinioClient client, String bucket) { this.client = client; this.bucket = bucket; }
     static GlassesS3Storage disabled() { return new GlassesS3Storage(null, ""); }
+
+    @Value("${astor.glasses.media-archive-enabled:false}")
+    void configureMediaArchive(boolean enabled) { mediaArchiveEnabled = enabled; }
+
+    public record ArchiveCapabilities(boolean enabled, int maxFileBytes) { }
+    public record ArchiveReceipt(String fileId, String sessionId, String sha256, long size, boolean archived) { }
+    private record ArchiveCommit(ArchiveReceipt receipt, String mime) { }
+
+    ArchiveCapabilities archiveCapabilities() {
+        return new ArchiveCapabilities(client != null && mediaArchiveEnabled, GlassesMediaController.LIMIT);
+    }
+
+    // A single pilot writer serializes the durable check/write/commit sequence. No in-memory idempotency cache.
+    synchronized ArchiveReceipt archiveFile(GlassesAccess.Scope scope, String fileId, String sessionId,
+                                            String sha256, String mime, byte[] media) {
+        if (!archiveCapabilities().enabled()) {
+            throw new GlassesFailure(503, "ARCHIVE_UNAVAILABLE", "Private archive is not enabled");
+        }
+        String prefix = "materials/" + scopeKey(scope) + "/" + fileId + "/";
+        var expected = new ArchiveCommit(new ArchiveReceipt(fileId, sessionId, sha256, media.length, true), mime);
+        try {
+            ArchiveCommit existing = archiveCommit(prefix + "archive-receipt.json");
+            if (existing != null) {
+                if (!existing.equals(expected)) {
+                    throw new GlassesFailure(409, "FILE_ID_CONFLICT", "Use a new fileId for changed content or session");
+                }
+                return existing.receipt;
+            }
+            String filename = switch (mime) {
+                case "image/jpeg" -> "archive.jpg";
+                case "audio/mp4" -> "archive.m4a";
+                case "video/mp4" -> "archive.mp4";
+                default -> throw new IllegalArgumentException();
+            };
+            put(prefix + filename, media, mime);
+            put(prefix + "archive-receipt.json", new ObjectMapper().writeValueAsBytes(expected), "application/json");
+            return expected.receipt;
+        } catch (GlassesFailure failure) {
+            throw failure;
+        } catch (Exception e) {
+            throw new GlassesFailure(503, "STORAGE_UNAVAILABLE", "Private material storage unavailable");
+        }
+    }
+
+    private ArchiveCommit archiveCommit(String key) throws Exception {
+        try (var input = client.getObject(GetObjectArgs.builder().bucket(bucket).object(key).build())) {
+            byte[] bytes = input.readNBytes(4097);
+            if (bytes.length == 0 || bytes.length > 4096) throw new IllegalStateException();
+            var value = new ObjectMapper().enable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+                    .readValue(bytes, ArchiveCommit.class);
+            if (value == null || value.receipt == null || !value.receipt.archived || value.mime == null) throw new IllegalStateException();
+            return value;
+        } catch (ErrorResponseException e) {
+            if (e.response().code() == 404 && "NoSuchKey".equals(e.errorResponse().code())) return null;
+            throw e;
+        }
+    }
 
     boolean mediaReady() { return client != null && Instant.now().isBefore(mediaReadyUntil); }
     boolean documentsReady() { return document != null && Instant.now().isBefore(document.expiresAt); }

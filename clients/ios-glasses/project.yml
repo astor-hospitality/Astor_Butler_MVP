@@ -17,7 +17,6 @@ targets:
     platform: iOS
     sources:
       - path: Sources
-        excludes: ["AstorDock*.m", "AstorDock*.h"]
     dependencies:
       - sdk: MobileCoreServices.framework
       - sdk: MediaPlayer.framework

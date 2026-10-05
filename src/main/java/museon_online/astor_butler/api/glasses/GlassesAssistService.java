@@ -54,14 +54,14 @@ public class GlassesAssistService implements AutoCloseable {
 
     public record Capabilities(boolean text, boolean voice, boolean vision, boolean storage, boolean documents, int maxAudioSeconds,
                                int maxAudioBytes, int maxImageBytes, int maxImageDimension, int maxTextChars,
-                               int maxBodyBytes) { }
+                               int maxBodyBytes, GlassesS3Storage.ArchiveCapabilities mediaArchive) { }
 
     Capabilities capabilities() {
         // A switch is permission to attempt text, not proof that a provider is ready.
         boolean textReady = textEnabled && Instant.now().isBefore(textReadyUntil);
         return new Capabilities(textReady, textReady && voice.ready(), Instant.now().isBefore(visionReadyUntil),
                 storage.mediaReady(), storage.documentsReady(),
-                30, 2097152, 2097152, 1280, 4000, 5242880);
+                30, 2097152, 2097152, 1280, 4000, 5242880, storage.archiveCapabilities());
     }
 
     synchronized void checkRate() {

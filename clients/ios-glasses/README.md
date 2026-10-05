@@ -13,7 +13,7 @@ Use macOS, Xcode 26+, CocoaPods and XcodeGen. Obtain the licensed AIBuds-SDK-iOS
       -configuration Debug -destination 'id=YOUR_DEVICE_UDID' \
       CODE_SIGN_ENTITLEMENTS='' build
 
-Set your signing team in project.yml. Personal Team Debug builds omit the Hotspot entitlement. Wi-Fi import/charging archive is separately owned and unfinished files are excluded here. No provider/SSH/S3/mobile credentials belong in sources or bundle.
+Set your signing team in project.yml. Personal Team Debug builds omit the Hotspot entitlement, so SDK Wi-Fi import remains disabled. The integrated phoneCapture archive works through files already received on the phone. No provider/SSH/S3/mobile credentials belong in sources or bundle.
 
 ## Table photos
 
@@ -21,7 +21,13 @@ Explicitly start training for two guests. Stages: TABLE_PREPARE, PLACE_SETTINGS,
 
 The context carries session UUID, BUSINESS_LUNCH_TWO, stage and revision. Server guidance and informational vision produce a private JPEG + reply.json with that context. Only matching request UUID/context and archived:true enable the local checkpoint. Delayed response, changed step, cancellation and missing receipt cannot advance it. No restaurant task/table identifiers are invented.
 
-The compressed JPEG stays only in memory. Retry keeps the same bytes, UUID and context for at most 110 seconds; server successful-reply cache lasts 120 seconds. Starting a session, advancing, cancellation and expiry clear pending media. The receipt confirms storage, not image accuracy or a real assignment's completion.
+The analysis retry JPEG stays in memory. Retry keeps the same bytes, UUID and context for at most 110 seconds; server successful-reply cache lasts 120 seconds. Starting a session, advancing, cancellation and expiry clear pending analysis media. An explicitly opened archive session also retains a private file copy until its own server receipt. The training receipt confirms storage, not image accuracy or a real assignment's completion.
+
+## Archive on charging
+
+Select “Подготовить архив сессии” before capture. The prepared JPEG (1280 px, compressed for analysis) and finished AAC question are copied to a private durable phone queue; standby microphone buffers are excluded. A live Glass charging event or “Выгрузить сейчас” moves that session's held files to pending uploads. Case charging alone is not a trigger. The queue requires mediaArchive.enabled from the backend and checks file/session UUID, standard SHA-256, size and archived:true before accepting each receipt. Interrupted uploads retain the file for retry.
+
+The separate /api/glasses/media archive stores JPEG/audio MP4/video MP4 up to 64 MiB. It does not run analysis or satisfy a training checkpoint. Saved video import from glasses memory requires Wi-Fi and a signing team with HotspotConfiguration; this Personal Team build does not enable it. See [DOCK_ARCHIVE.md](docs/DOCK_ARCHIVE.md) for the queue contract and separate physical acceptance results.
 
 ## Greeting and “Астор”
 

@@ -684,3 +684,11 @@ API: memory reply retry 32 entries/120s, payload conflict 409, cached answer sur
 ## 2026-10-05: фото по учебным шагам, приветствие и локальная команда
 
 Main a4023a7 включён в codex/glasses-backend-hardening без конфликтов. Ядро поручений остаётся отдельно от informational pilot. В clients/ios-glasses перенесён reviewable iPhone companion без SDK/Pods/build/ключей. Фото: четыре шага, обязательные PLACE_SETTINGS/FINAL_CHECK, session+stage+revision, S3 receipt, ручной переход и bounded retry. Runtime v3-step-photo promoted; полный Maven 336/336; публичный synthetic AAC/STT/photo/NO_SPEECH/409/401 PASS, контекст сверён в S3. iPhone build/sign/install PASS; wear greeting/local-only wake добавлены, аппаратная поддержка ещё не подтверждена. Документ: docs/operations/GLASSES_STEP_PHOTOS.md. Telegram Тариэлю отправлен 4 октября 19:02, меню к 5 октября ожидает подтверждения; Notion пакет создан.
+
+
+## 2026-10-05 — private media archive v4
+
+- /api/glasses/media: authenticated raw JPEG/AAC/MP4 up to64 MiB, canonical file/session UUID, standard SHA256, one upload, independent10/min limiter. Server commits media then receipt; receipt GET only is allowed, raw GET/list/delete/other scope PUT remain denied.
+- v4-media-archive is live; v3 retained stopped for rollback. Candidate restart retry and public HTTPS receipts/conflict/hash/auth and6MiB MP4 passed. Full Maven package347 tests green; CI for775a7a5 green, next archive head pending.
+- iPhone snapshot includes Dock modules and call policy fix. SDK Ready/HFP/wear capability2 enabled verified by physical chat; false SDK InCall during own SCO is fixed there. Greeting/wake/charge-upload are separate acceptance checks still open. Standby is local opt-in, no speaker verification; Personal Team Wi-Fi video import stays off.
+- Portable companion sources in clients/ios-glasses; licensed SDK, build outputs and access credentials excluded. API archive does not complete StaffTaskService commands or FSM steps.

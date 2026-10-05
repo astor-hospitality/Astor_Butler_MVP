@@ -10,6 +10,8 @@
 #import "AstorWearGreeting.h"
 #import "AstorWakeListener.h"
 #import "AstorVoiceActivity.h"
+#import "AstorDockArchive.h"
+#import "AstorCallPolicy.h"
 #import "AstorGlassesProbe-Swift.h"
 #import <math.h>
 #import <AIBuds/AIBuds.h>
@@ -21,6 +23,8 @@
 @property(nonatomic,strong) UILabel *callLabel;
 @property(nonatomic,assign) BOOL phoneCallActive, glassesCallActive, callActive, audioInterruptionActive;
 @property(nonatomic,strong) UILabel *powerLabel;
+@property(nonatomic,strong) AstorDockArchive *dock;
+@property(nonatomic,assign) BOOL dockCharging;
 @property(nonatomic,strong) NSMutableDictionary<NSString *,NSDictionary *> *powerStatus;
 @property(nonatomic,strong) NSMutableSet<NSString *> *freshPowerComponents;
 @property(nonatomic,strong) UITextView *report;
@@ -177,6 +181,7 @@
     self.devices=[UIStackView new];self.devices.axis=UILayoutConstraintAxisVertical;self.devices.spacing=8;[device addArrangedSubview:self.devices];
     self.capabilityLabel=[self label:@"Модель 563B-E1769\nФото, микрофон и динамики проверены.\nПостоянный видеопоток эта прошивка не предоставляет." size:16];[device addArrangedSubview:[self card:@[self.capabilityLabel,[self button:@"Проверить динамики" action:@selector(testSpeaker)]]]];
     self.voiceLabel=[self label:@"Голос Butler" size:16];[device addArrangedSubview:[self card:@[self.voiceLabel,[self button:@"Выбрать голос" action:@selector(chooseRussianVoice)]]]];
+    [device addArrangedSubview:[self card:@[[self label:@"Архив сессии" size:20],[self.dock makePanel]]]];
     [device addArrangedSubview:[self card:@[[self label:@"Голосовой старт" size:20],[self label:@"Скажите: «Привет, Siri. Астор». Если Siri не распознает имя, попробуйте «Запусти Астор». Начнётся учебный показ для Яны. iPhone может попросить разблокировку." size:15],[self button:@"Открыть Shortcuts" action:@selector(openShortcuts)]]]];
     [device addArrangedSubview:[self label:@"Жесты и кнопки" size:24]];self.gestureHint=[self label:@"Подключите очки: покажем только жесты, которые сообщает устройство." size:15];[device addArrangedSubview:self.gestureHint];
     [device addArrangedSubview:[self button:@"Настроить профиль Butler" action:@selector(applyButlerProfile)]];
@@ -192,7 +197,7 @@
 - (void)changeTab { [self.view endEditing:YES];for(NSUInteger i=0;i<self.pages.count;i++)self.pages[i].hidden=i!=self.tabs.selectedSegmentIndex; }
 - (void)saveEndpoint { [NSUserDefaults.standardUserDefaults setObject:self.endpoint.text?:@"" forKey:@"backendURL"];[self.view endEditing:YES];[self log:@"Адрес сохранён. Готовность сервера проверяется реальным запросом."]; }
 - (void)repeatAnswer {if(self.lastAnswer.length)[self speakAnswer:self.lastAnswer];else [self speakAnswer:@"Ответов Butler пока нет. Портал задач ещё не подключён."];}
-- (BOOL)lunchIsBusy {return self.callActive || self.audioInterruptionActive || self.busy || self.waitingPhoto || self.recorder || self.startingVoice || self.music;}
+- (BOOL)lunchIsBusy {return self.callActive || self.audioInterruptionActive || self.busy || self.waitingPhoto || self.recorder || self.startingVoice || self.music || self.dock.busy;}
 - (void)refreshLunch {
     BOOL active=self.lunch.active;
     self.lunchStepLabel.text=active?[NSString stringWithFormat:@"%lu / %lu · %@",(unsigned long)self.lunch.stepIndex+1,(unsigned long)AstorLunchGuide.steps.count,self.lunch.step[@"title"]]:self.lunch.finished?@"Учебный план пройден":@"Бизнес-ланч на двоих";
@@ -277,6 +282,9 @@
     [NSUserDefaults.standardUserDefaults registerDefaults:@{@"AstorWearGreetingEnabled":@YES}];
     self.wearGreeting=[AstorWearGreeting new];id last=[NSUserDefaults.standardUserDefaults objectForKey:@"AstorWearGreetingAt"];
     self.wakeListener=[AstorWakeListener new];
+    self.dock=[AstorDockArchive shared];__weak typeof(self) dockWeak=self;
+    self.dock.changed=^(NSString *status){[dockWeak log:status];};
+    self.dock.prepareForImport=^{[dockWeak suspendWake];dockWeak.wakePauseUntil=[NSDate dateWithTimeIntervalSinceNow:10];[dockWeak refreshDock];};
     if([last isKindOfClass:NSDate.class])self.wearGreeting.lastGreeting=last;
     self.autoProbe=[NSProcessInfo.processInfo.arguments containsObject:@"--astor-auto-probe"];
     self.glassesVoiceEnabled=[NSProcessInfo.processInfo.arguments containsObject:@"--astor-gesture-probe"];
@@ -365,6 +373,7 @@
     [self refreshPower];
     [self refreshWearGreeting];
     [self refreshWake];
+    [self refreshDock];
     self.metrics.text=[NSString stringWithFormat:@"Ready: %@ | кадров: %lu | Opus: %lu | PCM: %lu",
       self.device.isConnectedAndReady?@"да":@"нет",(unsigned long)self.frames,(unsigned long)self.opusBytes,(unsigned long)self.pcmBytes];
     self.connectionLabel.text=self.device.isConnectedAndReady?@"● Очки подключены":self.connecting?@"◌ Подключаем очки…":@"○ Очки не подключены";
@@ -449,7 +458,7 @@
 - (void)refreshWake {
     UIButtonConfiguration *style=self.wakeButton.configuration;style.title=self.wakeEnabled?@"Слушать «Астор» · выключить":@"Слушать «Астор» · включить";self.wakeButton.configuration=style;
     if(self.recorder && self.wakeDialogue){[self.recorder updateMeters];if([self.wakeActivity shouldFinishAt:self.recorder.currentTime power:[self.recorder averagePowerForChannel:0]]){[self finishVoice];return;}}
-    BOOL allowed=self.wakeEnabled && self.device.isConnectedAndReady && [self hasGlassesOutput] && ![self lunchIsBusy] && !self.speaker.isSpeaking && !self.answerAudio.isPlaying && !self.cue.isPlaying && self.wakePauseUntil.timeIntervalSinceNow<=0;
+    BOOL allowed=self.wakeEnabled && !self.dockCharging && self.device.isConnectedAndReady && [self hasGlassesOutput] && ![self lunchIsBusy] && !self.speaker.isSpeaking && !self.answerAudio.isPlaying && !self.cue.isPlaying && self.wakePauseUntil.timeIntervalSinceNow<=0;
     if(!allowed){if(self.wakeListener.running || self.wakeListener.starting)[self suspendWake];if(self.wakeEnabled)self.wakeLabel.text=@"Команда «Астор» · пауза на время действия";return;}
     if(self.wakeListener.running || self.wakeListener.starting)return;
     __weak typeof(self) weak=self;
@@ -516,6 +525,7 @@
     });
 }
 - (id<AIBudsLiveStreamingAPI>)readyStream {
+    if(self.dock.busy){[self log:@"Дождитесь импорта записей с очков."];return nil;}
     if(!self.device.isConnectedAndReady){[self log:@"Очки ещё не подключены и не готовы."];return nil;}
     if(![self.device conformsToProtocol:@protocol(AIBudsLiveStreamingAPI)]){[self log:@"SDK не предоставляет LiveStreamingAPI для этих очков."];return nil;}
     return (id<AIBudsLiveStreamingAPI>)self.device;
@@ -660,6 +670,7 @@
     [self beginPhotoForGuide:self.lunch.active?self.lunch.photoContext:nil];
 }
 - (void)beginPhotoForGuide:(NSDictionary *)context {
+    if(self.dock.busy){[self log:@"Дождитесь импорта записей с очков."];return;}
     if(self.callActive || self.audioInterruptionActive){[self log:@"Во время звонка или другого аудио фото Астор не запускается."];return;}
     if(self.busy || self.waitingPhoto || self.recorder || self.startingVoice){[self log:@"Дождитесь запроса или отмените его."];return;}
     if(self.photoDeadline.timeIntervalSinceNow>0){[self log:@"Предыдущее фото отменено. Дождитесь окончания его передачи перед новой съёмкой."];return;}
@@ -681,9 +692,10 @@
         UIImage *image=[UIImage imageWithData:data];if(!image || image.size.width<1 || image.size.height<1){[self endWork];[self log:@"Некорректное фото."];return;}
         CGFloat ratio=MIN(1.0,1280.0/MAX(image.size.width,image.size.height));CGSize size=CGSizeMake(image.size.width*ratio,image.size.height*ratio);
         UIGraphicsBeginImageContextWithOptions(size,YES,1);[image drawInRect:(CGRect){CGPointZero,size}];UIImage *small=UIGraphicsGetImageFromCurrentImageContext();UIGraphicsEndImageContext();self.preview.image=small;self.preview.hidden=NO;self.frames++;
-        [self log:@"Фото с очков получено. Кадр хранится только в памяти."];
+        [self log:@"Фото с очков получено."];
         NSString *prompt=context[@"prompt"]?:@"Что я вижу? Опиши кратко на русском; укажи, если детали неразличимы.";
         NSData *jpeg=UIImageJPEGRepresentation(small,0.75);if(!jpeg.length || jpeg.length>2*1024*1024){[self endWork];[self log:@"Фото не удалось подготовить в пределах размера API."];return;}
+        if(![self.dock capturePhotoData:jpeg])[self log:@"Кадр для анализа остаётся в памяти; архивная сессия не открыта или сохранение недоступно."];
         NSString *requestId=NSUUID.UUID.UUIDString.lowercaseString;
         if(context){self.pendingPhotoImage=jpeg;self.pendingPhotoContext=context;self.pendingPhotoRequestId=requestId;self.pendingPhotoCreated=NSDate.date;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,110*NSEC_PER_SEC),dispatch_get_main_queue(),^{if([self.pendingPhotoRequestId isEqual:requestId]){[self clearPendingPhoto];[self refreshLunch];}});}
@@ -692,7 +704,7 @@
     });
 }
 - (void)device:(id<AIBudsDeviceConvertible>)device didReceivePhotoDataForSceneRecognition:(NSData *)data enhancedPhotoData:(NSData *)enhanced error:(NSError *)error {if(device!=self.device)return;if(error){dispatch_async(dispatch_get_main_queue(),^{if(!self.waitingPhoto)return;self.waitingPhoto=NO;self.photoContext=nil;self.photoDeadline=nil;[self endWork];[self log:@"Ошибка передачи фото."];});return;}[self receivePhoto:enhanced?:data];}
-- (void)device:(id<AIBudsDeviceConvertible>)device didReceiveInstantPhotoData:(NSData *)data error:(NSError *)error {if(!error)[self receivePhoto:data];}
+- (void)device:(id<AIBudsDeviceConvertible>)device didReceiveInstantPhotoData:(NSData *)data error:(NSError *)error {if(device==self.device && !error)[self receivePhoto:data];}
 - (void)ask {NSString *text=[self.question.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];if(!text.length){[self log:@"Введите вопрос или запишите голос."];return;}[self sendText:text image:nil audio:nil];}
 - (void)sendText:(NSString *)text image:(NSData *)image audio:(NSData *)audio {
     [self sendText:text image:image audio:audio photoContext:nil requestId:NSUUID.UUID.UUIDString.lowercaseString];
@@ -757,6 +769,7 @@
     [a addAction:[UIAlertAction actionWithTitle:@"Закрыть" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil];
 }
 - (void)speakAnswer:(NSString *)answer {
+    if(self.dock.busy){[self log:@"Дождитесь импорта перед озвучкой."];return;}
     [self suspendWake];
     if(self.callActive || self.audioInterruptionActive){[self log:@"Озвучка отложена: идёт звонок или другое аудио. Ответ сохранён на экране."];return;}
     [self audioRoute];BOOL output=NO;
@@ -794,6 +807,7 @@
 }
 - (void)testSpeaker {AVSpeechSynthesisVoice *voice=[self russianVoice];if(voice)[self log:[NSString stringWithFormat:@"Проверка озвучки: %@, quality=%ld.",voice.name,(long)voice.quality]];[self speakAnswer:@"Астор на связи. Это проверка голоса. Если вы слышите меня через очки, аудиовыход работает."];}
 - (void)voice {
+    if(self.dock.busy){[self log:@"Дождитесь импорта записей с очков."];return;}
     if(self.callActive || self.audioInterruptionActive){[self log:@"Во время звонка или другого аудио запись Астор не запускается."];return;}
     if(self.startingVoice)return;
     if(self.music){[self.music stop];self.music=nil;[self restoreAssistantMedia];}
@@ -820,7 +834,9 @@
 }
 - (void)finishVoice {
     self.wakeDialogue=NO;self.wakeActivity=nil;
-    [self.recorder stop];self.recorder=nil;[self playCue:NO];NSData *audio=[NSData dataWithContentsOfURL:self.recordingURL];if(self.recordingURL)[NSFileManager.defaultManager removeItemAtURL:self.recordingURL error:nil];self.recordingURL=nil;
+    [self.recorder stop];self.recorder=nil;[self playCue:NO];NSData *audio=[NSData dataWithContentsOfURL:self.recordingURL];
+    if(audio.length && audio.length<2*1024*1024)[self.dock captureAudioFile:self.recordingURL];
+    if(self.recordingURL)[NSFileManager.defaultManager removeItemAtURL:self.recordingURL error:nil];self.recordingURL=nil;
     if(audio.length && audio.length<2*1024*1024){[self log:@"Голосовая запись получена; временный файл удалён."];if([self validEndpoint:NO])[self sendText:@"" image:nil audio:audio];else {[self log:@"Голос записан. Для ответа подключите Astor."];[self speakAnswer:@"Запись получена. Сервер Butler ещё не подключён."];[self endWork];}}else {[self log:@"Запись пуста или слишком велика."];[self endWork];}
 }
 - (void)playCue:(BOOL)start {
@@ -839,8 +855,13 @@
 - (void)callObserver:(CXCallObserver *)observer callChanged:(CXCall *)call {[self syncPhoneCalls];}
 - (void)device:(id<AIBudsDeviceConvertible>)device didCallStatusChanged:(enum AIBudsCallStatus)status {
     dispatch_async(dispatch_get_main_queue(),^{if(device!=self.device)return;
-        self.glassesCallActive=status==AIBudsCallStatusRinging || status==AIBudsCallStatusInCall || status==AIBudsCallStatusThreeWayRinging;
-        [self log:[NSString stringWithFormat:@"Состояние звонка SDK: %ld.",(long)status]];[self updateCallState];
+        [self syncPhoneCalls];
+        BOOL ownHFP=self.recorder!=nil || self.startingVoice || self.wakeListener.running || self.wakeListener.starting || self.speaker.isSpeaking || self.answerAudio.isPlaying || self.cue.isPlaying;
+        BOOL ringing=status==AIBudsCallStatusRinging || status==AIBudsCallStatusThreeWayRinging;
+        self.glassesCallActive=AstorCallShouldInterrupt(NO,ringing,status==AIBudsCallStatusInCall,ownHFP);
+        [self log:[NSString stringWithFormat:@"Состояние звонка SDK: %ld; системный звонок=%@, собственное HFP=%@.",(long)status,self.phoneCallActive?@"да":@"нет",ownHFP?@"да":@"нет"]];
+        if(status==AIBudsCallStatusInCall && ownHFP && !self.phoneCallActive && !ringing)[self log:@"SDK InCall относится к нашему Bluetooth-аудио; запись не прерывается."];
+        [self updateCallState];
     });
 }
 - (NSString *)powerKey {return [@"AstorPower." stringByAppendingString:self.device.uuid.UUIDString?:@"unknown"];}
@@ -854,11 +875,20 @@
     return [NSString stringWithFormat:@"%@ · %@%% · последнее %@",name,level,[date stringFromDate:at]];
 }
 - (void)refreshPower {self.powerLabel.text=[NSString stringWithFormat:@"%@\n%@",[self powerLine:@"Очки" component:@"0"],[self powerLine:@"Кейс" component:@"3"]];}
+- (void)refreshDock {
+    BOOL foreground=UIApplication.sharedApplication.applicationState!=UIApplicationStateBackground;
+    BOOL idle=!self.callActive && !self.audioInterruptionActive && !self.busy && !self.waitingPhoto && !self.recorder && !self.startingVoice && !self.assigning && !self.connecting && !self.speaker.isSpeaking && !self.answerAudio.isPlaying && !self.cue.isPlaying && !self.music.isPlaying && !self.wakeListener.running && !self.wakeListener.starting;
+    NSString *token=[self token];
+    if(foreground || token.length)[self.dock configureBaseURL:[NSURL URLWithString:[NSUserDefaults.standardUserDefaults stringForKey:@"backendURL"]?:@""] bearer:token];
+    [self.dock updateDevice:self.device foreground:foreground idle:idle];
+}
 - (void)device:(id<AIBudsDeviceConvertible>)device didBatteryStatusChanged:(AIBudsBatteryStatusModel *)status {
     dispatch_async(dispatch_get_main_queue(),^{if(device!=self.device)return;
         if(!self.powerStatus)self.powerStatus=[NSMutableDictionary new];if(!self.freshPowerComponents)self.freshPowerComponents=[NSMutableSet new];
         for(NSNumber *component in @[@(AIBudsBatteryComponentGlass),@(AIBudsBatteryComponentChargingCase)]){
             AIBudsBatteryInfoModel *info=[status infoForComponent:component.integerValue];if(!info)continue;
+            if(component.integerValue==AIBudsBatteryComponentGlass && info.chargingState!=AIBudsChargingStateUnknown){self.dockCharging=info.chargingState==AIBudsChargingStateCharging;if(self.dockCharging)[self suspendWake];}
+            [self refreshDock];[self.dock observeChargingForDevice:device component:component.integerValue state:info.chargingState];
             NSString *key=component.stringValue;NSDictionary *previous=self.powerStatus[key];NSMutableDictionary *entry=previous?[previous mutableCopy]:[NSMutableDictionary new];NSDate *now=NSDate.date;
             NSNumber *level=info.batteryLevel;BOOL valid=[level isKindOfClass:NSNumber.class] && isfinite(level.doubleValue) && level.doubleValue>=0 && level.doubleValue<=100 && floor(level.doubleValue)==level.doubleValue;
             if(valid){entry[@"level"]=level;entry[@"levelAt"]=now;}
@@ -931,6 +961,7 @@
     if(!values.count){[self log:@"Сохранённых изменений нет."];return;}[self assignChanges:values restoring:YES];
 }
 - (void)assignChanges:(NSDictionary *)changes restoring:(BOOL)restoring {
+    if(self.dock.busy){[self log:@"Дождитесь импорта перед настройкой жестов."];return;}
     if(self.assigning){[self log:@"Дождитесь настройки жестов."];return;}
     if(!self.device.isConnectedAndReady || ![self.device conformsToProtocol:@protocol(AIBudsDevicePhysicalOperationsAPI)]){[self log:@"Для настройки жестов подключите очки."];return;}
     NSDictionary *current=((id<AIBudsDevicePhysicalOperationsAPI>)self.device).physicalOperationsMapping;
@@ -963,7 +994,7 @@
     self.backgroundTask=[UIApplication.sharedApplication beginBackgroundTaskWithName:@"Astor bounded request" expirationHandler:^{[self cancelAgent];[self log:@"iOS завершила фоновое время. Откройте приложение для повторения."];}];
 }
 - (void)endWork {if(self.backgroundTask!=UIBackgroundTaskInvalid){UIBackgroundTaskIdentifier task=self.backgroundTask;self.backgroundTask=UIBackgroundTaskInvalid;[UIApplication.sharedApplication endBackgroundTask:task];}}
-- (void)enteredBackground {if(!self.pocketMode && !self.wakeEnabled)[self cancelAgent];else if(self.recorder || self.waitingPhoto || self.busy)[self beginWork];}
+- (void)enteredBackground {if(!self.pocketMode && !self.wakeEnabled)[self cancelAgent];else if(self.recorder || self.waitingPhoto || self.busy)[self beginWork];[self refreshDock];}
 - (void)restoreAssistantMedia {
     MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo=self.pocketMode?@{MPMediaItemPropertyTitle:@"Astor • помощник на смене",MPMediaItemPropertyArtist:self.pocketAction.selectedSegmentIndex==1?@"Учебная подсказка / фото / повтор":@"Голос / фото / повтор",MPNowPlayingInfoPropertyIsLiveStream:@YES}:nil;
     MPNowPlayingInfoCenter.defaultCenter.playbackState=MPNowPlayingPlaybackStatePaused;
@@ -1033,8 +1064,12 @@
 @end
 @implementation AppDelegate
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
+    [AstorDockArchive shared];
     self.window=[[UIWindow alloc]initWithFrame:UIScreen.mainScreen.bounds];
     self.window.rootViewController=[ProbeController new]; [self.window makeKeyAndVisible]; return YES;
+}
+- (void)application:(UIApplication *)application handleEventsForBackgroundURLSession:(NSString *)identifier completionHandler:(void (^)(void))completion {
+    if(![[AstorDockArchive shared] handleBackgroundSession:identifier completion:completion])completion();
 }
 @end
 int main(int argc,char *argv[]) {@autoreleasepool{return UIApplicationMain(argc,argv,nil,NSStringFromClass(AppDelegate.class));}}
