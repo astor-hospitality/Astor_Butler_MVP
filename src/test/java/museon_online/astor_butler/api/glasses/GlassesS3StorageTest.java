@@ -14,6 +14,22 @@ class GlassesS3StorageTest {
     private final MinioClient client = mock(MinioClient.class);
     private final GlassesS3Storage storage = new GlassesS3Storage(client, "unit-private-bucket");
 
+    @Test void photoMetadataIsStoredBesideTheScopedJpegWithoutTaskClaims() throws Exception {
+        var context = new GlassesPhotoContext("80d26cf1-5139-4121-a4ca-dfb14aac225c", "BUSINESS_LUNCH_TWO", "FINAL_CHECK", 4);
+        when(client.putObject(any(PutObjectArgs.class))).thenAnswer(i -> {
+            PutObjectArgs args = i.getArgument(0);
+            if (args.object().endsWith("reply.json")) {
+                var json = new com.fasterxml.jackson.databind.ObjectMapper().readTree(args.stream().readAllBytes());
+                assertThat(json.path("photoContext").path("sessionId").asText()).isEqualTo(context.sessionId());
+                assertThat(json.path("photoContext").path("stageCode").asText()).isEqualTo("FINAL_CHECK");
+                assertThat(json.toString()).doesNotContain("taskId", "tableId", "evidenceId");
+            }
+            return null;
+        });
+        storage.archive(scope, "ff5a8c58-bb60-43f4-b542-1e26c8b96581", "image", new byte[]{1}, "Ответ", context);
+        verify(client, times(2)).putObject(any());
+    }
+
     @Test void boundedDocumentsStayTenantScopedAndAreCached() throws Exception {
         String reference = "Учебный контекст, не меню ресторана.";
         when(client.getObject(any(GetObjectArgs.class))).thenAnswer(i -> {

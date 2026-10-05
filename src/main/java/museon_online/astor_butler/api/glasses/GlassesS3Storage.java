@@ -70,13 +70,25 @@ public class GlassesS3Storage {
     }
 
     void archive(GlassesAccess.Scope scope, String requestId, String kind, byte[] media, String answer) {
+        archive(scope, requestId, kind, media, answer, null);
+    }
+
+    boolean enabled() { return client != null; }
+
+    void archive(GlassesAccess.Scope scope, String requestId, String kind, byte[] media, String answer,
+                 GlassesPhotoContext photoContext) {
         if (client == null) return;
         String prefix = "materials/" + scopeKey(scope) + "/" + UUID.fromString(requestId) + "/";
         try {
             if (media.length > 0) put(prefix + (kind.equals("audio") ? "input.m4a" : "input.jpg"), media,
                     kind.equals("audio") ? "audio/mp4" : "image/jpeg");
-            byte[] reply = new ObjectMapper().writeValueAsBytes(Map.of("requestId", UUID.fromString(requestId).toString(),
-                    "kind", kind, "text", answer, "createdAt", Instant.now().toString()));
+            var record = new java.util.LinkedHashMap<String, Object>();
+            record.put("requestId", UUID.fromString(requestId).toString());
+            record.put("kind", kind);
+            record.put("text", answer);
+            record.put("createdAt", Instant.now().toString());
+            if (photoContext != null) record.put("photoContext", photoContext);
+            byte[] reply = new ObjectMapper().writeValueAsBytes(record);
             put(prefix + "reply.json", reply, "application/json");
             mediaReadyUntil = Instant.now().plusSeconds(300);
         } catch (Exception e) {

@@ -14,7 +14,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
-public class GlassesAssistService {
+public class GlassesAssistService implements AutoCloseable {
     private final ModelGateway gateway;
     private final GlassesVoice voice;
     private final GlassesS3Storage storage;
@@ -97,24 +97,39 @@ public class GlassesAssistService {
         return assist(scope, id, "image", text, image);
     }
 
+    String assistImage(GlassesAccess.Scope scope, String id, String text, byte[] image, GlassesPhotoContext photoContext) {
+        return assist(scope, id, "image", text, image, photoContext);
+    }
+
+    boolean archivesEnabled() { return storage.enabled(); }
+
     private String assist(GlassesAccess.Scope scope, String id, String kind, String text, byte[] media) {
+        return assist(scope, id, kind, text, media, null);
+    }
+
+    private String assist(GlassesAccess.Scope scope, String id, String kind, String text, byte[] media,
+                          GlassesPhotoContext photoContext) {
         if (!kind.equals("image") && !textEnabled) throw unavailable();
         AtomicBoolean cancelled = new AtomicBoolean();
         return execute(() -> {
-            String signature = GlassesReplyCache.fingerprint(kind, text, media);
+            String signature = GlassesReplyCache.digest(kind.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    text.getBytes(java.nio.charset.StandardCharsets.UTF_8), media,
+                    (photoContext == null ? "" : photoContext.signature()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             String answer = replies.find(scope, id, signature);
             if (answer == null) {
                 String context = storage.context(scope);
                 answer = switch (kind) {
                     case "audio" -> generate(voice.transcribe(media), context);
-                    case "image" -> image(text, Base64.getEncoder().encodeToString(media), context);
+                    case "image" -> image((photoContext == null ? "" : photoContext.prompt()) + text,
+                            Base64.getEncoder().encodeToString(media), context);
                     default -> generate(text, context);
                 };
                 if (cancelled.get()) throw unavailable();
                 replies.remember(scope, id, signature, answer);
             }
             if (cancelled.get()) throw unavailable();
-            storage.archive(scope, id, kind, media, answer);
+            if (photoContext == null) storage.archive(scope, id, kind, media, answer);
+            else storage.archive(scope, id, kind, media, answer, photoContext);
             return answer;
         }, kind.equals("image"), cancelled);
     }

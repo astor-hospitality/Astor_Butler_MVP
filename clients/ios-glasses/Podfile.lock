@@ -1,0 +1,36 @@
+PODS:
+  - AIBudsSDK/ABMate (1.0.1-beta.11):
+    - AIBudsSDK/Core
+    - AIBudsSDK/ThirdParty/GCDWebServer
+    - libopus (= 1.1)
+  - AIBudsSDK/Core (1.0.1-beta.11):
+    - AIBudsSDK/Foundation
+    - AIBudsSDK/Log/Core
+  - AIBudsSDK/Foundation (1.0.1-beta.11):
+    - AIBudsSDK/Log/Core
+  - AIBudsSDK/Log/Core (1.0.1-beta.11):
+    - AIBudsSDK/ThirdParty/ZipZap
+  - AIBudsSDK/ThirdParty/GCDWebServer (1.0.1-beta.11)
+  - AIBudsSDK/ThirdParty/ZipZap (1.0.1-beta.11)
+  - libopus (1.1):
+    - libopus/float (= 1.1)
+  - libopus/float (1.1)
+
+DEPENDENCIES:
+  - AIBudsSDK/ABMate (from `../vendor/AIBuds-SDK-iOS`)
+
+SPEC REPOS:
+  trunk:
+    - libopus
+
+EXTERNAL SOURCES:
+  AIBudsSDK:
+    :path: "../vendor/AIBuds-SDK-iOS"
+
+SPEC CHECKSUMS:
+  AIBudsSDK: 68a48701c8b012e3e5a5dfb90fdab93c00fc6bc7
+  libopus: ad5f060dcb8f30f139777244d70f9111f1c80863
+
+PODFILE CHECKSUM: a921b4821672792e1c69d6196a937f5966800caa
+
+COCOAPODS: 1.17.0

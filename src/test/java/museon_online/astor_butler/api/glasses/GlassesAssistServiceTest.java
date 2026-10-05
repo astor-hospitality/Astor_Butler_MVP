@@ -18,6 +18,29 @@ import static org.mockito.Mockito.*;
 class GlassesAssistServiceTest {
     private final GlassesAccess.Scope scope = new GlassesAccess.Scope("unit-venue", "unit-staff");
 
+    @Test void photoArchiveRetryKeepsStepBindingAndChangedStepConflicts() {
+        var gateway = mock(ModelGateway.class);
+        var storage = mock(GlassesS3Storage.class);
+        when(storage.context(scope)).thenReturn("");
+        when(gateway.analyzeImage(any())).thenReturn(museon_online.astor_butler.model.ModelVisionResponse
+                .vision("Видны приборы.", "test", "test", Duration.ZERO));
+        var context = new GlassesPhotoContext(UUID.randomUUID().toString(), "BUSINESS_LUNCH_TWO", "PLACE_SETTINGS", 2);
+        String id = UUID.randomUUID().toString();
+        doThrow(new GlassesFailure(503, "STORAGE_UNAVAILABLE", "Unavailable")).doNothing()
+                .when(storage).archive(eq(scope), eq(id), eq("image"), any(), eq("Видны приборы."), eq(context));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), storage, true, 1000)) {
+            assertThatThrownBy(() -> service.assistImage(scope, id, "фото", new byte[]{1}, context))
+                    .satisfies(e -> assertThat(((GlassesFailure)e).code).isEqualTo("STORAGE_UNAVAILABLE"));
+            assertThat(whenSlotAvailable(() -> service.assistImage(scope, id, "фото", new byte[]{1}, context)))
+                    .isEqualTo("Видны приборы.");
+            var changed = new GlassesPhotoContext(context.sessionId(), context.scenarioCode(), "FINAL_CHECK", 4);
+            assertThatThrownBy(() -> whenSlotAvailable(() -> service.assistImage(scope, id, "фото", new byte[]{1}, changed)))
+                    .satisfies(e -> assertThat(((GlassesFailure)e).code).isEqualTo("REQUEST_ID_CONFLICT"));
+            verify(gateway, times(1)).analyzeImage(argThat(r -> r.prompt().contains("два комплекта")));
+            verify(storage, times(2)).archive(eq(scope), eq(id), eq("image"), any(), any(), eq(context));
+        }
+    }
+
     @Test void s3DocumentsGroundAnswerAndStorageRetryDoesNotRepeatModelCall() {
         var gateway = mock(ModelGateway.class);
         var storage = mock(GlassesS3Storage.class);

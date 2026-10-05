@@ -221,6 +221,41 @@ class GlassesControllerTest {
         return Base64.getEncoder().encodeToString(out.toByteArray());
     }
 
+    private Map<String, Object> photoContext() {
+        return Map.of("sessionId", "80d26cf1-5139-4121-a4ca-dfb14aac225c", "scenarioCode", "BUSINESS_LUNCH_TWO",
+                "stageCode", "PLACE_SETTINGS", "revision", 2);
+    }
+
+    @Test void photoContextIsImageOnlyAndCannotAssertIdentityTasksOrCompletion() throws Exception {
+        rejects(json(Map.of("text", "a", "photoContext", photoContext())), 400, "MALFORMED_REQUEST");
+        for (var entry : Map.<String, Object>of("sessionId", "invalid", "scenarioCode", "LIVE_TASK",
+                "stageCode", "unknown", "revision", 0, "taskId", "invented", "archived", true).entrySet()) {
+            var context = new java.util.HashMap<>(photoContext());
+            context.put(entry.getKey(), entry.getValue());
+            rejects(json(Map.of("imageBase64", jpeg(32), "imageMimeType", "image/jpeg", "photoContext", context)),
+                    400, "MALFORMED_REQUEST");
+        }
+    }
+
+    @Test void photoReceiptFollowsSuccessfulArchiveAndBoundContext() throws Exception {
+        var storage = mock(GlassesS3Storage.class);
+        when(storage.context(any())).thenReturn("");
+        when(storage.enabled()).thenReturn(true);
+        when(gateway.analyzeImage(any())).thenReturn(museon_online.astor_butler.model.ModelVisionResponse
+                .vision("Проверьте два комплекта приборов.", "test", "test", Duration.ZERO));
+        try (var photos = new GlassesAssistService(gateway, mock(GlassesVoice.class), storage, true, 1000)) {
+            var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), photos, mapper);
+            var result = c.assist(request(json(Map.of("imageBase64", jpeg(32), "imageMimeType", "image/jpeg",
+                    "photoContext", photoContext()))));
+            assertThat(result.getStatusCode().value()).isEqualTo(200);
+            var receipt = ((GlassesController.AssistResponse) result.getBody()).photoReceipt();
+            assertThat(receipt.archived()).isTrue();
+            assertThat(receipt.requestId()).isEqualTo(ID);
+            assertThat(receipt.context().stageCode()).isEqualTo("PLACE_SETTINGS");
+            verify(storage).archive(any(), eq(ID), eq("image"), any(), any(), eq(receipt.context()));
+        }
+    }
+
     @Test void rateLimitsTheSinglePilotCredential() throws Exception {
         for (int i = 0; i < 10; i++) rejects(json(Map.of("text", "")), 400, "MALFORMED_REQUEST");
         rejects(json(Map.of("text", "")), 429, "RATE_LIMITED");
