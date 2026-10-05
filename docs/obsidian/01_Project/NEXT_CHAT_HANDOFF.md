@@ -953,3 +953,16 @@ docker compose -p astor_butler_mvp --profile telegram up -d --build aeris-astor-
 - Guest preview text обновлен в `TelegramRouter.previewText()`, версия поднята до `2026-07-01-system-trace-preview`.
 - BotFather profile copy лежит в `docs/operations/TELEGRAM_BOT_PROFILE.md`; его нужно применить вручную через `/setabouttext` и `/setdescription`.
 - Redis semantic response cache принят как следующий слой: быстрые ответы на повторяющиеся вопросы + накопление quality dataset для learner/OpenAI teacher/eval.
+
+## Astor Glasses isolated backend preparation — 2026-10-04
+
+Worktree `~/.codex/worktrees/fb4b/Astor_Butler_MVP`, branch `codex/glasses-voice-adapter`. Подготовлен informational adapter с pilot bearer access, strict payload/limits, bounded text ModelGateway и явным 503 для voice/vision. Не путать локальные contract tests с подтверждённым STT/e2e. Нет staff feed/evidence/actions/ACK.
+
+Перед продолжением прочитать `docs/operations/GLASSES_ASSIST_PILOT.md`, сверить #9/работу BryxOG. Следующий P0 — STT AAC validation/readiness, безопасный process/temp lifecycle, HTTPS/scoped access и physical voice smoke после отдельного решения. Production, hardware и основной checkout не изменялись; credentials не создавались.
+
+Локальная проверка: JDK 25 compile PASS, 25 новых glasses tests PASS, всего с выбранными gateway/STT compatibility tests 33/33 PASS. Full suite/GitHub CI не запускались. Graphify code graph обновлён.
+
+
+## 2026-10-04: Astor Glass runtime и фронт для передачи Роме
+
+Михаил разрешил Astor production/pлатные Yandex calls и координацию iPhone теста с отдельным чатом. Real cached Whisper AAC validation + YandexGPT text/voice + Qwen JPEG работают в standalone runtime без component scan/FSM/DB/Telegram startup. Public HTTPS smoke 200 для text/voice/vision, scoped bearer 12h; front `/astor/`, Butler page и WEB-only relay. Telegram proxy scoped restart восстановил getMe, основной бот не рестартовали. Maven 297 tests PASS, decoder 6 PASS. См. `docs/operations/ASTOR_GLASS_ROMA_HANDOFF.md` и runbook; физический HFP acceptance и GitHub CI/review отдельно. Приглашение 0xLaki write отправлено (пока pending); root-owned limited wrapper установлен, SSH key/отчёт destination ещё нужны. Не выдавать shared-host Docker/root или cloud keys Claude/клиенту.

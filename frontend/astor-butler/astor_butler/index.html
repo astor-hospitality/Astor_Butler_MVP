@@ -211,7 +211,8 @@
   <h2 class="section-title" id="final-title">Расскажите, где чаще всего теряется запрос гостя.</h2>
   <p class="lede">Бронь, меню, банкет, пожелание, звонок, вопрос в чате или передача между сменами - с этого удобно начинать внедрение.</p>
   <div class="final-cta">
-    <a href="#telegram-demo" class="btn btn-telegram">Посмотреть Telegram-демо</a>
+    <button type="button" id="openChatBtn" class="btn btn-telegram">Написать Astor</button>
+    <a href="#telegram-demo" class="btn btn-quiet">Посмотреть Telegram-демо</a>
     <a href="../" class="btn btn-quiet">Вернуться к Astor</a>
     <a href="../astor_concierge/" class="btn btn-quiet">Для событий</a>
   </div>
@@ -220,6 +221,21 @@
 
 </main>
 
+<div class="chat-widget" id="chatWidget" aria-hidden="true">
+  <button type="button" class="chat-fab" id="chatFab" aria-label="Открыть чат Astor">A</button>
+  <section class="chat-panel" aria-label="Чат Astor">
+    <div class="chat-head">
+      <div class="chat-head-title"><strong>Astor Butler</strong><span class="chat-status">Вопросы о внедрении</span></div>
+      <button type="button" class="chat-close" id="chatCloseBtn" aria-label="Закрыть чат">×</button>
+    </div>
+    <div class="chat-log" id="chatLog" role="log" aria-live="polite" aria-label="Сообщения"></div>
+    <form class="chat-form" id="chatForm">
+      <input id="chatInput" type="text" maxlength="4000" autocomplete="off" aria-label="Сообщение Astor" placeholder="Ваш вопрос о внедрении" required>
+      <button type="submit" aria-label="Отправить сообщение">Отправить</button>
+    </form>
+  </section>
+</div>
+<script src="../js/widget.js" defer></script>
 <script src="../js/main.js" defer></script>
 </body>
 </html>

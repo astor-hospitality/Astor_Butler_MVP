@@ -654,3 +654,21 @@ FSM управляет состоянием диалога, разрешенны
 - `/Users/michaelwelly/Obsidian/Astor_Butler_Knowledge/03_FSM/FIRST_TOUCH_FSM.md`
 - `/Users/michaelwelly/Obsidian/Astor_Butler_Knowledge/04_Tech/Event_Taxonomy.md`
 - `/Users/michaelwelly/Obsidian/Astor_Butler_Knowledge/04_Tech/Local_Runbook.md`
+
+## Astor Glasses informational pilot — 2026-10-04
+
+- В отдельной ветке `codex/glasses-voice-adapter` подготовлен локальный `/api/glasses/assist` + `/capabilities`; #9 остаётся назначенной BryxOG, интеграцию сверить с его работой.
+- Одно server-bound staff/tenant bearer credential с hash и expiry; bounded request, 10 attempts/minute, один provider call, honest errors. Text только ModelGateway, без FSM/бронирований/уведомлений. Staff context пока отсутствует.
+- Voice/vision всегда false/503. Existing command STT не используется: AAC readiness, metadata validation, transcript-safe logging и process/temp lifecycle ещё требуют реализации/проверки. Никакого фиктивного transcript/vision fallback.
+- Text readiness true только 60s после nonempty/nonfallback gateway response; конфигурация сама по себе не доказывает готовность.
+- Production/VM/телефон/основной checkout/Astor_Glasses_Spike не затрагивались. Контракт, настройки, блокеры и P0/P1/P2 backlog: `docs/operations/GLASSES_ASSIST_PILOT.md`.
+
+## Astor Glass v1 release preparation — 2026-10-04
+
+Михаил явно расширил scope: production Astor, Yandex AI Studio text/single-photo analysis, frontend и Telegram, затем отчёт/PR и ограниченное администрирование Роме. Physical iPhone tests только в чате «Проверить интеграцию ИИ с очками»; координация между чатами разрешена. VEDAL/C3AG и общий Docker/root доступ не входят в права Ромы.
+
+- Добавлен isolated GlassesPilotApplication (no Butler component scanning/Telegram/DB/Kafka), local AAC→PyAV/faster-whisper, tool-free Yandex Completions gateway. Server-side API key — отдельный SA с ai.languageModels.user и yc.ai.foundationModels.execute; не ключ существующих VEDAL/runtime аккаунтов.
+- Decoder проверяет container/AAC/16kHz/mono/≤30s и actual decoded samples до STT. Private temp files, bounded process output, stderr не логируется, timeout/process cleanup; при невозможности подтвердить stop файл остается закрытым для других пользователей, не удаляется преждевременно.
+- Text/vision readiness — успешный real response за 300s, voice также требует real STT и text response. Vision unavailable при fallback/incomplete/error; continuous video недоступно по firmware и не обещано.
+- Static Astor widget исправлен: cold-load scope error и старый tunnel endpoint; production должен использовать same-origin /api/astor/messages. Это guest widget, не staff API или доказательство staff ACK.
+- Telegram proxy DNS: current process использовал старый resolver; по новой production авторизации перезапущен только astor-telegram-wg-proxy. Host proxy HTTP302, getMe astor_butler_bot ok, свежие polling errors 0. Бот/БД/другие проекты не перезапускались.

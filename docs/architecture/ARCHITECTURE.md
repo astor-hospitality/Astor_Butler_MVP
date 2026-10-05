@@ -142,6 +142,14 @@ Service chats внутри Telegram (`TELEGRAM_ADMIN_CHAT_ID`, `TELEGRAM_ANALYTI
 
 Каналы с региональными, юридическими или сетевыми ограничениями подключаются только через официальные API/интеграционные контуры, доступные заказчику и инфраструктуре проекта. Если провайдер требует отдельный egress region, это решается на уровне integration gateway, а не внутри FSM.
 
+### Astor Glasses Informational Pilot (2026-10-04)
+
+`GlassesController` exposes `/api/glasses/assist` and `/api/glasses/capabilities` with a separate, expiring pilot bearer credential bound server-side to one staff member and venue. Authorization is checked inside both handlers before reading the body; the existing global `permitAll` does not grant glasses access. The credential is limited to these informational routes and cannot authorize guest/staff domain mutations.
+
+The adapter bounds JSON/media sizes, rejects unknown identity/URL fields, limits the pilot to 10 attempts/minute and one provider call in flight, and returns structured errors without provider diagnostics. Text calls only `ModelGateway.generateText`; readiness is true for 300 seconds after a nonempty, nonfallback response. There is no tenant data retrieval yet. Voice validates MP4/AAC 16kHz mono and declared/decoded duration up to 30 seconds using a local PyAV/faster-whisper helper, with bounded stdout/stderr draining, timeout, private temporary files and cleanup after process termination. Vision passes a validated JPEG to `ModelGateway.analyzeImage`; fallback/empty/incomplete results return 503. No media is persisted. An unconfirmed process termination quarantines the private temporary file instead of deleting a file still in use.
+
+No `MessageGatewayService`, FSM, booking, staff-task or notification service is invoked. Staff assignments, evidence and actions/ACK belong to a separate future scoped domain adapter. Pilot configuration and acceptance blockers: `docs/operations/GLASSES_ASSIST_PILOT.md`. A separate `GlassesPilotApplication` imports only these adapters with embedded Tomcat; it does not scan or start the Butler application. Its tool-free `YandexGlassesGateway` uses AI Studio Completions for YandexGPT text and Qwen multimodal analysis, with redirects disabled and cloud request logging off. This supports an isolated runtime alongside the existing monolith. Production and physical acceptance evidence are recorded in the release handoff; local tests alone do not prove hardware completion.
+
 ### Telephony Intake
 
 Телефония рассматривается как отдельный transport adapter, а не как отдельная бизнес-логика.
@@ -1026,3 +1034,5 @@ sequenceDiagram
 - `pom.xml` пока содержит JPA/Hibernate/Actuator dependencies; целевое состояние - JDBC without JPA/Hibernate и Prometheus/observability stack.
 - Keycloak/JWT Stateless пока не подключен в коде: `SecurityConfig` временно разрешает большую часть запросов.
 - Booking domain в `main` еще не вынесен как первый production-домен; его нужно строить после User/service/data layer.
+
+Публичный frontend Astor `/astor/` использует отдельный anonymous WEB relay `/api/astor/messages`: bounded body/response, фиксированный WEB channel/site, без client identity/tenant/chatId/commands, без tools. Relay вызывает основной message gateway только как гостевой WEB lead; staff/admin portal этим не реализован.

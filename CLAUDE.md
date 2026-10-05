@@ -73,3 +73,13 @@ For C3FLEX:
 - clear conversion path;
 - luxury/premium visual identity;
 - fast, responsive UI.
+
+## Explicit Astor Glass scope for Roma — 2026-10-04
+
+Mikhail authorized Roma to test and extend the Astor Glass v1 product through feature branches and PRs, and to operate only the approved Astor services through a root-owned restricted wrapper. This explicit assignment extends the default frontend scope for glasses API/tests/scripts, the Astor presentation frontend and associated documentation. It does not authorize direct edits to main, guest FSM changes, destructive database work, arbitrary deployment code or access to VEDAL/C3AG.
+
+- Read `docs/operations/GLASSES_ASSIST_PILOT.md` and the release handoff before changes. Informational assist cannot ACK or mutate staff tasks/guest bookings.
+- Secrets stay server-side. No `.env*`, bearer/cloud keys, raw audio/photos/transcripts or production logs in commits or reports.
+- No shared-host Docker/root, Docker socket/group, general sudo, arbitrary commands or arbitrary image/ref deployment. Use only explicitly allowed `astor-glasses-admin` operations.
+- Staff identity/feed/evidence/ACK/concurrency/idempotency are a separate P1 contract. A single-photo vision answer is not a continuous video stream or a committed task state.
+- Every PR must describe the change and tests. Required GitHub reviews/CI remain mandatory; local tests and a pilot deployment do not replace them.
