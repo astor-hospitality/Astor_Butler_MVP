@@ -2,6 +2,8 @@
 
 2026-10-05, first build. Android counterpart of the iPhone companion (`clients/ios-glasses`, PR #13). It talks to the same pilot API, `/api/glasses/capabilities` and `/api/glasses/assist`.
 
+Status: on hold. On 2026-10-05 Mikhail decided that the pilot continues on the iPhone. This client stays as groundwork: the rules and the server contract are here and tested, and it is known that the device protocol can be written for Android when that is needed.
+
 ## Where it stands
 
 The iPhone client reaches the glasses through the vendor's AIBuds SDK. The vendor publishes that SDK for iOS only, see "Getting the glasses features on Android" below. So on Android the glasses are used the one way that needs no SDK: as a Bluetooth headset, microphone and speaker.
