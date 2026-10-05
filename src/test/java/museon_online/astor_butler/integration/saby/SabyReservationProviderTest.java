@@ -2,6 +2,7 @@ package museon_online.astor_butler.integration.saby;
 
 import museon_online.astor_butler.domain.booking.external.ExternalReservationProvider;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.restclient.RestTemplateBuilder;
 
 import java.time.Instant;
 
@@ -13,7 +14,7 @@ class SabyReservationProviderTest {
     void reportsMissingConfigurationWithoutCallingExternalApi() {
         SabyReservationProperties properties = new SabyReservationProperties();
         properties.setEnabled(true);
-        SabyReservationProvider provider = new SabyReservationProvider(properties);
+        SabyReservationProvider provider = new SabyReservationProvider(properties, new RestTemplateBuilder());
 
         var status = provider.status();
         var availability = provider.checkAvailability(new ExternalReservationProvider.ExternalAvailabilityRequest(
@@ -37,19 +38,19 @@ class SabyReservationProviderTest {
     }
 
     @Test
-    void blocksWritesEvenWhenPlaceholderConfigIsCompleteUntilContractIsImplemented() {
+    void blocksWritesWhenConfiguredUntilWritePathIsEnabled() {
         SabyReservationProperties properties = new SabyReservationProperties();
         properties.setEnabled(true);
         properties.setAppClientId("client");
         properties.setAppSecret("secret");
         properties.setSecretKey("service-key");
         properties.setPointId("206");
-        SabyReservationProvider provider = new SabyReservationProvider(properties);
+        SabyReservationProvider provider = new SabyReservationProvider(properties, new RestTemplateBuilder());
 
         var result = provider.reserve(null, "idem-1");
 
         assertThat(provider.status().configured()).isTrue();
         assertThat(result.created()).isFalse();
-        assertThat(result.status()).isEqualTo("PROVIDER_CONTRACT_NOT_IMPLEMENTED");
+        assertThat(result.status()).isEqualTo("SABY_WRITE_DISABLED");
     }
 }
