@@ -1,6 +1,8 @@
 package museon_online.astor_butler.fsm.scenario;
 
 import museon_online.astor_butler.fsm.core.BotState;
+import museon_online.astor_butler.fsm.understanding.GuestInputUnderstandingService;
+import museon_online.astor_butler.fsm.understanding.UnderstoodInput;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,7 +23,8 @@ import static org.mockito.Mockito.lenient;
 
 /**
  * What a guest types for the day and the time, as it reached the production bot on 2026-10-05:
- * "32.13" answered "Произошла ошибка", and so did "19.30" locally. Nothing a guest types may crash the dialogue.
+ * "32.13" answered "Произошла ошибка", and so did "19.30" locally. Nothing a guest types may crash the dialogue,
+ * and a time the bot accepts has to be the time the guest meant.
  */
 @ExtendWith(MockitoExtension.class)
 class TableBookingDraftMergerTest {
@@ -29,6 +32,8 @@ class TableBookingDraftMergerTest {
 
     @Mock
     private TableBookingDraftStorage draftStorage;
+
+    private final GuestInputUnderstandingService understanding = new GuestInputUnderstandingService();
 
     private TableBookingDraftMerger merger;
 
@@ -40,12 +45,21 @@ class TableBookingDraftMergerTest {
     }
 
     private TableBookingDraftStorage.Draft answer(BotState state, String text, LocalDate storedDate) {
+        return merger.merge(guestSays(text, storedDate), state, text.toLowerCase().trim(), null);
+    }
+
+    /** The same answer the way the bot hears it: the understanding service first, then the merger. */
+    private TableBookingDraftStorage.Draft heard(BotState state, String text, LocalDate storedDate) {
+        UnderstoodInput understood = understanding.understand(text, state);
+        return merger.merge(guestSays(text, storedDate), state, understood.routeText(), understood);
+    }
+
+    private IncomingMessage guestSays(String text, LocalDate storedDate) {
         TableBookingDraftStorage.Draft stored = new TableBookingDraftStorage.Draft("AERIS", null, null, storedDate, null, 2,
                 null, null, null, true, "Забронировать стол");
         lenient().when(draftStorage.find(any())).thenReturn(Optional.of(stored));
-        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 356, 284069928, text, null,
+        return IncomingMessage.telegram(1773317437L, 1773317437L, 356, 284069928, text, null,
                 "Наталья", "Поединенко", "Poedinenko", "ru", false, "284069928");
-        return merger.merge(incoming, state, text.toLowerCase().trim(), null);
     }
 
     @Test
@@ -116,5 +130,40 @@ class TableBookingDraftMergerTest {
         assertThat(answer(BotState.TABLE_BOOKING_COLLECT_TIME, "19:00", chosen).requestedTime()).isEqualTo(LocalTime.of(19, 0));
         assertThat(answer(BotState.TABLE_BOOKING_COLLECT_TIME, "семь вечера", chosen).requestedTime()).isNull();
         assertThat(answer(BotState.TABLE_BOOKING_COLLECT_TIME, "в 7 вечера", chosen).requestedTime()).isEqualTo(LocalTime.of(19, 0));
+    }
+
+    @Test
+    void theWordAfterTheHourSaysWhichPartOfTheDayItIs() {
+        LocalDate chosen = TODAY.plusDays(1);
+        String[][] cases = {
+                {"3 ночи", "03:00"}, {"в 2 ночи", "02:00"}, {"12 ночи", "00:00"}, {"в 11 ночи", "23:00"},
+                {"в 3 часа ночи", "03:00"}, {"в 11 часов ночи", "23:00"},
+                {"в 7 вечера", "19:00"}, {"в 7 часов вечера", "19:00"}, {"7:30 вечера", "19:30"},
+                {"в 2 дня", "14:00"}, {"в 2 часа дня", "14:00"}, {"в 12 дня", "12:00"}, {"в 11 дня", "11:00"},
+                {"в 9 утра", "09:00"}, {"в 9 часов утра", "09:00"}};
+        for (String[] example : cases) {
+            LocalTime expected = LocalTime.parse(example[1]);
+
+            assertThat(heard(BotState.TABLE_BOOKING_COLLECT_TIME, example[0], chosen).requestedTime()).as(example[0]).isEqualTo(expected);
+            assertThat(answer(BotState.TABLE_BOOKING_COLLECT_TIME, example[0], chosen).requestedTime()).as(example[0] + ", merger alone").isEqualTo(expected);
+        }
+    }
+
+    @Test
+    void aGreetingWithTheWordEveningDoesNotMoveAnExactTime() {
+        TableBookingDraftStorage.Draft draft = heard(BotState.TABLE_BOOKING_INTENT, "Добрый вечер! Столик завтра на 11:30", null);
+
+        assertThat(draft.requestedDate()).isEqualTo(TODAY.plusDays(1));
+        assertThat(draft.requestedTime()).isEqualTo(LocalTime.of(11, 30));
+    }
+
+    @Test
+    void aClockTimeThatDoesNotExistIsNotATime() {
+        LocalDate chosen = TODAY.plusDays(1);
+        // "24:00" used to become 00:00 of the chosen day, which is a whole day earlier than the guest means.
+        for (String text : new String[]{"25:00", "30:00", "19:75", "24:00", "24:30", "99:99"}) {
+            assertThat(heard(BotState.TABLE_BOOKING_COLLECT_TIME, text, chosen).requestedTime()).as(text).isNull();
+            assertThat(answer(BotState.TABLE_BOOKING_COLLECT_TIME, text, chosen).requestedTime()).as(text + ", merger alone").isNull();
+        }
     }
 }
