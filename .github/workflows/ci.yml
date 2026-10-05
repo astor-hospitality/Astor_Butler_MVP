@@ -45,3 +45,20 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t astor-butler-mvp:ci .
+
+  android-glasses:
+    name: Android glasses client rules
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Rules and server contract tests
+        working-directory: clients/android-glasses
+        run: ./gradlew :core:test --no-daemon
