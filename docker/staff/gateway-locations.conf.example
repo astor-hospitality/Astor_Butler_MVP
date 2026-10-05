@@ -1,0 +1,43 @@
+# Review-only snippet. Define astor_staff_monolith upstream in the Astor gateway;
+# do not paste over a shared VEDAL/C3AG gateway or expose all /api/.
+# Duplicate timeout/header settings deliberately keep every route self-contained.
+location ^~ /api/staff/ {
+    client_max_body_size 64k;
+    proxy_pass http://astor_staff_monolith;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header Host $host;
+    proxy_read_timeout 15s;
+    proxy_send_timeout 15s;
+    proxy_cache off;
+    access_log off;
+}
+location ^~ /api/admin/staff/ {
+    client_max_body_size 64k;
+    proxy_pass http://astor_staff_monolith;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header Host $host;
+    proxy_read_timeout 15s;
+    proxy_send_timeout 15s;
+    proxy_cache off;
+    access_log off;
+}
+location = /api/admin/staff-tasks {
+    client_max_body_size 64k;
+    proxy_pass http://astor_staff_monolith;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header Host $host;
+    proxy_read_timeout 15s;
+    proxy_send_timeout 15s;
+    proxy_cache off;
+    access_log off;
+}
+location ^~ /api/admin/staff-tasks/ {
+    client_max_body_size 64k;
+    proxy_pass http://astor_staff_monolith;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header Host $host;
+    proxy_read_timeout 15s;
+    proxy_send_timeout 15s;
+    proxy_cache off;
+    access_log off;
+}

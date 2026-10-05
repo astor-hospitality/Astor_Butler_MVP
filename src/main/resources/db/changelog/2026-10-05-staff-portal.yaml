@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-05-staff-portal
+      author: codex
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-05-staff-portal.sql

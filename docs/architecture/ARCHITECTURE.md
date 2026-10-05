@@ -150,6 +150,14 @@ The adapter bounds JSON/media sizes, rejects unknown identity/URL fields, limits
 
 No `MessageGatewayService`, FSM, booking, staff-task or notification service is invoked. Staff assignments, evidence and actions/ACK belong to a separate future scoped domain adapter. Pilot configuration and acceptance blockers: `docs/operations/GLASSES_ASSIST_PILOT.md`. A separate `GlassesPilotApplication` imports only these adapters with embedded Tomcat; it does not scan or start the Butler application. Its tool-free `YandexGlassesGateway` uses AI Studio Completions for YandexGPT text and Qwen multimodal analysis, with redirects disabled and cloud request logging off. This supports an isolated runtime alongside the existing monolith. Production and physical acceptance evidence are recorded in the release handoff; local tests alone do not prove hardware completion.
 
+### Staff Portal PostgreSQL / OIDC (2026-10-05, gated)
+
+The manager cabinet `/staff/` no longer simulates mutations or reads demo JSON. A separate ordered security chain covers `/api/staff/**`, `/api/admin/staff/**`, and `/api/admin/staff-tasks/**`; disabled means deny-all, not fallback to the legacy guest `permitAll`. Enabling requires a dedicated Astor HTTPS Keycloak issuer/JWKS, signed expiring RS256 access tokens with `aud=astor-api`, one `tenant`, and an Astor staff role. VEDAL identities are not reused. Public browser login uses code + S256 PKCE and keeps access tokens only in memory.
+
+`StaffPortalService` persists assignments, staff/shift directory, processed events and task audit in monolith PostgreSQL, using the existing task-state rules. Each mutation locks one tenant row and commits task/version/event/audit atomically; replays re-check current directory role, activity, shift and ownership. Only MANAGER controls shifts/directory. Manager/hostess can administer tasks; waiter transitions use their own JWT scope and assigned task. Full staff snapshots filter by assignee before the bound and remove reassigned tasks. Over-capacity snapshots fail explicitly rather than silently truncating.
+
+This domain does not invoke guest FSM, booking APIs or the informational `/api/glasses/assist`. Photo evidence storage and an iPhone adapter are separate work: the new staff evidence endpoint returns 503 until real scoped storage is integrated. The current pilot photo/S3 API, developed separately, is not automatically this staff-domain evidence flow. Enablement, first manager bootstrap, proxy routes, migration preflight and acceptance: `docs/operations/STAFF_PORTAL_RUNBOOK.md`. Code/CI completion is not production deployment or physical acceptance.
+
 ### Telephony Intake
 
 Телефония рассматривается как отдельный transport adapter, а не как отдельная бизнес-логика.

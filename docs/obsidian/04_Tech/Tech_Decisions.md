@@ -672,3 +672,9 @@ FSM управляет состоянием диалога, разрешенны
 - Text/vision readiness — успешный real response за 300s, voice также требует real STT и text response. Vision unavailable при fallback/incomplete/error; continuous video недоступно по firmware и не обещано.
 - Static Astor widget исправлен: cold-load scope error и старый tunnel endpoint; production должен использовать same-origin /api/astor/messages. Это guest widget, не staff API или доказательство staff ACK.
 - Telegram proxy DNS: current process использовал старый resolver; по новой production авторизации перезапущен только astor-telegram-wg-proxy. Host proxy HTTP302, getMe astor_butler_bot ok, свежие polling errors 0. Бот/БД/другие проекты не перезапускались.
+
+## Staff portal — PostgreSQL / отдельный Astor OIDC, 2026-10-05
+
+Михаил подтвердил: данные поручений и смены в PostgreSQL монолита, отдельный Keycloak Astor, сменами управляет MANAGER; VEDAL не используется. `/staff/` переводится с demo JSON на same-origin staff API. Disabled feature — deny-all в отдельном security chain, не fallback в permitAll. RS256 JWT проверяет issuer/aud/exp, tenant/role только из claims, актуальный directory role/activity дополнительно проверяется в БД.
+
+Task/version/event/audit в одной tenant-locked PostgreSQL transaction; cached replay не обходит отзыв роли/смены/ownership. Directory не создаёт Keycloak identity. Browser code+S256 PKCE, access token только в памяти; 15s request deadline. Manager/hostess администрируют tasks, только MANAGER — staff/shift. Full snapshots не обрезаются молча при capacity limit. Staff evidence пока 503; изолированный glasses pilot S3/ACK — другая интеграция. Инструкция, bootstrap, HTTPS gateway и deployment gate: `docs/operations/STAFF_PORTAL_RUNBOOK.md`; архитектура/viewer обновлены раньше этой заметки. Никакой production/Keycloak rollout или physical acceptance по факту локальных тестов.

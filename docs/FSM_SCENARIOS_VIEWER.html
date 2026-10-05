@@ -748,6 +748,12 @@ flowchart LR
     <p><code>/api/glasses/assist</code> и <code>/api/glasses/capabilities</code> защищены отдельным пилотным bearer-доступом со staff/tenant scope и expiry. Text обращается только к ModelGateway; voice валидирует AAC 16kHz mono и использует локальный Whisper; vision передаёт отдельный JPEG настоящей мультимодальной модели Yandex AI Studio. Не настроенный/не готовый провайдер возвращает явный 503. Нет перехода в guest FSM, изменения задач/бронирований, записи evidence или уведомлений. Staff feed, команды и ACK требуют отдельного доменного контракта. Детали: <a href="operations/GLASSES_ASSIST_PILOT.md">контракт и блокеры</a>.</p>
   </section>
 
+  <section id="staff-portal">
+    <h2>Staff portal: PostgreSQL + отдельный вход Astor (2026-10-05, выключен по умолчанию)</h2>
+    <p>Кабинет <code>/staff/</code> читает только серверные поручения и историю, не demo JSON. При выключенном <code>astor.staff.enabled</code> отдельный security chain запрещает staff/admin routes. При включении: HTTPS Keycloak Astor, подпись/issuer/audience/expiry JWT, tenant и роль из токена, актуальный справочник PostgreSQL. VEDAL не используется.</p>
+    <p>Менеджер управляет справочником и сменами; менеджер/хостес — назначением и переназначением поручений. Сотрудник принимает и выполняет только свои поручения открытой смены. Tenant lock + транзакция связывают task/version/event/audit, replay проверяет актуальные права. Полный snapshot удаляет старые назначения; превышение лимита возвращает явный отказ. Фото в новом staff API пока 503, а не учебный ACK; отдельный pilot S3 не равен этой интеграции. Guest FSM/бронь и <code>/assist</code> не вызываются. <a href="operations/STAFF_PORTAL_RUNBOOK.md">Включение и приёмка</a>; код и CI не подтверждают production/очки.</p>
+  </section>
+
   <section id="model-gateway">
     <h2>1.6 Model Gateway / органы восприятия</h2>
     <p>Целевой AI-слой Astor Butler строится как набор сменных способностей, а не как прямые вызовы к одной модели. Локально используются Qwen/Ollama, <code>qwen2.5vl:3b</code>, <code>nomic-embed-text</code> и faster-whisper, а в production при необходимости можно включить OpenAI/API-провайдера. FSM остается центром принятия решений.</p>
