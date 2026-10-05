@@ -41,6 +41,21 @@ class AstorWebRelayTest {
             assertTrue(body.get().contains("astor-butler-commercial"));assertFalse(body.get().contains("foreign"));
         } finally {server.stop(0);}
     }
+    @Test void leadAcknowledgementSpeaksAboutAstorNotC3agProduction() throws Exception {
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+        server.createContext("/",x->{
+            byte[] reply=("{\"text\":\"Я приняла запрос и передам его команде C3AG: посмотрим задачу по продакшену, видео и сайту, "
+                    +"а менеджер вернется с человеческим ответом.\",\"nextState\":\"WEB_LEAD_RECEIVED\"}").getBytes(StandardCharsets.UTF_8);
+            x.sendResponseHeaders(200,reply.length);x.getResponseBody().write(reply);x.close();});server.start();
+        try {
+            var relay = new AstorWebRelay("http://127.0.0.1:"+server.getAddress().getPort()+"/");
+            var response=relay.process(request("{\"channel\":\"WEB\",\"text\":\"Хотим внедрить Astor в ресторане\",\"payload\":{\"sessionId\":\"web-a-b\"}}"));
+            assertEquals(200,response.getStatusCode().value());
+            String text=String.valueOf(((java.util.Map<?,?>)response.getBody()).get("text"));
+            assertTrue(text.contains("команде Astor"));
+            assertFalse(text.contains("C3AG"));assertFalse(text.contains("продакшен"));assertFalse(text.contains("видео"));
+        } finally {server.stop(0);}
+    }
     @Test void invalidJsonAndOversizedBodyAreBounded() {
         var relay=new AstorWebRelay("http://127.0.0.1:1/");
         assertEquals(400,relay.process(request("{" )).getStatusCode().value());

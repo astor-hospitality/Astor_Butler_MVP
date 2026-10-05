@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Astor Concierge — куда пойти</title>
+<meta name="description" content="Лента заведений Astor Concierge: фото, рейтинг и бронь через команду ресторана.">
+<meta name="theme-color" content="#080a0d">
+<link rel="icon" type="image/svg+xml" href="../../assets/favicon.svg?v=20260707-aa">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../css/feed.css">
+<!-- Telegram Mini App bridge: optional, the page also works as a plain web page. -->
+<script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+<script src="../../js/feed.js" defer></script>
+</head>
+<body>
+
+<a class="skip-link" href="#feed">Перейти к списку</a>
+
+<header class="feed-head">
+  <p class="feed-brand">Astor Concierge</p>
+  <h1 class="feed-title">Куда пойти</h1>
+  <p class="feed-city" id="feedCity"></p>
+</header>
+
+<main id="feed" class="feed" aria-live="polite">
+  <p class="feed-status" id="feedStatus">Загружаю заведения…</p>
+
+  <section id="feedPinned" class="feed-pinned" aria-label="Выбор Astor" hidden></section>
+
+  <section id="feedRanked" class="feed-ranked" aria-labelledby="feedRankedTitle" hidden>
+    <h2 class="feed-section-title" id="feedRankedTitle">По рейтингу</h2>
+    <p class="feed-section-note">Среднее между Яндекс Картами и 2ГИС.</p>
+    <ol class="rank-list" id="feedRankList"></ol>
+  </section>
+</main>
+
+<footer class="feed-foot">
+  <p>Первое место — выбор Astor, а не позиция в рейтинге.</p>
+  <p id="feedRatingsDate" hidden></p>
+</footer>
+
+<noscript><p class="feed-status">Для ленты нужен JavaScript.</p></noscript>
+
+</body>
+</html>

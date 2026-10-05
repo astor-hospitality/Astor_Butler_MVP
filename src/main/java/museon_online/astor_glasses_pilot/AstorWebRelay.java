@@ -21,6 +21,8 @@ import java.util.concurrent.Semaphore;
 /** Public presentation transport: only anonymous WEB messages, never client-selected staff/FSM channels. */
 @RestController
 public class AstorWebRelay {
+    private static final String ASTOR_LEAD_REPLY = "Принял запрос и передам его команде Astor: менеджер вернётся с ответом по внедрению. "
+            + "Если удобно, следующим сообщением оставьте контакт, название заведения и задачу, которую хотите решить первой.";
     private final URI upstream;
     private final ObjectMapper mapper = new ObjectMapper().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
@@ -62,10 +64,16 @@ public class AstorWebRelay {
             if (response.statusCode() == 429) return error(429, "WEB_BUSY");
             if (response.statusCode() != 200 || bytes.length > 65536) return error(503, "WEB_UNAVAILABLE");
             JsonNode reply;
-            try { reply = mapper.readTree(bytes).path("text"); }
-            catch (Exception e) { return error(503, "WEB_UNAVAILABLE"); }
+            String state;
+            try {
+                JsonNode root = mapper.readTree(bytes);
+                reply = root.path("text");
+                state = root.path("nextState").asText("");
+            } catch (Exception e) { return error(503, "WEB_UNAVAILABLE"); }
             if (!reply.isTextual() || reply.asText().isBlank()) return error(503, "WEB_UNAVAILABLE");
-            return ResponseEntity.ok().header("Cache-Control", "no-store").body(Map.of("text", reply.asText().replace("команде C3AG", "команде Astor")));
+            // Upstream lead acknowledgement is written for the C3AG production site; the Astor page gets its own wording.
+            String answer = "WEB_LEAD_RECEIVED".equals(state) ? ASTOR_LEAD_REPLY : reply.asText().replace("команде C3AG", "команде Astor");
+            return ResponseEntity.ok().header("Cache-Control", "no-store").body(Map.of("text", answer));
         } catch (com.fasterxml.jackson.core.JacksonException e) {
             return error(400, "INVALID_WEB_MESSAGE");
         } catch (Exception e) {
