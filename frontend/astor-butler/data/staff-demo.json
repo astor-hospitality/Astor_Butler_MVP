@@ -1,0 +1,136 @@
+{
+  "tenant": "AERIS",
+  "note": "Учебные данные для прототипа кабинета. Имена, столы и поручения выдуманы; формы полей повторяют docs/operations/GLASSES_STAFF_TASKS_P1_DRAFT.md. Время задано в минутах относительно момента открытия страницы.",
+  "staff": [
+    { "staffId": "st-1", "displayName": "Анна", "role": "WAITER", "shift": "OPEN", "deviceId": "Очки 1" },
+    { "staffId": "st-2", "displayName": "Илья", "role": "WAITER", "shift": "OPEN", "deviceId": "Очки 2" },
+    { "staffId": "st-3", "displayName": "Мария", "role": "HOSTESS", "shift": "OPEN", "deviceId": null },
+    { "staffId": "st-4", "displayName": "Олег", "role": "WAITER", "shift": "CLOSED", "deviceId": null }
+  ],
+  "tasks": [
+    {
+      "taskId": "t-101",
+      "sourceRef": "Concierge, заявка 12",
+      "tableCode": "13",
+      "title": "Подготовить стол на двоих",
+      "instruction": "Подготовить стол на двоих, проверить сервировку. Гости придут к 14:00.",
+      "priority": "HIGH",
+      "deadlineInMinutes": 20,
+      "assigneeStaffId": "st-1",
+      "status": "IN_PROGRESS",
+      "version": 4,
+      "deliveredMinutesAgo": 14,
+      "voicedMinutesAgo": 13,
+      "stages": [
+        { "code": "seats", "title": "Стулья и посадка", "evidenceRequired": false, "done": true, "evidence": 0 },
+        { "code": "setting", "title": "Сервировка", "evidenceRequired": true, "done": false, "evidence": 1 },
+        { "code": "final", "title": "Проверка перед гостями", "evidenceRequired": true, "done": false, "evidence": 0 }
+      ],
+      "events": [
+        { "type": "ASSIGNED", "actor": "Мария", "minutesAgo": 15 },
+        { "type": "DELIVERED", "actor": "телефон Анны", "minutesAgo": 14 },
+        { "type": "VOICED", "actor": "Очки 1", "minutesAgo": 13 },
+        { "type": "ACCEPT", "actor": "Анна", "minutesAgo": 13 },
+        { "type": "STAGE_DONE", "actor": "Анна", "minutesAgo": 9, "detail": "Стулья и посадка" },
+        { "type": "EVIDENCE", "actor": "Очки 1", "minutesAgo": 4, "detail": "Сервировка" }
+      ]
+    },
+    {
+      "taskId": "t-102",
+      "sourceRef": "Гость в боте",
+      "tableCode": "2",
+      "title": "Принести плед",
+      "instruction": "Гость за вторым столом просит плед.",
+      "priority": "NORMAL",
+      "deadlineInMinutes": 5,
+      "assigneeStaffId": "st-2",
+      "status": "HELP_REQUESTED",
+      "version": 3,
+      "deliveredMinutesAgo": 8,
+      "voicedMinutesAgo": 8,
+      "stages": [
+        { "code": "bring", "title": "Принести плед", "evidenceRequired": false, "done": false, "evidence": 0 }
+      ],
+      "events": [
+        { "type": "ASSIGNED", "actor": "Мария", "minutesAgo": 9 },
+        { "type": "DELIVERED", "actor": "телефон Ильи", "minutesAgo": 8 },
+        { "type": "VOICED", "actor": "Очки 2", "minutesAgo": 8 },
+        { "type": "ACCEPT", "actor": "Илья", "minutesAgo": 7 },
+        { "type": "HELP", "actor": "Илья", "minutesAgo": 2, "detail": "Пледы закончились на складе зала" }
+      ]
+    },
+    {
+      "taskId": "t-103",
+      "sourceRef": "Гость в боте",
+      "tableCode": "7",
+      "title": "Свеча к десерту",
+      "instruction": "К десерту вынести свечу, у гостей годовщина.",
+      "priority": "NORMAL",
+      "deadlineInMinutes": 40,
+      "assigneeStaffId": "st-1",
+      "status": "ACCEPTED",
+      "version": 2,
+      "deliveredMinutesAgo": 6,
+      "voicedMinutesAgo": 5,
+      "stages": [
+        { "code": "candle", "title": "Подготовить свечу", "evidenceRequired": false, "done": false, "evidence": 0 },
+        { "code": "serve", "title": "Вынести с десертом", "evidenceRequired": true, "done": false, "evidence": 0 }
+      ],
+      "events": [
+        { "type": "ASSIGNED", "actor": "Мария", "minutesAgo": 6 },
+        { "type": "DELIVERED", "actor": "телефон Анны", "minutesAgo": 6 },
+        { "type": "VOICED", "actor": "Очки 1", "minutesAgo": 5 },
+        { "type": "ACCEPT", "actor": "Анна", "minutesAgo": 5 }
+      ]
+    },
+    {
+      "taskId": "t-104",
+      "sourceRef": "Менеджер",
+      "tableCode": "5",
+      "title": "Подготовить стол на четверых",
+      "instruction": "Подготовить пятый стол на четверых к 15:30.",
+      "priority": "NORMAL",
+      "deadlineInMinutes": 75,
+      "assigneeStaffId": "st-2",
+      "status": "ASSIGNED",
+      "version": 1,
+      "deliveredMinutesAgo": null,
+      "voicedMinutesAgo": null,
+      "stages": [
+        { "code": "seats", "title": "Стулья и посадка", "evidenceRequired": false, "done": false, "evidence": 0 },
+        { "code": "setting", "title": "Сервировка", "evidenceRequired": true, "done": false, "evidence": 0 }
+      ],
+      "events": [
+        { "type": "ASSIGNED", "actor": "Мария", "minutesAgo": 1 }
+      ]
+    },
+    {
+      "taskId": "t-100",
+      "sourceRef": "Concierge, заявка 11",
+      "tableCode": "9",
+      "title": "Подготовить стол на двоих",
+      "instruction": "Подготовить девятый стол на двоих.",
+      "priority": "NORMAL",
+      "deadlineInMinutes": null,
+      "assigneeStaffId": "st-2",
+      "status": "DONE",
+      "version": 6,
+      "deliveredMinutesAgo": 52,
+      "voicedMinutesAgo": 51,
+      "stages": [
+        { "code": "seats", "title": "Стулья и посадка", "evidenceRequired": false, "done": true, "evidence": 0 },
+        { "code": "setting", "title": "Сервировка", "evidenceRequired": true, "done": true, "evidence": 1 }
+      ],
+      "events": [
+        { "type": "ASSIGNED", "actor": "Мария", "minutesAgo": 53 },
+        { "type": "DELIVERED", "actor": "телефон Ильи", "minutesAgo": 52 },
+        { "type": "VOICED", "actor": "Очки 2", "minutesAgo": 51 },
+        { "type": "ACCEPT", "actor": "Илья", "minutesAgo": 51 },
+        { "type": "STAGE_DONE", "actor": "Илья", "minutesAgo": 47, "detail": "Стулья и посадка" },
+        { "type": "EVIDENCE", "actor": "Очки 2", "minutesAgo": 43, "detail": "Сервировка" },
+        { "type": "STAGE_DONE", "actor": "Илья", "minutesAgo": 43, "detail": "Сервировка" },
+        { "type": "COMPLETE", "actor": "Илья", "minutesAgo": 42 }
+      ]
+    }
+  ]
+}

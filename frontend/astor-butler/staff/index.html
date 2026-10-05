@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Astor — кабинет поручений (прототип)</title>
+<meta name="description" content="Прототип кабинета менеджера Astor: смена, лента поручений, шаги и фото. Учебные данные.">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#080a0d">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=20260707-aa">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/staff.css">
+<script src="../js/staff.js" defer></script>
+</head>
+<body>
+
+<a class="skip-link" href="#feed">Перейти к ленте</a>
+
+<p class="demo-banner" role="note">Прототип на учебных данных. К серверу не подключён: действия меняют только эту страницу.</p>
+
+<header class="top">
+  <div>
+    <p class="top-brand">Astor · кабинет поручений</p>
+    <h1 class="top-title" id="tenantTitle">Заведение</h1>
+  </div>
+  <button class="btn btn-primary" id="newTaskButton" type="button">Новое поручение</button>
+</header>
+
+<div class="layout">
+  <aside class="shift" aria-labelledby="shiftTitle">
+    <h2 class="section-title" id="shiftTitle">Смена</h2>
+    <ul class="staff-list" id="staffList"></ul>
+  </aside>
+
+  <main class="feed" id="feed">
+    <div class="feed-head">
+      <h2 class="section-title">Лента поручений</h2>
+      <div class="filters" id="filters" role="group" aria-label="Фильтр ленты"></div>
+    </div>
+    <p class="feed-status" id="feedStatus">Загружаю поручения…</p>
+    <ol class="task-list" id="taskList"></ol>
+  </main>
+</div>
+
+<dialog class="sheet" id="taskDialog" aria-labelledby="taskDialogTitle">
+  <div class="sheet-head">
+    <h2 class="sheet-title" id="taskDialogTitle">Поручение</h2>
+    <button class="btn btn-quiet btn-small" type="button" data-close>Закрыть</button>
+  </div>
+  <div class="sheet-body" id="taskDialogBody"></div>
+</dialog>
+
+<dialog class="sheet" id="newTaskDialog" aria-labelledby="newTaskTitle">
+  <form class="task-form" id="newTaskForm" method="dialog">
+    <div class="sheet-head">
+      <h2 class="sheet-title" id="newTaskTitle">Новое поручение</h2>
+      <button class="btn btn-quiet btn-small" type="button" data-close>Закрыть</button>
+    </div>
+    <div class="sheet-body">
+      <label class="field">Стол
+        <input name="tableCode" required maxlength="8" autocomplete="off" inputmode="numeric">
+      </label>
+      <label class="field">Что сделать
+        <input name="title" required maxlength="80" autocomplete="off">
+      </label>
+      <label class="field">Текст для озвучки в очках
+        <textarea name="instruction" rows="2" maxlength="300"></textarea>
+      </label>
+      <label class="field">Шаги, по одному в строке
+        <textarea name="stages" rows="3" required maxlength="400"></textarea>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="evidence" checked> Требовать фото на последнем шаге
+      </label>
+      <label class="field">Кому
+        <select name="assignee" id="newTaskAssignee" required></select>
+      </label>
+      <label class="check">
+        <input type="checkbox" name="high"> Срочно
+      </label>
+      <button class="btn btn-primary" type="submit">Назначить</button>
+    </div>
+  </form>
+</dialog>
+
+<noscript><p class="feed-status">Для кабинета нужен JavaScript.</p></noscript>
+
+</body>
+</html>
