@@ -1,0 +1,161 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-10-04T12:14:00.000Z",
+  "staleAfterHours": 168,
+  "venues": {
+    "aeris": {
+      "yandex": {
+        "sourceId": "103837967593",
+        "url": "https://yandex.ru/maps/org/aeris/103837967593/",
+        "rating": 4.8,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      },
+      "gis": {
+        "sourceId": "70000001085768632",
+        "url": "https://2gis.ru/ekaterinburg/firm/70000001085768632",
+        "rating": 4.8,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      }
+    },
+    "negodyai": {
+      "yandex": {
+        "sourceId": "120839461774",
+        "url": "https://yandex.ru/maps/org/negodyai/120839461774/",
+        "rating": 5,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      },
+      "gis": {
+        "sourceId": "70000001039364594",
+        "url": "https://2gis.ru/ekaterinburg/firm/70000001039364594",
+        "rating": 5,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      }
+    },
+    "momo": {
+      "yandex": {
+        "sourceId": "1193772782",
+        "url": "https://yandex.ru/maps/org/momo/1193772782/",
+        "rating": 4.9,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      },
+      "gis": {
+        "sourceId": "70000001025783455",
+        "url": "https://2gis.ru/ekaterinburg/firm/70000001025783455",
+        "rating": 4.9,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      }
+    },
+    "dom-kultury": {
+      "yandex": {
+        "sourceId": "243013495762",
+        "url": "https://yandex.ru/maps/org/dom_kultury/243013495762/",
+        "rating": 4.7,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      },
+      "gis": {
+        "sourceId": "70000001109591280",
+        "url": "https://2gis.ru/ekaterinburg/firm/70000001109591280",
+        "rating": 4.8,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      }
+    },
+    "fizkultura": {
+      "yandex": {
+        "sourceId": "102743421082",
+        "url": "https://yandex.ru/maps/org/fizkultura/102743421082/",
+        "rating": 4.7,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      },
+      "gis": {
+        "sourceId": "70000001097638348",
+        "url": "https://2gis.ru/ekaterinburg/firm/70000001097638348",
+        "rating": 4.8,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      }
+    },
+    "metis": {
+      "yandex": {
+        "sourceId": "19193824259",
+        "url": "https://yandex.ru/maps/org/metis/19193824259/",
+        "rating": 4.6,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      },
+      "gis": {
+        "sourceId": "70000001032328273",
+        "url": "https://2gis.ru/ekaterinburg/firm/70000001032328273",
+        "rating": 4.9,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      }
+    },
+    "myata": {
+      "yandex": {
+        "sourceId": "1165897871",
+        "url": "https://yandex.ru/maps/org/myata/1165897871/",
+        "rating": 4.5,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      },
+      "gis": {
+        "sourceId": "1267165676499509",
+        "url": "https://2gis.ru/ekaterinburg/firm/1267165676499509",
+        "rating": 4.9,
+        "provider": "manual",
+        "checkedAt": "2026-10-04T12:14:00.000Z",
+        "updatedAt": "2026-10-04T12:14:00.000Z",
+        "status": "fresh",
+        "lastFailure": null
+      }
+    }
+  }
+}
