@@ -991,6 +991,7 @@ public class ChangeCancelScenario implements FsmScenario {
     private boolean isChangeCancelIntent(String text) {
         return containsAny(
                 text,
+                "изменить / отменить",
                 "отменить брон",
                 "отмена брон",
                 "отменить стол",
