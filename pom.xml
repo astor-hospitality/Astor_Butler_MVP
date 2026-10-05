@@ -131,6 +131,13 @@
             <version>${liquibase-core.version}</version>
         </dependency>
 
+        <!-- Spring Boot 4 runs Liquibase only when its own module is on the classpath.
+             With liquibase-core alone the spring.liquibase.* settings are ignored and no migration runs. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-liquibase</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
