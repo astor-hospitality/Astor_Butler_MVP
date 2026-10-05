@@ -11,10 +11,13 @@ import java.util.regex.Pattern;
 /**
  * Reads a day or a time out of what a guest typed. A guest may type anything, so nothing here throws:
  * "32.13" is simply not a date, and "19.30" is the time half past seven, not the nineteenth of a thirtieth month.
+ * A time that is read has to be the one the guest meant: "3 ночи" is not three in the afternoon.
  */
 final class GuestDateText {
     private static final Pattern DAY_MONTH = Pattern.compile("\\b(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?\\b");
     private static final Pattern DOTTED_TIME = Pattern.compile("(?<![\\d./-])([01]?\\d|2[0-3])\\.([0-5]\\d)(?![\\d./-])");
+    private static final Pattern TIME_OF_DAY = Pattern.compile(
+            "(?<![\\d:.])(\\d{1,2})(?:[:.][0-5]\\d)?\\s*(?:час(?:ов|а)?\\s+)?(ночи|вечера|дня|утра)(?![а-яё])");
 
     private GuestDateText() {
     }
@@ -52,6 +55,20 @@ final class GuestDateText {
         return Optional.empty();
     }
 
+    /**
+     * The same time once the word after it is read: "3 ночи" is 03:00 and "12 ночи" is midnight, "11 ночи" and
+     * "7 вечера" are 23:00 and 19:00, "2 дня" is 14:00. Empty when the guest put no such word after this time.
+     */
+    static Optional<LocalTime> atTimeOfDay(LocalTime time, String text) {
+        Matcher matcher = TIME_OF_DAY.matcher(text);
+        while (matcher.find()) {
+            if (Integer.parseInt(matcher.group(1)) == time.getHour()) {
+                return Optional.of(time.withHour(hourAt(time.getHour(), matcher.group(2))));
+            }
+        }
+        return Optional.empty();
+    }
+
     /** A yyyy-mm-dd date, when that day exists. */
     static Optional<LocalDate> isoDate(String text) {
         try {
@@ -63,6 +80,15 @@ final class GuestDateText {
 
     private static boolean exists(int year, int month, int day) {
         return month >= 1 && month <= 12 && day >= 1 && day <= YearMonth.of(year, month).lengthOfMonth();
+    }
+
+    private static int hourAt(int hour, String timeOfDay) {
+        return switch (timeOfDay) {
+            case "ночи" -> hour == 12 ? 0 : hour >= 6 && hour <= 11 ? hour + 12 : hour;
+            case "вечера" -> hour >= 1 && hour <= 11 ? hour + 12 : hour;
+            case "дня" -> hour >= 1 && hour <= 6 ? hour + 12 : hour;
+            default -> hour;
+        };
     }
 
     private static int fullYear(String value) {

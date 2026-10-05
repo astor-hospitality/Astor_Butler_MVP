@@ -789,7 +789,8 @@ public class ChangeCancelScenario implements FsmScenario {
         UnderstoodInput understood = understandingService.understand(raw, BotState.TABLE_BOOKING_COLLECT_TIME);
         Optional<LocalTime> fromSlot = Optional.ofNullable(understood.slots().get("time"))
                 .map(SlotValue::value)
-                .flatMap(this::parseTime);
+                .flatMap(this::parseTime)
+                .map(time -> GuestDateText.atTimeOfDay(time, understood.normalizedText()).orElse(time));
         if (fromSlot.isPresent()) {
             return fromSlot;
         }
