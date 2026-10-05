@@ -8,6 +8,10 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Saby Presto service authorization and booking settings.
+ * Contract: docs/integrations/SABY_PRESTO_BOOKING_API.md. Secrets come only from the server environment.
+ */
 @Component
 @ConfigurationProperties(prefix = "astor.integrations.saby")
 @Getter
@@ -15,16 +19,16 @@ import java.util.List;
 public class SabyReservationProperties {
 
     private boolean enabled = false;
-    private String baseUrl = "";
-    private String authMethod = "";
-    private String apiToken = "";
-    private String clientId = "";
-    private String clientSecret = "";
-    private String refreshToken = "";
-    private String organizationId = "";
-    private String restaurantId = "";
-    private String availabilityPath = "";
-    private String reservationPath = "";
+    private boolean writeEnabled = false;
+    private String baseUrl = "https://api.sbis.ru";
+    private String authUrl = "https://online.sbis.ru/oauth/service/";
+    private String appClientId = "";
+    private String appSecret = "";
+    private String secretKey = "";
+    private String pointId = "";
+    private String hallId = "";
+    private String venueCode = "AERIS";
+    private String zoneId = "Asia/Yekaterinburg";
     private long timeoutMs = 3000;
     private int maxRetries = 1;
 
@@ -35,23 +39,12 @@ public class SabyReservationProperties {
     public List<String> missingConfiguration() {
         List<String> missing = new ArrayList<>();
         require(missing, "SABY_API_BASE_URL", baseUrl);
-        require(missing, "SABY_AUTH_METHOD", authMethod);
-        require(missing, "SABY_ORGANIZATION_ID", organizationId);
-        require(missing, "SABY_RESTAURANT_ID", restaurantId);
-        require(missing, "SABY_AVAILABILITY_PATH", availabilityPath);
-        require(missing, "SABY_RESERVATION_PATH", reservationPath);
-        if (noTokenAuthConfigured() && noOAuthConfigured()) {
-            missing.add("SABY_API_TOKEN or SABY_CLIENT_ID + SABY_CLIENT_SECRET + SABY_REFRESH_TOKEN");
-        }
+        require(missing, "SABY_AUTH_URL", authUrl);
+        require(missing, "SABY_APP_CLIENT_ID", appClientId);
+        require(missing, "SABY_APP_SECRET", appSecret);
+        require(missing, "SABY_SECRET_KEY", secretKey);
+        require(missing, "SABY_POINT_ID", pointId);
         return List.copyOf(missing);
-    }
-
-    private boolean noTokenAuthConfigured() {
-        return apiToken == null || apiToken.isBlank();
-    }
-
-    private boolean noOAuthConfigured() {
-        return isBlank(clientId) || isBlank(clientSecret) || isBlank(refreshToken);
     }
 
     private void require(List<String> missing, String envName, String value) {

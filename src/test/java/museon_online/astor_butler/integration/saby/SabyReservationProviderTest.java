@@ -26,14 +26,11 @@ class SabyReservationProviderTest {
         ));
 
         assertThat(status.configured()).isFalse();
-        assertThat(status.missingConfiguration()).contains(
-                "SABY_API_BASE_URL",
-                "SABY_AUTH_METHOD",
-                "SABY_ORGANIZATION_ID",
-                "SABY_RESTAURANT_ID",
-                "SABY_AVAILABILITY_PATH",
-                "SABY_RESERVATION_PATH",
-                "SABY_API_TOKEN or SABY_CLIENT_ID + SABY_CLIENT_SECRET + SABY_REFRESH_TOKEN"
+        assertThat(status.missingConfiguration()).containsExactly(
+                "SABY_APP_CLIENT_ID",
+                "SABY_APP_SECRET",
+                "SABY_SECRET_KEY",
+                "SABY_POINT_ID"
         );
         assertThat(availability.status()).isEqualTo("PROVIDER_NOT_CONFIGURED");
         assertThat(availability.providerConfigured()).isFalse();
@@ -43,13 +40,10 @@ class SabyReservationProviderTest {
     void blocksWritesEvenWhenPlaceholderConfigIsCompleteUntilContractIsImplemented() {
         SabyReservationProperties properties = new SabyReservationProperties();
         properties.setEnabled(true);
-        properties.setBaseUrl("https://example.invalid");
-        properties.setAuthMethod("token");
-        properties.setApiToken("placeholder");
-        properties.setOrganizationId("org");
-        properties.setRestaurantId("restaurant");
-        properties.setAvailabilityPath("/availability");
-        properties.setReservationPath("/reservations");
+        properties.setAppClientId("client");
+        properties.setAppSecret("secret");
+        properties.setSecretKey("service-key");
+        properties.setPointId("206");
         SabyReservationProvider provider = new SabyReservationProvider(properties);
 
         var result = provider.reserve(null, "idem-1");
