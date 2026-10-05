@@ -1,0 +1,162 @@
+{
+  "waiter": {
+    "iss": "http://localhost:8180/realms/astor",
+    "aud": [
+      "astor-api",
+      "account"
+    ],
+    "azp": "astor-staff-ui",
+    "typ": "Bearer",
+    "sub": "47000a59-87ed-4c7b-997a-9534c922d479",
+    "tenant": "AERIS",
+    "realm_access": {
+      "roles": [
+        "default-roles-astor",
+        "offline_access",
+        "uma_authorization",
+        "astor-waiter"
+      ]
+    },
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links",
+          "view-profile"
+        ]
+      }
+    },
+    "scope": "openid email profile"
+  },
+  "waiter-phone-client": {
+    "iss": "http://localhost:8180/realms/astor",
+    "aud": [
+      "astor-api",
+      "account"
+    ],
+    "azp": "astor-glasses-app",
+    "typ": "Bearer",
+    "sub": "47000a59-87ed-4c7b-997a-9534c922d479",
+    "tenant": "AERIS",
+    "realm_access": {
+      "roles": [
+        "default-roles-astor",
+        "offline_access",
+        "uma_authorization",
+        "astor-waiter"
+      ]
+    },
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links",
+          "view-profile"
+        ]
+      }
+    },
+    "scope": "openid email profile"
+  },
+  "manager-with-waiter-role": {
+    "iss": "http://localhost:8180/realms/astor",
+    "aud": [
+      "astor-api",
+      "account"
+    ],
+    "azp": "astor-staff-ui",
+    "typ": "Bearer",
+    "sub": "009f1ba7-5d5e-43a1-9028-18b67c0512a8",
+    "tenant": "AERIS",
+    "realm_access": {
+      "roles": [
+        "default-roles-astor",
+        "astor-manager",
+        "offline_access",
+        "uma_authorization",
+        "astor-waiter"
+      ]
+    },
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links",
+          "view-profile"
+        ]
+      }
+    },
+    "scope": "openid email profile"
+  },
+  "no-venue": {
+    "iss": "http://localhost:8180/realms/astor",
+    "aud": [
+      "astor-api",
+      "account"
+    ],
+    "azp": "astor-staff-ui",
+    "typ": "Bearer",
+    "sub": "6e3cc73a-a3d2-4637-a3dd-a20980fed2d4",
+    "realm_access": {
+      "roles": [
+        "default-roles-astor",
+        "offline_access",
+        "uma_authorization",
+        "astor-waiter"
+      ]
+    },
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links",
+          "view-profile"
+        ]
+      }
+    },
+    "scope": "openid email profile"
+  },
+  "no-staff-role": {
+    "iss": "http://localhost:8180/realms/astor",
+    "aud": [
+      "astor-api",
+      "account"
+    ],
+    "azp": "astor-staff-ui",
+    "typ": "Bearer",
+    "sub": "bfea7a86-8000-4c91-b732-b9e551ca0d53",
+    "tenant": "AERIS",
+    "realm_access": {
+      "roles": [
+        "default-roles-astor",
+        "offline_access",
+        "uma_authorization"
+      ]
+    },
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links",
+          "view-profile"
+        ]
+      }
+    },
+    "scope": "openid email profile"
+  },
+  "another-client-of-the-realm": {
+    "iss": "http://localhost:8180/realms/astor",
+    "aud": "account",
+    "azp": "account-console",
+    "typ": "Bearer",
+    "sub": "47000a59-87ed-4c7b-997a-9534c922d479",
+    "resource_access": {
+      "account": {
+        "roles": [
+          "manage-account",
+          "manage-account-links"
+        ]
+      }
+    },
+    "scope": "openid email profile"
+  }
+}
