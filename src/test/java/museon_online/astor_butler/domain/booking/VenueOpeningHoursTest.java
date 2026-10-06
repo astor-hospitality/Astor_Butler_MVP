@@ -42,6 +42,20 @@ class VenueOpeningHoursTest {
     }
 
     @Test
+    void knowsTheLateHoursOfAnEvening() {
+        // Monday closes at 02:00 the next morning, Friday at 04:00.
+        assertThat(hours.isLateHourOf(MONDAY, LocalTime.of(0, 30))).isTrue();
+        assertThat(hours.isLateHourOf(MONDAY, LocalTime.of(1, 59))).isTrue();
+        assertThat(hours.isLateHourOf(MONDAY, LocalTime.of(2, 0))).isFalse();
+        assertThat(hours.isLateHourOf(MONDAY, LocalTime.of(13, 0))).isFalse();
+        assertThat(hours.isLateHourOf(MONDAY, LocalTime.of(23, 0))).isFalse();
+        assertThat(hours.isLateHourOf(FRIDAY, LocalTime.of(3, 0))).isTrue();
+        assertThat(hours.isLateHourOf(null, LocalTime.of(0, 30))).isFalse();
+        hours.setEnabled(false);
+        assertThat(hours.isLateHourOf(MONDAY, LocalTime.of(0, 30))).isFalse();
+    }
+
+    @Test
     void theWeekendOpensLater() {
         assertThat(hours.isOpen(SATURDAY, LocalTime.of(13, 0))).isFalse();
         assertThat(hours.isOpen(SATURDAY, LocalTime.of(14, 0))).isTrue();

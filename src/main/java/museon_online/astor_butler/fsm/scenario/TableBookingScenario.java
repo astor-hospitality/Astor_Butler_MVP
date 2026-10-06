@@ -19,6 +19,8 @@ import museon_online.astor_butler.service.message.OutgoingMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -28,6 +30,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 @RequiredArgsConstructor
@@ -39,6 +43,10 @@ public class TableBookingScenario implements FsmScenario {
     private static final Locale RU = Locale.forLanguageTag("ru-RU");
     private static final java.util.Set<String> LEAVE_WORDS = java.util.Set.of(
             "отмена", "стоп", "главное меню", "выйти", "передумал", "передумала", "не надо", "не нужно");
+
+    /** The largest party the draft reader takes for one table, see TableBookingDraftMerger. */
+    private static final int MAX_PARTY_SIZE = 20;
+    private static final Pattern GUEST_COUNT_REPLY = Pattern.compile("(?:на\\s+|нас\\s+)?(\\d{2,4})(?:\\s*(?:гост\\p{L}*|человек\\p{L}*|персон\\p{L}*|чел\\.?))?");
 
     private final FSMStorage fsmStorage;
     private final TableBookingDraftStorage draftStorage;
@@ -88,8 +96,18 @@ public class TableBookingScenario implements FsmScenario {
         }
         TableBookingDraftStorage.Draft draft = draftMerger.merge(incoming, state, normalized, understood);
 
-        if (draft.requestedDate() != null && draft.requestedTime() != null && !openingHours.isOpen(draft.requestedDate(), draft.requestedTime())) {
-            return askForAnOpenHour(incoming, state, draft);
+        if (draft.requestedDate() != null && draft.requestedTime() != null) {
+            if (alreadyPassed(draft)) {
+                Optional<TableBookingDraftStorage.Draft> tonight = laterTonight(draft);
+                if (tonight.isEmpty()) {
+                    return askForAnotherTime(incoming, state, draft, "Это время уже прошло.", "TIME_ALREADY_PASSED");
+                }
+                draft = tonight.get();
+                draftStorage.save(incoming.chatId(), draft);
+            }
+            if (!openingHours.isOpen(draft.requestedDate(), draft.requestedTime())) {
+                return askForAnOpenHour(incoming, state, draft);
+            }
         }
         Optional<TableBookingStepRegistry.Step> nextStep = stepRegistry.nextMissingStep(draft);
         if (nextStep.isPresent()) {
@@ -103,6 +121,52 @@ public class TableBookingScenario implements FsmScenario {
      * and the booking goes on with whatever is still missing, which now includes the time.
      */
     private OutgoingMessage askForAnOpenHour(IncomingMessage incoming, BotState state, TableBookingDraftStorage.Draft draft) {
+        String hours = openingHours.describe(draft.requestedDate())
+                .map(open -> "В это время AERIS закрыт. В этот день ждем гостей " + open + ".")
+                .orElse("В это время AERIS закрыт.");
+        return askForAnotherTime(incoming, state, draft, hours, "TIME_OUTSIDE_OPENING_HOURS");
+    }
+
+    private boolean alreadyPassed(TableBookingDraftStorage.Draft draft) {
+        Instant startAt = draft.requestedDate().atTime(draft.requestedTime()).atZone(BookingTimeProvider.VENUE_ZONE).toInstant();
+        return !startAt.isAfter(timeProvider.now());
+    }
+
+    /**
+     * "Сегодня в 00:30", said in the evening, is half past midnight of the coming night: a late hour of today's own
+     * evening, which the calendar puts on tomorrow. Any other time that is already gone is not guessed. Neither is
+     * a late hour named after midnight, while last evening is still going on: at 00:24 "сегодня в 00:09" is a slip,
+     * not a wish for the next night.
+     */
+    private Optional<TableBookingDraftStorage.Draft> laterTonight(TableBookingDraftStorage.Draft draft) {
+        LocalDate today = timeProvider.today();
+        if (!draft.requestedDate().equals(today)
+                || !openingHours.isLateHourOf(today, draft.requestedTime())
+                || openingHours.isLateHourOf(today.minusDays(1), timeProvider.nowTime())) {
+            return Optional.empty();
+        }
+        LocalDate date = draft.requestedDate().plusDays(1);
+        Instant startAt = date.atTime(draft.requestedTime()).atZone(BookingTimeProvider.VENUE_ZONE).toInstant();
+        Duration length = draft.requestedStartAt() == null || draft.requestedEndAt() == null
+                ? Duration.ofHours(2)
+                : Duration.between(draft.requestedStartAt(), draft.requestedEndAt());
+        return Optional.of(new TableBookingDraftStorage.Draft(
+                draft.venueCode(),
+                startAt,
+                startAt.plus(length),
+                date,
+                draft.requestedTime(),
+                draft.partySize(),
+                draft.tableCode(),
+                draft.preferredZone(),
+                draft.seatingPreference(),
+                draft.seatingPreferenceResolved(),
+                draft.originalText()
+        ));
+    }
+
+    /** The time was understood but cannot be booked. It is dropped, the guest is told why, and the booking goes on. */
+    private OutgoingMessage askForAnotherTime(IncomingMessage incoming, BotState state, TableBookingDraftStorage.Draft draft, String reason, String marker) {
         TableBookingDraftStorage.Draft withoutTime = new TableBookingDraftStorage.Draft(
                 draft.venueCode(),
                 null,
@@ -117,9 +181,6 @@ public class TableBookingScenario implements FsmScenario {
                 draft.originalText()
         );
         draftStorage.save(incoming.chatId(), withoutTime);
-        String hours = openingHours.describe(draft.requestedDate())
-                .map(open -> "В это время AERIS закрыт. В этот день ждем гостей " + open + ".")
-                .orElse("В это время AERIS закрыт.");
         TableBookingStepRegistry.Step next = stepRegistry.nextMissingStep(withoutTime).orElseThrow();
         // An empty guest text keeps "не хочу гадать со временем" out: the time was understood, the venue is just closed then.
         OutgoingMessage question = askForStep(incoming, state, withoutTime, next, "");
@@ -127,14 +188,14 @@ public class TableBookingScenario implements FsmScenario {
                 question.channel(),
                 question.externalUserId(),
                 question.chatId(),
-                hours + "\n\n" + question.text(),
+                reason + "\n\n" + question.text(),
                 question.nextState(),
                 question.html(),
                 question.requestContact(),
                 question.removeKeyboard(),
                 question.fallback(),
                 question.adminAlert(),
-                java.util.stream.Stream.concat(java.util.stream.Stream.of("TIME_OUTSIDE_OPENING_HOURS"), question.actions().stream()).toList(),
+                java.util.stream.Stream.concat(java.util.stream.Stream.of(marker), question.actions().stream()).toList(),
                 question.metadata(),
                 question.createdAt()
         );
@@ -171,7 +232,8 @@ public class TableBookingScenario implements FsmScenario {
     ) {
         BotState nextState = step.state();
         fsmStorage.setState(incoming.chatId(), nextState);
-        String text = withAcknowledgement(currentState, nextState, draft, normalizedText, phraseService.ask(step, draft));
+        String text = unusedAnswer(currentState, nextState, draft, normalizedText)
+                .orElseGet(() -> withAcknowledgement(currentState, nextState, draft, normalizedText, phraseService.ask(step, draft)));
 
         if (nextState == BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION) {
             boolean includeDocument = shouldSendPlan(currentState);
@@ -196,6 +258,33 @@ public class TableBookingScenario implements FsmScenario {
             return message.withRemoveKeyboard(true);
         }
         return message;
+    }
+
+    /**
+     * The guest answered the question and the answer could not be used. The same question word for word reads as if
+     * the bot had not heard, so the reason comes first. The time step has its own words in the acknowledgement.
+     */
+    private Optional<String> unusedAnswer(BotState currentState, BotState nextState, TableBookingDraftStorage.Draft draft, String normalizedText) {
+        if (normalizedText.isBlank() || currentState != nextState) {
+            return Optional.empty();
+        }
+        if (nextState == BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE && draft.partySize() == null) {
+            return Optional.of(namesTooManyGuests(normalizedText)
+                    ? "В одну бронь стола могу записать до " + MAX_PARTY_SIZE + " гостей. Для большей компании напишите «менеджер», команда AERIS подберет вариант."
+                    : "Не понял, сколько будет гостей. Напишите число, например 4.");
+        }
+        if (nextState == BotState.TABLE_BOOKING_COLLECT_DATE && draft.requestedDate() == null) {
+            return Optional.of(normalizedText.contains("вчера")
+                    ? "Этот день уже прошел. На какой день держим стол?"
+                    : "Не смог понять день. Выберите его кнопкой или напишите, например, «завтра», «в пятницу», «30.06».");
+        }
+        return Optional.empty();
+    }
+
+    /** Only a reply that is a count of guests and nothing else: "21.06" at this step is a date, not twenty-one guests. */
+    private boolean namesTooManyGuests(String normalizedText) {
+        Matcher count = GUEST_COUNT_REPLY.matcher(normalizedText.trim());
+        return count.matches() && Integer.parseInt(count.group(1)) > MAX_PARTY_SIZE;
     }
 
     private String withAcknowledgement(
