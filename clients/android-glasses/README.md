@@ -62,6 +62,7 @@ app/    the Android application: one screen, request flow, recorder, token store
 JDK 17 or newer and the Android SDK (platform 36). Put the SDK path into `local.properties` as `sdk.dir=...` or set `ANDROID_HOME`.
 
     ./gradlew :core:test            # 13 tests, no phone or SDK needed
+    ./gradlew :core:test -PcoreOnly # the same tests when Google's repository (dl.google.com) cannot be reached
     ./gradlew :app:assembleDebug    # app/build/outputs/apk/debug/app-debug.apk
 
 No backend address, token or key is in the sources. The address and the token are typed on the screen.
