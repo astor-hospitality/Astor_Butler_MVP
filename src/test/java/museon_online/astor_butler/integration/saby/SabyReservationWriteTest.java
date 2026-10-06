@@ -68,7 +68,7 @@ class SabyReservationWriteTest {
                 .andExpect(jsonPath("$.pointId").value(206))
                 .andExpect(jsonPath("$.datetime").value("2026-10-07 14:00:00"))
                 .andExpect(jsonPath("$.customer.name").value("Иван"))
-                .andExpect(jsonPath("$.customer.phone").value("+79990000000"))
+                .andExpect(jsonPath("$.customer.phone").value("79990000000"))
                 .andExpect(jsonPath("$.booking.visitors").value(2))
                 .andExpect(jsonPath("$.booking.woTable").value(true))
                 .andExpect(jsonPath("$.booking.hall").doesNotExist())
