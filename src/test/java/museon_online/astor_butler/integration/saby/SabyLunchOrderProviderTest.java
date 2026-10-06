@@ -22,12 +22,10 @@ class SabyLunchOrderProviderTest {
         SabyReservationProperties properties = new SabyReservationProperties();
         properties.setEnabled(true);
         properties.setBaseUrl("https://example.invalid");
-        properties.setAuthMethod("token");
-        properties.setApiToken("placeholder");
-        properties.setOrganizationId("org");
-        properties.setRestaurantId("restaurant");
-        properties.setAvailabilityPath("/availability");
-        properties.setReservationPath("/reservations");
+        properties.setAppClientId("fixture-client");
+        properties.setAppSecret("fixture-secret");
+        properties.setSecretKey("fixture-key");
+        properties.setPointId("206");
         SabyLunchOrderProvider provider = new SabyLunchOrderProvider(properties);
 
         ExternalLunchOrderProvider.Result result = provider.submit(null, "astor-lunch-1");
