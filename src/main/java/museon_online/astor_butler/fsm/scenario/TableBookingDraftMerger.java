@@ -57,7 +57,22 @@ public class TableBookingDraftMerger {
             String normalized,
             UnderstoodInput understood
     ) {
-        Optional<TableBookingDraftStorage.Draft> stored = findDraft(incoming.chatId());
+        TableBookingDraftStorage.Draft draft = read(findDraft(incoming.chatId()), incoming.text(), currentState, normalized, understood);
+        draftStorage.save(incoming.chatId(), draft);
+        return draft;
+    }
+
+    /**
+     * What one message says about the visit, on top of what is already known: day, time, party size, table.
+     * Reads and stores nothing, so another scenario can ask the same questions and hear the answers the same way.
+     */
+    public TableBookingDraftStorage.Draft read(
+            Optional<TableBookingDraftStorage.Draft> stored,
+            String rawText,
+            BotState currentState,
+            String normalized,
+            UnderstoodInput understood
+    ) {
         Map<String, SlotValue> slots = understood == null || understood.slots() == null ? Map.of() : understood.slots();
 
         Optional<LocalDate> extractedDate = dateFromSlot(slots).or(() -> extractDate(normalized));
@@ -93,9 +108,9 @@ public class TableBookingDraftMerger {
                 .or(() -> stored.map(TableBookingDraftStorage.Draft::seatingPreference))
                 .orElse(null);
 
-        String originalText = mergeOriginalText(stored.map(TableBookingDraftStorage.Draft::originalText).orElse(null), incoming.text());
+        String originalText = mergeOriginalText(stored.map(TableBookingDraftStorage.Draft::originalText).orElse(null), rawText);
         Instant startAt = date == null || time == null ? null : date.atTime(time).atZone(BookingTimeProvider.VENUE_ZONE).toInstant();
-        TableBookingDraftStorage.Draft draft = new TableBookingDraftStorage.Draft(
+        return new TableBookingDraftStorage.Draft(
                 defaultVenueCode,
                 startAt,
                 startAt == null ? null : startAt.plusSeconds(2 * 60 * 60),
@@ -108,8 +123,6 @@ public class TableBookingDraftMerger {
                 seatingPreferenceResolved(currentState, normalized, seatingPreference, stored, slots),
                 originalText
         );
-        draftStorage.save(incoming.chatId(), draft);
-        return draft;
     }
 
     private Optional<LocalDate> dateFromSlot(Map<String, SlotValue> slots) {
