@@ -48,6 +48,9 @@ test('dedicated container/database use file secrets, bounded resources and priva
   assert.ok(compose.includes('ASTOR_IDENTITY_POSTGRES_IMAGE:?'));
   assert.ok(compose.includes('ASTOR_IDENTITY_KEYCLOAK_BASE:?'));
   assert.ok(compose.includes('POSTGRES_PASSWORD_FILE:'));
+  assert.ok(compose.includes('POSTGRES_USER: astor_identity_admin'));
+  assert.ok(compose.includes('KC_DB_USERNAME: astor_keycloak'));
+  assert.ok(!compose.match(/secrets: \[identity-db-password, identity-bootstrap-password, identity-postgres-admin-password\]/));
   assert.ok(compose.includes('internal: true'));
   assert.ok(compose.includes('cap_drop: [ALL]'));
   assert.ok(!compose.includes('vedal') && !compose.includes('astor_postgres_test'));
@@ -72,4 +75,5 @@ test('entrypoint preserves signals; optimized image build has no runtime credent
   assert.ok(file('Dockerfile').includes('KC_HTTP_MANAGEMENT_RELATIVE_PATH=/'));
   assert.ok(!file('Dockerfile').includes('start-dev'));
   assert.ok(!file('Dockerfile').includes('KC_DB_PASSWORD='));
+  assert.ok(file('initialize-database.py').includes('NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION'));
 });

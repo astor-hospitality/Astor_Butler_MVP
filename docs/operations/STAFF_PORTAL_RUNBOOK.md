@@ -57,6 +57,19 @@ files имеют uid1000/mode0400 для readonly mount только в новы
 PostgreSQL использует `POSTGRES_PASSWORD_FILE`, Keycloak entrypoint читает
 файлы внутри контейнера; Compose/images/git не содержат пароль.
 
+Keycloak подключается ролью `astor_keycloak`: owner только своей БД/schema,
+**NOSUPERUSER/NOCREATEDB/NOCREATEROLE/NOREPLICATION**. Bootstrap PostgreSQL role
+`astor_identity_admin` отдельная, её password file root0400 не монтируется в
+Keycloak. `initialize-database.py` создаёт отсутствующие роли и ограничивает
+application role в **новом identity PostgreSQL**, не трогая данные монолита;
+существующие role passwords не сбрасывает. Чистый старт: prepare-runtime →
+Compose up только postgres → operator initialize-database → up keycloak.
+Не поднимать Keycloak до создания app role. В этой новой инсталляции переход
+с первоначальной bootstrap роли выполняется до выдачи доступа сотрудникам:
+её LOGIN отключается, tables/sequences только identity public-schema передаются
+новой app role. Bootstrap PostgreSQL роль не может потерять SUPERUSER; её не
+используем как app. Не делать широкий REASSIGN OWNED для shared template DB.
+
 `images.env` (0600, только digests, вне git) фиксирует base images:
 
 - Keycloak: `quay.io/keycloak/keycloak@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc`;

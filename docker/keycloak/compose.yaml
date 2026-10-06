@@ -6,14 +6,14 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: astor_identity
-      POSTGRES_USER: astor_identity
-      POSTGRES_PASSWORD_FILE: /run/secrets/identity-db-password
+      POSTGRES_USER: astor_identity_admin
+      POSTGRES_PASSWORD_FILE: /run/secrets/identity-postgres-admin-password
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
-    secrets: [identity-db-password]
+    secrets: [identity-postgres-admin-password]
     volumes: [identity-postgres:/var/lib/postgresql/data]
     networks: [database]
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U astor_identity -d astor_identity"]
+      test: [CMD-SHELL, "pg_isready -U astor_identity_admin -d astor_identity"]
       interval: 10s
       timeout: 3s
       retries: 12
@@ -36,7 +36,7 @@ services:
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/astor_identity
-      KC_DB_USERNAME: astor_identity
+      KC_DB_USERNAME: astor_keycloak
       KC_DB_POOL_INITIAL_SIZE: "2"
       KC_DB_POOL_MIN_SIZE: "2"
       KC_DB_POOL_MAX_SIZE: "10"
@@ -81,6 +81,8 @@ networks:
 volumes:
   identity-postgres: {}
 secrets:
+  identity-postgres-admin-password:
+    file: /opt/astor-identity/runtime/postgres-admin-password
   identity-db-password:
     file: /opt/astor-identity/runtime/db-password
   identity-bootstrap-password:

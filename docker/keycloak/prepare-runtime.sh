@@ -5,14 +5,16 @@ set -euo pipefail
 [[ $(pwd -P) == /opt/astor-identity/source ]] || { echo 'Unexpected source directory'; exit 1; }
 umask 077
 install -d -m 0700 /opt/astor-identity/runtime
-for file in db-password bootstrap-password; do
+for file in db-password bootstrap-password postgres-admin-password; do
   path="/opt/astor-identity/runtime/$file"
+  owner=1000
+  [[ "$file" != postgres-admin-password ]] || owner=0
   if [[ ! -e "$path" ]]; then
     openssl rand -hex 32 > "$path"
-    chown 1000:0 "$path"
+    chown "$owner":0 "$path"
     chmod 0400 "$path"
   fi
-  [[ -s "$path" && $(stat -c %a "$path") == 400 && $(stat -c %u "$path") == 1000 ]] \
+  [[ -s "$path" && $(stat -c %a "$path") == 400 && $(stat -c %u "$path") == "$owner" ]] \
     || { echo "Invalid runtime file permissions: $file"; exit 1; }
 done
 runtime=/opt/astor-identity/runtime/images.env
