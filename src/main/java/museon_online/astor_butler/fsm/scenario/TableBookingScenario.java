@@ -36,6 +36,8 @@ public class TableBookingScenario implements FsmScenario {
     private static final DateTimeFormatter DATE_BUTTON = DateTimeFormatter.ofPattern("dd.MM");
     private static final DateTimeFormatter TIME_BUTTON = DateTimeFormatter.ofPattern("HH:mm");
     private static final Locale RU = Locale.forLanguageTag("ru-RU");
+    private static final java.util.Set<String> LEAVE_WORDS = java.util.Set.of(
+            "отмена", "стоп", "главное меню", "выйти", "передумал", "передумала", "не надо", "не нужно");
 
     private final FSMStorage fsmStorage;
     private final TableBookingDraftStorage draftStorage;
@@ -79,6 +81,9 @@ public class TableBookingScenario implements FsmScenario {
     public OutgoingMessage handle(IncomingMessage incoming, BotState currentState, String text, UnderstoodInput understood) {
         String normalized = normalize(text);
         BotState state = currentState == null ? BotState.UNKNOWN : currentState.canonical();
+        if (isTableBookingState(state) && wantsToLeave(normalized)) {
+            return leave(incoming);
+        }
         TableBookingDraftStorage.Draft draft = draftMerger.merge(incoming, state, normalized, understood);
 
         Optional<TableBookingStepRegistry.Step> nextStep = stepRegistry.nextMissingStep(draft);
@@ -86,6 +91,28 @@ public class TableBookingScenario implements FsmScenario {
             return askForStep(incoming, state, draft, nextStep.get(), normalized);
         }
         return createReservation(incoming, draft);
+    }
+
+    /** The guest changed their mind in the middle of the booking: nothing is kept, nothing is created. */
+    private OutgoingMessage leave(IncomingMessage incoming) {
+        draftStorage.clear(incoming.chatId());
+        fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+        return message(
+                incoming,
+                "Хорошо, бронь не оформляю. Главное меню оставил под рукой.",
+                BotState.READY_FOR_DIALOG,
+                "TABLE_BOOKING_CANCELLED_BY_GUEST",
+                "RETURN_MAIN_MENU"
+        );
+    }
+
+    /**
+     * Only a whole reply counts, so "на двоих, без отмены" stays an answer. "Нет" is not here: that is how a guest
+     * declines a seating wish.
+     */
+    private boolean wantsToLeave(String normalized) {
+        String words = normalized.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
+        return LEAVE_WORDS.contains(words) || words.startsWith("отменить") || words.startsWith("отмени ");
     }
 
     private OutgoingMessage askForStep(
