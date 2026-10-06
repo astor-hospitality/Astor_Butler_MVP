@@ -1,0 +1,40 @@
+{
+  "venueCode": "AERIS",
+  "venueName": "AERIS",
+  "confirmedByVenue": false,
+  "days": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+  "from": "12:00",
+  "to": "16:00",
+  "seatingMinutes": 90,
+  "included": "",
+  "courses": [
+    {"code": "SALAD", "title": "Салаты", "dishes": [
+      {"code": "NICOISE", "title": "Нисуаз", "priceRub": 290, "portion": "170 г"},
+      {"code": "CAESAR_CHICKEN", "title": "Цезарь с цыплёнком", "priceRub": 290, "portion": "130 г"}
+    ]},
+    {"code": "SOUP", "title": "Суп", "dishes": [
+      {"code": "BORSCHT", "title": "Борщ со сметаной", "priceRub": 270, "portion": "320 г"},
+      {"code": "CHICKEN_BROTH", "title": "Куриный бульон с домашней лапшой", "priceRub": 230, "portion": "300 г"}
+    ]},
+    {"code": "MAIN", "title": "Горячее", "dishes": [
+      {"code": "COD_TARTAR", "title": "Треска с соусом тартар", "priceRub": 520, "portion": "150 г"},
+      {"code": "CHICKEN_CUTLETS", "title": "Куриные котлеты с картофельным пюре", "priceRub": 370, "portion": "200 г"},
+      {"code": "STROGANOFF", "title": "Бефстроганов с картофельным пюре", "priceRub": 570, "portion": "250 г"}
+    ]},
+    {"code": "DESSERT", "title": "Десерты", "dishes": [
+      {"code": "MEDOVIK", "title": "Медовик", "priceRub": 220, "portion": "90 г"}
+    ]},
+    {"code": "DRINKS", "title": "Напитки", "dishes": [
+      {"code": "TEA_ASSAM", "title": "Чай ассам", "priceRub": 210, "portion": "500 мл"},
+      {"code": "TEA_SENCHA", "title": "Чай сенча", "priceRub": 210, "portion": "500 мл"},
+      {"code": "ESPRESSO", "title": "Эспрессо / лунго", "priceRub": 160, "portion": null},
+      {"code": "CAPPUCCINO", "title": "Капучино", "priceRub": 220, "portion": null},
+      {"code": "LEMONADE_RASPBERRY", "title": "Лимонад малина-бузина", "priceRub": 200, "portion": null},
+      {"code": "LEMONADE_BASIL", "title": "Лимонад базилик-жасмин", "priceRub": 200, "portion": null},
+      {"code": "LEMONADE_PASSION_FRUIT", "title": "Лимонад маракуйя-ананас", "priceRub": 200, "portion": null},
+      {"code": "CRANBERRY_MORS", "title": "Домашний клюквенный морс", "priceRub": 140, "portion": "200 мл"},
+      {"code": "WINE_OF_THE_DAY", "title": "Вино дня", "priceRub": 350, "portion": "125 мл"}
+    ]}
+  ],
+  "sets": []
+}

@@ -151,6 +151,9 @@
     const actions = el("div", "venue-actions");
     const booking = venue.connected ? httpsUrl(venue.bookingUrl) : null;
     if (booking) actions.append(link("Забронировать", booking, "btn btn-primary"));
+    // Opens the venue's bot with a start parameter: the bot begins its business lunch dialogue for this venue.
+    const lunch = venue.connected ? httpsUrl(venue.lunchUrl) : null;
+    if (lunch) actions.append(link("Бизнес-ланч", lunch, "btn btn-quiet"));
     const site = httpsUrl(venue.siteUrl);
     if (site) actions.append(link("Сайт", site, "btn btn-quiet"));
     if (actions.childElementCount) body.append(actions);
@@ -175,6 +178,8 @@
     const booking = venue.connected ? httpsUrl(venue.bookingUrl) : null;
     if (booking) links.append(link("Забронировать", booking));
     else links.append(el("span", "rank-state", "Бронь через Astor пока недоступна"));
+    const lunch = venue.connected ? httpsUrl(venue.lunchUrl) : null;
+    if (lunch) links.append(link("Бизнес-ланч", lunch));
     info.append(links);
 
     item.append(el("span", "rank-pos", String(position)), info, ratingBlock(entry, "rank-score", true));

@@ -6,6 +6,9 @@ import museon_online.astor_butler.domain.booking.EventBookingStatus;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
+import museon_online.astor_butler.domain.lunch.BusinessLunchFixtures;
+import museon_online.astor_butler.domain.lunch.BusinessLunchService;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
 import museon_online.astor_butler.fsm.understanding.GuestInputUnderstandingService;
@@ -20,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -56,15 +60,104 @@ class ChangeCancelScenarioTest {
     @BeforeEach
     void setUp() {
         lenient().when(changeDraftStorage.find(anyLong())).thenReturn(Optional.empty());
-        scenario = new ChangeCancelScenario(
+        scenario = scenarioAt(new BookingTimeProvider());
+    }
+
+    private ChangeCancelScenario scenarioAt(BookingTimeProvider clock) {
+        ChangeCancelScenario created = new ChangeCancelScenario(
                 fsmStorage,
                 tableReservationService,
                 eventBookingService,
                 changeDraftStorage,
                 new museon_online.astor_butler.fsm.understanding.GuestInputUnderstandingService(),
-                new BookingTimeProvider()
+                clock,
+                new BusinessLunchService(tableReservationService, List.of(), clock, new BusinessLunchCatalog(List.of(BusinessLunchFixtures.fullMenu())))
         );
-        ReflectionTestUtils.setField(scenario, "adminChatId", "100500");
+        ReflectionTestUtils.setField(created, "adminChatId", "100500");
+        return created;
+    }
+
+    /** A business lunch on Thursday 18.06 at 13:00, seen on Monday 15.06 at 14:00 in Yekaterinburg. Lunch is on weekdays, 12:00 to 16:00. */
+    private ChangeCancelScenario onMondayWithALunchOnThursday(String pendingAction) {
+        lenient().when(changeDraftStorage.find(1773317437L))
+                .thenReturn(Optional.of(new ChangeCancelDraftStorage.Draft(44L, pendingAction)));
+        lenient().when(tableReservationService.getReservation(44L)).thenReturn(lunchReservation(Instant.parse("2026-06-18T08:00:00Z")));
+        return scenarioAt(new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-15T09:00:00Z"), BookingTimeProvider.VENUE_ZONE)));
+    }
+
+    private TableReservationOrder lunchReservation(Instant startAt) {
+        return BusinessLunchFixtures.reservation(44, 1773317437L, startAt, startAt.plusSeconds(90 * 60), 2);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> buttons(OutgoingMessage outgoing) {
+        return ((List<List<String>>) outgoing.metadata().get("replyKeyboardRows")).stream().flatMap(List::stream).toList();
+    }
+
+    @Test
+    void aBusinessLunchIsNotMovedOutOfLunchHours() {
+        ChangeCancelScenario lunchAware = onMondayWithALunchOnThursday("CHANGE_TIME");
+        IncomingMessage incoming = telegram("19:00");
+
+        OutgoingMessage outgoing = lunchAware.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+        assertThat(outgoing.nextState()).isEqualTo(BotState.TABLE_BOOKING_CHANGE_REQUESTED.name());
+        assertThat(outgoing.text()).isEqualTo("Бизнес-ланч подают с 12:00 до 16:00. Выберите, пожалуйста, время в этом промежутке.");
+        assertThat(buttons(outgoing)).containsExactly("12:00", "12:30", "13:00", "13:30", "14:00", "14:30", "15:00", "15:30", "↩️ Отменить действие");
+    }
+
+    @Test
+    void aMovedBusinessLunchKeepsItsOwnLength() {
+        ChangeCancelScenario lunchAware = onMondayWithALunchOnThursday("CHANGE_TIME");
+        IncomingMessage incoming = telegram("14:30");
+        when(tableReservationService.changeByGuest(eq(44L), any())).thenReturn(lunchReservation(Instant.parse("2026-06-18T09:30:00Z")));
+
+        OutgoingMessage outgoing = lunchAware.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        var captor = forClass(museon_online.astor_butler.domain.booking.TableReservationChangeCommand.class);
+        verify(tableReservationService).changeByGuest(eq(44L), captor.capture());
+        assertThat(captor.getValue().requestedStartAt()).isEqualTo(Instant.parse("2026-06-18T09:30:00Z"));
+        // Ninety minutes, as the lunch offer says, not the two hours of an ordinary table.
+        assertThat(captor.getValue().requestedEndAt()).isEqualTo(Instant.parse("2026-06-18T11:00:00Z"));
+        assertThat(captor.getValue().seatingPreference()).isEqualTo("Бизнес-ланч");
+        assertThat(outgoing.text()).contains("повторное подтверждение", "14:30 - 16:00");
+    }
+
+    @Test
+    void aBusinessLunchIsNotMovedToADayWithoutLunch() {
+        ChangeCancelScenario lunchAware = onMondayWithALunchOnThursday("CHANGE_DATE");
+        IncomingMessage incoming = telegram("в субботу");
+
+        OutgoingMessage outgoing = lunchAware.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+        assertThat(outgoing.text()).isEqualTo("Бизнес-ланч в AERIS проходит по будням. Выберите, пожалуйста, один из этих дней.");
+        assertThat(buttons(outgoing)).containsExactly("Сегодня 15.06", "Завтра 16.06", "Ср 17.06", "Чт 18.06", "Пт 19.06", "↩️ Отменить действие");
+    }
+
+    @Test
+    void anAnswerThatIsNotATimeIsAskedAgainWithLunchButtons() {
+        ChangeCancelScenario lunchAware = onMondayWithALunchOnThursday("CHANGE_TIME");
+        IncomingMessage incoming = telegram("попозже");
+
+        OutgoingMessage outgoing = lunchAware.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+        assertThat(outgoing.text()).isEqualTo("Не смог понять ответ. Выберите новое время кнопкой или напишите, например, 13:30.");
+        assertThat(buttons(outgoing)).contains("12:00", "15:30").doesNotContain("19:00");
+    }
+
+    @Test
+    void theQuestionAboutMovingABusinessLunchNamesItsHours() {
+        ChangeCancelScenario lunchAware = onMondayWithALunchOnThursday("");
+        IncomingMessage incoming = telegram("🕰 Перенести время");
+
+        OutgoingMessage outgoing = lunchAware.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        assertThat(outgoing.text()).isEqualTo("Понял, переносим время бизнес-ланча. Его подают с 12:00 до 16:00. Выберите новое время кнопкой или напишите, например, 13:30.");
+        assertThat(buttons(outgoing)).contains("12:00", "15:30").doesNotContain("19:00", "23:00");
+        verify(changeDraftStorage).save(1773317437L, new ChangeCancelDraftStorage.Draft(44L, "CHANGE_TIME"));
     }
 
     @Test

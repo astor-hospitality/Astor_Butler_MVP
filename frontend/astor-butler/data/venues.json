@@ -11,6 +11,7 @@
       "address": "ул. Мамина-Сибиряка, 58",
       "connected": true,
       "bookingUrl": "https://t.me/astor_butler_bot",
+      "lunchUrl": "https://t.me/astor_butler_bot?start=lunch_aeris",
       "siteUrl": "https://aeris.bar/",
       "photos": [
         { "src": "https://static.tildacdn.com/tild3762-6431-4466-a566-626638653832/Frame_42.jpg", "alt": "Барная стойка и зал AERIS" },
