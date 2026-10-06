@@ -74,8 +74,10 @@ public class BusinessLunchService {
     }
 
     /**
-     * @param alreadyPlaced the guest already has a request for this very time, so no second table was held
-     * @param external what the venue's own system answered; {@code MANUAL_ENTRY} when none is switched on
+     * @param reservation the table held for this lunch; when {@code alreadyPlaced}, the guest's earlier request that is in its way
+     * @param alreadyPlaced the guest already holds a request at this venue for a time that crosses the lunch, so no second table was held
+     * @param order what was ordered; null when nothing was placed
+     * @param external what the venue's own system answered; {@code MANUAL_ENTRY} when none is switched on; null when nothing was placed
      */
     public record Placement(
             TableReservationOrder reservation,
@@ -143,11 +145,11 @@ public class BusinessLunchService {
             throw new IllegalArgumentException("Business lunch order has no dishes");
         }
 
-        Optional<TableReservationOrder> existing = tableReservationService.listActiveReservationsByChatId(request.chatId()).stream()
-                .filter(order -> startAt.equals(order.requestedStartAt()))
-                .findFirst();
-        if (existing.isPresent()) {
-            return new Placement(existing.get(), true, order(request, set, dishes, existing.get(), startAt, endAt), null);
+        // The same rule as for an ordinary table: a request of this guest that crosses the lunch is in its way,
+        // whether it starts at the same minute or a quarter of an hour later.
+        Optional<TableReservationOrder> inTheWay = tableReservationService.findOverlappingReservation(request.chatId(), offer.venueCode(), startAt, endAt);
+        if (inTheWay.isPresent()) {
+            return new Placement(inTheWay.get(), true, null, null);
         }
 
         Optional<ExternalLunchOrderProvider> provider = externalProviders.stream()

@@ -36,6 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -430,15 +431,32 @@ class BusinessLunchScenarioTest {
 
     @Test
     void theSameLunchTwiceIsNotPlacedTwice() {
-        when(tableReservationService.listActiveReservationsByChatId(CHAT))
-                .thenReturn(List.of(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2)));
+        when(tableReservationService.findOverlappingReservation(eq(CHAT), eq("SIMPLE"), eq(TUESDAY_13_00), any()))
+                .thenReturn(Optional.of(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2)));
         say("/start lunch_simple_s1_p2_d20261006_t1300");
 
         OutgoingMessage repeated = say("да");
 
         assertThat(repeated.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
-        assertThat(repeated.text()).contains("У вас уже есть заявка #77 на это время, вторую не создаю.");
+        assertThat(repeated.text()).contains("У вас уже есть заявка #77 на 06.10 в 13:00.", "вторую не создаю");
         assertThat(repeated.actions()).contains("LUNCH_ORDER_ALREADY_PLACED");
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aTableTheGuestHoldsForACrossingTimeIsNamedInsteadOfASecondOne() {
+        // An ordinary table from 13:15: the lunch asked for 13:00 would sit on top of it.
+        Instant quarterPast = TUESDAY_13_00.plusSeconds(15 * 60);
+        when(tableReservationService.findOverlappingReservation(eq(CHAT), eq("SIMPLE"), eq(TUESDAY_13_00), any()))
+                .thenReturn(Optional.of(BusinessLunchFixtures.reservation(51, CHAT, quarterPast, quarterPast.plusSeconds(5400), 2)));
+        say("/start lunch_simple_s1_p2_d20261006_t1300");
+
+        OutgoingMessage reply = say("да");
+
+        assertThat(reply.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(reply.text()).contains("У вас уже есть заявка #51 на 06.10 в 13:15.", "пересекается с этим ланчем", "вторую не создаю", "«Изменить / отменить»");
+        assertThat(reply.actions()).contains("LUNCH_ORDER_ALREADY_PLACED");
+        assertThat(drafts).doesNotContainKey(CHAT);
         verify(tableReservationService, never()).createReservation(any());
     }
 

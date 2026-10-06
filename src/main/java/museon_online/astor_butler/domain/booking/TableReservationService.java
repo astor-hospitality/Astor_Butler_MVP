@@ -8,8 +8,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -48,6 +50,27 @@ public class TableReservationService {
             throw badRequest("chatId is required");
         }
         return repository.findActiveOrdersByChatId(chatId);
+    }
+
+    /**
+     * The guest's own request at this venue whose time crosses the given window; the earliest one when there are several.
+     * One guest cannot sit at two tables at once, so whatever creates a reservation asks here first.
+     * Only a request that still holds a table counts: a rejected, cancelled or expired one is not in the way.
+     * Touching is not crossing: a visit that ends at 13:00 leaves 13:00 free. An unfinished window crosses nothing.
+     */
+    public Optional<TableReservationOrder> findOverlappingReservation(Long chatId, String venueCode, Instant startAt, Instant endAt) {
+        if (chatId == null) {
+            throw badRequest("chatId is required");
+        }
+        if (startAt == null || endAt == null) {
+            return Optional.empty();
+        }
+        return repository.findActiveOrdersByChatId(chatId, venueCode).stream()
+                .filter(order -> order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
+                        || order.status() == TableReservationStatus.CONFIRMED)
+                .filter(order -> order.requestedStartAt() != null && order.requestedEndAt() != null)
+                .filter(order -> order.requestedStartAt().isBefore(endAt) && startAt.isBefore(order.requestedEndAt()))
+                .min(Comparator.comparing(TableReservationOrder::requestedStartAt));
     }
 
     @Transactional

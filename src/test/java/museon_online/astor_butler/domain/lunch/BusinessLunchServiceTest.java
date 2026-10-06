@@ -1,7 +1,12 @@
 package museon_online.astor_butler.domain.lunch;
 
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
+import museon_online.astor_butler.domain.booking.TableReservationNotificationService;
+import museon_online.astor_butler.domain.booking.TableReservationOrder;
+import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.booking.TableReservationService;
+import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.booking.VenueTable;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
 import museon_online.astor_butler.fsm.scenario.BookingTimeProvider;
 import org.junit.jupiter.api.Test;
@@ -14,14 +19,18 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -155,15 +164,66 @@ class BusinessLunchServiceTest {
     void theSameGuestAndTimeTwiceHoldsOneTable() {
         FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-501", ""));
         BusinessLunchService service = service(List.of(saby));
-        when(tableReservationService.listActiveReservationsByChatId(CHAT))
-                .thenReturn(List.of(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2)));
+        // The lunch asks about its own venue and its own hour and a half, 13:00 to 14:30.
+        when(tableReservationService.findOverlappingReservation(CHAT, "AERIS", TUESDAY_13_00, TUESDAY_13_00.plusSeconds(90 * 60)))
+                .thenReturn(Optional.of(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2)));
 
         BusinessLunchService.Placement placement = service.place(request("CONCIERGE", null));
 
         assertThat(placement.alreadyPlaced()).isTrue();
         assertThat(placement.reservation().id()).isEqualTo(77L);
+        assertThat(placement.order()).isNull();
         assertThat(saby.order).isNull();
         verify(tableReservationService, never()).createReservation(any());
+    }
+
+    /** Tuesday's lunch runs from 13:00 to 14:30. Here the lunch works over the real reservation rules, and only the database is stood in for. */
+    @Test
+    void aLunchDoesNotSitOnTopOfARequestTheGuestAlreadyHolds() {
+        TableReservationRepository repository = mock(TableReservationRepository.class);
+        BusinessLunchService service = overTheRealReservationRules(repository);
+
+        // In minutes from 13:00: a quarter of an hour later, an hour earlier, the same time, inside the lunch, around it.
+        for (int[] held : new int[][]{{15, 105}, {-60, 30}, {0, 90}, {30, 60}, {-30, 150}}) {
+            when(repository.findActiveOrdersByChatId(CHAT, "AERIS")).thenReturn(List.of(
+                    BusinessLunchFixtures.reservation(51, CHAT, TUESDAY_13_00.plusSeconds(held[0] * 60L), TUESDAY_13_00.plusSeconds(held[1] * 60L), 2)));
+
+            BusinessLunchService.Placement placement = service.place(request("DIRECT", null));
+
+            assertThat(placement.alreadyPlaced()).as("held from %+d to %+d minutes", held[0], held[1]).isTrue();
+            assertThat(placement.reservation().id()).isEqualTo(51L);
+        }
+        verify(repository, never()).createAwaitingManagerOrder(any(), any());
+    }
+
+    @Test
+    void aRequestThatOnlyTouchesTheLunchOrNoLongerHoldsATableIsNotInItsWay() {
+        TableReservationRepository repository = mock(TableReservationRepository.class);
+        BusinessLunchService service = overTheRealReservationRules(repository);
+        when(repository.findAvailableTables(any(), any(), any(), anyInt(), any())).thenReturn(List.of(new VenueTable(
+                4L, "AERIS", "4", "Table 4", "MAIN_HALL", 1, 4, null, true, true, 2, "AERIS PLAN", 4, TUESDAY_13_00, TUESDAY_13_00)));
+        when(repository.createAwaitingManagerOrder(any(), any()))
+                .thenReturn(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2));
+        Instant quarterPast = TUESDAY_13_00.plusSeconds(15 * 60);
+        List<TableReservationOrder> notInTheWay = List.of(
+                // Until 13:00 sharp, from 14:30 sharp, the same hours a day later.
+                BusinessLunchFixtures.reservation(51, CHAT, TUESDAY_13_00.minusSeconds(120 * 60), TUESDAY_13_00, 2),
+                BusinessLunchFixtures.reservation(52, CHAT, TUESDAY_13_00.plusSeconds(90 * 60), TUESDAY_13_00.plusSeconds(210 * 60), 2),
+                BusinessLunchFixtures.reservation(53, CHAT, TUESDAY_13_00.plusSeconds(24 * 3600), TUESDAY_13_00.plusSeconds(24 * 3600 + 5400), 2),
+                // A quarter past one would cross the lunch, but these no longer hold a table.
+                BusinessLunchFixtures.reservation(54, CHAT, quarterPast, quarterPast.plusSeconds(5400), 2, TableReservationStatus.CANCELLED),
+                BusinessLunchFixtures.reservation(55, CHAT, quarterPast, quarterPast.plusSeconds(5400), 2, TableReservationStatus.REJECTED),
+                BusinessLunchFixtures.reservation(56, CHAT, quarterPast, quarterPast.plusSeconds(5400), 2, TableReservationStatus.EXPIRED));
+
+        for (TableReservationOrder held : notInTheWay) {
+            when(repository.findActiveOrdersByChatId(CHAT, "AERIS")).thenReturn(List.of(held));
+
+            BusinessLunchService.Placement placement = service.place(request("DIRECT", null));
+
+            assertThat(placement.alreadyPlaced()).as("request #%s", held.id()).isFalse();
+            assertThat(placement.reservation().id()).isEqualTo(77L);
+        }
+        verify(repository, times(notInTheWay.size())).createAwaitingManagerOrder(any(), any());
     }
 
     @Test
@@ -204,6 +264,11 @@ class BusinessLunchServiceTest {
     private BusinessLunchService.Request request(String source, String comment) {
         return new BusinessLunchService.Request(CHAT, CHAT, offer, "STARTER_MAIN", List.of("BROTH", "PASTA"), 2, TODAY.plusDays(1), LocalTime.of(13, 0),
                 "Наталья", null, comment, source, "CONCIERGE".equals(source) ? "7f3a" : null);
+    }
+
+    private BusinessLunchService overTheRealReservationRules(TableReservationRepository repository) {
+        TableReservationService reservations = new TableReservationService(repository, mock(TableReservationNotificationService.class));
+        return new BusinessLunchService(reservations, List.of(), timeProvider, new BusinessLunchCatalog(List.of(offer)));
     }
 
     private BusinessLunchService service(List<ExternalLunchOrderProvider> providers) {

@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -421,9 +422,12 @@ public class BusinessLunchScenario implements FsmScenario {
         fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
         Long orderId = placement.reservation().id();
         if (placement.alreadyPlaced()) {
+            // The request in the way may be this very lunch or an ordinary table a quarter of an hour apart, so its own time is named.
+            ZonedDateTime heldAt = placement.reservation().requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE);
             return OutgoingMessage.of(
                     incoming,
-                    "У вас уже есть заявка #%s на это время, вторую не создаю. Изменить или отменить ее можно кнопкой «Изменить / отменить».".formatted(orderId),
+                    "У вас уже есть заявка #%s на %s в %s. По времени она пересекается с этим ланчем, поэтому вторую не создаю. Изменить или отменить ее можно кнопкой «Изменить / отменить»."
+                            .formatted(orderId, heldAt.format(DAY_BUTTON), heldAt.format(TIME_TEXT)),
                     BotState.READY_FOR_DIALOG.name(),
                     false,
                     false,

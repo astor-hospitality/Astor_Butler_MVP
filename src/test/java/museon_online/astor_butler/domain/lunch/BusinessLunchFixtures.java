@@ -88,6 +88,10 @@ public final class BusinessLunchFixtures {
     }
 
     public static TableReservationOrder reservation(long id, long chatId, Instant startAt, Instant endAt, int guests) {
+        return reservation(id, chatId, startAt, endAt, guests, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+    }
+
+    public static TableReservationOrder reservation(long id, long chatId, Instant startAt, Instant endAt, int guests, TableReservationStatus status) {
         return new TableReservationOrder(
                 id,
                 chatId,
@@ -98,7 +102,7 @@ public final class BusinessLunchFixtures {
                 "Стол 4 · у окна",
                 null,
                 BusinessLunchService.SEATING_LABEL,
-                TableReservationStatus.AWAITING_MANAGER_CONFIRMATION,
+                status,
                 "TELEGRAM",
                 startAt,
                 endAt,
