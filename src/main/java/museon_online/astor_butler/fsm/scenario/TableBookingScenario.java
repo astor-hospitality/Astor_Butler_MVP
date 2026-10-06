@@ -6,6 +6,7 @@ import museon_online.astor_butler.api.common.ApiException;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
+import museon_online.astor_butler.domain.booking.VenueOpeningHours;
 import museon_online.astor_butler.domain.media.AerisMediaCatalog;
 import museon_online.astor_butler.domain.media.MediaAsset;
 import museon_online.astor_butler.fsm.core.BotState;
@@ -47,6 +48,7 @@ public class TableBookingScenario implements FsmScenario {
     private final TableBookingStepRegistry stepRegistry;
     private final BookingPhraseService phraseService;
     private final BookingTimeProvider timeProvider;
+    private final VenueOpeningHours openingHours;
 
     @Value("${telegram.booking.plan-pdf-asset-code:AERIS_FLOOR_PLAN}")
     private String planPdfAssetCode;
@@ -86,11 +88,56 @@ public class TableBookingScenario implements FsmScenario {
         }
         TableBookingDraftStorage.Draft draft = draftMerger.merge(incoming, state, normalized, understood);
 
+        if (draft.requestedDate() != null && draft.requestedTime() != null && !openingHours.isOpen(draft.requestedDate(), draft.requestedTime())) {
+            return askForAnOpenHour(incoming, state, draft);
+        }
         Optional<TableBookingStepRegistry.Step> nextStep = stepRegistry.nextMissingStep(draft);
         if (nextStep.isPresent()) {
             return askForStep(incoming, state, draft, nextStep.get(), normalized);
         }
         return createReservation(incoming, draft);
+    }
+
+    /**
+     * The guest named a time when the venue is closed. The time is dropped, the guest is told the hours of that day,
+     * and the booking goes on with whatever is still missing, which now includes the time.
+     */
+    private OutgoingMessage askForAnOpenHour(IncomingMessage incoming, BotState state, TableBookingDraftStorage.Draft draft) {
+        TableBookingDraftStorage.Draft withoutTime = new TableBookingDraftStorage.Draft(
+                draft.venueCode(),
+                null,
+                null,
+                draft.requestedDate(),
+                null,
+                draft.partySize(),
+                draft.tableCode(),
+                draft.preferredZone(),
+                draft.seatingPreference(),
+                draft.seatingPreferenceResolved(),
+                draft.originalText()
+        );
+        draftStorage.save(incoming.chatId(), withoutTime);
+        String hours = openingHours.describe(draft.requestedDate())
+                .map(open -> "В это время AERIS закрыт. В этот день ждем гостей " + open + ".")
+                .orElse("В это время AERIS закрыт.");
+        TableBookingStepRegistry.Step next = stepRegistry.nextMissingStep(withoutTime).orElseThrow();
+        // An empty guest text keeps "не хочу гадать со временем" out: the time was understood, the venue is just closed then.
+        OutgoingMessage question = askForStep(incoming, state, withoutTime, next, "");
+        return new OutgoingMessage(
+                question.channel(),
+                question.externalUserId(),
+                question.chatId(),
+                hours + "\n\n" + question.text(),
+                question.nextState(),
+                question.html(),
+                question.requestContact(),
+                question.removeKeyboard(),
+                question.fallback(),
+                question.adminAlert(),
+                java.util.stream.Stream.concat(java.util.stream.Stream.of("TIME_OUTSIDE_OPENING_HOURS"), question.actions().stream()).toList(),
+                question.metadata(),
+                question.createdAt()
+        );
     }
 
     /** The guest changed their mind in the middle of the booking: nothing is kept, nothing is created. */
@@ -246,10 +293,17 @@ public class TableBookingScenario implements FsmScenario {
         if (requestedDate != null && requestedDate.isAfter(timeProvider.today())) {
             start = LocalTime.of(12, 0);
         }
+        LocalDate day = requestedDate == null ? timeProvider.today() : requestedDate;
         List<String> labels = new ArrayList<>();
         LocalTime time = start;
         for (int i = 0; i < 12; i++) {
-            labels.add(time.format(TIME_BUTTON));
+            // Only hours of that same day when the venue is open: a button past midnight would mean the morning already gone.
+            if (openingHours.isOpen(day, time)) {
+                labels.add(time.format(TIME_BUTTON));
+            }
+            if (time.plusHours(1).isBefore(time)) {
+                break;
+            }
             time = time.plusHours(1);
         }
         return rows(labels, 4);

@@ -6,6 +6,7 @@ import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.booking.VenueOpeningHours;
 import museon_online.astor_butler.domain.media.AerisMediaCatalog;
 import museon_online.astor_butler.domain.media.MediaAsset;
 import museon_online.astor_butler.fsm.understanding.InputIntent;
@@ -75,7 +76,8 @@ class TableBookingScenarioTest {
                 draftMerger,
                 new TableBookingStepRegistry(),
                 new BookingPhraseService(),
-                timeProvider
+                timeProvider,
+                new VenueOpeningHours()
         );
         lenient().when(mediaCatalog.floorPlan()).thenReturn(new MediaAsset(
                 "AERIS_FLOOR_PLAN",
@@ -597,6 +599,73 @@ class TableBookingScenarioTest {
 
         verify(tableReservationService).createReservation(any());
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
+    }
+
+    /** A table and two guests are chosen for Saturday 27.06; AERIS opens at 14:00 on Saturdays and closes at 04:00. */
+    private AtomicReference<TableBookingDraftStorage.Draft> saturdayWithoutATime() {
+        AtomicReference<TableBookingDraftStorage.Draft> stored = new AtomicReference<>(new TableBookingDraftStorage.Draft(
+                "AERIS", null, null, LocalDate.of(2026, 6, 27), null, 2, "5", null, null, true, "Забронировать стол"));
+        lenient().doAnswer(invocation -> Optional.ofNullable(stored.get())).when(draftStorage).find(eq(1773317437L));
+        lenient().doAnswer(invocation -> {
+            stored.set(invocation.getArgument(1));
+            return null;
+        }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
+        return stored;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> buttons(OutgoingMessage outgoing) {
+        return ((List<List<String>>) outgoing.metadata().get("replyKeyboardRows")).stream().flatMap(List::stream).toList();
+    }
+
+    @Test
+    void aTimeWhenTheVenueIsClosedIsExplainedAndAskedAgain() {
+        AtomicReference<TableBookingDraftStorage.Draft> stored = saturdayWithoutATime();
+
+        OutgoingMessage outgoing = scenario.handle(telegram("13:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "13:00");
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(outgoing.nextState()).isEqualTo(BotState.TABLE_BOOKING_COLLECT_TIME.name());
+        assertThat(outgoing.actions()).contains("TIME_OUTSIDE_OPENING_HOURS", "ASK_TIME");
+        assertThat(outgoing.text()).startsWith("В это время AERIS закрыт. В этот день ждем гостей с 14:00 до 04:00.");
+        assertThat(outgoing.text()).doesNotContain("Не хочу гадать");
+        assertThat(buttons(outgoing)).containsExactly("14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00");
+        assertThat(stored.get().requestedTime()).isNull();
+        assertThat(stored.get().requestedDate()).isEqualTo(LocalDate.of(2026, 6, 27));
+        assertThat(stored.get().partySize()).isEqualTo(2);
+    }
+
+    @Test
+    void anHourAfterMidnightBelongsToTheEveningBefore() {
+        saturdayWithoutATime();
+
+        // One o'clock on Saturday night is still Friday's evening, which runs until 04:00.
+        OutgoingMessage outgoing = scenario.handle(telegram("01:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "01:00");
+
+        assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
+        verify(tableReservationService).createReservation(any());
+    }
+
+    @Test
+    void theMorningAfterClosingIsNotBooked() {
+        saturdayWithoutATime();
+
+        OutgoingMessage outgoing = scenario.handle(telegram("09:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "09:00");
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(outgoing.text()).startsWith("В это время AERIS закрыт.");
+    }
+
+    @Test
+    void aClosedHourNamedAtOnceIsExplainedBeforeTheOtherQuestions() {
+        lenient().when(draftStorage.find(any())).thenReturn(Optional.empty());
+
+        OutgoingMessage outgoing = scenario.handle(telegram("Хочу забронировать столик завтра на 09:00 на двоих"), BotState.READY_FOR_DIALOG,
+                "Хочу забронировать столик завтра на 09:00 на двоих");
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(outgoing.text()).startsWith("В это время AERIS закрыт. В этот день ждем гостей с 14:00 до 04:00.");
+        assertThat(outgoing.actions()).contains("TIME_OUTSIDE_OPENING_HOURS");
     }
 
     @Test
