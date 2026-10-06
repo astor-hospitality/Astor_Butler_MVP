@@ -271,6 +271,12 @@ public class TableBookingScenario implements FsmScenario {
     }
 
     private OutgoingMessage createReservation(IncomingMessage incoming, TableBookingDraftStorage.Draft draft) {
+        Optional<TableReservationOrder> held = tableReservationService.listActiveReservationsByChatId(incoming.chatId()).stream()
+                .filter(order -> overlaps(order, draft))
+                .findFirst();
+        if (held.isPresent()) {
+            return alreadyBooked(incoming, held.get());
+        }
         try {
             TableReservationOrder order = tableReservationService.createReservation(new TableReservationCommand(
                     incoming.chatId(),
@@ -314,6 +320,28 @@ public class TableBookingScenario implements FsmScenario {
                     "ASK_TABLE_SELECTION"
             );
         }
+    }
+
+    /** One guest cannot sit at two tables at once, so a second request for an overlapping time is not created. */
+    private OutgoingMessage alreadyBooked(IncomingMessage incoming, TableReservationOrder held) {
+        draftStorage.clear(incoming.chatId());
+        fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+        java.time.ZonedDateTime startAt = held.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE);
+        return message(
+                incoming,
+                "У вас уже есть заявка #%s на %s в %s, вторую на это же время не создаю. Изменить или отменить ее можно кнопкой «Изменить / отменить». Если нужен еще один стол, напишите «менеджер»."
+                        .formatted(held.id(), startAt.format(DATE_BUTTON), startAt.format(TIME_BUTTON)),
+                BotState.READY_FOR_DIALOG,
+                "RESERVATION_ALREADY_EXISTS",
+                "RETURN_MAIN_MENU"
+        );
+    }
+
+    private boolean overlaps(TableReservationOrder order, TableBookingDraftStorage.Draft draft) {
+        if (order.requestedStartAt() == null || order.requestedEndAt() == null || draft.requestedStartAt() == null || draft.requestedEndAt() == null) {
+            return false;
+        }
+        return order.requestedStartAt().isBefore(draft.requestedEndAt()) && draft.requestedStartAt().isBefore(order.requestedEndAt());
     }
 
     private OutgoingMessage message(IncomingMessage incoming, String text, BotState nextState, String... actions) {
