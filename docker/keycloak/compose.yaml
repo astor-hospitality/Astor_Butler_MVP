@@ -1,0 +1,87 @@
+name: astor-identity
+services:
+  postgres:
+    image: ${ASTOR_IDENTITY_POSTGRES_IMAGE:?Set immutable PostgreSQL image digest}
+    container_name: astor_identity_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: astor_identity
+      POSTGRES_USER: astor_identity
+      POSTGRES_PASSWORD_FILE: /run/secrets/identity-db-password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [identity-db-password]
+    volumes: [identity-postgres:/var/lib/postgresql/data]
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U astor_identity -d astor_identity"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    mem_limit: 512m
+    cpus: 1.0
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  keycloak:
+    image: astor-identity-keycloak:26.8.0
+    build:
+      context: .
+      args:
+        KEYCLOAK_BASE: ${ASTOR_IDENTITY_KEYCLOAK_BASE:?Set immutable Keycloak image digest}
+    container_name: astor_identity_keycloak
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/astor_identity
+      KC_DB_USERNAME: astor_identity
+      KC_DB_POOL_INITIAL_SIZE: "2"
+      KC_DB_POOL_MIN_SIZE: "2"
+      KC_DB_POOL_MAX_SIZE: "10"
+      KC_HOSTNAME: https://c3ag.ru/astor-auth
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_RELATIVE_PATH: /astor-auth
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_BOOTSTRAP_ADMIN_USERNAME: astor-bootstrap
+      KC_CACHE: local
+      KC_HTTP_MANAGEMENT_RELATIVE_PATH: /
+      JAVA_OPTS_KC_HEAP: -Xms128m -Xmx768m
+    secrets: [identity-db-password, identity-bootstrap-password]
+    volumes: [./astor-realm.json:/opt/keycloak/data/import/astor-realm.json:ro]
+    # Operator CLI only; no public Docker port or management listener.
+    ports: ["127.0.0.1:18880:8080"]
+    networks:
+      database: {}
+      proxy: {aliases: [astor-identity-keycloak]}
+      # Docker suppresses port publishing on an all-internal network stack.
+      # An independent operator network makes the loopback-only port usable.
+      operator: {}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000; printf \"GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3; grep -q \"200 OK\" <&3'"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+    mem_limit: 1536m
+    cpus: 1.5
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+networks:
+  database: {internal: true}
+  proxy: {internal: true, name: astor-identity_proxy}
+  operator: {name: astor-identity_operator}
+volumes:
+  identity-postgres: {}
+secrets:
+  identity-db-password:
+    file: /opt/astor-identity/runtime/db-password
+  identity-bootstrap-password:
+    file: /opt/astor-identity/runtime/bootstrap-password

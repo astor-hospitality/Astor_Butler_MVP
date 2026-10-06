@@ -12,6 +12,99 @@
 
 ## 1. Отдельный Keycloak Astor
 
+### Изолированная инфраструктура — 2026-10-06
+
+Исходники deployment: `docker/keycloak/`. Выбран существующий Astor origin
+`https://c3ag.ru` (витрина `/astor/` уже имеет TLS), отдельный prefix
+`/astor-auth`. Новые DNS/покупки/сертификаты не требуются. Образец VEDAL прочитан
+read-only: используем модель issuer/audience/PKCE, **не** его `start-dev`,
+открытый Docker port, БД, realm, пользователей, пароли или theme.
+
+- Production optimized Keycloak **26.8.0**; `KC_HTTP_RELATIVE_PATH` и management
+  path заданы на build stage (в 26.8 это build-time settings).
+- Standalone Compose project `astor-identity`, отдельный PostgreSQL16, volume
+  `astor-identity_identity-postgres`. Это **не** live `astor_postgres_test`.
+- Только identity Keycloak/PG в приватной database network. Отдельная private
+  proxy network `astor-identity_proxy` связывает Keycloak со шлюзом; PG к ней
+  не подключён. VEDAL и монолит к новым сетям не подключаются.
+- Public paths: `/astor-auth/realms/astor/` и `/astor-auth/resources/`. Все прочие
+  `/astor-auth/` (включая admin/master/health/metrics) — 404. Служебный port 18880
+  доступен только на `127.0.0.1` для операторского CLI через существующий SSH.
+  Публичную admin UI не открывать ради onboarding.
+  Keycloak имеет отдельную operator network для Docker loopback publishing;
+  без неё Docker не публикует port при all-internal stack. Другие сервисы
+  к operator network не подключаются; PG остаётся только на internal database.
+- Realm `astor`, public client `astor-staff-ui` с exact callback/logout
+  `https://c3ag.ru/astor/staff/`, origin `https://c3ag.ru`, S256; API audience
+  `astor-api`; token 300s; tenant admin-only. Мобильный client пока не импортируем:
+  физический custom-scheme callback ещё не принят.
+- Никаких реальных staff accounts импортом. Bootstrap master operator
+  `astor-bootstrap` имеет случайный 256-bit пароль только в root-private runtime.
+  После создания постоянного именного оператора с MFA временный bootstrap
+  должен быть удалён оператором; runtime file не отправлять в чат/Telegram.
+
+Issuer: `https://c3ag.ru/astor-auth/realms/astor`.
+JWKS: `https://c3ag.ru/astor-auth/realms/astor/protocol/openid-connect/certs`.
+Эти адреса можно использовать для PR25 **после** отдельного DB/rollout approval;
+само наличие Keycloak не включает staff API и не применяет миграцию монолита.
+
+#### Воспроизводимость и секреты
+
+На VM source живёт в `/opt/astor-identity/source`, runtime —
+`/opt/astor-identity/runtime` (root, 0700). `prepare-runtime.sh` создаёт новые
+пароли через openssl, не печатает их и не перезаписывает существующие. Password
+files имеют uid1000/mode0400 для readonly mount только в новые containers.
+PostgreSQL использует `POSTGRES_PASSWORD_FILE`, Keycloak entrypoint читает
+файлы внутри контейнера; Compose/images/git не содержат пароль.
+
+`images.env` (0600, только digests, вне git) фиксирует base images:
+
+- Keycloak: `quay.io/keycloak/keycloak@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc`;
+- PostgreSQL: `postgres@sha256:42df6755a4110ea9e324bfaefd02eb2f6afc0f0b9bc063c55c9f73dc29d25770`.
+
+Compose command для **этого** стека: из `/opt/astor-identity/source`, operator
+`docker compose --env-file /opt/astor-identity/runtime/images.env -f compose.yaml`.
+Не запускать общий `docker compose up` проекта ради identity.
+
+#### Gateway lifecycle и откат
+
+В live template добавляются **только** self-contained locations из
+`docker/keycloak/nginx-locations.conf` внутри существующего HTTPS c3ag.ru server.
+До записи: checksum/CAS сверка текущего template, backup template и effective
+config в root-private runtime, `nginx -t` candidate. Затем `nginx -t` и scoped
+reload, **без** restart/recreate шлюза. Media64m/buffering-off, glasses5m,
+`/api/astor/messages`, C3AG/VEDAL и conf.d routes сохранить без изменений.
+
+При следующем **recreate** шлюза включить
+`docker/keycloak/gateway-network.override.yaml` вместе с его existing Compose
+files: ручное `docker network connect` переживает restart/host reboot, но не
+создание нового контейнера. Не заменять production nginx полным старым repo
+template: там отсутствуют другие live domains. Применять scoped fragment к
+текущему operator-managed template и проверять semantic diff.
+
+Rollback identity: удалить только добавленный `/astor-auth` fragment (или вернуть
+backup, **только если** после него не было чужих gateway changes), nginx-t/reload;
+остановить только `astor-identity` Compose **без `-v`**, disconnect его proxy
+network от gateway после удаления routes. БД/volume/secrets сохраняются;
+`down -v`, realm overwrite/import override, truncate запрещены без отдельного
+решения. Откат identity не требует restart монолита/VEDAL/glasses.
+
+#### Проверки
+
+`node --test docker/keycloak/tests/*.test.mjs` — manifest/boundaries, не live
+подтверждение. `smoke-identity.py` по умолчанию делает read-only HTTPS проверки:
+discovery/JWKS, spoof headers, запрет admin/master, exact callback/S256/assets.
+Только operator с явным `--allow-ephemeral-user` создаёт один synthetic Astor
+waiter, проходит настоящий code exchange, проверяет RS256 подпись по JWKS,
+issuer/aud/tenant/role/exp, CORS, replay/неверный verifier/logout и удаляет
+synthetic account в finally. Не печатает токены/пароли и не обращается к staff
+API/БД монолита. Реальный менеджер/directory/bootstrap и вход самого кабинета
+проверяются отдельно после согласованной migration.
+
+Основа: [Keycloak container build](https://www.keycloak.org/server/containers),
+[hostname](https://www.keycloak.org/server/hostname),
+[reverse proxy](https://www.keycloak.org/server/reverseproxy).
+
 Оператор создаёт отдельный Astor identity-контур; не подключает realm/пользователей VEDAL. Использовать HTTPS с проверяемым сертификатом. Не публиковать административную консоль/права или создавать общие логины для команды.
 
 - Realm/issuer Astor, стабильный HTTPS JWKS; RS256.

@@ -751,6 +751,7 @@ flowchart LR
   <section id="staff-portal">
     <h2>Staff portal: PostgreSQL + отдельный вход Astor (2026-10-05, выключен по умолчанию)</h2>
     <p>Кабинет <code>/staff/</code> читает только серверные поручения и историю, не demo JSON. При выключенном <code>astor.staff.enabled</code> отдельный security chain запрещает staff/admin routes. При включении: HTTPS Keycloak Astor, подпись/issuer/audience/expiry JWT, tenant и роль из токена, актуальный справочник PostgreSQL. VEDAL не используется.</p>
+    <p>06.10: отдельная identity-инфраструктура — Keycloak 26.8.0 + собственный PostgreSQL, issuer <code>https://c3ag.ru/astor-auth/realms/astor</code>, PKCE callback <code>https://c3ag.ru/astor/staff/</code>. Admin/master закрыты снаружи. Это не включение кабинета: менеджер/directory и миграции живого монолита требуют отдельной приёмки; guest FSM не меняется.</p>
     <p>Менеджер управляет справочником и сменами; менеджер/хостес — назначением и переназначением поручений. Сотрудник принимает и выполняет только свои поручения открытой смены. Tenant lock + транзакция связывают task/version/event/audit, replay проверяет актуальные права. Полный snapshot удаляет старые назначения; превышение лимита возвращает явный отказ. Фото в новом staff API пока 503, а не учебный ACK; отдельный pilot S3 не равен этой интеграции. Guest FSM/бронь и <code>/assist</code> не вызываются. <a href="operations/STAFF_PORTAL_RUNBOOK.md">Включение и приёмка</a>; код и CI не подтверждают production/очки.</p>
   </section>
 

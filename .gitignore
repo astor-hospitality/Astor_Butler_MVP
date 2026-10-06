@@ -12,6 +12,8 @@ frontend/out/
 *.war
 *.nar
 *.log
+__pycache__/
+*.pyc
 
 .idea/
 *.iml

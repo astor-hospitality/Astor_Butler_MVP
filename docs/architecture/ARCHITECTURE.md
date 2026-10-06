@@ -154,6 +154,16 @@ No `MessageGatewayService`, FSM, booking, staff-task or notification service is 
 
 The manager cabinet `/staff/` no longer simulates mutations or reads demo JSON. A separate ordered security chain covers `/api/staff/**`, `/api/admin/staff/**`, and `/api/admin/staff-tasks/**`; disabled means deny-all, not fallback to the legacy guest `permitAll`. Enabling requires a dedicated Astor HTTPS Keycloak issuer/JWKS, signed expiring RS256 access tokens with `aud=astor-api`, one `tenant`, and an Astor staff role. VEDAL identities are not reused. Public browser login uses code + S256 PKCE and keeps access tokens only in memory.
 
+Dedicated identity infrastructure (2026-10-06) lives in `docker/keycloak/`:
+optimized Keycloak26.8.0, its own PostgreSQL16/volume/credentials and private
+database/proxy networks. The existing Astor HTTPS origin exposes only
+`https://c3ag.ru/astor-auth/realms/astor/` and login assets; admin/master remain
+operator-only. Issuer is `https://c3ag.ru/astor-auth/realms/astor`, staff callback
+is exactly `https://c3ag.ru/astor/staff/`. This infrastructure is independent of
+the monolith migration/feature rollout: real manager/directory bootstrap and
+existing DB rehearsal are still separate gates. VEDAL/C3AG/glasses routes,
+identities and data are not reused or rewritten.
+
 `StaffPortalService` persists assignments, staff/shift directory, processed events and task audit in monolith PostgreSQL, using the existing task-state rules. Each mutation locks one tenant row and commits task/version/event/audit atomically; replays re-check current directory role, activity, shift and ownership. Only MANAGER controls shifts/directory. Manager/hostess can administer tasks; waiter transitions use their own JWT scope and assigned task. Full staff snapshots filter by assignee before the bound and remove reassigned tasks. Over-capacity snapshots fail explicitly rather than silently truncating.
 
 This domain does not invoke guest FSM, booking APIs or the informational `/api/glasses/assist`. Photo evidence storage and an iPhone adapter are separate work: the new staff evidence endpoint returns 503 until real scoped storage is integrated. The current pilot photo/S3 API, developed separately, is not automatically this staff-domain evidence flow. Enablement, first manager bootstrap, proxy routes, migration preflight and acceptance: `docs/operations/STAFF_PORTAL_RUNBOOK.md`. Code/CI completion is not production deployment or physical acceptance.

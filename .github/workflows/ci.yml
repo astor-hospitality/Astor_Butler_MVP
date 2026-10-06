@@ -64,6 +64,11 @@ jobs:
       - name: Staff frontend auth and asset checks
         run: node --test frontend/astor-butler/tests/*.test.mjs
 
+      - name: Astor identity manifest and proxy boundaries
+        run: |
+          node --test docker/keycloak/tests/*.test.mjs
+          bash -n docker/keycloak/entrypoint.sh docker/keycloak/prepare-runtime.sh
+
       - name: Package
         run: mvn -B -DskipTests package
 
