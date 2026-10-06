@@ -1,0 +1,9 @@
+{
+  "meta": { "api_version": "3.0", "code": 200 },
+  "result": {
+    "items": [
+      { "id": "700", "name": "Fixture venue", "reviews": { "general_rating": null, "general_review_count": 0 } }
+    ],
+    "total": 1
+  }
+}

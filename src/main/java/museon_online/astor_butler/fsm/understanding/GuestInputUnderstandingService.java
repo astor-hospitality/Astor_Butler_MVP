@@ -352,6 +352,15 @@ public class GuestInputUnderstandingService {
     }
 
     private String normalizePartySize(String text, BotState currentState, Map<String, SlotValue> slots) {
+        Optional<Integer> family = GuestPartyText.adultsWithChildren(text);
+        if (family.isPresent()) {
+            slots.put("partySize", new SlotValue("partySize", family.get().toString(), 0.96));
+            return text;
+        }
+        if (GuestPartyText.childrenWithoutACount(text)) {
+            // The adults alone are not the party: the booking asks how many guests come in all.
+            return text;
+        }
         Integer partySize = partySizeFromWords(text);
         if (partySize != null) {
             slots.put("partySize", new SlotValue("partySize", partySize.toString(), 0.95));

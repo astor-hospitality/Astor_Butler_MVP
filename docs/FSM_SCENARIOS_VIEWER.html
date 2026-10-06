@@ -745,7 +745,9 @@ flowchart LR
 
   <section id="glasses-assist">
     <h2>Astor Glasses: информационный пилот (2026-10-04)</h2>
+    <p>R&amp;D завершено 6 октября по решению Михаила. У текущего iPhone Apple localRussian=false, запуск диалога — через кнопку. Прототип Whisper сохранён с ASTOR_ENABLE_EXPERIMENTAL_WAKE=0: положительный synthetic wake не прошёл, режим выключен. Личность говорящего не проверяется, длительное прослушивание с заблокированным телефоном не принято. Все существующие голосовые/фото/архивные возможности и ограничения перечислены в <a href="operations/GLASSES_RD_HANDOFF.md">финальной передаче</a>.</p>
     <p><code>/api/glasses/assist</code> и <code>/api/glasses/capabilities</code> защищены отдельным пилотным bearer-доступом со staff/tenant scope и expiry. Text обращается только к ModelGateway; voice валидирует AAC 16kHz mono и использует локальный Whisper; vision передаёт отдельный JPEG настоящей мультимодальной модели Yandex AI Studio. Не настроенный/не готовый провайдер возвращает явный 503. Нет перехода в guest FSM, изменения задач/бронирований, записи evidence или уведомлений. Staff feed, команды и ACK требуют отдельного доменного контракта. Детали: <a href="operations/GLASSES_ASSIST_PILOT.md">контракт и блокеры</a>.</p>
+    <p>Архив <code>/api/glasses/media</code>: исходный JPEG/MP4 до 64 MiB, UUID файла и сессии, проверенный сервером SHA-256. Подтверждение выдаётся после записи файла и commit record в приватный S3. При повторе после перезапуска возвращается сохранённое подтверждение; изменённый файл с тем же ID получает 409. Телефон хранит копию до совпадающего receipt, выгрузка требует явного <code>mediaArchive.enabled</code>. Это хранение учебных материалов, без автоматического выполнения поручения или перехода FSM. Пилотный срок хранения — один день.</p>
   </section>
 
   <section id="model-gateway">
@@ -2014,6 +2016,12 @@ flowchart LR
       <tr><td>Safety</td><td>Fallback, money, service-chat, Safe Play и assets failures покрыты отдельно.</td><td>Без этих тестов не углубляем бизнес-сценарии в код.</td></tr>
       </tbody>
     </table>
+  </section>
+  <section id="glasses-private-storage">
+    <p>Фото по учебным шагам (2026-10-05): сессия UUID → фиксированный шаг сервировки → один JPEG → vision → приватный S3 → photoReceipt. Контекст входит в защиту от изменённого повтора. На iPhone шаги «Накрыть на двоих» и «Проверить перед встречей» требуют matching archived receipt; сотрудник явно выбирает переход. Поздний ответ и отменённый снимок не меняют прогресс. Это локальная тренировка, не поручение StaffTaskService и не guest FSM.</p>
+    <h2>Astor Glass: документы, материалы и сетевые повторы</h2>
+    <p>Информационный assist остаётся вне guest FSM. Приватный S3 предоставляет ограниченный справочный документ server-bound заведения; первый источник явно учебный. Успешные аудио/фото и ответ сохраняются под server-bound сотрудником и requestId, без публичных ссылок.</p>
+    <p>Одинаковый UUID и payload: повтор кратко кешированного ответа. Другой payload с тем же UUID: 409. Тишина: 400 NO_SPEECH. S3 upload не означает evidence реального поручения или task ACK; assignment, version и staff commands требуют отдельного контракта.</p>
   </section>
 </main>
 

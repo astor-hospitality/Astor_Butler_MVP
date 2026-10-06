@@ -311,6 +311,9 @@ body {
   color: var(--paper-dim);
 }
 
+/* A rating that was not re-checked for a long time: still shown, visibly less certain. */
+.rating-stale { opacity: 0.6; font-style: italic; }
+
 .rank-score { text-align: right; }
 
 .rank-score .rating-value { font-size: 1.15rem; }

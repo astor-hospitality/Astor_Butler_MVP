@@ -1,6 +1,7 @@
 package museon_online.astor_butler.fsm.scenario;
 
 import museon_online.astor_butler.fsm.core.BotState;
+import museon_online.astor_butler.fsm.understanding.GuestPartyText;
 import museon_online.astor_butler.fsm.understanding.SlotValue;
 import museon_online.astor_butler.fsm.understanding.UnderstoodInput;
 import museon_online.astor_butler.service.message.IncomingMessage;
@@ -21,8 +22,9 @@ import java.util.regex.Pattern;
 public class TableBookingDraftMerger {
 
     private static final Pattern ISO_DATE = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
-    private static final Pattern DATE = Pattern.compile("\\b(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?\\b");
-    private static final Pattern TIME = Pattern.compile("(?<![./-])\\b([01]?\\d|2[0-3])(?::([0-5]\\d)|\\s*(?:час(?:ов|а)?|ч))?\\b(?![./-])");
+    // Either a whole clock time, or a bare hour that is not a piece of a date or of a clock time that does not exist ("25:00").
+    private static final Pattern TIME = Pattern.compile(
+            "(?<![:./-])\\b(?:([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)|([01]?\\d|2[0-3])(?:\\s*(?:час(?:ов|а)?|ч))?\\b(?![:./-]))");
     private static final Pattern TABLE_NUMBER_SELECTION = Pattern.compile("^(?:стол(?:ик)?\\s*)?(?:[1-9]|1\\d)$");
     private static final Pattern TABLE_NUMBER_IN_TEXT = Pattern.compile(".*(?:^|\\s)стол(?:ик)?\\s*(?:[1-9]|1\\d)(?:\\s|$).*");
     private static final Pattern TABLE_NUMBER_BEFORE_WORD = Pattern.compile(".*(?:^|\\s)(?:[1-9]|1\\d)\\s*стол(?:ик)?(?:\\s|$).*");
@@ -62,7 +64,7 @@ public class TableBookingDraftMerger {
         Optional<LocalDate> extractedDate = dateFromSlot(slots).or(() -> extractDate(normalized));
         LocalDate date = extractedDate.or(() -> storedDate(stored)).orElse(null);
 
-        Optional<LocalTime> slotTime = timeFromSlot(slots);
+        Optional<LocalTime> slotTime = timeFromSlot(slots).map(time -> GuestDateText.atTimeOfDay(time, normalized).orElse(time));
         Optional<LocalTime> extractedTime = slotTime.isPresent()
                 ? slotTime
                 : shouldIgnoreTimeInCurrentStep(currentState, normalized, extractedDate)
@@ -213,7 +215,7 @@ public class TableBookingDraftMerger {
 
     private Optional<LocalDate> extractDate(String text) {
         if (ISO_DATE.matcher(text).matches()) {
-            return Optional.of(LocalDate.parse(text));
+            return GuestDateText.isoDate(text);
         }
         if (text.contains("послезавтра")) {
             return Optional.of(timeProvider.today().plusDays(2));
@@ -222,10 +224,10 @@ public class TableBookingDraftMerger {
         if (weekday.isPresent()) {
             return weekday;
         }
-        if (text.contains("сегодня") || text.contains("завтра") || DATE.matcher(text).find()) {
+        if (text.contains("сегодня") || text.contains("завтра")) {
             return Optional.of(requestedDate(text));
         }
-        return Optional.empty();
+        return GuestDateText.dayMonth(text, timeProvider.today());
     }
 
     private Optional<LocalDate> extractWeekdayDate(String text) {
@@ -267,11 +269,20 @@ public class TableBookingDraftMerger {
         if (looksLikePartySizeAnswer(text) || looksLikeTableSelection(text)) {
             return Optional.empty();
         }
+        // "19.30" is how many guests write a time; the TIME pattern deliberately skips digits next to a dot.
+        Optional<LocalTime> dotted = GuestDateText.dottedTime(text, timeProvider.today());
+        if (dotted.isPresent()) {
+            return dotted.map(time -> atTimeOfDay(time, text));
+        }
         Matcher matcher = TIME.matcher(text);
         return matcher.find() ? Optional.of(parseTime(matcher, text)) : Optional.empty();
     }
 
     private Optional<Integer> extractPartySize(String text) {
+        Optional<Integer> family = GuestPartyText.adultsWithChildren(text);
+        if (family.isPresent() || GuestPartyText.childrenWithoutACount(text)) {
+            return family;
+        }
         if (containsAny(text, "одного", "один", "одна", "одному", "соло", "я один", "я одна", "буду один", "буду одна", "только я")) {
             return Optional.of(1);
         }
@@ -342,15 +353,7 @@ public class TableBookingDraftMerger {
         if (text.contains("завтра")) {
             return today.plusDays(1);
         }
-        Matcher matcher = DATE.matcher(text);
-        if (matcher.find()) {
-            int day = Integer.parseInt(matcher.group(1));
-            int month = Integer.parseInt(matcher.group(2));
-            int year = matcher.group(3) == null ? today.getYear() : parseYear(matcher.group(3));
-            LocalDate parsed = LocalDate.of(year, month, day);
-            return matcher.group(3) == null && parsed.isBefore(today) ? parsed.plusYears(1) : parsed;
-        }
-        return today;
+        return GuestDateText.dayMonth(text, today).orElse(today);
     }
 
     private String tableCode(String text) {
@@ -430,18 +433,17 @@ public class TableBookingDraftMerger {
     }
 
     private LocalTime parseTime(Matcher matcher, String text) {
-        int hour = Integer.parseInt(matcher.group(1));
-        int minute = matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2));
-        String normalized = normalize(text);
-        if (hour >= 1 && hour <= 11 && containsAny(normalized, "вечера", "вечер", "ночи")) {
-            hour += 12;
-        }
-        return LocalTime.of(hour, minute);
+        boolean clock = matcher.group(1) != null;
+        int hour = Integer.parseInt(clock ? matcher.group(1) : matcher.group(3));
+        int minute = clock ? Integer.parseInt(matcher.group(2)) : 0;
+        return atTimeOfDay(LocalTime.of(hour, minute), text);
     }
 
-    private int parseYear(String value) {
-        int year = Integer.parseInt(value);
-        return year < 100 ? 2000 + year : year;
+    private LocalTime atTimeOfDay(LocalTime time, String text) {
+        String normalized = normalize(text);
+        // Without a word right after the time, "вечером в 7" still means the evening, as before.
+        return GuestDateText.atTimeOfDay(time, normalized)
+                .orElseGet(() -> time.getHour() >= 1 && time.getHour() <= 11 && normalized.contains("вечер") ? time.plusHours(12) : time);
     }
 
     private String mergeOriginalText(String existing, String next) {

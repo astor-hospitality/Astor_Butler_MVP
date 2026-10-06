@@ -36,3 +36,7 @@ frontend/*.tsbuildinfo
 # Runtime media binaries belong to MinIO/S3 + media_assets, not the app jar.
 src/main/resources/menu/aeris/*.pdf
 src/main/resources/booking/*.pdf
+
+# AERIS site menu pictures are re-downloadable by scripts/aeris_menu/sync.mjs; only JSON/MD/manifest are tracked.
+src/main/resources/menu/aeris/site/images/
+src/main/resources/menu/aeris/site/ocr/

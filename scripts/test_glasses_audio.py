@@ -9,6 +9,7 @@ import tempfile
 p = argparse.ArgumentParser()
 p.add_argument('--python', required=True)
 p.add_argument('--model-dir', required=True)
+p.add_argument('--stt-silence', action='store_true', help='Also exercise cached Whisper/VAD on a silent AAC fixture')
 a = p.parse_args()
 with tempfile.TemporaryDirectory(prefix='astor-aac-test-') as tmp:
     for rate, channels, seconds, expected in [(16000, 1, 1, 'valid'), (44100, 1, 1, 'malformed'),
@@ -27,3 +28,8 @@ with tempfile.TemporaryDirectory(prefix='astor-aac-test-') as tmp:
     r=subprocess.run([a.python,'scripts/glasses_stt.py','--model-dir',a.model_dir,'--validate-only',str(f)],capture_output=True,check=True,timeout=10)
     assert json.loads(r.stdout)['status']=='malformed'
     print('Malformed container: PASS')
+    if a.stt_silence:
+        f=pathlib.Path(tmp)/'16000-1-1.m4a'
+        r=subprocess.run([a.python,'scripts/glasses_stt.py','--model-dir',a.model_dir,str(f)],capture_output=True,check=True,timeout=30)
+        assert json.loads(r.stdout)['status']=='no_speech'
+        print('Real cached Whisper/VAD silence: NO_SPEECH PASS')

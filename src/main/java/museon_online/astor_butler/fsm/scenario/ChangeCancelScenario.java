@@ -6,6 +6,7 @@ import museon_online.astor_butler.domain.booking.EventBookingService;
 import museon_online.astor_butler.domain.booking.TableReservationChangeCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
+import museon_online.astor_butler.domain.booking.TableReservationStatus;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
 import museon_online.astor_butler.fsm.understanding.GuestInputUnderstandingService;
@@ -42,7 +43,6 @@ public class ChangeCancelScenario implements FsmScenario {
             .withZone(ZoneId.of("Asia/Yekaterinburg"));
     private static final Pattern EXPLICIT_TIME = Pattern.compile("\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b");
     private static final Pattern SHORT_HOUR = Pattern.compile("^(?:в\\s+|к\\s+)?([1-9]|1[0-1]|1\\d|2[0-3])$");
-    private static final Pattern DATE_PATTERN = Pattern.compile("\\b(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?\\b");
 
     private final FSMStorage fsmStorage;
     private final TableReservationService tableReservationService;
@@ -159,7 +159,7 @@ public class ChangeCancelScenario implements FsmScenario {
                     %s
 
                     Что меняем? Выберите действие кнопкой ниже. Без вашего явного выбора я ничего не отменю и не перенесу.
-                    """.formatted(confirmedReservationCard(reservations.getFirst()));
+                    """.formatted(reservationCard(reservations.getFirst()));
         }
         return """
                 Нашел активную заявку на мероприятие:
@@ -190,11 +190,9 @@ public class ChangeCancelScenario implements FsmScenario {
         );
     }
 
-    private String confirmedReservationCard(TableReservationOrder order) {
+    private String reservationCard(TableReservationOrder order) {
         return """
-                Бронь подтверждена
-
-                Ваш стол ждет вас.
+                %s
 
                 Заказ: #%s
                 Стол: %s
@@ -203,6 +201,7 @@ public class ChangeCancelScenario implements FsmScenario {
                 Гостей: %s
                 Пожелание: %s
                 """.formatted(
+                reservationStatusText(order),
                 order.id(),
                 tableName(order),
                 order.requestedStartAt() == null ? "не указана" : java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy").withZone(ZoneId.of("Asia/Yekaterinburg")).format(order.requestedStartAt()),
@@ -210,6 +209,16 @@ public class ChangeCancelScenario implements FsmScenario {
                 order.partySize() == null ? "не указано" : order.partySize(),
                 seatingPreference(order)
         );
+    }
+
+    private String reservationStatusText(TableReservationOrder order) {
+        if (order.status() == TableReservationStatus.CONFIRMED) {
+            return "Бронь подтверждена\n\nВаш стол ждет вас.";
+        }
+        if (order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
+            return "Заявка ждет подтверждения хостес";
+        }
+        return "Заявка на стол";
     }
 
     private String activeEventText(EventBookingOrder order) {
@@ -580,7 +589,7 @@ public class ChangeCancelScenario implements FsmScenario {
                 fsmStorage.setState(incoming.chatId(), BotState.TABLE_BOOKING_CHANGE_REQUESTED);
                 return OutgoingMessage.of(
                         incoming,
-                        "Нашел эту бронь.\n\n%s\n\nЧто меняем?".formatted(confirmedReservationCard(selected.get())),
+                        "Нашел эту бронь.\n\n%s\n\nЧто меняем?".formatted(reservationCard(selected.get())),
                         BotState.TABLE_BOOKING_CHANGE_REQUESTED.name(),
                         false,
                         false,
@@ -621,7 +630,7 @@ public class ChangeCancelScenario implements FsmScenario {
                 %s
 
                 Как только хостес ответит, я вернусь с финальным статусом. Главное меню оставил под рукой.
-                """.formatted(confirmedReservationCard(changed)),
+                """.formatted(reservationCard(changed)),
                 BotState.READY_FOR_DIALOG.name(),
                 false,
                 false,
@@ -780,7 +789,8 @@ public class ChangeCancelScenario implements FsmScenario {
         UnderstoodInput understood = understandingService.understand(raw, BotState.TABLE_BOOKING_COLLECT_TIME);
         Optional<LocalTime> fromSlot = Optional.ofNullable(understood.slots().get("time"))
                 .map(SlotValue::value)
-                .flatMap(this::parseTime);
+                .flatMap(this::parseTime)
+                .map(time -> GuestDateText.atTimeOfDay(time, understood.normalizedText()).orElse(time));
         if (fromSlot.isPresent()) {
             return fromSlot;
         }
@@ -820,15 +830,7 @@ public class ChangeCancelScenario implements FsmScenario {
         if (day.isPresent()) {
             return Optional.of(today.with(TemporalAdjusters.nextOrSame(day.get())));
         }
-        Matcher matcher = DATE_PATTERN.matcher(text);
-        if (!matcher.find()) {
-            return Optional.empty();
-        }
-        int date = Integer.parseInt(matcher.group(1));
-        int month = Integer.parseInt(matcher.group(2));
-        int year = matcher.group(3) == null ? today.getYear() : parseYear(matcher.group(3));
-        LocalDate parsed = LocalDate.of(year, month, date);
-        return Optional.of(matcher.group(3) == null && parsed.isBefore(today) ? parsed.plusYears(1) : parsed);
+        return GuestDateText.dayMonth(text, today);
     }
 
     private Optional<java.time.DayOfWeek> weekdayFromText(String text) {
@@ -920,11 +922,6 @@ public class ChangeCancelScenario implements FsmScenario {
         return Optional.empty();
     }
 
-    private int parseYear(String value) {
-        int year = Integer.parseInt(value);
-        return year < 100 ? 2000 + year : year;
-    }
-
     private String appendGuestComment(TableReservationOrder current, String addition) {
         String existing = current.guestComment() == null ? "" : current.guestComment().trim();
         if (existing.isBlank()) {
@@ -1005,6 +1002,7 @@ public class ChangeCancelScenario implements FsmScenario {
     private boolean isChangeCancelIntent(String text) {
         return containsAny(
                 text,
+                "изменить / отменить",
                 "отменить брон",
                 "отмена брон",
                 "отменить стол",

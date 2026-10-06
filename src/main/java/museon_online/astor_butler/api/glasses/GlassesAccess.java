@@ -27,7 +27,7 @@ public class GlassesAccess {
         this.expiresAt = expiresAt;
     }
 
-    void check(String authorization) {
+    Scope check(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ") || authorization.length() <= 7
                 || authorization.length() > 4096) {
             throw new GlassesFailure(401, "UNAUTHORIZED", "Bearer access required");
@@ -51,5 +51,8 @@ public class GlassesAccess {
         } catch (java.time.format.DateTimeParseException e) {
             throw new GlassesFailure(403, "FORBIDDEN", "Pilot scope missing or expired");
         }
+        return new Scope(tenant, staff);
     }
+
+    record Scope(String tenant, String staff) { }
 }

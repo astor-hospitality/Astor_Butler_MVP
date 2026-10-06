@@ -1,0 +1,8 @@
+Pods/
+build/
+*.xcodeproj/
+*.xcworkspace/
+Info.plist
+.DS_Store
+.astor*
+*.log

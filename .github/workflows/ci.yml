@@ -46,6 +46,24 @@ jobs:
       - name: Build Docker image
         run: docker build -t astor-butler-mvp:ci .
 
+  concierge-ratings:
+    name: Concierge ratings tool
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Ratings snapshot and feed ranking tests
+        run: node --test scripts/concierge_ratings/test/*.test.mjs
+
+      - name: AERIS menu sync tests
+        run: node --test scripts/aeris_menu/test/*.test.mjs
+
   android-glasses:
     name: Android glasses client rules
     runs-on: ubuntu-latest
