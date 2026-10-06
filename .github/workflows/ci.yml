@@ -36,6 +36,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Verify scoped deployment guards
+        run: bash scripts/deploy/test-aeris-scoped.sh
+
       - name: Guard tracked secrets and artifacts
         run: |
           set -euo pipefail
