@@ -25,7 +25,9 @@ public record BusinessLunchOrder(
         String guestPhone,
         String comment,
         String source,
-        String conciergeRequestId
+        String conciergeRequestId,
+        /** The booking id in the venue's own system when Butler already wrote the reservation there; otherwise null. */
+        String externalReservationId
 ) {
     public record Item(String courseCode, String dishCode, String dishTitle, int quantity, Integer priceRub) {
     }

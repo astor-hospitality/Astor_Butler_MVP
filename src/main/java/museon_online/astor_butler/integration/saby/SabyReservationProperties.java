@@ -27,6 +27,8 @@ public class SabyReservationProperties {
     private String secretKey = "";
     private String pointId = "";
     private String hallId = "";
+    /** Optional: the Presto price list that holds the lunch dishes; found through the API when empty. */
+    private String priceListId = "";
     private String venueCode = "AERIS";
     private String zoneId = "Asia/Yekaterinburg";
     private long timeoutMs = 3000;

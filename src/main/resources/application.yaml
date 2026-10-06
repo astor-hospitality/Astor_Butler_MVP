@@ -63,6 +63,7 @@ astor:
       secret-key: ${SABY_SECRET_KEY:}
       point-id: ${SABY_POINT_ID:}
       hall-id: ${SABY_HALL_ID:}
+      price-list-id: ${SABY_PRICE_LIST_ID:}
       venue-code: ${SABY_VENUE_CODE:AERIS}
       zone-id: ${SABY_ZONE_ID:Asia/Yekaterinburg}
       timeout-ms: ${SABY_TIMEOUT_MS:3000}

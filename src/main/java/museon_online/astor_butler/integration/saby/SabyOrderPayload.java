@@ -73,6 +73,26 @@ final class SabyOrderPayload {
         return body;
     }
 
+    /** The dishes of a pre-order, in the shape {@code order/create} and {@code order/update} take them. */
+    static Map<String, Object> withNomenclatures(Map<String, Object> body, List<Map<String, Object>> nomenclatures) {
+        Map<String, Object> copy = new LinkedHashMap<>(body);
+        copy.put("nomenclatures", List.copyOf(nomenclatures));
+        return copy;
+    }
+
+    static Map<String, Object> nomenclature(long id, int count, Long priceListId, String name) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("id", id);
+        item.put("count", count);
+        if (priceListId != null) {
+            item.put("priceListId", priceListId);
+        }
+        if (!isBlank(name)) {
+            item.put("name", name);
+        }
+        return item;
+    }
+
     /**
      * The phone the way Saby examples show it: digits only, {@code 7} first, eleven in all. {@code +7 (912) 345-67-89}
      * and {@code 8 912 345 67 89} both become {@code 79123456789}; anything else is left to the hostess.
