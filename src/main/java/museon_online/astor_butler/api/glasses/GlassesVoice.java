@@ -56,6 +56,10 @@ public class GlassesVoice {
             String status = result.path("status").asText();
             if (status.equals("malformed")) throw new GlassesFailure(400, "MALFORMED_AUDIO", "Invalid AAC mono 16kHz media");
             if (status.equals("too_large")) throw new GlassesFailure(413, "AUDIO_TOO_LONG", "Audio exceeds 30 seconds");
+            if (status.equals("no_speech")) {
+                readyUntil = Instant.now().plusSeconds(300);
+                throw new GlassesFailure(400, "NO_SPEECH", "Speech was not detected; record a short phrase again");
+            }
             String text = result.path("text").asText("").trim();
             if (!status.equals("transcribed") || text.isBlank() || text.codePointCount(0, text.length()) > 4000) {
                 throw unavailable();

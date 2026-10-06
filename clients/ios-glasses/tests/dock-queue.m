@@ -1,0 +1,65 @@
+#import <Foundation/Foundation.h>
+#import "../Sources/AstorDockQueue.h"
+static void check(BOOL condition,NSString *message){if(!condition){NSLog(@"FAIL: %@",message);exit(1);}}
+int main(void){@autoreleasepool {
+    NSURL *root=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES];
+    AstorDockQueue *q=[[AstorDockQueue alloc]initWithDirectory:root];
+    check(!q.storageError && ![q observeChargingForDevice:@"device" component:0 state:1],@"Charging without a bounded session cannot import old media");
+    check([q beginSessionForDevice:@"device" baseline:@[@"old.jpg"] error:nil],@"An explicit inventory boundary arms a session");
+    NSString *session=q.sessions.firstObject[@"sessionId"];
+    check(![q beginSessionForDevice:@"device" baseline:@[] error:nil],@"A pending session cannot be replaced");
+    check(![q observeChargingForDevice:@"device" component:3 state:1],@"Case power alone cannot end a glasses session");
+    check(![q observeChargingForDevice:@"device" component:0 state:-1],@"Unknown power cannot trigger import");
+    check([q observeChargingForDevice:@"device" component:0 state:1],@"Live glasses charging queues an armed session");
+    check(![q observeChargingForDevice:@"device" component:0 state:1],@"Repeated charging callbacks are idempotent");
+    check([[q pendingDeviceNames:@[@"old.jpg",@"new.mp4",@"new.mp4"] device:@"device"] isEqual:@[@"new.mp4"]],@"Historic files and duplicate device names are excluded");
+    check([q freezeInventory:@[@"old.jpg",@"new.mp4"] device:@"device"],@"First end-of-session inventory is persisted");
+    check([[q pendingDeviceNames:@[@"new.mp4",@"later.jpg"] device:@"device"] isEqual:@[@"new.mp4"]],@"Photos taken after the final inventory cannot leak into a retry");
+    NSURL *source=[root URLByAppendingPathComponent:@"source.mp4"];[@"test bytes" writeToURL:source atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    check(![q stageFile:source device:@"device" name:@"old.jpg" mime:@"image/jpeg" error:nil],@"Historic data cannot be relabelled into this session");
+    check([q stageFile:source device:@"device" name:@"new.mp4" mime:@"video/mp4" error:nil],@"Successful import gets a private queue copy");
+    check([q stageFile:source device:@"device" name:@"new.mp4" mime:@"video/mp4" error:nil] && q.files.count==1,@"Partial SDK/batch retries do not duplicate imported files");
+    NSDictionary *f=q.files.firstObject;NSString *fileId=f[@"fileId"];
+    check([f[@"sessionId"] isEqual:session] && [f[@"sha256"] length]==64 && [f[@"size"] isEqual:@10],@"Receipt correlates the session, hash and byte count");
+    [NSFileManager.defaultManager removeItemAtURL:source error:nil];
+    check([q URLForFile:f]!=nil,@"An SDK temp-file deletion does not lose the private queue copy");
+    check([q setUploading:fileId],@"Queue tracks in-flight upload");
+    q=[[AstorDockQueue alloc]initWithDirectory:root];
+    check([q.files.firstObject[@"state"] isEqual:@"pending"] && [[q sessionForDevice:@"device"][@"state"] isEqual:@"waitingDevice"],@"Restart preserves import state and makes interrupted upload retryable");
+    NSMutableDictionary *receipt=[@{@"fileId":fileId,@"sessionId":session,@"sha256":f[@"sha256"],@"size":@10,@"archived":@YES} mutableCopy];
+    receipt[@"sessionId"]=NSUUID.UUID.UUIDString;check(![q acceptReceipt:receipt fileId:fileId],@"An unrelated session cannot acknowledge this file");
+    receipt[@"sessionId"]=session;receipt[@"sha256"]=@"wrong";check(![q acceptReceipt:receipt fileId:fileId],@"Wrong content hash never counts as uploaded");
+    receipt[@"sha256"]=f[@"sha256"];receipt[@"size"]=@9;check(![q acceptReceipt:receipt fileId:fileId],@"A truncated server object cannot count as uploaded");
+    receipt[@"size"]=@10;receipt[@"archived"]=@NO;check(![q acceptReceipt:receipt fileId:fileId],@"A processed but unarchived reply is insufficient");
+    NSDate *now=NSDate.date;[q failUpload:fileId status:503 at:now];
+    check(![q nextUploadAt:now] && [q nextUploadAt:[now dateByAddingTimeInterval:31]]!=nil,@"Retryable failures back off without removing content");
+    [q failUpload:fileId status:401 at:now];check(![q nextUploadAt:[now dateByAddingTimeInterval:3600]],@"Expired authorization pauses automatic retries");
+    [q retryUploads];check([q nextUploadAt:now]!=nil,@"Explicit retry after login resumes the retained file");
+    receipt[@"archived"]=@YES;check([q acceptReceipt:receipt fileId:fileId] && ![q nextUploadAt:now],@"Only a matching durable receipt closes the upload");
+    [q failUpload:fileId status:503 at:now];check([q.files.firstObject[@"state"] isEqual:@"confirmed"],@"Late failure cannot erase an acknowledged upload");
+    [q finishImportForDevice:@"device" success:YES];check(![q sessionForDevice:@"device"],@"Completed import releases the next session boundary");
+    check([q URLForFile:f]!=nil,@"Original and private copies are retained; no automatic destructive cleanup");
+    check([q beginSessionForDevice:@"device" baseline:@[@"old.jpg",@"new.mp4"] error:nil],@"A new baseline excludes previously imported content");
+    check([q observeChargingForDevice:@"device" component:0 state:1],@"A fresh callback can trigger a new armed session");
+    check([q freezeInventory:@[@"old.jpg",@"new.mp4",@"missing.m4a"] device:@"device"],@"A retry retains the original import manifest");
+    check(![q finishImportForDevice:@"device" success:YES] && [q sessionForDevice:@"device"],@"An empty SDK result cannot complete a session when an expected file is missing");
+    q=[[AstorDockQueue alloc]initWithDirectory:root];check(![q beginSessionForDevice:@"device" baseline:@[] error:nil],@"Reopening cannot forget an unfinished session");
+    NSData *badSchema=[NSJSONSerialization dataWithJSONObject:@{@"version":@1,@"files":@[@42],@"sessions":@[]} options:0 error:nil];[badSchema writeToURL:[root URLByAppendingPathComponent:@"queue.json"] atomically:YES];
+    q=[[AstorDockQueue alloc]initWithDirectory:root];check(q.storageError!=nil,@"Invalid structured metadata is rejected safely before loading records");
+    [@"invalid manifest" writeToURL:[root URLByAppendingPathComponent:@"queue.json"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    q=[[AstorDockQueue alloc]initWithDirectory:root];check(q.storageError!=nil && ![q nextUploadAt:now],@"A corrupt manifest stops transfers without overwriting saved data");
+    [NSFileManager.defaultManager removeItemAtURL:root error:nil];
+    q=[[AstorDockQueue alloc]initWithDirectory:root];
+    check([q beginCapturedSessionForDevice:@"phone-glasses"],@"The Bluetooth path needs no device Wi-Fi inventory");
+    source=[root URLByAppendingPathComponent:@"voice.m4a"];[@"voice bytes" writeToURL:source atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    check([q stageCapturedFile:source device:@"phone-glasses" mime:@"audio/mp4" error:nil],@"The original recording is copied before the application removes its temp file");
+    [q retryUploads];check(![q nextUploadAt:now],@"Retry does not release held data before the user ends a session or live charging occurs");
+    q=[[AstorDockQueue alloc]initWithDirectory:root];check(![q nextUploadAt:now] && [q.files.firstObject[@"state"] isEqual:@"held"],@"Restart cannot silently upload a recording session");
+    check(![q observeChargingForDevice:@"phone-glasses" component:3 state:1] && ![q nextUploadAt:now],@"Charging an empty case does not release Bluetooth captures");
+    check([q observeChargingForDevice:@"phone-glasses" component:0 state:1] && [q nextUploadAt:now] && ![q sessionForDevice:@"phone-glasses"],@"Live glasses charging releases held copies without Wi-Fi import");
+    check(![q stageCapturedFile:source device:@"phone-glasses" mime:@"audio/mp4" error:nil],@"Late data cannot enter the closed session");
+    check([q beginCapturedSessionForDevice:@"phone-glasses"] && [q stageCapturedFile:source device:@"phone-glasses" mime:@"audio/mp4" error:nil] && [q requestImportForDevice:@"phone-glasses"],@"Explicit upload releases another session with its own UUID");
+    check(![q.files[0][@"sessionId"] isEqual:q.files[1][@"sessionId"]],@"Two recording sessions are never merged");
+    [NSFileManager.defaultManager removeItemAtURL:root error:nil];puts("Dock queue: Bluetooth capture, session isolation, restart, partial retry and durable receipts passed");
+    return 0;
+}}

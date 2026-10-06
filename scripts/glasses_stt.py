@@ -72,7 +72,9 @@ def main():
         segments, _ = model.transcribe(audio, language="ru", vad_filter=True, beam_size=1,
                                        best_of=1, condition_on_previous_text=False)
         text = " ".join(segment.text.strip() for segment in segments).strip()
-        if not text or len(text) > 4000:
+        if not text:
+            result("no_speech")
+        elif len(text) > 4000:
             result("unavailable")
         else:
             result("transcribed", text=text)

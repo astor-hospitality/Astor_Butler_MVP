@@ -24,7 +24,7 @@ public class GlassesController {
     private static final int BODY_LIMIT = 5 * 1024 * 1024;
     private static final int MEDIA_LIMIT = 2 * 1024 * 1024;
     private static final Set<String> FIELDS = Set.of("requestId", "text", "audioBase64", "audioMimeType",
-            "imageBase64", "imageMimeType");
+            "imageBase64", "imageMimeType", "photoContext");
     private final GlassesAccess access;
     private final GlassesAssistService service;
     private final ObjectMapper mapper;
@@ -51,7 +51,7 @@ public class GlassesController {
     public ResponseEntity<?> assist(HttpServletRequest request) {
         String requestId = null;
         try {
-            access.check(request.getHeader("Authorization"));
+            var scope = access.check(request.getHeader("Authorization"));
             service.checkRate();
             if (request.getContentLengthLong() > BODY_LIMIT) throw tooLarge();
             if (request.getContentType() == null
@@ -74,6 +74,8 @@ public class GlassesController {
             String image = field(body, "imageBase64");
             String audioMime = field(body, "audioMimeType");
             String imageMime = field(body, "imageMimeType");
+            GlassesPhotoContext photoContext = photoContext(body.get("photoContext"));
+            if (photoContext != null && image == null) throw malformed();
             if ((audio != null && image != null) || (audio == null && audioMime != null)
                     || (image == null && imageMime != null)) throw malformed();
             if (audio != null) {
@@ -85,17 +87,18 @@ public class GlassesController {
                 }
                 long boxSize = Integer.toUnsignedLong(ByteBuffer.wrap(media).getInt());
                 if (boxSize < 16 || boxSize > media.length) throw malformed();
-                String answer = service.assistAudio(media);
+                String answer = service.assistAudio(scope, requestId, text, media);
                 return success(requestId, answer);
             }
             if (image != null) {
                 if (!"image/jpeg".equals(imageMime)) throw malformed();
-                validateJpeg(decode(image));
-                String answer = service.assistImage(text, image);
-                return success(requestId, answer);
+                byte[] media = decode(image);
+                validateJpeg(media);
+                String answer = service.assistImage(scope, requestId, text, media, photoContext);
+                return success(requestId, answer, photoContext);
             }
             if (text.isBlank()) throw malformed();
-            String answer = service.assist(text);
+            String answer = service.assist(scope, requestId, text);
             return success(requestId, answer);
         } catch (GlassesFailure e) {
             return error(requestId, e);
@@ -105,11 +108,18 @@ public class GlassesController {
     }
 
     private ResponseEntity<?> success(String requestId, String answer) {
-        return ResponseEntity.ok().header("Cache-Control", "no-store")
-                .body(new AssistResponse(requestId, answer, service.capabilities()));
+        return success(requestId, answer, null);
     }
 
-    public record AssistResponse(String requestId, String text, GlassesAssistService.Capabilities capabilities) { }
+    private ResponseEntity<?> success(String requestId, String answer, GlassesPhotoContext photoContext) {
+        return ResponseEntity.ok().header("Cache-Control", "no-store")
+                .body(new AssistResponse(requestId, answer, service.capabilities(), photoContext == null ? null
+                        : new PhotoReceipt(requestId, photoContext, service.archivesEnabled())));
+    }
+
+    public record AssistResponse(String requestId, String text, GlassesAssistService.Capabilities capabilities,
+                                 PhotoReceipt photoReceipt) { }
+    public record PhotoReceipt(String requestId, GlassesPhotoContext context, boolean archived) { }
     public record ErrorResponse(String requestId, Map<String, String> error) { }
 
     private ResponseEntity<?> error(String requestId, GlassesFailure failure) {
@@ -124,6 +134,15 @@ public class GlassesController {
         if (value == null || value.isNull()) return null;
         if (!value.isTextual()) throw malformed();
         return value.textValue();
+    }
+
+    private GlassesPhotoContext photoContext(JsonNode node) {
+        if (node == null || node.isNull()) return null;
+        if (!node.isObject() || node.size() != 4 || !node.has("sessionId") || !node.has("scenarioCode")
+                || !node.has("stageCode") || !node.has("revision") || !node.get("revision").isIntegralNumber()
+                || !node.get("revision").canConvertToInt()) throw malformed();
+        return new GlassesPhotoContext(field(node, "sessionId"), field(node, "scenarioCode"),
+                field(node, "stageCode"), node.get("revision").intValue());
     }
 
     private byte[] decode(String base64) {

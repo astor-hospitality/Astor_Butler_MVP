@@ -7,10 +7,17 @@
 - `POST /api/glasses/assist`, JSON, `Authorization: Bearer …`. Canonical UUID `requestId`, `text` до 4000 Unicode code points; опционально одна пара `audioBase64`/`audioMimeType:audio/mp4` или `imageBase64`/`imageMimeType:image/jpeg`. Для аудио текст может быть пустым. URL, client tenant/staff/chatId и неизвестные поля отвергаются.
 - Body до 5 MiB, decoded media до 2 MiB. JPEG signature/reader/header dimensions до 1280 px без записи на диск. MP4 header проверяется до запуска helper; PyAV полностью декодирует единственный AAC stream 16kHz/mono, проверяет metadata и реальное число samples до 30 секунд. Допускается один AAC frame padding, который отрезается перед STT. MPEG/PCM/stereo/44.1kHz/лишние streams не принимаются.
 - Voice: cached local faster-whisper base, CPU/int8, Russian; затем реальный YandexGPT. Text: YandexGPT. Vision: Qwen3.6-35b-a3b с JPEG data URL; без подмены анализа изображения текстовым ответом. Cloud request отключает data logging и не содержит tools.
-- `200`: `{requestId,text,capabilities}`, только непустой полный ответ провайдера. Informational assist не подтверждает и не выполняет задания, брони или FSM-переходы. Контекст ресторана/RAG и staff task feed пока отсутствуют.
-- `GET /api/glasses/capabilities`: тот же bearer; text/voice/vision, maxAudioSeconds=30, maxAudioBytes=maxImageBytes=2097152, maxImageDimension=1280, maxTextChars=4000, maxBodyBytes=5242880. Readiness означает успешный вызов за последние 300 секунд; до первого запроса и после ошибки false. Разрешённый POST может прогреть провайдер при false.
-- Ошибки `{requestId:UUID|null,error:{code,message}}`: 400 malformed; 401 missing/invalid bearer; 403 expired/missing scope; 413 limits; 429 busy/rate; 503 unavailable/provider timeout. RequestId сохраняется после валидации; отказ до чтения body имеет null. Cache-Control:no-store, WWW-Authenticate для 401, Retry-After для 429.
+- `200`: `{requestId,text,capabilities}`, только непустой полный ответ провайдера. Informational assist не подтверждает и не выполняет задания, брони или FSM-переходы. Приватный S3 даёт ограниченный учебный справочник; реальные restaurant RAG и staff task feed пока отсутствуют.
+- `GET /api/glasses/capabilities`: тот же bearer; text/voice/vision/storage/documents, maxAudioSeconds=30, maxAudioBytes=maxImageBytes=2097152, maxImageDimension=1280, maxTextChars=4000, maxBodyBytes=5242880. Provider/storage readiness означает успешный вызов за последние 300 секунд; documents — прочитанный документ в кеше на 60 секунд. Конфигурация не доказывает готовность. Разрешённый POST может прогреть провайдер при false; 4xx не сбрасывает предыдущую успешную readiness.
+- Ошибки `{requestId:UUID|null,error:{code,message}}`: 400 malformed/NO_SPEECH; 401 missing/invalid bearer; 403 expired/missing scope; 409 REQUEST_ID_CONFLICT; 413 limits; 429 busy/rate; 503 unavailable/provider timeout/KNOWLEDGE_UNAVAILABLE/STORAGE_UNAVAILABLE. RequestId сохраняется после валидации; отказ до чтения body имеет null. Cache-Control:no-store, WWW-Authenticate для 401, Retry-After для 429.
 - Один server-bound tenant/staff credential, 10 авторизованных попыток в минуту, один pipeline без очереди. Runtime timeout 45 секунд, STT 20 секунд; лимиты локальны одной JVM. Busy provider остаётся занятым до фактического окончания, новые потоки не накапливаются.
+- Повтор одинакового server-bound scope/UUID/payload использует успешный ответ из memory cache: максимум 32 ответа, TTL 120 секунд. Изменённый payload с тем же UUID — 409. Cache содержит hash входа и ответ, без raw media; перезапуск/TTL/eviction разрешают новый model call. При отказе S3 готовый ответ кратко сохраняется для повторной записи без второго model call. Late result после provider timeout не кешируется/архивируется.
+
+## Приватный S3
+
+См. [GLASSES_S3_STORAGE.md](GLASSES_S3_STORAGE.md). Server-bound tenant документ UTF-8 до 32 KiB используется как справочные данные, без tools. Первый документ — [учебный бизнес-ланч](GLASSES_PILOT_KNOWLEDGE.md), а не реальное меню. Успешные аудио/фото и ответ записываются в отдельный tenant/staff hash/UUID prefix; text-only сохраняет ответ. Никаких публичных media URLs или выбора object key клиентом.
+
+При включённом S3 отсутствие справочника или ошибка архива даёт явный 503. Чтение/запись входит в общий timeout; каждый S3 HTTP call ограничен 8 секундами. Материалы имеют lifecycle expiration 1 day, выполняемый ежедневным процессом Object Storage, не точный таймер на 24 часа. Документы не истекают автоматически. Отключённый S3 сохраняет прежний контракт assist.
 
 ## Процесс и файлы
 
@@ -22,6 +29,8 @@ Helper вызывается argv без shell. Environment очищается о
 
 Server-only settings: ASTOR_GLASSES_TOKEN_SHA256, TENANT, STAFF, EXPIRES_AT, TEXT_ENABLED, VOICE_ENABLED, TIMEOUT_MS, STT_TIMEOUT_MS, PYTHON, STT_SCRIPT, STT_MODEL_DIR, WORK_DIR; ASTOR_GLASSES_YANDEX_API_KEY/FOLDER, TEXT_MODEL, VISION_MODEL. Secret env лежит вне git, root 0600. SHA-256 hash не является мобильным токеном. Отзыв/ротация — замена server config и restart только isolated adapter; expiry проверяется на каждом запросе.
 
+S3 settings: ASTOR_GLASSES_S3_ENABLED, S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY. Ключ отдельного storage SA находится только в server env, не в мобильном JSON, Docker image или репозитории. Поддерживается только HTTPS endpoint Yandex Object Storage; static key требует отдельной ротации/отзыва.
+
 Отдельный service account `astor-glasses-runtime`: только `ai.languageModels.user`, API key scope `yc.ai.foundationModels.execute`, срок ключа до 2026-10-11 18:00 UTC. Мобильный доступ до 2026-10-04 22:20 UTC; bearer передаётся только приватно и сохраняется в Keychain. Мобильный клиент не получает cloud key. Этот однотокенный пилот не заменяет P1 identity/session revocation.
 
 ## Фронт и Telegram
@@ -30,7 +39,7 @@ Server-only settings: ASTOR_GLASSES_TOKEN_SHA256, TENANT, STAFF, EXPIRES_AT, TEX
 
 ## Проверки и приёмка
 
-Локальный Maven suite: 297 tests, 0 failures/errors/skipped. `scripts/test_glasses_audio.py`: 6 настоящих decoder fixtures, включая 30/31 секунды, stereo, 44.1kHz и испорченный контейнер. Синтетическая русская речь прошла реальный Whisper и YandexGPT; синтетический JPEG прошёл реальный Qwen. Это backend smoke, не физический HFP acceptance.
+Базовый runtime: Maven 297 tests PASS. S3/hardening: полный suite 309 tests PASS, включая cancellation regression; окончательные CI/deploy результаты фиксируются в handoff. `scripts/test_glasses_audio.py`: 6 настоящих decoder fixtures, включая 30/31 секунды, stereo, 44.1kHz и испорченный контейнер; `--stt-silence` проверяет реальный cached Whisper/VAD NO_SPEECH. Синтетическая русская речь прошла реальный Whisper и YandexGPT; синтетический JPEG прошёл реальный Qwen. Это backend smoke, не физический HFP acceptance.
 
 Физический тест делает отдельный чат: очки microphone → iPhone AAC m4a → API → STT → ответ → HFP TTS. Проверить cancel/timeout/offline/reconnect/lock/call interruptions, requestId и отсутствие task ACK. Не объявлять Astor Glass полностью готовым до этого теста и required GitHub CI/review.
 

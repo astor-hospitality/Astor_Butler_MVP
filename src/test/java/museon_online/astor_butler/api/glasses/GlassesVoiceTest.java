@@ -41,6 +41,16 @@ class GlassesVoiceTest {
         emptyWork();
     }
 
+    @Test void noSpeechIsRetryableInputErrorAndDoesNotDisableWorkingStt() throws Exception {
+        var voice = voice("printf '%s' '{\"status\":\"no_speech\"}'", 1000);
+        assertThatThrownBy(() -> voice.transcribe(new byte[]{1})).satisfies(e -> {
+            assertThat(((GlassesFailure)e).status).isEqualTo(400);
+            assertThat(((GlassesFailure)e).code).isEqualTo("NO_SPEECH");
+        });
+        assertThat(voice.ready()).isTrue();
+        emptyWork();
+    }
+
     @Test void timeoutStopsProcessBeforeCleanup() throws Exception {
         var voice = voice("exec sleep 10", 80);
         long before = System.nanoTime();
