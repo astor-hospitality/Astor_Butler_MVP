@@ -154,6 +154,8 @@ No `MessageGatewayService`, FSM, booking, staff-task or notification service is 
 
 ### Telephony Intake
 
+Astor wake-word R&D frozen by Mikhail (2026-10-06): the actual iPhone reports Apple localRussian=false. The separately written Whisper CPU prototype failed the positive synthetic wake check and is retained with ASTOR_ENABLE_EXPERIMENTAL_WAKE=0. It cannot become available simply by bundling the model/framework. Its bounded local speech window, single decoder, cancellation/deadline and confidence checks are experimental. The accepted entry remains the explicit question button; Apple wake is available only where on-device Russian is supported and explicitly enabled. Speaker identity and long-running locked-phone operation are not implemented/accepted. No new R&D proceeds without a new request.
+
 Телефония рассматривается как отдельный transport adapter, а не как отдельная бизнес-логика.
 
 Целевой поток:

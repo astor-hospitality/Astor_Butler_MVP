@@ -2,6 +2,8 @@
 
 Updated 2026-10-05 against Butler main a4023a7. Source snapshot of the signed iPhone training companion. The phone connects the AIBuds glasses SDK to the isolated HTTPS pilot API. Staff task transport/auth/persistence being developed separately are not connected here.
 
+R&D closed by Mikhail on 2026-10-06. Use the default project.yml. The optional offline-wake spec and CPU decoder are preserved as a frozen prototype, with ASTOR_ENABLE_EXPERIMENTAL_WAKE=0. Its positive synthetic wake test failed; it is not included as an enabled feature. The actual iPhone reported Apple localRussian=false, so start dialogue through the button. See [final handoff](../../docs/operations/GLASSES_RD_HANDOFF.md).
+
 ## Build
 
 Use macOS, Xcode 26+, CocoaPods and XcodeGen. Obtain the licensed AIBuds-SDK-iOS checkout separately; SDK, Pods and build output are excluded.

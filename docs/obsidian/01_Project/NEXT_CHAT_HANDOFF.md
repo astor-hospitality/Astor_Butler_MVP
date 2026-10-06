@@ -986,3 +986,8 @@ Main a4023a7 включён в codex/glasses-backend-hardening без конфл
 - v4-media-archive is live; v3 retained stopped for rollback. Candidate restart retry and public HTTPS receipts/conflict/hash/auth and6MiB MP4 passed. Full Maven package347 tests green; CI for775a7a5 green, next archive head pending.
 - iPhone snapshot includes Dock modules and call policy fix. SDK Ready/HFP/wear capability2 enabled verified by physical chat; false SDK InCall during own SCO is fixed there. Greeting/wake/charge-upload are separate acceptance checks still open. Standby is local opt-in, no speaker verification; Personal Team Wi-Fi video import stays off.
 - Portable companion sources in clients/ios-glasses; licensed SDK, build outputs and access credentials excluded. API archive does not complete StaffTaskService commands or FSM steps.
+
+
+## 2026-10-06 — R&D очков закрыто
+
+Михаил явно остановил дальнейшее исследование и распорядился интегрировать всё написанное. Итог и фактические ограничения: docs/operations/GLASSES_RD_HANDOFF.md. Рабочий кнопочный голос/HFP→backend→reply/TTS проверен; сохранённый AAC сверён по SHA256. Фото/зарядка/greeting/locked standby не выдаются за физически принятые. Apple localRussian=false на текущем iPhone, эксперимент Whisper positive synthetic FAIL и ASTOR_ENABLE_EXPERIMENTAL_WAKE=0. Новые физические шаги, установки, модельные исследования не выполнять без новой задачи. Scoped pilot bearer истёк; следующая выдача доступа — отдельная операционная процедура.
