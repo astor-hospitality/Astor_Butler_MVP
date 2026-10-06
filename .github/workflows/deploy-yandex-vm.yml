@@ -1,106 +1,76 @@
 name: Deploy to Yandex VM
-
 on:
   workflow_dispatch:
     inputs:
-      compose_profiles:
-        description: "Compose profiles to enable on the VM"
-        required: true
-        default: "telegram nlu"
-      smoke_url:
-        description: "Health URL reachable from the VM"
-        required: true
-        default: "http://127.0.0.1:8089/actuator/health"
-      extra_smoke_urls:
-        description: "Optional extra health URLs, one per line"
+      mode:
+        description: "Read-only preflight or AERIS-only deployment"
+        type: choice
+        options: [preflight, deploy]
+        default: preflight
+      backup_path:
+        description: "Deploy: absolute path of operator-verified fresh DB backup on VM"
         required: false
-        default: ""
-
+      confirm:
+        description: "Deploy: DEPLOY_AERIS after agreeing maintenance/rollback window"
+        required: false
 permissions:
   contents: read
-
+  actions: read
 concurrency:
   group: astor-yandex-vm
   cancel-in-progress: false
-
 jobs:
   deploy:
-    name: SSH deploy
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Guard tracked secrets and artifacts
+      - uses: actions/checkout@v4
+      - name: Validate source and CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode }}
+          CONFIRM: ${{ inputs.confirm }}
         run: |
           set -euo pipefail
-          tracked="$(git ls-files '.env' '.env.*' 'target/**' '.codex*' || true)"
-          if [ -n "$tracked" ]; then
-            echo "Forbidden tracked files detected:"
-            echo "$tracked"
-            exit 1
+          test "$GITHUB_REF" = refs/heads/main
+          test -z "$(git ls-files '.env' '.env.*' 'target/**' '.codex*')"
+          if [ "$MODE" = deploy ]; then
+            test "$CONFIRM" = DEPLOY_AERIS
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success" \
+              --jq '.workflow_runs | length' | awk '$1 > 0 {ok=1} END {exit !ok}'
           fi
-
+          bash -n scripts/deploy/aeris-scoped.sh
       - name: Prepare SSH
         env:
-          YANDEX_VM_SSH_KEY: ${{ secrets.YANDEX_VM_SSH_KEY }}
-          YANDEX_VM_HOST: ${{ secrets.YANDEX_VM_HOST }}
-          YANDEX_VM_SSH_PORT: ${{ secrets.YANDEX_VM_SSH_PORT }}
+          SSH_KEY: ${{ secrets.YANDEX_VM_SSH_KEY }}
+          VM_HOST: ${{ secrets.YANDEX_VM_HOST }}
+          VM_PORT: ${{ secrets.YANDEX_VM_SSH_PORT }}
         run: |
           set -euo pipefail
           mkdir -p ~/.ssh
-          printf '%s\n' "$YANDEX_VM_SSH_KEY" > ~/.ssh/yandex_vm_key
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/yandex_vm_key
           chmod 600 ~/.ssh/yandex_vm_key
-          ssh-keyscan -p "${YANDEX_VM_SSH_PORT:-22}" "$YANDEX_VM_HOST" >> ~/.ssh/known_hosts
-
-      - name: Sync source to VM
+          ssh-keyscan -p "${VM_PORT:-22}" "$VM_HOST" >> ~/.ssh/known_hosts
+      - name: Preflight and optional scoped deployment
         env:
-          YANDEX_VM_HOST: ${{ secrets.YANDEX_VM_HOST }}
-          YANDEX_VM_USER: ${{ secrets.YANDEX_VM_USER }}
-          YANDEX_VM_SSH_PORT: ${{ secrets.YANDEX_VM_SSH_PORT }}
-          YANDEX_VM_DEPLOY_PATH: ${{ secrets.YANDEX_VM_DEPLOY_PATH }}
+          VM_HOST: ${{ secrets.YANDEX_VM_HOST }}
+          VM_USER: ${{ secrets.YANDEX_VM_USER }}
+          VM_PORT: ${{ secrets.YANDEX_VM_SSH_PORT }}
+          VM_PATH: ${{ secrets.YANDEX_VM_DEPLOY_PATH }}
+          MODE: ${{ inputs.mode }}
+          BACKUP_PATH: ${{ inputs.backup_path }}
         run: |
           set -euo pipefail
-          deploy_path="${YANDEX_VM_DEPLOY_PATH:-/opt/astor-butler}"
-          ssh -i ~/.ssh/yandex_vm_key -p "${YANDEX_VM_SSH_PORT:-22}" \
-            "$YANDEX_VM_USER@$YANDEX_VM_HOST" "mkdir -p '$deploy_path'"
-          rsync -az --delete \
-            --exclude '.git/' \
-            --exclude '.env' \
-            --exclude '.env.*' \
-            --exclude 'target/' \
-            --exclude '.codex/' \
-            --exclude '.codex*/' \
-            -e "ssh -i ~/.ssh/yandex_vm_key -p ${YANDEX_VM_SSH_PORT:-22}" \
-            ./ "$YANDEX_VM_USER@$YANDEX_VM_HOST:$deploy_path/"
-
-      - name: Compose up on VM
-        env:
-          YANDEX_VM_HOST: ${{ secrets.YANDEX_VM_HOST }}
-          YANDEX_VM_USER: ${{ secrets.YANDEX_VM_USER }}
-          YANDEX_VM_SSH_PORT: ${{ secrets.YANDEX_VM_SSH_PORT }}
-          YANDEX_VM_DEPLOY_PATH: ${{ secrets.YANDEX_VM_DEPLOY_PATH }}
-          COMPOSE_PROFILES: ${{ inputs.compose_profiles }}
-          SMOKE_URL: ${{ inputs.smoke_url }}
-          EXTRA_SMOKE_URLS: ${{ inputs.extra_smoke_urls }}
-        run: |
-          set -euo pipefail
-          deploy_path="${YANDEX_VM_DEPLOY_PATH:-/opt/astor-butler}"
-          profile_args=""
-          for profile in $COMPOSE_PROFILES; do
-            profile_args="$profile_args --profile $profile"
-          done
-          extra_smoke_urls_b64="$(printf '%s' "$EXTRA_SMOKE_URLS" | base64 | tr -d '\n')"
-          ssh -i ~/.ssh/yandex_vm_key -p "${YANDEX_VM_SSH_PORT:-22}" \
-            "$YANDEX_VM_USER@$YANDEX_VM_HOST" \
-            "set -euo pipefail
-             cd '$deploy_path'
-             test -f .env.production
-             docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.prod.yml $profile_args up -d --build
-             docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.prod.yml $profile_args ps
-             if [ -n '$SMOKE_URL' ]; then curl -fsS '$SMOKE_URL'; fi
-             printf '%s' '$extra_smoke_urls_b64' | base64 -d | while IFS= read -r url; do
-               [ -z \"\$url\" ] && continue
-               curl -fsS \"\$url\"
-             done"
+          deploy_path="${VM_PATH:-/opt/astor-butler}"
+          [[ "$deploy_path" =~ ^/[a-zA-Z0-9_./-]+$ && "$deploy_path" != / ]]
+          [[ -z "$BACKUP_PATH" || "$BACKUP_PATH" =~ ^/[a-zA-Z0-9_./-]+$ ]]
+          ssh_args=(-i ~/.ssh/yandex_vm_key -p "${VM_PORT:-22}" -o BatchMode=yes)
+          remote="$VM_USER@$VM_HOST"
+          ssh "${ssh_args[@]}" "$remote" "bash -s -- '$deploy_path' preflight '$GITHUB_SHA' ''" < scripts/deploy/aeris-scoped.sh
+          if [ "$MODE" = deploy ]; then
+            release="$deploy_path/releases/$GITHUB_SHA"
+            ssh "${ssh_args[@]}" "$remote" "mkdir -p '$release'"
+            rsync -az --exclude '.git/' --exclude '.env*' --exclude 'target/' --exclude '.codex*' \
+              -e "ssh -i ~/.ssh/yandex_vm_key -p ${VM_PORT:-22} -o BatchMode=yes" ./ "$remote:$release/"
+            ssh "${ssh_args[@]}" "$remote" "bash -s -- '$deploy_path' deploy '$GITHUB_SHA' '$BACKUP_PATH'" < scripts/deploy/aeris-scoped.sh
+          fi
