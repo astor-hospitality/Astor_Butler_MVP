@@ -21,7 +21,9 @@ import java.util.regex.Pattern;
 public class TableBookingDraftMerger {
 
     private static final Pattern ISO_DATE = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
-    private static final Pattern TIME = Pattern.compile("(?<![./-])\\b([01]?\\d|2[0-3])(?::([0-5]\\d)|\\s*(?:час(?:ов|а)?|ч))?\\b(?![./-])");
+    // Either a whole clock time, or a bare hour that is not a piece of a date or of a clock time that does not exist ("25:00").
+    private static final Pattern TIME = Pattern.compile(
+            "(?<![:./-])\\b(?:([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)|([01]?\\d|2[0-3])(?:\\s*(?:час(?:ов|а)?|ч))?\\b(?![:./-]))");
     private static final Pattern TABLE_NUMBER_SELECTION = Pattern.compile("^(?:стол(?:ик)?\\s*)?(?:[1-9]|1\\d)$");
     private static final Pattern TABLE_NUMBER_IN_TEXT = Pattern.compile(".*(?:^|\\s)стол(?:ик)?\\s*(?:[1-9]|1\\d)(?:\\s|$).*");
     private static final Pattern TABLE_NUMBER_BEFORE_WORD = Pattern.compile(".*(?:^|\\s)(?:[1-9]|1\\d)\\s*стол(?:ик)?(?:\\s|$).*");
@@ -61,7 +63,7 @@ public class TableBookingDraftMerger {
         Optional<LocalDate> extractedDate = dateFromSlot(slots).or(() -> extractDate(normalized));
         LocalDate date = extractedDate.or(() -> storedDate(stored)).orElse(null);
 
-        Optional<LocalTime> slotTime = timeFromSlot(slots);
+        Optional<LocalTime> slotTime = timeFromSlot(slots).map(time -> GuestDateText.atTimeOfDay(time, normalized).orElse(time));
         Optional<LocalTime> extractedTime = slotTime.isPresent()
                 ? slotTime
                 : shouldIgnoreTimeInCurrentStep(currentState, normalized, extractedDate)
@@ -269,7 +271,7 @@ public class TableBookingDraftMerger {
         // "19.30" is how many guests write a time; the TIME pattern deliberately skips digits next to a dot.
         Optional<LocalTime> dotted = GuestDateText.dottedTime(text, timeProvider.today());
         if (dotted.isPresent()) {
-            return dotted.map(time -> LocalTime.of(eveningHour(time.getHour(), text), time.getMinute()));
+            return dotted.map(time -> atTimeOfDay(time, text));
         }
         Matcher matcher = TIME.matcher(text);
         return matcher.find() ? Optional.of(parseTime(matcher, text)) : Optional.empty();
@@ -426,13 +428,17 @@ public class TableBookingDraftMerger {
     }
 
     private LocalTime parseTime(Matcher matcher, String text) {
-        int hour = Integer.parseInt(matcher.group(1));
-        int minute = matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2));
-        return LocalTime.of(eveningHour(hour, text), minute);
+        boolean clock = matcher.group(1) != null;
+        int hour = Integer.parseInt(clock ? matcher.group(1) : matcher.group(3));
+        int minute = clock ? Integer.parseInt(matcher.group(2)) : 0;
+        return atTimeOfDay(LocalTime.of(hour, minute), text);
     }
 
-    private int eveningHour(int hour, String text) {
-        return hour >= 1 && hour <= 11 && containsAny(normalize(text), "вечера", "вечер", "ночи") ? hour + 12 : hour;
+    private LocalTime atTimeOfDay(LocalTime time, String text) {
+        String normalized = normalize(text);
+        // Without a word right after the time, "вечером в 7" still means the evening, as before.
+        return GuestDateText.atTimeOfDay(time, normalized)
+                .orElseGet(() -> time.getHour() >= 1 && time.getHour() <= 11 && normalized.contains("вечер") ? time.plusHours(12) : time);
     }
 
     private String mergeOriginalText(String existing, String next) {

@@ -8,6 +8,9 @@ import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
+import museon_online.astor_butler.fsm.understanding.GuestInputUnderstandingService;
+import museon_online.astor_butler.fsm.understanding.InputIntent;
+import museon_online.astor_butler.fsm.understanding.UnderstoodInput;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.OutgoingMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentCaptor.forClass;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -251,6 +255,71 @@ class ChangeCancelScenarioTest {
     }
 
     @Test
+    void theMenuButtonOpensTheGuestsBooking() {
+        // The reply keyboard sends its label as the message text, and the router asks the scenario with the understood text.
+        IncomingMessage incoming = telegram("Изменить / отменить");
+        UnderstoodInput understood = new GuestInputUnderstandingService().understand(incoming.text(), BotState.READY_FOR_DIALOG);
+        lenient().when(tableReservationService.listActiveReservationsByChatId(incoming.chatId())).thenReturn(List.of(activeReservation()));
+        lenient().when(eventBookingService.listActiveOrdersByChatId(incoming.chatId())).thenReturn(List.of());
+
+        assertThat(understood.primaryIntent()).isEqualTo(InputIntent.CHANGE_CANCEL);
+        assertThat(scenario.supports(incoming, BotState.READY_FOR_DIALOG, understood.routeText(), understood)).isTrue();
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, understood.routeText(), understood);
+
+        assertThat(outgoing.actions()).containsExactly("CHANGE_CANCEL", "ACTIVE_RESERVATIONS_FOUND", "ASK_ACTIVE_ORDER_REFERENCE");
+        assertThat(outgoing.text()).contains("Заказ: #44", "Выберите действие кнопкой");
+        assertThat(outgoing.metadata()).containsKey("replyKeyboardRows");
+        verify(tableReservationService, never()).cancelByGuest(anyLong());
+    }
+
+    @Test
+    void aRequestTheHostessHasNotAnsweredIsNotCalledConfirmed() {
+        IncomingMessage incoming = telegram("отменить бронь");
+        when(tableReservationService.listActiveReservationsByChatId(incoming.chatId())).thenReturn(List.of(awaitingReservation()));
+        when(eventBookingService.listActiveOrdersByChatId(incoming.chatId())).thenReturn(List.of());
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, incoming.text());
+
+        assertThat(outgoing.text()).contains("Заявка ждет подтверждения", "Заказ: #44", "Стол: Окно у бара (A7)");
+        assertThat(outgoing.text()).doesNotContain("Бронь подтверждена", "Ваш стол ждет вас");
+    }
+
+    @Test
+    void afterAChangeTheCardSaysTheRequestWaitsForTheHostessAgain() {
+        IncomingMessage incoming = telegram("17:30");
+        when(changeDraftStorage.find(incoming.chatId()))
+                .thenReturn(Optional.of(new ChangeCancelDraftStorage.Draft(44L, "CHANGE_TIME")));
+        when(tableReservationService.getReservation(44L)).thenReturn(activeReservation());
+        when(tableReservationService.changeByGuest(eq(44L), any())).thenReturn(awaitingReservation());
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        assertThat(outgoing.text()).contains("повторное подтверждение", "Заявка ждет подтверждения");
+        assertThat(outgoing.text()).doesNotContain("Бронь подтверждена", "Ваш стол ждет вас");
+    }
+
+    @Test
+    void movesTheBookingToTheTimeOfDayTheGuestNames() {
+        // The booking is on 18.06 in Yekaterinburg, five hours ahead of UTC.
+        String[][] cases = {{"7:30 вечера", "2026-06-18T14:30:00Z"}, {"в 7 часов вечера", "2026-06-18T14:00:00Z"}, {"в 2 часа дня", "2026-06-18T09:00:00Z"}};
+        for (String[] example : cases) {
+            IncomingMessage incoming = telegram(example[0]);
+            UnderstoodInput understood = new GuestInputUnderstandingService().understand(incoming.text(), BotState.TABLE_BOOKING_CHANGE_REQUESTED);
+            when(changeDraftStorage.find(incoming.chatId()))
+                    .thenReturn(Optional.of(new ChangeCancelDraftStorage.Draft(44L, "CHANGE_TIME")));
+            when(tableReservationService.getReservation(44L)).thenReturn(activeReservation());
+            when(tableReservationService.changeByGuest(eq(44L), any())).thenReturn(awaitingReservation());
+
+            scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, understood.routeText(), understood);
+
+            var captor = forClass(museon_online.astor_butler.domain.booking.TableReservationChangeCommand.class);
+            verify(tableReservationService, atLeastOnce()).changeByGuest(eq(44L), captor.capture());
+            assertThat(captor.getValue().requestedStartAt()).as(example[0]).isEqualTo(Instant.parse(example[1]));
+        }
+    }
+
+    @Test
     void asksForTheDateAgainWhenTheDayDoesNotExist() {
         IncomingMessage incoming = telegram("32.13");
         when(changeDraftStorage.find(incoming.chatId()))
@@ -341,6 +410,11 @@ class ChangeCancelScenarioTest {
                 Instant.parse("2026-06-15T10:00:00Z"),
                 Instant.parse("2026-06-15T10:00:00Z")
         );
+    }
+
+    private TableReservationOrder awaitingReservation() {
+        TableReservationOrder active = activeReservation();
+        return changedReservation(active.requestedStartAt(), active.requestedEndAt(), active.partySize(), active.tableCode(), active.tableDisplayName());
     }
 
     private TableReservationOrder cancelledReservation() {
