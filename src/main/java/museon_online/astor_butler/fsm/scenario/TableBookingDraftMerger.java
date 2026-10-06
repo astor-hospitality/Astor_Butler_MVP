@@ -14,6 +14,7 @@ import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -276,7 +277,16 @@ public class TableBookingDraftMerger {
             return dotted.map(time -> atTimeOfDay(time, text));
         }
         Matcher matcher = TIME.matcher(text);
-        return matcher.find() ? Optional.of(parseTime(matcher, text)) : Optional.empty();
+        MatchResult hour = null;
+        int surest = 0;
+        while (matcher.find()) {
+            int sure = howSureItIsTheHour(matcher, text);
+            if (sure > surest) {
+                surest = sure;
+                hour = matcher.toMatchResult();
+            }
+        }
+        return hour == null ? Optional.empty() : Optional.of(parseTime(hour, text));
     }
 
     private Optional<Integer> extractPartySize(String text) {
@@ -435,7 +445,39 @@ public class TableBookingDraftMerger {
                 || normalized.equals("сам выбери");
     }
 
-    private LocalTime parseTime(Matcher matcher, String text) {
+    /**
+     * A phrase can hold several numbers: "стол 5 на 2 гостей завтра в 9 утра". The hour is the clock time if there is one,
+     * else the number with "утра" or "часов" after it, else the one after "в" or "к", else the first that is left.
+     * A number of guests or of a table is not an hour at all.
+     */
+    private int howSureItIsTheHour(MatchResult number, String text) {
+        if (number.group(1) != null) {
+            return 4;
+        }
+        String after = text.substring(number.end()).stripLeading();
+        String before = text.substring(0, number.start()).stripTrailing();
+        if (startsWithAny(after, "гост", "человек", "персон", "чел", "стол") || before.endsWith("стол") || before.endsWith("столик")) {
+            return 0;
+        }
+        if (startsWithAny(after, "утра", "дня", "вечера", "ночи", "час")) {
+            return 3;
+        }
+        if (before.equals("в") || before.endsWith(" в") || before.equals("к") || before.endsWith(" к")) {
+            return 2;
+        }
+        return 1;
+    }
+
+    private boolean startsWithAny(String text, String... starts) {
+        for (String start : starts) {
+            if (text.startsWith(start)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private LocalTime parseTime(MatchResult matcher, String text) {
         boolean clock = matcher.group(1) != null;
         int hour = Integer.parseInt(clock ? matcher.group(1) : matcher.group(3));
         int minute = clock ? Integer.parseInt(matcher.group(2)) : 0;
