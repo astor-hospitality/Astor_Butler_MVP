@@ -6,6 +6,7 @@ import museon_online.astor_butler.domain.tip.TipOrderCommand;
 import museon_online.astor_butler.domain.tip.TipService;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
+import museon_online.astor_butler.fsm.understanding.GuestMoneyText;
 import museon_online.astor_butler.service.message.AdminAlert;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.OutgoingMessage;
@@ -14,13 +15,15 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.regex.Pattern;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
 public class SmartTipScenario implements FsmScenario {
 
-    private static final Pattern MONEY = Pattern.compile(".*\\b\\d{2,7}\\b.*");
+    private static final Set<String> LEAVE_WORDS = Set.of(
+            "отмена", "отмени", "стоп", "главное меню", "выйти", "назад", "передумал", "передумала", "не надо", "не нужно", "нет");
+    private static final String HOW_TO_NAME_THE_SUM = "Напишите ее числом в рублях, например 500. Если передумали, напишите «отмена».";
 
     private final FSMStorage fsmStorage;
     private final TipService tipService;
@@ -52,7 +55,7 @@ public class SmartTipScenario implements FsmScenario {
         if (state == BotState.TIP_CONFIRMATION) {
             return confirmTip(incoming, normalized);
         }
-        return collectAmount(incoming, normalized);
+        return collectAmount(incoming, state, normalized);
     }
 
     @Override
@@ -66,12 +69,23 @@ public class SmartTipScenario implements FsmScenario {
         return true;
     }
 
-    private OutgoingMessage collectAmount(IncomingMessage incoming, String text) {
-        if (!hasMoney(text)) {
+    private OutgoingMessage collectAmount(IncomingMessage incoming, BotState state, String text) {
+        boolean alreadyAsked = state == BotState.TIP_COLLECT_AMOUNT;
+        if (alreadyAsked && wantsToLeave(text)) {
+            return leave(incoming);
+        }
+        GuestMoneyText.Reading amount = GuestMoneyText.read(text);
+        if (!amount.isAmount()) {
             fsmStorage.setState(incoming.chatId(), BotState.TIP_COLLECT_AMOUNT);
+            // The first question is an invitation; a second one has to say what went wrong and how to get out.
+            String question = amount.kind() == GuestMoneyText.Kind.NOT_POSITIVE
+                    ? "Сумма чаевых должна быть больше нуля. " + HOW_TO_NAME_THE_SUM
+                    : alreadyAsked
+                    ? "Не смог понять сумму. " + HOW_TO_NAME_THE_SUM
+                    : "Красивая благодарность. Какую сумму чаевых хотите оставить?";
             return OutgoingMessage.of(
                     incoming,
-                    "Красивая благодарность. Какую сумму чаевых хотите оставить?",
+                    question,
                     BotState.TIP_COLLECT_AMOUNT.name(),
                     false,
                     false,
@@ -82,12 +96,12 @@ public class SmartTipScenario implements FsmScenario {
             ).withMetadata(Map.of("scenario", id()));
         }
 
-        TipOrder order = tipService.createDraft(tipOrderCommand(incoming, text));
+        TipOrder order = tipService.createDraft(tipOrderCommand(incoming, text, amount.rubles() * 100L));
         fsmStorage.setState(incoming.chatId(), BotState.TIP_CONFIRMATION);
         return OutgoingMessage.of(
                 incoming,
                 """
-                Принял сумму чаевых и собрал draft благодарности #%s.
+                Принял сумму чаевых, благодарность #%s.
 
                 Получатель: %s
                 Сумма: %s ₽
@@ -120,7 +134,7 @@ public class SmartTipScenario implements FsmScenario {
                             Получатель: %s
                             Сумма: %s ₽
 
-                            Следующий слой подключит прямую СБП-ссылку сотрудника или Telegram Stars invoice. Сейчас я вернул вас в главное меню.
+                            Оплата чаевых через бота пока не подключена, поэтому деньги не списаны. Я вернул вас в главное меню.
                             """.formatted(order.id(), staffName(order), rubles(order.amountMinor())),
                     BotState.READY_FOR_DIALOG.name(),
                     false,
@@ -141,7 +155,7 @@ public class SmartTipScenario implements FsmScenario {
             fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
             return OutgoingMessage.of(
                     incoming,
-                    "Хорошо, отменил draft чаевых #%s. Возвращаюсь в главное меню.".formatted(order.id()),
+                    "Хорошо, чаевые #%s отменил. Возвращаюсь в главное меню.".formatted(order.id()),
                     BotState.READY_FOR_DIALOG.name(),
                     false,
                     false,
@@ -158,7 +172,7 @@ public class SmartTipScenario implements FsmScenario {
         fsmStorage.setState(incoming.chatId(), BotState.TIP_CONFIRMATION);
         return OutgoingMessage.of(
                 incoming,
-                "Подтвердите, пожалуйста: да — зафиксировать draft чаевых, нет — отменить.",
+                "Ответьте, пожалуйста, «да», чтобы записать чаевые, или «нет», чтобы отменить.",
                 BotState.TIP_CONFIRMATION.name(),
                 false,
                 false,
@@ -169,18 +183,33 @@ public class SmartTipScenario implements FsmScenario {
         ).withMetadata(Map.of("scenario", id()));
     }
 
+    /** The guest changed their mind before naming a sum: nothing was created, so there is nothing to cancel. */
+    private OutgoingMessage leave(IncomingMessage incoming) {
+        fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+        return OutgoingMessage.of(
+                incoming,
+                "Хорошо, чаевые не оформляю. Главное меню оставил под рукой.",
+                BotState.READY_FOR_DIALOG.name(),
+                false,
+                false,
+                true,
+                false,
+                AdminAlert.none(),
+                List.of("SMART_TIP", "TIP_CANCELLED_BY_GUEST", "RETURN_MAIN_MENU")
+        ).withMetadata(Map.of("scenario", id()));
+    }
+
+    /** Only a whole reply counts, so "нет, лучше 500" is still read for its sum. */
+    private boolean wantsToLeave(String text) {
+        String words = text.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
+        return LEAVE_WORDS.contains(words);
+    }
+
     private boolean isSmartTipIntent(String text) {
         return containsAny(text, "чаевые", "поблагодарить", "спасибо официанту", "благодарность", "на чай", "накинуть", "тип", "официанту", "бармену");
     }
 
-    private boolean hasMoney(String text) {
-        return MONEY.matcher(text).matches()
-                || text.contains("тысяч")
-                || text.contains("тысячи")
-                || text.contains("руб");
-    }
-
-    private TipOrderCommand tipOrderCommand(IncomingMessage incoming, String text) {
+    private TipOrderCommand tipOrderCommand(IncomingMessage incoming, String text, long amountMinor) {
         return new TipOrderCommand(
                 incoming.chatId(),
                 incoming.telegramUserId(),
@@ -188,22 +217,11 @@ public class SmartTipScenario implements FsmScenario {
                 "AERIS",
                 null,
                 null,
-                amountMinor(text),
+                amountMinor,
                 "RUB",
                 displayName(incoming),
                 text
         );
-    }
-
-    private Long amountMinor(String text) {
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\d{2,7}").matcher(text);
-        if (matcher.find()) {
-            return Long.parseLong(matcher.group()) * 100L;
-        }
-        if (text.contains("тысяч") || text.contains("тысячи")) {
-            return 100_000L;
-        }
-        return null;
     }
 
     private String rubles(Long amountMinor) {
@@ -250,6 +268,9 @@ public class SmartTipScenario implements FsmScenario {
                 || text.equals("не надо")
                 || text.equals("отмена")
                 || text.equals("отмени")
+                || text.equals("передумал")
+                || text.equals("передумала")
+                || text.equals("главное меню")
                 || text.equals("не подтверждаю");
     }
 
