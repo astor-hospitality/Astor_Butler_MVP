@@ -164,6 +164,18 @@ class TableBookingScenarioTest {
     }
 
     @Test
+    void leavesAnAnswerInTheChangeStepToTheChangeScenario() {
+        // ChangeCancelScenario puts the guest into this state and waits for the new time, day, table or party size.
+        // The router asks this scenario first, so claiming the state here started a new booking instead.
+        for (String answer : new String[]{"20:00", "4", "в пятницу", "у окна", "да"}) {
+            IncomingMessage incoming = telegram(answer);
+
+            assertThat(scenario.supports(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text())).as(answer).isFalse();
+        }
+        assertThat(scenario.owns(BotState.TABLE_BOOKING_CHANGE_REQUESTED)).isFalse();
+    }
+
+    @Test
     void doesNotResendHallPlanDuringActiveSlotCollection() {
         IncomingMessage incoming = telegram("завтра");
         when(draftStorage.find(incoming.chatId())).thenReturn(Optional.of(new TableBookingDraftStorage.Draft(
