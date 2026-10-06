@@ -70,6 +70,16 @@ public class TableReservationService {
         return order;
     }
 
+    /** Remembers the number the venue's own system gave this reservation, for example the Saby one. */
+    @Transactional
+    public TableReservationOrder attachExternalId(Long id, String externalId) {
+        requireOrder(id);
+        if (externalId == null || externalId.isBlank()) {
+            throw badRequest("externalId is required");
+        }
+        return repository.attachExternalId(id, externalId.trim());
+    }
+
     @Transactional
     public TableReservationOrder confirm(Long id) {
         TableReservationOrder current = requireOrder(id);

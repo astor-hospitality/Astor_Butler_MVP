@@ -325,6 +325,19 @@ public class TableReservationRepository {
         return result.stream().findFirst();
     }
 
+    public TableReservationOrder attachExternalId(Long id, String externalId) {
+        jdbcTemplate.update("""
+                UPDATE table_reservation_orders
+                SET sbis_external_id = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                externalId,
+                id
+        );
+        return findOrder(id).orElseThrow();
+    }
+
     public TableReservationOrder confirm(Long id) {
         jdbcTemplate.update("""
                 UPDATE table_reservation_orders

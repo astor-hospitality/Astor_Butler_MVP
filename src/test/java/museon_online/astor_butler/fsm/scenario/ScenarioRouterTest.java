@@ -37,6 +37,9 @@ class ScenarioRouterTest {
     private FirstTouchScenario firstTouchScenario;
 
     @Mock
+    private BusinessLunchScenario businessLunchScenario;
+
+    @Mock
     private TableBookingScenario tableBookingScenario;
 
     @Mock
@@ -100,6 +103,7 @@ class ScenarioRouterTest {
         router = new ScenarioRouter(
                 fsmStorage,
                 firstTouchScenario,
+                businessLunchScenario,
                 tableBookingScenario,
                 eventBookingScenario,
                 changeCancelScenario,
@@ -201,6 +205,44 @@ class ScenarioRouterTest {
         assertThat(outgoing.actions()).containsExactly("MENU_ASSETS", "MENU_ASSETS_DELIVERED");
         verify(inputUnderstandingService, never()).understand(anyString(), any(), any());
         verify(tableBookingScenario, never()).handle(any(), any(), anyString(), any());
+    }
+
+    @Test
+    void aBusinessLunchAnswerIsNotOfferedToAnyOtherScenario() {
+        IncomingMessage incoming = telegram("13:00");
+        OutgoingMessage lunchReply = OutgoingMessage.of(incoming, "Отправляю заявку команде?", BotState.BUSINESS_LUNCH_CONFIRMATION.name(),
+                false, false, false, false, AdminAlert.none(), List.of("BUSINESS_LUNCH", "ASK_LUNCH_CONFIRMATION"));
+        when(firstTouchScenario.supports(incoming, BotState.BUSINESS_LUNCH_COLLECT_TIME, incoming.text())).thenReturn(false);
+        when(businessLunchScenario.supports(incoming, BotState.BUSINESS_LUNCH_COLLECT_TIME, incoming.text())).thenReturn(true);
+        when(businessLunchScenario.handle(incoming, BotState.BUSINESS_LUNCH_COLLECT_TIME, incoming.text())).thenReturn(lunchReply);
+
+        OutgoingMessage outgoing = router.route(incoming, BotState.BUSINESS_LUNCH_COLLECT_TIME, incoming.text());
+
+        assertThat(outgoing).isSameAs(lunchReply);
+        verify(businessLunchScenario).rememberHandoff(incoming, incoming.text());
+        verify(inputUnderstandingService, never()).understand(anyString(), any(), any());
+        verify(tableBookingScenario, never()).handle(any(), any(), anyString(), any());
+    }
+
+    @Test
+    void aLunchFromTheConciergeIsKeptThroughConsentAndResumedByTheLunchScenario() {
+        IncomingMessage incoming = telegram("/start lunch_aeris");
+        OutgoingMessage consent = OutgoingMessage.of(incoming, "Нажимая кнопку...", BotState.CONSENT_REQUIRED.name(),
+                true, true, false, false, AdminAlert.none(), List.of("REQUEST_CONTACT", "CONSENT_REQUIRED"));
+        OutgoingMessage afterFirstTouch = OutgoingMessage.of(incoming, "Какой вариант выбираете?", BotState.BUSINESS_LUNCH_CHOOSE_SET.name(),
+                false, false, false, false, AdminAlert.none(), List.of("BUSINESS_LUNCH", "ASK_LUNCH_SET"));
+        when(firstTouchScenario.supports(incoming, BotState.UNKNOWN, incoming.text())).thenReturn(true);
+        when(firstTouchScenario.handle(incoming, BotState.UNKNOWN, incoming.text())).thenReturn(consent);
+        when(businessLunchScenario.continueAfterFirstTouch(incoming, consent)).thenReturn(afterFirstTouch);
+
+        OutgoingMessage outgoing = router.route(incoming, BotState.UNKNOWN, incoming.text());
+
+        assertThat(outgoing).isSameAs(afterFirstTouch);
+        var order = org.mockito.Mockito.inOrder(businessLunchScenario, firstTouchScenario);
+        order.verify(businessLunchScenario).rememberHandoff(incoming, incoming.text());
+        order.verify(firstTouchScenario).handle(incoming, BotState.UNKNOWN, incoming.text());
+        order.verify(businessLunchScenario).continueAfterFirstTouch(incoming, consent);
+        verify(businessLunchScenario, never()).handle(any(), any(), anyString());
     }
 
     private IncomingMessage telegram(String text) {

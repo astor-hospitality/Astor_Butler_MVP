@@ -1,0 +1,20 @@
+{
+  "venueCode": "AERIS",
+  "venueName": "AERIS",
+  "confirmedByVenue": false,
+  "days": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
+  "from": "12:00",
+  "to": "16:00",
+  "seatingMinutes": 90,
+  "included": "",
+  "courses": [
+    {"code": "SALAD", "title": "Салат", "dishes": [{"code": "SALAD_OF_THE_DAY", "title": "Салат дня"}]},
+    {"code": "SOUP", "title": "Суп", "dishes": [{"code": "SOUP_OF_THE_DAY", "title": "Суп дня"}]},
+    {"code": "MAIN", "title": "Горячее", "dishes": [{"code": "MAIN_OF_THE_DAY", "title": "Горячее дня"}]}
+  ],
+  "sets": [
+    {"code": "SALAD_SOUP", "title": "Салат + суп", "priceRub": null, "slots": [["SALAD"], ["SOUP"]]},
+    {"code": "STARTER_MAIN", "title": "Салат или суп + горячее", "priceRub": null, "slots": [["SALAD", "SOUP"], ["MAIN"]]},
+    {"code": "FULL", "title": "Салат + суп + горячее", "priceRub": null, "slots": [["SALAD"], ["SOUP"], ["MAIN"]]}
+  ]
+}

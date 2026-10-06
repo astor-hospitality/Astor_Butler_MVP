@@ -10,6 +10,7 @@ import museon_online.astor_butler.fsm.scenario.ChangeCancelScenario;
 import museon_online.astor_butler.fsm.scenario.ConciergeScenario;
 import museon_online.astor_butler.fsm.scenario.EventBookingScenario;
 import museon_online.astor_butler.fsm.scenario.FeedbackScenario;
+import museon_online.astor_butler.fsm.scenario.BusinessLunchScenario;
 import museon_online.astor_butler.fsm.scenario.FirstTouchScenario;
 import museon_online.astor_butler.fsm.scenario.FsmScenario;
 import museon_online.astor_butler.fsm.scenario.HiddenHeartScenario;
@@ -66,6 +67,9 @@ class MessageGatewayServiceTest {
 
     @Mock
     private FirstTouchScenario firstTouchScenario;
+
+    @Mock
+    private BusinessLunchScenario businessLunchScenario;
 
     @Mock
     private MainMenuScenario mainMenuScenario;
@@ -174,6 +178,7 @@ class MessageGatewayServiceTest {
         ScenarioRouter scenarioRouter = new ScenarioRouter(
                 fsmStorage,
                 firstTouchScenario,
+                businessLunchScenario,
                 tableBookingScenario,
                 eventBookingScenario,
                 changeCancelScenario,

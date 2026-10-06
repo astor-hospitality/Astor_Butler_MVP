@@ -25,6 +25,7 @@ public class ScenarioRouter {
 
     private final FSMStorage fsmStorage;
     private final FirstTouchScenario firstTouchScenario;
+    private final BusinessLunchScenario businessLunchScenario;
     private final TableBookingScenario tableBookingScenario;
     private final EventBookingScenario eventBookingScenario;
     private final ChangeCancelScenario changeCancelScenario;
@@ -46,8 +47,16 @@ public class ScenarioRouter {
     private final IntentExampleRepository intentExampleRepository;
 
     public OutgoingMessage route(IncomingMessage incoming, BotState currentState, String text) {
+        // A guest the Concierge sent for a business lunch may still have to give consent: the lunch waits and then goes on.
+        businessLunchScenario.rememberHandoff(incoming, text);
         if (firstTouchScenario.supports(incoming, currentState, text)) {
-            return firstTouchScenario.handle(incoming, currentState, text);
+            return businessLunchScenario.continueAfterFirstTouch(incoming, firstTouchScenario.handle(incoming, currentState, text));
+        }
+
+        // Its own steps and its own entry phrases, decided before any intent guessing, so that an answer such as "13:00"
+        // or "на двоих" cannot be taken for the start of a table booking.
+        if (businessLunchScenario.supports(incoming, currentState, text)) {
+            return businessLunchScenario.handle(incoming, currentState, text);
         }
 
         OutgoingMessage keyboardShortcut = tryKeyboardShortcutRoute(incoming, currentState, text);
