@@ -60,3 +60,6 @@ jobs:
 
       - name: Ratings snapshot and feed ranking tests
         run: node --test scripts/concierge_ratings/test/*.test.mjs
+
+      - name: AERIS menu sync tests
+        run: node --test scripts/aeris_menu/test/*.test.mjs
