@@ -35,6 +35,10 @@ public class BusinessLunchService {
     private final TableReservationService tableReservationService;
     private final List<ExternalLunchOrderProvider> externalProviders;
     private final BookingTimeProvider timeProvider;
+    private final BusinessLunchCatalog catalog;
+
+    @Value("${astor.business-lunch.default-venue-code:AERIS}")
+    private String defaultVenueCode = "AERIS";
 
     @Value("${telegram.booking.manager-chat-id:876857557}")
     private Long managerTelegramId;
@@ -79,6 +83,19 @@ public class BusinessLunchService {
             BusinessLunchOrder order,
             ExternalLunchOrderProvider.Result external
     ) {
+    }
+
+    /**
+     * The lunch offer a reservation was made under, by the mark this service puts on it. Empty for any other reservation.
+     * The mark is also the start of the comment, because the guest may later replace the seating wish.
+     */
+    public Optional<BusinessLunchOffer> offerOf(TableReservationOrder reservation) {
+        if (reservation == null) {
+            return Optional.empty();
+        }
+        boolean lunch = SEATING_LABEL.equals(reservation.seatingPreference())
+                || reservation.guestComment() != null && reservation.guestComment().startsWith(SEATING_LABEL);
+        return lunch ? catalog.find(defaultVenueCode) : Optional.empty();
     }
 
     /** Why this day or time cannot be a business lunch. A null time checks the day alone. */

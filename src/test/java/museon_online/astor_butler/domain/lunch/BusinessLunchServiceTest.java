@@ -167,6 +167,27 @@ class BusinessLunchServiceTest {
     }
 
     @Test
+    void knowsALunchReservationByItsMarkEvenAfterTheSeatingWishWasReplaced() {
+        BusinessLunchService service = service(List.of());
+        var lunch = BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+        var moved = new museon_online.astor_butler.domain.booking.TableReservationOrder(lunch.id(), lunch.chatId(), lunch.telegramUserId(), lunch.userId(),
+                lunch.tableId(), lunch.tableCode(), lunch.tableDisplayName(), lunch.preferredZone(), "у окна", lunch.status(), lunch.source(),
+                lunch.requestedStartAt(), lunch.requestedEndAt(), lunch.partySize(), lunch.guestName(), lunch.guestPhone(),
+                "Бизнес-ланч: Борщ со сметаной × 2. Итого 540 ₽. | Стол/зона изменены: у окна", lunch.managerTelegramId(), lunch.managerUserId(),
+                lunch.hostessChatId(), lunch.sbisExternalId(), lunch.createdAt(), lunch.updatedAt());
+        var ordinary = new museon_online.astor_butler.domain.booking.TableReservationOrder(lunch.id(), lunch.chatId(), lunch.telegramUserId(), lunch.userId(),
+                lunch.tableId(), lunch.tableCode(), lunch.tableDisplayName(), lunch.preferredZone(), "у окна", lunch.status(), lunch.source(),
+                lunch.requestedStartAt(), lunch.requestedEndAt(), lunch.partySize(), lunch.guestName(), lunch.guestPhone(),
+                "Забронировать стол", lunch.managerTelegramId(), lunch.managerUserId(),
+                lunch.hostessChatId(), lunch.sbisExternalId(), lunch.createdAt(), lunch.updatedAt());
+
+        assertThat(service.offerOf(lunch)).contains(offer);
+        assertThat(service.offerOf(moved)).contains(offer);
+        assertThat(service.offerOf(ordinary)).isEmpty();
+        assertThat(service.offerOf(null)).isEmpty();
+    }
+
+    @Test
     void refusesWhatTheOfferDoesNotAllow() {
         BusinessLunchService service = service(List.of());
         BusinessLunchService.Request ok = request("DIRECT", null);
@@ -186,7 +207,7 @@ class BusinessLunchServiceTest {
     }
 
     private BusinessLunchService service(List<ExternalLunchOrderProvider> providers) {
-        return new BusinessLunchService(tableReservationService, providers, timeProvider);
+        return new BusinessLunchService(tableReservationService, providers, timeProvider, new BusinessLunchCatalog(List.of(offer)));
     }
 
     /** Stands in for the venue's system. A null answer makes it throw, as a network failure would. */

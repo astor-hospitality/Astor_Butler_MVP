@@ -18,11 +18,9 @@ import museon_online.astor_butler.service.message.OutgoingMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
-import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -48,15 +46,15 @@ public class BusinessLunchScenario implements FsmScenario {
     private static final DateTimeFormatter DAY_BUTTON = DateTimeFormatter.ofPattern("dd.MM");
     private static final DateTimeFormatter DAY_TEXT = DateTimeFormatter.ofPattern("EEEE, dd.MM", RU);
     private static final DateTimeFormatter TIME_TEXT = DateTimeFormatter.ofPattern("HH:mm");
-    private static final List<DayOfWeek> WEEKDAYS = List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY);
     private static final String SEND_BUTTON = "✅ Отправить заявку";
     private static final String CHANGE_BUTTON = "✏️ Изменить";
     private static final String CANCEL_BUTTON = "↩️ Отменить";
     private static final String NEXT_BUTTON = "➡️ Дальше";
+    private static final String REMOVE_BUTTON = "➖ Убрать последнее";
+    private static final List<String> REMOVE_WORDS = List.of("убрать", "убери", "удалить", "удали", "минус");
     private static final Set<String> NEXT = Set.of("дальше", "далее", "пропустить", "готово", "ничего", "нет", "не надо", "не нужно");
     private static final Set<String> YES = Set.of("да", "ок", "окей", "верно", "все верно", "подтверждаю", "согласен", "согласна");
     private static final Set<String> EXIT = Set.of("отмена", "стоп", "главное меню", "выйти", "не надо", "не нужно", "передумал", "передумала", "нет");
-    private static final int DAY_CHOICES = 5;
     private static final String VENUE_WORD = "Состав и стоимость на день подтвердит команда.";
     private static final int WISH_LIMIT = 200;
     private static final int CORRECTION_WORDS = 4;
@@ -218,7 +216,7 @@ public class BusinessLunchScenario implements FsmScenario {
                 String question = course.title() + ": что добавить? Каждое нажатие добавляет одну порцию.";
                 String order = draft.dishCodes().isEmpty() ? "" : "\n" + orderLine(offer, draft);
                 List<List<String>> choices = new ArrayList<>(rows(course.dishes().stream().map(this::dishButton).toList(), 1));
-                choices.add(List.of(NEXT_BUTTON));
+                choices.add(draft.dishCodes().isEmpty() ? List.of(NEXT_BUTTON) : List.of(REMOVE_BUTTON, NEXT_BUTTON));
                 return ask(incoming, BotState.BUSINESS_LUNCH_CHOOSE_DISH, join(lead, question + order), choices, "ASK_LUNCH_DISH");
             }
         } else {
@@ -241,7 +239,8 @@ public class BusinessLunchScenario implements FsmScenario {
         if (draft.time() == null) {
             return ask(incoming, BotState.BUSINESS_LUNCH_COLLECT_TIME, join(lead, "Во сколько вас ждать?"), rows(timeChoices(offer, draft.date()), 4), "ASK_TIME");
         }
-        String question = summary(offer, draft) + "\n\nОтправляю заявку команде? Если есть пожелания, напишите их одной строкой, я передам.";
+        String question = summary(offer, draft) + "\n\nОтправляю заявку команде? Если есть пожелания, напишите их одной строкой, я передам."
+                + (offer.aLaCarte() ? " Лишнее можно убрать: напишите «убрать» и название блюда." : "");
         return ask(incoming, BotState.BUSINESS_LUNCH_CONFIRMATION, join(lead, question), List.of(List.of(SEND_BUTTON), List.of(CHANGE_BUTTON)), "ASK_LUNCH_CONFIRMATION");
     }
 
@@ -257,6 +256,9 @@ public class BusinessLunchScenario implements FsmScenario {
     /** À la carte: one tap adds one portion from the current course, "дальше" moves to the next course. */
     private OutgoingMessage onCourse(IncomingMessage incoming, BusinessLunchOffer offer, Draft draft, String normalized) {
         int step = courseStep(draft);
+        if (isRemoval(normalized)) {
+            return removePortion(incoming, offer, draft, normalized);
+        }
         if (isNext(normalized) || step >= offer.courses().size()) {
             return advance(incoming, offer, draft.withCourseStep(Math.min(step + 1, offer.courses().size())), "");
         }
@@ -270,6 +272,31 @@ public class BusinessLunchScenario implements FsmScenario {
         }
         BusinessLunchOffer.Dish dish = course.dishes().get(picked);
         return advance(incoming, offer, draft.withPortion(dish.code()).withCourseStep(step), "Добавил: " + dish.title() + ".");
+    }
+
+    /** Takes one portion out of the order: the last one added, or the last portion of the dish the guest names. */
+    private OutgoingMessage removePortion(IncomingMessage incoming, BusinessLunchOffer offer, Draft draft, String normalized) {
+        List<String> order = draft.dishCodes();
+        if (order.isEmpty()) {
+            return advance(incoming, offer, draft, "В заказе пока ничего нет.");
+        }
+        String name = words(normalized);
+        for (String word : REMOVE_WORDS) {
+            name = name.startsWith(word) ? name.substring(word.length()).trim() : name;
+        }
+        int index = order.size() - 1;
+        if (!name.isBlank() && !name.startsWith("последн")) {
+            List<String> taken = order.stream().distinct().toList();
+            int picked = pick(taken.stream().map(code -> offer.dish(code).map(BusinessLunchOffer.Dish::title).orElse(code)).toList(), name);
+            if (picked < 0) {
+                return advance(incoming, offer, draft, "Такого блюда в заказе нет.");
+            }
+            index = order.lastIndexOf(taken.get(picked));
+        }
+        String removed = offer.dish(order.get(index)).map(BusinessLunchOffer.Dish::title).orElse(order.get(index));
+        Draft without = draft.withoutPortion(index);
+        // With nothing left there is no summary to return to: the guest starts from the first course again.
+        return advance(incoming, offer, without.dishCodes().isEmpty() ? without.withCourseStep(0) : without, "Убрал: " + removed + ".");
     }
 
     private OutgoingMessage onDish(IncomingMessage incoming, BusinessLunchOffer offer, Draft draft, String normalized) {
@@ -329,6 +356,9 @@ public class BusinessLunchScenario implements FsmScenario {
         if (normalized.contains("изменить") || normalized.contains("поменять") || normalized.contains("заново")) {
             Draft again = Draft.start(draft.venueCode(), draft.source(), draft.conciergeRequestId());
             return advance(incoming, offer, again, "Хорошо, соберем заново.");
+        }
+        if (offer.aLaCarte() && isRemoval(normalized)) {
+            return removePortion(incoming, offer, draft, normalized);
         }
         String wish = text == null ? "" : text.trim();
         // A short reply such as "лучше в 14:30" corrects the summary. A longer one is a wish for the team and is not searched
@@ -589,8 +619,7 @@ public class BusinessLunchScenario implements FsmScenario {
     }
 
     private Optional<BusinessLunchService.WindowIssue> dayIssue(BusinessLunchOffer offer, LocalDate day) {
-        Optional<BusinessLunchService.WindowIssue> issue = lunchService.windowIssue(offer, day, null);
-        return issue.isPresent() || !timeChoices(offer, day).isEmpty() ? issue : Optional.of(BusinessLunchService.WindowIssue.ALREADY_PASSED);
+        return BusinessLunchChoices.dayIssue(offer, lunchService, day);
     }
 
     private List<List<String>> setRows(BusinessLunchOffer offer) {
@@ -598,39 +627,15 @@ public class BusinessLunchScenario implements FsmScenario {
     }
 
     private List<String> dayChoices(BusinessLunchOffer offer) {
-        LocalDate today = timeProvider.today();
-        List<String> labels = new ArrayList<>();
-        for (int ahead = 0; ahead < 21 && labels.size() < DAY_CHOICES; ahead++) {
-            LocalDate day = today.plusDays(ahead);
-            if (dayIssue(offer, day).isPresent()) {
-                continue;
-            }
-            String name = ahead == 0 ? "Сегодня" : ahead == 1 ? "Завтра" : capitalize(day.getDayOfWeek().getDisplayName(TextStyle.SHORT, RU));
-            labels.add(name + " " + day.format(DAY_BUTTON));
-        }
-        return labels;
+        return BusinessLunchChoices.days(offer, lunchService, timeProvider.today());
     }
 
-    /** Half-hour starts inside the lunch hours; for today only the ones still ahead. */
     private List<String> timeChoices(BusinessLunchOffer offer, LocalDate day) {
-        List<String> labels = new ArrayList<>();
-        for (LocalTime time = offer.from(); time.isBefore(offer.to()); time = time.plusMinutes(30)) {
-            if (lunchService.windowIssue(offer, day, time).isEmpty()) {
-                labels.add(time.format(TIME_TEXT));
-            }
-            if (time.plusMinutes(30).isBefore(time)) {
-                break;
-            }
-        }
-        return labels;
+        return BusinessLunchChoices.times(offer, lunchService, day);
     }
 
     private List<List<String>> rows(List<String> labels, int columns) {
-        List<List<String>> rows = new ArrayList<>();
-        for (int i = 0; i < labels.size(); i += columns) {
-            rows.add(List.copyOf(labels.subList(i, Math.min(i + columns, labels.size()))));
-        }
-        return rows;
+        return BusinessLunchChoices.rows(labels, columns);
     }
 
     private List<String> titles(List<BusinessLunchOffer.Dish> dishes) {
@@ -750,22 +755,15 @@ public class BusinessLunchScenario implements FsmScenario {
     }
 
     private String explain(BusinessLunchOffer offer, BusinessLunchService.WindowIssue issue) {
-        return switch (issue) {
-            case NOT_A_LUNCH_DAY -> "Бизнес-ланч в %s проходит %s. Выберите, пожалуйста, один из этих дней.".formatted(venueName(offer), daysText(offer));
-            case OUTSIDE_LUNCH_HOURS -> "Бизнес-ланч подают с %s до %s. Выберите, пожалуйста, время в этом промежутке.".formatted(offer.from().format(TIME_TEXT), offer.to().format(TIME_TEXT));
-            case ALREADY_PASSED -> "Это время уже прошло. Выберите, пожалуйста, более позднее.";
-        };
+        return BusinessLunchChoices.explain(offer, issue);
     }
 
     private String daysText(BusinessLunchOffer offer) {
-        if (offer.days().size() == WEEKDAYS.size() && offer.days().containsAll(WEEKDAYS)) {
-            return "по будням";
-        }
-        return "в дни: " + String.join(", ", offer.days().stream().sorted().map(day -> day.getDisplayName(TextStyle.SHORT, RU)).toList());
+        return BusinessLunchChoices.daysText(offer);
     }
 
     private String venueName(BusinessLunchOffer offer) {
-        return offer.venueName() == null || offer.venueName().isBlank() ? offer.venueCode() : offer.venueName();
+        return BusinessLunchChoices.venueName(offer);
     }
 
     private boolean asksForLunch(String normalized) {
@@ -778,8 +776,18 @@ public class BusinessLunchScenario implements FsmScenario {
     }
 
     private boolean isNext(String normalized) {
-        String words = normalized.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
+        String words = words(normalized);
         return NEXT.contains(words) || words.startsWith("дальше") || words.startsWith("без ");
+    }
+
+    private boolean isRemoval(String normalized) {
+        String words = words(normalized);
+        return REMOVE_WORDS.stream().anyMatch(word -> words.equals(word) || words.startsWith(word + " "));
+    }
+
+    /** The reply without emoji and punctuation, so a button and the same words typed by hand read alike. */
+    private String words(String normalized) {
+        return normalized.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
     }
 
     private boolean isExit(String normalized) {

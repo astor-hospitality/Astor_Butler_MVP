@@ -68,7 +68,7 @@ class BusinessLunchScenarioTest {
                 new InMemoryStates(),
                 new InMemoryDrafts(),
                 new BusinessLunchCatalog(List.of(BusinessLunchFixtures.fullMenu(), BusinessLunchFixtures.dishOfTheDay(), BusinessLunchFixtures.aLaCarte())),
-                new BusinessLunchService(tableReservationService, providers, timeProvider),
+                new BusinessLunchService(tableReservationService, providers, timeProvider, new BusinessLunchCatalog(List.of(BusinessLunchFixtures.fullMenu()))),
                 new GuestInputUnderstandingService(),
                 new TableBookingDraftMerger(mock(TableBookingDraftStorage.class), timeProvider),
                 timeProvider
@@ -154,7 +154,7 @@ class BusinessLunchScenarioTest {
 
         OutgoingMessage soup = say("➡️ Дальше");
         assertThat(soup.text()).startsWith("Суп: что добавить?");
-        assertThat(buttons(soup)).containsExactly("Борщ со сметаной · 270 ₽", "➡️ Дальше", "↩️ Отменить");
+        assertThat(buttons(soup)).containsExactly("Борщ со сметаной · 270 ₽", "➖ Убрать последнее", "➡️ Дальше", "↩️ Отменить");
         say("Борщ со сметаной · 270 ₽");
         OutgoingMessage twice = say("борщ со сметаной");
         assertThat(twice.text()).contains("В заказе: Нисуаз × 1, Борщ со сметаной × 2. Итого 830 ₽.");
@@ -183,6 +183,44 @@ class BusinessLunchScenarioTest {
         assertThat(command.getValue().guestComment()).isEqualTo("Бизнес-ланч из Concierge: Нисуаз × 1, Борщ со сметаной × 2. Итого 830 ₽. В Saby внести вручную.");
         assertThat(placed.text()).contains("Заявку #77 на бизнес-ланч передал команде Carte", "Итого: 830 ₽");
         assertThat(placed.metadata()).containsEntry("lunchSet", "A_LA_CARTE");
+    }
+
+    @Test
+    void aPortionCanBeTakenBackOut() {
+        say("/start lunch_carte");
+        say("Нисуаз");
+        say("Нисуаз");
+
+        OutgoingMessage undone = say("➖ Убрать последнее");
+        assertThat(undone.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+        assertThat(undone.text()).contains("Убрал: Нисуаз.", "В заказе: Нисуаз × 1. Итого 290 ₽.");
+
+        say("дальше");
+        say("Борщ со сметаной");
+        OutgoingMessage byName = say("убрать нисуаз");
+        assertThat(byName.text()).contains("Убрал: Нисуаз.", "В заказе: Борщ со сметаной × 1. Итого 270 ₽.");
+
+        OutgoingMessage unknown = say("убрать капучино");
+        assertThat(unknown.text()).contains("Такого блюда в заказе нет.", "В заказе: Борщ со сметаной × 1. Итого 270 ₽.");
+    }
+
+    @Test
+    void atTheSummaryADishCanBeRemovedAndAnEmptyOrderStartsOver() {
+        say("/start lunch_carte_p2_d20261006_t1300");
+        say("Нисуаз");
+        say("дальше");
+        say("Борщ со сметаной");
+        say("дальше");
+        assertThat(say("дальше").nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
+
+        OutgoingMessage smaller = say("убрать борщ со сметаной");
+        assertThat(smaller.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
+        assertThat(smaller.text()).contains("Убрал: Борщ со сметаной.", "Заказ:\n• Нисуаз × 1 · 290 ₽\nИтого: 290 ₽");
+
+        OutgoingMessage empty = say("убрать нисуаз");
+        assertThat(empty.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+        assertThat(empty.text()).contains("Убрал: Нисуаз.", "Салаты: что добавить?");
+        verify(tableReservationService, never()).createReservation(any());
     }
 
     @Test

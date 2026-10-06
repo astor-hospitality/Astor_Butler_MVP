@@ -109,6 +109,12 @@ public class BusinessLunchDraftStorage {
             return new Draft(venueCode, setCode, dishes, courseStep, partySize, date, time, comment, source, conciergeRequestId);
         }
 
+        public Draft withoutPortion(int index) {
+            List<String> dishes = new ArrayList<>(dishCodes);
+            dishes.remove(index);
+            return new Draft(venueCode, setCode, dishes, courseStep, partySize, date, time, comment, source, conciergeRequestId);
+        }
+
         public Draft withCourseStep(Integer step) {
             return new Draft(venueCode, setCode, dishCodes, step, partySize, date, time, comment, source, conciergeRequestId);
         }

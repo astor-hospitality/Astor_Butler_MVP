@@ -7,6 +7,8 @@ import museon_online.astor_butler.domain.booking.TableReservationChangeCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.lunch.BusinessLunchOffer;
+import museon_online.astor_butler.domain.lunch.BusinessLunchService;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
 import museon_online.astor_butler.fsm.understanding.GuestInputUnderstandingService;
@@ -41,6 +43,8 @@ public class ChangeCancelScenario implements FsmScenario {
             .withZone(ZoneId.of("Asia/Yekaterinburg"));
     private static final DateTimeFormatter TIME_ONLY = DateTimeFormatter.ofPattern("HH:mm")
             .withZone(ZoneId.of("Asia/Yekaterinburg"));
+    private static final String HOW_TO_PICK_LUNCH_TIME = "Выберите новое время кнопкой или напишите, например, 13:30.";
+    private static final String HOW_TO_PICK_LUNCH_DAY = "Выберите новый день кнопкой или напишите его сообщением.";
     private static final Pattern EXPLICIT_TIME = Pattern.compile("\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b");
     private static final Pattern SHORT_HOUR = Pattern.compile("^(?:в\\s+|к\\s+)?([1-9]|1[0-1]|1\\d|2[0-3])$");
 
@@ -50,6 +54,7 @@ public class ChangeCancelScenario implements FsmScenario {
     private final ChangeCancelDraftStorage changeDraftStorage;
     private final GuestInputUnderstandingService understandingService;
     private final BookingTimeProvider timeProvider;
+    private final BusinessLunchService lunchService;
 
     @Value("${telegram.admin.chat-id:}")
     private String adminChatId;
@@ -505,6 +510,15 @@ public class ChangeCancelScenario implements FsmScenario {
 
     private OutgoingMessage startChangeAction(IncomingMessage incoming, Long orderId, String action) {
         changeDraftStorage.save(incoming.chatId(), new ChangeCancelDraftStorage.Draft(orderId, action));
+        if ("CHANGE_TIME".equals(action) || "CHANGE_DATE".equals(action)) {
+            TableReservationOrder order = tableReservationService.getReservation(orderId);
+            Optional<BusinessLunchOffer> lunch = lunchService.offerOf(order);
+            if (lunch.isPresent()) {
+                return askLunchMove(incoming, order, lunch.get(), action, "CHANGE_TIME".equals(action)
+                        ? "Понял, переносим время бизнес-ланча. Его подают %s. %s".formatted(BusinessLunchChoices.hoursText(lunch.get()), HOW_TO_PICK_LUNCH_TIME)
+                        : "Понял, переносим день бизнес-ланча. Он проходит %s. %s".formatted(BusinessLunchChoices.daysText(lunch.get()), HOW_TO_PICK_LUNCH_DAY));
+            }
+        }
         return switch (action) {
             case "CHANGE_PARTY_SIZE" -> changeWorkInProgress(
                     incoming,
@@ -615,8 +629,30 @@ public class ChangeCancelScenario implements FsmScenario {
             case "CHANGE_DATE" -> changeDateCommand(incoming, normalized, current).orElse(null);
             default -> null;
         };
+        Optional<BusinessLunchOffer> lunch = movesTheVisit(pending.action()) ? lunchService.offerOf(current) : Optional.empty();
         if (command == null) {
-            return askAgainForPending(incoming, pending.action());
+            return lunch.isPresent()
+                    ? askLunchMove(incoming, current, lunch.get(), pending.action(),
+                            "Не смог понять ответ. " + ("CHANGE_DATE".equals(pending.action()) ? HOW_TO_PICK_LUNCH_DAY : HOW_TO_PICK_LUNCH_TIME))
+                    : askAgainForPending(incoming, pending.action());
+        }
+        if (lunch.isPresent()) {
+            // A business lunch stays a business lunch when it is moved: its own days, its own hours, its own length.
+            java.time.ZonedDateTime startAt = command.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE);
+            Optional<BusinessLunchService.WindowIssue> issue = lunchService.windowIssue(lunch.get(), startAt.toLocalDate(), startAt.toLocalTime());
+            if (issue.isPresent()) {
+                return askLunchMove(incoming, current, lunch.get(), pending.action(), BusinessLunchChoices.explain(lunch.get(), issue.get()));
+            }
+            command = new TableReservationChangeCommand(
+                    command.venueCode(),
+                    command.tableCode(),
+                    command.preferredZone(),
+                    command.seatingPreference(),
+                    command.requestedStartAt(),
+                    command.requestedStartAt().plusSeconds(lunch.get().seating() * 60L),
+                    command.partySize(),
+                    command.guestComment()
+            );
         }
 
         TableReservationOrder changed = tableReservationService.changeByGuest(current.id(), command);
@@ -639,6 +675,23 @@ public class ChangeCancelScenario implements FsmScenario {
                 AdminAlert.none(),
                 List.of("CHANGE_CANCEL", pending.action(), "RESERVATION_CHANGED", "RETURN_MAIN_MENU")
         ).withMetadata(Map.of("scenario", id(), "changedTableReservationId", changed.id()));
+    }
+
+    private boolean movesTheVisit(String action) {
+        return "CHANGE_TIME".equals(action) || "CHANGE_DATE".equals(action);
+    }
+
+    /** Asks for the new time or day of a business lunch with buttons that fit its hours. */
+    private OutgoingMessage askLunchMove(IncomingMessage incoming, TableReservationOrder order, BusinessLunchOffer lunch, String action, String text) {
+        if ("CHANGE_DATE".equals(action)) {
+            List<List<String>> days = new java.util.ArrayList<>(BusinessLunchChoices.rows(BusinessLunchChoices.days(lunch, lunchService, timeProvider.today()), 3));
+            days.add(List.of("↩️ Отменить действие"));
+            return changeWorkInProgress(incoming, text, action, days);
+        }
+        LocalDate day = order.requestedStartAt() == null ? timeProvider.today() : order.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE).toLocalDate();
+        List<List<String>> times = new java.util.ArrayList<>(BusinessLunchChoices.rows(BusinessLunchChoices.times(lunch, lunchService, day), 4));
+        times.add(List.of("↩️ Отменить действие"));
+        return changeWorkInProgress(incoming, text, action, times);
     }
 
     private OutgoingMessage askAgainForPending(IncomingMessage incoming, String action) {
