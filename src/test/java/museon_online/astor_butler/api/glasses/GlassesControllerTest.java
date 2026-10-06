@@ -121,6 +121,24 @@ class GlassesControllerTest {
         verifyNoInteractions(gateway);
     }
 
+    @Test void identicalNetworkRetryReusesReplyButChangedInputIsConflict() throws Exception {
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Ответ для повтора.", "test", "test", Duration.ZERO));
+        String body = json(Map.of("text", "повтори"));
+        for (int i = 0; i < 2; i++) {
+            mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer " + TOKEN)
+                            .contentType("application/json").content(body))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.text").value("Ответ для повтора."));
+        }
+        mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer " + TOKEN)
+                        .contentType("application/json").content(json(Map.of("text", "другой вопрос"))))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.requestId").value(ID))
+                .andExpect(jsonPath("$.error.code").value("REQUEST_ID_CONFLICT"));
+        mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer wrong")
+                        .contentType("application/json").content(body))
+                .andExpect(status().isUnauthorized());
+        verify(gateway, times(1)).generateText(any());
+    }
+
     @ParameterizedTest @ValueSource(strings = {"", "   "})
     void blankProviderResponseIsUnavailable(String response) throws Exception {
         when(gateway.generateText(any())).thenReturn(ModelTextResponse.text(response, "test", "test", Duration.ZERO));
@@ -201,6 +219,41 @@ class GlassesControllerTest {
         var out = new ByteArrayOutputStream();
         ImageIO.write(new BufferedImage(width, 2, BufferedImage.TYPE_INT_RGB), "jpeg", out);
         return Base64.getEncoder().encodeToString(out.toByteArray());
+    }
+
+    private Map<String, Object> photoContext() {
+        return Map.of("sessionId", "80d26cf1-5139-4121-a4ca-dfb14aac225c", "scenarioCode", "BUSINESS_LUNCH_TWO",
+                "stageCode", "PLACE_SETTINGS", "revision", 2);
+    }
+
+    @Test void photoContextIsImageOnlyAndCannotAssertIdentityTasksOrCompletion() throws Exception {
+        rejects(json(Map.of("text", "a", "photoContext", photoContext())), 400, "MALFORMED_REQUEST");
+        for (var entry : Map.<String, Object>of("sessionId", "invalid", "scenarioCode", "LIVE_TASK",
+                "stageCode", "unknown", "revision", 0, "taskId", "invented", "archived", true).entrySet()) {
+            var context = new java.util.HashMap<>(photoContext());
+            context.put(entry.getKey(), entry.getValue());
+            rejects(json(Map.of("imageBase64", jpeg(32), "imageMimeType", "image/jpeg", "photoContext", context)),
+                    400, "MALFORMED_REQUEST");
+        }
+    }
+
+    @Test void photoReceiptFollowsSuccessfulArchiveAndBoundContext() throws Exception {
+        var storage = mock(GlassesS3Storage.class);
+        when(storage.context(any())).thenReturn("");
+        when(storage.enabled()).thenReturn(true);
+        when(gateway.analyzeImage(any())).thenReturn(museon_online.astor_butler.model.ModelVisionResponse
+                .vision("Проверьте два комплекта приборов.", "test", "test", Duration.ZERO));
+        try (var photos = new GlassesAssistService(gateway, mock(GlassesVoice.class), storage, true, 1000)) {
+            var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), photos, mapper);
+            var result = c.assist(request(json(Map.of("imageBase64", jpeg(32), "imageMimeType", "image/jpeg",
+                    "photoContext", photoContext()))));
+            assertThat(result.getStatusCode().value()).isEqualTo(200);
+            var receipt = ((GlassesController.AssistResponse) result.getBody()).photoReceipt();
+            assertThat(receipt.archived()).isTrue();
+            assertThat(receipt.requestId()).isEqualTo(ID);
+            assertThat(receipt.context().stageCode()).isEqualTo("PLACE_SETTINGS");
+            verify(storage).archive(any(), eq(ID), eq("image"), any(), any(), eq(receipt.context()));
+        }
     }
 
     @Test void rateLimitsTheSinglePilotCredential() throws Exception {

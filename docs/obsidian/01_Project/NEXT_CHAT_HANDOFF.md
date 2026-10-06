@@ -966,3 +966,28 @@ Worktree `~/.codex/worktrees/fb4b/Astor_Butler_MVP`, branch `codex/glasses-voice
 ## 2026-10-04: Astor Glass runtime и фронт для передачи Роме
 
 Михаил разрешил Astor production/pлатные Yandex calls и координацию iPhone теста с отдельным чатом. Real cached Whisper AAC validation + YandexGPT text/voice + Qwen JPEG работают в standalone runtime без component scan/FSM/DB/Telegram startup. Public HTTPS smoke 200 для text/voice/vision, scoped bearer 12h; front `/astor/`, Butler page и WEB-only relay. Telegram proxy scoped restart восстановил getMe, основной бот не рестартовали. Maven 297 tests PASS, decoder 6 PASS. См. `docs/operations/ASTOR_GLASS_ROMA_HANDOFF.md` и runbook; физический HFP acceptance и GitHub CI/review отдельно. Приглашение 0xLaki write отправлено (пока pending); root-owned limited wrapper установлен, SSH key/отчёт destination ещё нужны. Не выдавать shared-host Docker/root или cloud keys Claude/клиенту.
+
+
+## 2026-10-04: S3 documents and glasses backend hardening
+
+Михаил подтвердил оба S3 назначения: материалы очков и документы для ответа. Отдельная ветка `codex/glasses-backend-hardening` от PR #11; фронт Ромы/ограниченный SSH остаются в PR #12. S3 bucket `astor-glasses-pilot-b1gug0tmrgmsq5pfsvhs`: private, max 1 GiB, отдельный SA, только конкретный document GET и scoped materials PUT, lifecycle materials 1 day (daily processing), без folder roles/ключей в git. Bucket ACL задаёт базовые права; policy ограничивает действия/пути. Live static-key GET/PUT PASS; material GET, doc PUT, чужой scope PUT, list, DELETE и anonymous GET 403. Учебный документ business lunch, реальное меню/назначения отсутствуют.
+
+API: memory reply retry 32 entries/120s, payload conflict 409, cached answer survives a storage failure to retry archive, late model result after timeout not reused; silence 400 NO_SPEECH, successful STT readiness preserved. All work remains informational, outside FSM/task ACK. Full Maven package: 309 tests, 0 failures/errors/skipped; real decoder 6 PASS + cached Whisper silence PASS. Graph updated. Runtime rollout/HTTPS smoke and PR CI are separate completion signals; physical acceptance stays with chat «Проверить интеграцию ИИ с очками». Operational details: `docs/operations/GLASSES_S3_STORAGE.md`.
+
+
+## 2026-10-05: фото по учебным шагам, приветствие и локальная команда
+
+Main a4023a7 включён в codex/glasses-backend-hardening без конфликтов. Ядро поручений остаётся отдельно от informational pilot. В clients/ios-glasses перенесён reviewable iPhone companion без SDK/Pods/build/ключей. Фото: четыре шага, обязательные PLACE_SETTINGS/FINAL_CHECK, session+stage+revision, S3 receipt, ручной переход и bounded retry. Runtime v3-step-photo promoted; полный Maven 336/336; публичный synthetic AAC/STT/photo/NO_SPEECH/409/401 PASS, контекст сверён в S3. iPhone build/sign/install PASS; wear greeting/local-only wake добавлены, аппаратная поддержка ещё не подтверждена. Документ: docs/operations/GLASSES_STEP_PHOTOS.md. Telegram Тариэлю отправлен 4 октября 19:02, меню к 5 октября ожидает подтверждения; Notion пакет создан.
+
+
+## 2026-10-05 — private media archive v4
+
+- /api/glasses/media: authenticated raw JPEG/AAC/MP4 up to64 MiB, canonical file/session UUID, standard SHA256, one upload, independent10/min limiter. Server commits media then receipt; receipt GET only is allowed, raw GET/list/delete/other scope PUT remain denied.
+- v4-media-archive is live; v3 retained stopped for rollback. Candidate restart retry and public HTTPS receipts/conflict/hash/auth and6MiB MP4 passed. Full Maven package347 tests green; CI for775a7a5 green, next archive head pending.
+- iPhone snapshot includes Dock modules and call policy fix. SDK Ready/HFP/wear capability2 enabled verified by physical chat; false SDK InCall during own SCO is fixed there. Greeting/wake/charge-upload are separate acceptance checks still open. Standby is local opt-in, no speaker verification; Personal Team Wi-Fi video import stays off.
+- Portable companion sources in clients/ios-glasses; licensed SDK, build outputs and access credentials excluded. API archive does not complete StaffTaskService commands or FSM steps.
+
+
+## 2026-10-06 — R&D очков закрыто
+
+Михаил явно остановил дальнейшее исследование и распорядился интегрировать всё написанное. Итог и фактические ограничения: docs/operations/GLASSES_RD_HANDOFF.md. Рабочий кнопочный голос/HFP→backend→reply/TTS проверен; сохранённый AAC сверён по SHA256. Фото/зарядка/greeting/locked standby не выдаются за физически принятые. Apple localRussian=false на текущем iPhone, эксперимент Whisper positive synthetic FAIL и ASTOR_ENABLE_EXPERIMENTAL_WAKE=0. Новые физические шаги, установки, модельные исследования не выполнять без новой задачи. Scoped pilot bearer истёк; следующая выдача доступа — отдельная операционная процедура.
