@@ -1,6 +1,5 @@
 {
   "city": "Екатеринбург",
-  "ratingsUpdatedAt": "2026-10-04",
   "venues": [
     {
       "id": "aeris",
@@ -20,7 +19,6 @@
         { "src": "https://static.tildacdn.com/tild3337-3839-4431-a365-643764623965/SAV_4644.jpg", "alt": "Диванная зона AERIS" },
         { "src": "https://static.tildacdn.com/tild6536-3037-4239-a334-663365333365/SAV_4374.jpg", "alt": "Карта коктейлей Elements" }
       ],
-      "ratings": { "yandex": 4.8, "gis": 4.8 },
       "mapUrls": {
         "yandex": "https://yandex.ru/maps/org/aeris/103837967593/",
         "gis": "https://2gis.ru/ekaterinburg/firm/70000001085768632"
@@ -31,7 +29,6 @@
       "name": "Негодяи",
       "category": "Гастробар",
       "address": "пр. Ленина, 20а",
-      "ratings": { "yandex": 5.0, "gis": 5.0 },
       "mapUrls": {
         "yandex": "https://yandex.ru/maps/org/negodyai/120839461774/",
         "gis": "https://2gis.ru/ekaterinburg/firm/70000001039364594"
@@ -43,7 +40,6 @@
       "category": "Гастробар",
       "cuisine": "Паназиатская кухня",
       "address": "ул. Карла Либкнехта, 38а",
-      "ratings": { "yandex": 4.9, "gis": 4.9 },
       "mapUrls": {
         "yandex": "https://yandex.ru/maps/org/momo/1193772782/",
         "gis": "https://2gis.ru/ekaterinburg/firm/70000001025783455"
@@ -55,7 +51,6 @@
       "category": "Гастробар",
       "cuisine": "Русская и европейская кухня",
       "address": "ул. Бажова, 193",
-      "ratings": { "yandex": 4.7, "gis": 4.8 },
       "mapUrls": {
         "yandex": "https://yandex.ru/maps/org/dom_kultury/243013495762/",
         "gis": "https://2gis.ru/ekaterinburg/firm/70000001109591280"
@@ -66,7 +61,6 @@
       "name": "Физкультура",
       "category": "Гастробар",
       "address": "ул. Добролюбова, 2Б",
-      "ratings": { "yandex": 4.7, "gis": 4.8 },
       "mapUrls": {
         "yandex": "https://yandex.ru/maps/org/fizkultura/102743421082/",
         "gis": "https://2gis.ru/ekaterinburg/firm/70000001097638348"
@@ -78,7 +72,6 @@
       "category": "Гастробар",
       "cuisine": "Латиноамериканская кухня",
       "address": "ул. Вайнера, 9",
-      "ratings": { "yandex": 4.6, "gis": 4.9 },
       "mapUrls": {
         "yandex": "https://yandex.ru/maps/org/metis/19193824259/",
         "gis": "https://2gis.ru/ekaterinburg/firm/70000001032328273"
@@ -89,7 +82,6 @@
       "name": "Мята",
       "category": "Гастробар",
       "address": "пр. Ленина, 5л",
-      "ratings": { "yandex": 4.5, "gis": 4.9 },
       "mapUrls": {
         "yandex": "https://yandex.ru/maps/org/myata/1165897871/",
         "gis": "https://2gis.ru/ekaterinburg/firm/1267165676499509"

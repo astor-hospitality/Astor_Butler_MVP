@@ -1,0 +1,4 @@
+# Left by scripts/concierge_ratings while it runs or for rollback; only snapshot.json is published content.
+snapshot.prev.json
+.update.lock
+*.tmp

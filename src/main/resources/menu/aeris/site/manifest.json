@@ -1,0 +1,45 @@
+{
+  "venue": "AERIS",
+  "site": "https://aeris.bar",
+  "fetchedAt": "2026-10-06T16:22:00.000Z",
+  "note": "kitchen snapshot taken 2026-10-06 through the Claude browser on Mikhail's Mac; pictures of bar, wine and lunch not downloaded yet — run scripts/aeris_menu/sync.mjs from a machine that reaches aeris.bar",
+  "pages": {
+    "kitchen": {
+      "title": "Кухня",
+      "kind": "catalog",
+      "status": "ok",
+      "dishes": 68,
+      "sections": 9,
+      "catalog": {
+        "recid": "2272368201",
+        "storepart": "801053506212"
+      }
+    },
+    "barmenu": {
+      "title": "Бар",
+      "kind": "images",
+      "status": "not-run"
+    },
+    "wineroom": {
+      "title": "Винная карта",
+      "kind": "images",
+      "status": "not-run"
+    },
+    "bl": {
+      "title": "Бизнес-ланч",
+      "kind": "images",
+      "status": "not-run",
+      "knownImages": [
+        "https://static.tildacdn.com/tild3564-3035-4938-a233-633261646337/Aeris____140297__4_4.png",
+        "https://static.tildacdn.com/tild3430-3461-4631-b461-316563643434/1111.jpg"
+      ]
+    }
+  },
+  "files": {
+    "kitchen.json": {
+      "sha256": "371585f9e039d74cb6645e77cda7bf0cac31a558bbb51238724f352a660b9cfd",
+      "fetchedAt": "2026-10-06T16:22:00.000Z",
+      "source": "https://aeris.bar/kitchen"
+    }
+  }
+}

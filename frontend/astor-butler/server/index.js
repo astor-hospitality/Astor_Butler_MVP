@@ -12,6 +12,7 @@ const ASSET_MANIFEST = {
   "/astor_concierge/feed/index.html": "astor_concierge/feed/index.html",
   "/css/feed.css": "css/feed.css",
   "/js/feed.js": "js/feed.js",
+  "/js/feed-ratings.js": "js/feed-ratings.js",
   "/data/venues.json": "data/venues.json",
   "/staff": "staff/index.html",
   "/staff.html": "staff/index.html",
@@ -19,6 +20,7 @@ const ASSET_MANIFEST = {
   "/css/staff.css": "css/staff.css",
   "/js/staff.js": "js/staff.js",
   "/js/staff-auth.js": "js/staff-auth.js",
+  "/data/ratings/snapshot.json": "data/ratings/snapshot.json",
   "/css/style.css": "css/style.css",
   "/js/main.js": "js/main.js",
   "/js/widget.js": "js/widget.js",
@@ -89,6 +91,10 @@ function cacheControl(assetPath) {
   if (assetPath.startsWith("staff/") || assetPath === "js/staff.js" || assetPath === "js/staff-auth.js") return "no-store";
   if (assetPath.endsWith(".html")) {
     return "public, max-age=60";
+  }
+  // Feed data changes between releases: a year-long immutable copy would pin old ratings.
+  if (assetPath.startsWith("data/")) {
+    return "no-cache";
   }
   return "public, max-age=31536000, immutable";
 }
