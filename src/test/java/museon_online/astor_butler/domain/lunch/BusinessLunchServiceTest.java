@@ -93,14 +93,47 @@ class BusinessLunchServiceTest {
         assertThat(saby.order.setCode()).isEqualTo("STARTER_MAIN");
         assertThat(saby.order.setPriceRub()).isEqualTo(650);
         assertThat(saby.order.guests()).isEqualTo(2);
+        // Two guests, so two portions of each dish of the set, and the set price twice.
         assertThat(saby.order.dishes()).containsExactly(
-                new BusinessLunchOrder.Item("SOUP", "BROTH", "Куриный бульон"),
-                new BusinessLunchOrder.Item("MAIN", "PASTA", "Паста с томатами"));
+                new BusinessLunchOrder.Item("SOUP", "BROTH", "Куриный бульон", 2, null),
+                new BusinessLunchOrder.Item("MAIN", "PASTA", "Паста с томатами", 2, null));
+        assertThat(saby.order.totalRub()).isEqualTo(1300);
         assertThat(placement.external().accepted()).isTrue();
         verify(tableReservationService).attachExternalId(77L, "SABY-501");
         var command = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(command.capture());
         assertThat(command.getValue().guestComment()).isEqualTo("Бизнес-ланч: 2 × «Салат или суп + горячее», 650 ₽. Куриный бульон, Паста с томатами.");
+    }
+
+    @Test
+    void anOrderFromAMenuWithoutSetsCountsPortionsAndTheTotal() {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-502", ""));
+        BusinessLunchService service = service(List.of(saby));
+        when(tableReservationService.createReservation(any())).thenReturn(BusinessLunchFixtures.reservation(78, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2));
+
+        service.place(new BusinessLunchService.Request(CHAT, CHAT, BusinessLunchFixtures.aLaCarte(), null, List.of("BORSCHT", "NICOISE", "BORSCHT", "MORS", "MORS"),
+                2, TODAY.plusDays(1), LocalTime.of(13, 0), "Наталья", null, null, "CONCIERGE", "7f3a"));
+
+        assertThat(saby.order.setCode()).isNull();
+        assertThat(saby.order.dishes()).containsExactly(
+                new BusinessLunchOrder.Item("SOUP", "BORSCHT", "Борщ со сметаной", 2, 270),
+                new BusinessLunchOrder.Item("SALAD", "NICOISE", "Нисуаз", 1, 290),
+                new BusinessLunchOrder.Item("DRINKS", "MORS", "Клюквенный морс", 2, 140));
+        assertThat(saby.order.totalRub()).isEqualTo(1110);
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestComment()).isEqualTo("Бизнес-ланч из Concierge: Борщ со сметаной × 2, Нисуаз × 1, Клюквенный морс × 2. Итого 1110 ₽.");
+        assertThat(command.getValue().partySize()).isEqualTo(2);
+    }
+
+    @Test
+    void anOrderWithNoDishesIsRefused() {
+        BusinessLunchService service = service(List.of());
+
+        assertThatThrownBy(() -> service.place(new BusinessLunchService.Request(CHAT, CHAT, BusinessLunchFixtures.aLaCarte(), null, List.of(),
+                2, TODAY.plusDays(1), LocalTime.of(13, 0), null, null, null, "DIRECT", null)))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(tableReservationService, never()).createReservation(any());
     }
 
     @Test

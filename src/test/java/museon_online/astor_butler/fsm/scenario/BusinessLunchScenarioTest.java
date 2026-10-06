@@ -67,7 +67,7 @@ class BusinessLunchScenarioTest {
         scenario = new BusinessLunchScenario(
                 new InMemoryStates(),
                 new InMemoryDrafts(),
-                new BusinessLunchCatalog(List.of(BusinessLunchFixtures.fullMenu(), BusinessLunchFixtures.dishOfTheDay())),
+                new BusinessLunchCatalog(List.of(BusinessLunchFixtures.fullMenu(), BusinessLunchFixtures.dishOfTheDay(), BusinessLunchFixtures.aLaCarte())),
                 new BusinessLunchService(tableReservationService, providers, timeProvider),
                 new GuestInputUnderstandingService(),
                 new TableBookingDraftMerger(mock(TableBookingDraftStorage.class), timeProvider),
@@ -134,6 +134,101 @@ class BusinessLunchScenarioTest {
         assertThat(placed.metadata()).containsEntry("tableReservationId", 77L).containsEntry("lunchSource", "CONCIERGE").containsEntry("externalStatus", "MANUAL_ENTRY");
         assertThat(placed.adminAlert().required()).isFalse();
         assertThat(drafts).isEmpty();
+    }
+
+    @Test
+    void aMenuWithoutSetsIsOrderedCourseByCourse() {
+        OutgoingMessage salads = say("/start lunch_carte");
+        assertThat(salads.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+        assertThat(salads.text()).contains(
+                "Бизнес-ланч в Carte: по будням с 12:00 до 16:00.",
+                "Салаты\n• Нисуаз, 170 г · 290 ₽\n• Цезарь с цыплёнком, 130 г · 290 ₽",
+                "Напитки\n• Клюквенный морс, 200 мл · 140 ₽\n• Капучино · 220 ₽",
+                "Салаты: что добавить? Каждое нажатие добавляет одну порцию.");
+        assertThat(salads.text()).doesNotContain("подтвердит команда");
+        assertThat(buttons(salads)).containsExactly("Нисуаз · 290 ₽", "Цезарь с цыплёнком · 290 ₽", "➡️ Дальше", "↩️ Отменить");
+
+        OutgoingMessage added = say("Нисуаз · 290 ₽");
+        assertThat(added.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+        assertThat(added.text()).isEqualTo("Добавил: Нисуаз.\n\nСалаты: что добавить? Каждое нажатие добавляет одну порцию.\nВ заказе: Нисуаз × 1. Итого 290 ₽.");
+
+        OutgoingMessage soup = say("➡️ Дальше");
+        assertThat(soup.text()).startsWith("Суп: что добавить?");
+        assertThat(buttons(soup)).containsExactly("Борщ со сметаной · 270 ₽", "➡️ Дальше", "↩️ Отменить");
+        say("Борщ со сметаной · 270 ₽");
+        OutgoingMessage twice = say("борщ со сметаной");
+        assertThat(twice.text()).contains("В заказе: Нисуаз × 1, Борщ со сметаной × 2. Итого 830 ₽.");
+
+        assertThat(say("дальше").text()).startsWith("Напитки: что добавить?");
+        // "Нет" to the drinks skips the drinks. It does not throw the whole order away.
+        OutgoingMessage guests = say("нет");
+        assertThat(guests.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
+
+        say("2");
+        say("завтра");
+        OutgoingMessage summary = say("13:00");
+        assertThat(summary.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
+        assertThat(summary.text()).contains(
+                "Вторник, 06.10 в 13:00",
+                "Гостей: 2",
+                "Заказ:\n• Нисуаз × 1 · 290 ₽\n• Борщ со сметаной × 2 · 540 ₽\nИтого: 830 ₽");
+        assertThat(summary.text()).doesNotContain("Комбо");
+        verify(tableReservationService, never()).createReservation(any());
+
+        OutgoingMessage placed = say("да");
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().venueCode()).isEqualTo("CARTE");
+        assertThat(command.getValue().guestComment()).isEqualTo("Бизнес-ланч из Concierge: Нисуаз × 1, Борщ со сметаной × 2. Итого 830 ₽. В Saby внести вручную.");
+        assertThat(placed.text()).contains("Заявку #77 на бизнес-ланч передал команде Carte", "Итого: 830 ₽");
+        assertThat(placed.metadata()).containsEntry("lunchSet", "A_LA_CARTE");
+    }
+
+    @Test
+    void anOrderWithNothingInItIsNotCarriedOn() {
+        say("/start lunch_carte");
+        say("дальше");
+        say("пропустить");
+
+        OutgoingMessage back = say("без напитков");
+
+        assertThat(back.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+        assertThat(back.text()).contains("В заказе пока ничего нет.", "Салаты: что добавить?");
+        assertThat(say("отмена").nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+    }
+
+    @Test
+    void aDishFromAnotherCourseOrAStrangeWordIsNotAdded() {
+        say("/start lunch_carte_p2");
+
+        OutgoingMessage unknown = say("Борщ со сметаной");
+
+        assertThat(unknown.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+        assertThat(unknown.text()).contains("Не нашел такое блюдо в этом разделе.", "Салаты: что добавить?");
+        assertThat(drafts.get(CHAT).dishCodes()).isEmpty();
+    }
+
+    @Test
+    void theVenuesSystemGetsPortionsAndPricesOfAnOrderWithoutSets() {
+        VenueSystem saby = new VenueSystem(new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-777", ""));
+        providers.add(saby);
+        say("/start lunch_carte_p2_d20261006_t1300");
+        say("2");
+        say("2");
+        say("дальше");
+        say("дальше");
+        say("Капучино");
+        say("дальше");
+
+        say("да");
+
+        assertThat(saby.order.setCode()).isNull();
+        assertThat(saby.order.dishes()).containsExactly(
+                new BusinessLunchOrder.Item("SALAD", "CAESAR", "Цезарь с цыплёнком", 2, 290),
+                new BusinessLunchOrder.Item("DRINKS", "CAPPUCCINO", "Капучино", 1, 220));
+        assertThat(saby.order.totalRub()).isEqualTo(800);
+        verify(tableReservationService).attachExternalId(77L, "SABY-777");
     }
 
     @Test

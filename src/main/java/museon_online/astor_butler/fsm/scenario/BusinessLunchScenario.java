@@ -26,6 +26,7 @@ import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,6 +52,8 @@ public class BusinessLunchScenario implements FsmScenario {
     private static final String SEND_BUTTON = "✅ Отправить заявку";
     private static final String CHANGE_BUTTON = "✏️ Изменить";
     private static final String CANCEL_BUTTON = "↩️ Отменить";
+    private static final String NEXT_BUTTON = "➡️ Дальше";
+    private static final Set<String> NEXT = Set.of("дальше", "далее", "пропустить", "готово", "ничего", "нет", "не надо", "не нужно");
     private static final Set<String> YES = Set.of("да", "ок", "окей", "верно", "все верно", "подтверждаю", "согласен", "согласна");
     private static final Set<String> EXIT = Set.of("отмена", "стоп", "главное меню", "выйти", "не надо", "не нужно", "передумал", "передумала", "нет");
     private static final int DAY_CHOICES = 5;
@@ -113,13 +116,15 @@ public class BusinessLunchScenario implements FsmScenario {
             return begin(incoming, heardAtOnce(text), "");
         }
         String normalized = normalize(text);
-        if (isExit(normalized)) {
-            return leave(incoming);
-        }
         Draft draft = stored.get();
         Optional<BusinessLunchOffer> offer = catalog.find(draft.venueCode());
         if (offer.isEmpty()) {
             return unavailable(incoming);
+        }
+        // "Нет" to "what from the salads?" skips the salads; anywhere else it leaves the lunch.
+        boolean skipsCourse = state == BotState.BUSINESS_LUNCH_CHOOSE_DISH && offer.get().aLaCarte() && isNext(normalized);
+        if (isExit(normalized) && !skipsCourse) {
+            return leave(incoming);
         }
         return switch (state) {
             case BUSINESS_LUNCH_CHOOSE_SET -> onSet(incoming, offer.get(), draft, normalized);
@@ -185,8 +190,11 @@ public class BusinessLunchScenario implements FsmScenario {
         }
         Draft clean = withOnlyChoices(offer.get(), sanitized(offer.get(), draft));
         // The summary carries the same note about the venue's word, so the opening line leaves it out when the summary follows at once.
-        boolean summaryNext = clean.setCode() != null && openSlot(clean) < 0 && clean.partySize() != null && clean.date() != null && clean.time() != null;
+        boolean summaryNext = dishesChosen(offer.get(), clean) && clean.partySize() != null && clean.date() != null && clean.time() != null;
         String opening = intro(offer.get()) + (needsVenueWord(offer.get()) && !summaryNext ? " " + VENUE_WORD : "");
+        if (offer.get().aLaCarte() && clean.dishCodes().isEmpty()) {
+            opening = opening + "\n\n" + menu(offer.get());
+        }
         return advance(incoming, offer.get(), clean, join(lead, opening));
     }
 
@@ -197,16 +205,32 @@ public class BusinessLunchScenario implements FsmScenario {
             draft = draft.withDate(null).withTime(null);
             lead = join(lead, "На этот день время бизнес-ланча уже прошло.");
         }
+        if (offer.aLaCarte() && courseStep(draft) >= offer.courses().size() && draft.dishCodes().isEmpty()) {
+            draft = draft.withCourseStep(0);
+            lead = join(lead, "В заказе пока ничего нет. Выберите, пожалуйста, хотя бы одно блюдо.");
+        }
         draftStorage.save(incoming.chatId(), draft);
 
-        if (draft.setCode() == null) {
-            return ask(incoming, BotState.BUSINESS_LUNCH_CHOOSE_SET, join(lead, "Какой вариант выбираете?"), setRows(offer), "ASK_LUNCH_SET");
-        }
-        BusinessLunchOffer.LunchSet set = offer.set(draft.setCode()).orElseThrow();
-        int slot = openSlot(draft);
-        if (slot >= 0) {
-            String question = offer.slotTitle(set, slot) + ": что выбираете?";
-            return ask(incoming, BotState.BUSINESS_LUNCH_CHOOSE_DISH, join(lead, question), rows(titles(offer.dishesFor(set, slot)), 1), "ASK_LUNCH_DISH");
+        if (offer.aLaCarte()) {
+            int step = courseStep(draft);
+            if (step < offer.courses().size()) {
+                BusinessLunchOffer.Course course = offer.courses().get(step);
+                String question = course.title() + ": что добавить? Каждое нажатие добавляет одну порцию.";
+                String order = draft.dishCodes().isEmpty() ? "" : "\n" + orderLine(offer, draft);
+                List<List<String>> choices = new ArrayList<>(rows(course.dishes().stream().map(this::dishButton).toList(), 1));
+                choices.add(List.of(NEXT_BUTTON));
+                return ask(incoming, BotState.BUSINESS_LUNCH_CHOOSE_DISH, join(lead, question + order), choices, "ASK_LUNCH_DISH");
+            }
+        } else {
+            if (draft.setCode() == null) {
+                return ask(incoming, BotState.BUSINESS_LUNCH_CHOOSE_SET, join(lead, "Какой вариант выбираете?"), setRows(offer), "ASK_LUNCH_SET");
+            }
+            BusinessLunchOffer.LunchSet set = offer.set(draft.setCode()).orElseThrow();
+            int slot = openSlot(draft);
+            if (slot >= 0) {
+                String question = offer.slotTitle(set, slot) + ": что выбираете?";
+                return ask(incoming, BotState.BUSINESS_LUNCH_CHOOSE_DISH, join(lead, question), rows(titles(offer.dishesFor(set, slot)), 1), "ASK_LUNCH_DISH");
+            }
         }
         if (draft.partySize() == null) {
             return ask(incoming, BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE, join(lead, "На сколько гостей накрыть?"), rows(List.of("1", "2", "3", "4"), 4), "ASK_PARTY_SIZE");
@@ -217,7 +241,7 @@ public class BusinessLunchScenario implements FsmScenario {
         if (draft.time() == null) {
             return ask(incoming, BotState.BUSINESS_LUNCH_COLLECT_TIME, join(lead, "Во сколько вас ждать?"), rows(timeChoices(offer, draft.date()), 4), "ASK_TIME");
         }
-        String question = summary(offer, draft) + "\n\nОтправляю заявку команде? Если гости хотят разное, напишите это одной строкой, я передам.";
+        String question = summary(offer, draft) + "\n\nОтправляю заявку команде? Если есть пожелания, напишите их одной строкой, я передам.";
         return ask(incoming, BotState.BUSINESS_LUNCH_CONFIRMATION, join(lead, question), List.of(List.of(SEND_BUTTON), List.of(CHANGE_BUTTON)), "ASK_LUNCH_CONFIRMATION");
     }
 
@@ -230,7 +254,28 @@ public class BusinessLunchScenario implements FsmScenario {
         return advance(incoming, offer, draft.withSet(set.code(), emptySlots(set)), "");
     }
 
+    /** À la carte: one tap adds one portion from the current course, "дальше" moves to the next course. */
+    private OutgoingMessage onCourse(IncomingMessage incoming, BusinessLunchOffer offer, Draft draft, String normalized) {
+        int step = courseStep(draft);
+        if (isNext(normalized) || step >= offer.courses().size()) {
+            return advance(incoming, offer, draft.withCourseStep(Math.min(step + 1, offer.courses().size())), "");
+        }
+        BusinessLunchOffer.Course course = offer.courses().get(step);
+        int picked = pick(titles(course.dishes()), normalized);
+        if (picked < 0) {
+            return advance(incoming, offer, draft, "Не нашел такое блюдо в этом разделе. Выберите кнопкой ниже или нажмите «Дальше».");
+        }
+        if (draft.dishCodes().size() >= BusinessLunchService.MAX_PORTIONS) {
+            return advance(incoming, offer, draft, "В одном заказе не больше %s порций. Для большой компании напишите «менеджер».".formatted(BusinessLunchService.MAX_PORTIONS));
+        }
+        BusinessLunchOffer.Dish dish = course.dishes().get(picked);
+        return advance(incoming, offer, draft.withPortion(dish.code()).withCourseStep(step), "Добавил: " + dish.title() + ".");
+    }
+
     private OutgoingMessage onDish(IncomingMessage incoming, BusinessLunchOffer offer, Draft draft, String normalized) {
+        if (offer.aLaCarte()) {
+            return onCourse(incoming, offer, draft, normalized);
+        }
         BusinessLunchOffer.LunchSet set = offer.set(draft.setCode()).orElseThrow();
         int slot = openSlot(draft);
         List<BusinessLunchOffer.Dish> dishes = offer.dishesFor(set, slot);
@@ -377,7 +422,7 @@ public class BusinessLunchScenario implements FsmScenario {
         ).withMetadata(Map.of(
                 "scenario", id(),
                 "tableReservationId", orderId,
-                "lunchSet", draft.setCode(),
+                "lunchSet", draft.setCode() == null ? "A_LA_CARTE" : draft.setCode(),
                 "lunchSource", draft.source() == null ? "" : draft.source(),
                 "externalProvider", external.providerId(),
                 "externalStatus", external.status(),
@@ -396,7 +441,7 @@ public class BusinessLunchScenario implements FsmScenario {
                 %s не принял заказ. Внесите его вручную.
 
                 Заявка #%s · %s в %s · гостей: %s
-                Комбо: %s
+                %s
                 Статус: %s
                 """.formatted(
                 html(external.providerId()),
@@ -404,7 +449,7 @@ public class BusinessLunchScenario implements FsmScenario {
                 draft.date().format(DAY_BUTTON),
                 draft.time().format(TIME_TEXT),
                 draft.partySize(),
-                html(offer.set(draft.setCode()).map(BusinessLunchOffer.LunchSet::title).orElse(draft.setCode())),
+                html(offer.aLaCarte() ? orderLine(offer, draft) : "Комбо: " + offer.set(draft.setCode()).map(BusinessLunchOffer.LunchSet::title).orElse(draft.setCode())),
                 html(external.status())
         ));
     }
@@ -460,13 +505,13 @@ public class BusinessLunchScenario implements FsmScenario {
 
     private Draft draftFrom(BusinessLunchHandoff handoff) {
         String venue = handoff.venueCode() == null ? defaultVenueCode : handoff.venueCode().toUpperCase(Locale.ROOT);
-        return new Draft(venue, handoff.setRef(), List.of(), handoff.partySize(), handoff.date(), handoff.time(), null, BusinessLunchHandoff.SOURCE, handoff.requestId());
+        return new Draft(venue, handoff.setRef(), List.of(), null, handoff.partySize(), handoff.date(), handoff.time(), null, BusinessLunchHandoff.SOURCE, handoff.requestId());
     }
 
     /** A guest who writes "бизнес-ланч завтра в 13:00 на двоих" has already answered three questions. */
     private Draft heardAtOnce(String text) {
         TableBookingDraftStorage.Draft said = heard(text, BotState.TABLE_BOOKING_INTENT);
-        return new Draft(defaultVenueCode, null, List.of(), said.partySize(), said.requestedDate(), said.requestedTime(), null, "DIRECT", null);
+        return new Draft(defaultVenueCode, null, List.of(), null, said.partySize(), said.requestedDate(), said.requestedTime(), null, "DIRECT", null);
     }
 
     /** Hears a day, a time or a party size the same way the table booking does. */
@@ -486,7 +531,12 @@ public class BusinessLunchScenario implements FsmScenario {
         if (time != null && (time.isBefore(offer.from()) || !time.isBefore(offer.to()) || day != null && lunchService.windowIssue(offer, day, time).isPresent())) {
             time = null;
         }
-        return new Draft(draft.venueCode(), set.map(BusinessLunchOffer.LunchSet::code).orElse(null), dishes, guests, day, time, draft.comment(), draft.source(), draft.conciergeRequestId());
+        if (offer.aLaCarte()) {
+            List<String> order = draft.dishCodes().stream().filter(code -> code != null && offer.dish(code).isPresent()).toList();
+            Integer step = draft.courseStep() == null ? null : Math.max(0, Math.min(draft.courseStep(), offer.courses().size()));
+            return new Draft(draft.venueCode(), null, order, step, guests, day, time, draft.comment(), draft.source(), draft.conciergeRequestId());
+        }
+        return new Draft(draft.venueCode(), set.map(BusinessLunchOffer.LunchSet::code).orElse(null), dishes, null, guests, day, time, draft.comment(), draft.source(), draft.conciergeRequestId());
     }
 
     private Optional<BusinessLunchOffer.LunchSet> setByRef(BusinessLunchOffer offer, String ref) {
@@ -513,6 +563,9 @@ public class BusinessLunchScenario implements FsmScenario {
 
     /** A slot with a single dish needs no question. */
     private Draft withOnlyChoices(BusinessLunchOffer offer, Draft draft) {
+        if (offer.aLaCarte()) {
+            return draft;
+        }
         Optional<BusinessLunchOffer.LunchSet> set = draft.setCode() == null ? Optional.empty() : offer.set(draft.setCode());
         if (set.isEmpty()) {
             return draft.setCode() == null ? draft : draft.withSet(null, List.of());
@@ -611,16 +664,25 @@ public class BusinessLunchScenario implements FsmScenario {
     }
 
     private String summary(BusinessLunchOffer offer, Draft draft) {
-        BusinessLunchOffer.LunchSet set = offer.set(draft.setCode()).orElseThrow();
         List<String> lines = new ArrayList<>();
         lines.add("Бизнес-ланч в " + venueName(offer));
         lines.add(capitalize(draft.date().format(DAY_TEXT)) + " в " + draft.time().format(TIME_TEXT));
         lines.add("Гостей: " + draft.partySize());
-        lines.add("Комбо: «" + set.title() + "»" + (set.priceRub() == null ? "" : ", " + set.priceRub() + " ₽ за ланч"));
-        lines.add("Блюда: " + String.join(", ", draft.dishCodes().stream()
-                .filter(Objects::nonNull)
-                .map(code -> offer.dish(code).map(BusinessLunchOffer.Dish::title).orElse(code))
-                .toList()));
+        if (offer.aLaCarte()) {
+            lines.add("Заказ:");
+            portions(draft).forEach((code, count) -> {
+                BusinessLunchOffer.Dish dish = offer.dish(code).orElseThrow();
+                lines.add("• " + dish.title() + " × " + count + " · " + dish.priceRub() * count + " ₽");
+            });
+            lines.add("Итого: " + total(offer, draft) + " ₽");
+        } else {
+            BusinessLunchOffer.LunchSet set = offer.set(draft.setCode()).orElseThrow();
+            lines.add("Комбо: «" + set.title() + "»" + (set.priceRub() == null ? "" : ", " + set.priceRub() + " ₽ за ланч"));
+            lines.add("Блюда: " + String.join(", ", draft.dishCodes().stream()
+                    .filter(Objects::nonNull)
+                    .map(code -> offer.dish(code).map(BusinessLunchOffer.Dish::title).orElse(code))
+                    .toList()));
+        }
         if (draft.comment() != null && !draft.comment().isBlank()) {
             lines.add("Пожелание: " + draft.comment());
         }
@@ -628,6 +690,59 @@ public class BusinessLunchScenario implements FsmScenario {
             lines.add(VENUE_WORD);
         }
         return String.join("\n", lines);
+    }
+
+    /** The whole lunch menu, the way the printed one reads: courses, dishes, portion and price. */
+    private String menu(BusinessLunchOffer offer) {
+        List<String> lines = new ArrayList<>();
+        for (BusinessLunchOffer.Course course : offer.courses()) {
+            if (!lines.isEmpty()) {
+                lines.add("");
+            }
+            lines.add(course.title());
+            for (BusinessLunchOffer.Dish dish : course.dishes()) {
+                String portion = dish.portion() == null || dish.portion().isBlank() ? "" : ", " + dish.portion().trim();
+                lines.add("• " + dish.title() + portion + " · " + dish.priceRub() + " ₽");
+            }
+        }
+        return String.join("\n", lines);
+    }
+
+    private String dishButton(BusinessLunchOffer.Dish dish) {
+        return dish.title() + " · " + dish.priceRub() + " ₽";
+    }
+
+    /** "В заказе: Нисуаз × 1, Борщ со сметаной × 2. Итого 830 ₽." */
+    private String orderLine(BusinessLunchOffer offer, Draft draft) {
+        List<String> parts = new ArrayList<>();
+        portions(draft).forEach((code, count) -> parts.add(offer.dish(code).map(BusinessLunchOffer.Dish::title).orElse(code) + " × " + count));
+        return "В заказе: " + String.join(", ", parts) + ". Итого " + total(offer, draft) + " ₽.";
+    }
+
+    /** Portions per dish, in the order the guest first took each. */
+    private Map<String, Integer> portions(Draft draft) {
+        Map<String, Integer> portions = new LinkedHashMap<>();
+        draft.dishCodes().stream().filter(Objects::nonNull).forEach(code -> portions.merge(code, 1, Integer::sum));
+        return portions;
+    }
+
+    private int total(BusinessLunchOffer offer, Draft draft) {
+        return draft.dishCodes().stream()
+                .filter(Objects::nonNull)
+                .mapToInt(code -> offer.dish(code).map(BusinessLunchOffer.Dish::priceRub).orElse(0))
+                .sum();
+    }
+
+    private int courseStep(Draft draft) {
+        return draft.courseStep() == null ? 0 : draft.courseStep();
+    }
+
+    /** Whether the order itself is complete: every slot of the set filled, or every course of the menu passed with something taken. */
+    private boolean dishesChosen(BusinessLunchOffer offer, Draft draft) {
+        if (offer.aLaCarte()) {
+            return courseStep(draft) >= offer.courses().size() && !draft.dishCodes().isEmpty();
+        }
+        return draft.setCode() != null && openSlot(draft) < 0;
     }
 
     private boolean needsVenueWord(BusinessLunchOffer offer) {
@@ -660,6 +775,11 @@ public class BusinessLunchScenario implements FsmScenario {
     private boolean isYes(String normalized) {
         String words = normalized.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
         return YES.contains(words) || words.startsWith("да ") || words.startsWith("отправ") || words.startsWith("подтвержд");
+    }
+
+    private boolean isNext(String normalized) {
+        String words = normalized.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
+        return NEXT.contains(words) || words.startsWith("дальше") || words.startsWith("без ");
     }
 
     private boolean isExit(String normalized) {

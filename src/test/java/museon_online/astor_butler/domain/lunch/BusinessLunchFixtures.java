@@ -62,6 +62,31 @@ public final class BusinessLunchFixtures {
         );
     }
 
+    /** A venue with no sets: every dish has its own price, the guest takes what they like. */
+    public static BusinessLunchOffer aLaCarte() {
+        return new BusinessLunchOffer(
+                "CARTE",
+                "Carte",
+                true,
+                WEEKDAYS,
+                LocalTime.of(12, 0),
+                LocalTime.of(16, 0),
+                90,
+                "",
+                List.of(
+                        new BusinessLunchOffer.Course("SALAD", "Салаты", List.of(
+                                new BusinessLunchOffer.Dish("NICOISE", "Нисуаз", 290, "170 г"),
+                                new BusinessLunchOffer.Dish("CAESAR", "Цезарь с цыплёнком", 290, "130 г"))),
+                        new BusinessLunchOffer.Course("SOUP", "Суп", List.of(
+                                new BusinessLunchOffer.Dish("BORSCHT", "Борщ со сметаной", 270, "320 г"))),
+                        new BusinessLunchOffer.Course("DRINKS", "Напитки", List.of(
+                                new BusinessLunchOffer.Dish("MORS", "Клюквенный морс", 140, "200 мл"),
+                                new BusinessLunchOffer.Dish("CAPPUCCINO", "Капучино", 220, null)))
+                ),
+                List.of()
+        );
+    }
+
     public static TableReservationOrder reservation(long id, long chatId, Instant startAt, Instant endAt, int guests) {
         return new TableReservationOrder(
                 id,

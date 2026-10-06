@@ -14,7 +14,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -28,6 +30,7 @@ public class BusinessLunchService {
 
     public static final String SEATING_LABEL = "Бизнес-ланч";
     public static final int MAX_GUESTS = 20;
+    public static final int MAX_PORTIONS = 60;
 
     private final TableReservationService tableReservationService;
     private final List<ExternalLunchOrderProvider> externalProviders;
@@ -45,6 +48,10 @@ public class BusinessLunchService {
         ALREADY_PASSED
     }
 
+    /**
+     * @param setCode the chosen set, or null for an à la carte order
+     * @param dishCodes one code per slot of the set; for an à la carte order one code per portion, repeated as ordered
+     */
     public record Request(
             Long chatId,
             Long telegramUserId,
@@ -103,7 +110,7 @@ public class BusinessLunchService {
 
     public Placement place(Request request) {
         BusinessLunchOffer offer = request.offer();
-        BusinessLunchOffer.LunchSet set = offer.set(request.setCode())
+        BusinessLunchOffer.LunchSet set = offer.aLaCarte() ? null : offer.set(request.setCode())
                 .orElseThrow(() -> new IllegalArgumentException("Unknown business lunch set: " + request.setCode()));
         if (request.guests() < 1 || request.guests() > MAX_GUESTS) {
             throw new IllegalArgumentException("Business lunch is for 1 to " + MAX_GUESTS + " guests");
@@ -114,7 +121,10 @@ public class BusinessLunchService {
 
         Instant startAt = request.date().atTime(request.time()).atZone(BookingTimeProvider.VENUE_ZONE).toInstant();
         Instant endAt = startAt.plusSeconds(offer.seating() * 60L);
-        List<BusinessLunchOrder.Item> dishes = items(offer, request.dishCodes());
+        List<BusinessLunchOrder.Item> dishes = items(offer, request.dishCodes(), set == null ? 1 : request.guests());
+        if (dishes.isEmpty()) {
+            throw new IllegalArgumentException("Business lunch order has no dishes");
+        }
 
         Optional<TableReservationOrder> existing = tableReservationService.listActiveReservationsByChatId(request.chatId()).stream()
                 .filter(order -> startAt.equals(order.requestedStartAt()))
@@ -168,14 +178,36 @@ public class BusinessLunchService {
         return status != null && status.enabled() && status.configured();
     }
 
-    private List<BusinessLunchOrder.Item> items(BusinessLunchOffer offer, List<String> dishCodes) {
-        List<BusinessLunchOrder.Item> items = new ArrayList<>();
+    /** One line per dish in the order the guest chose them. A set gives every guest each of its dishes. */
+    private List<BusinessLunchOrder.Item> items(BusinessLunchOffer offer, List<String> dishCodes, int portionsPerCode) {
+        Map<String, Integer> portions = new LinkedHashMap<>();
         for (String code : dishCodes == null ? List.<String>of() : dishCodes) {
-            BusinessLunchOffer.Dish dish = offer.dish(code)
-                    .orElseThrow(() -> new IllegalArgumentException("Unknown business lunch dish: " + code));
-            items.add(new BusinessLunchOrder.Item(offer.courseOf(code).map(BusinessLunchOffer.Course::code).orElse(""), dish.code(), dish.title()));
+            if (code != null) {
+                portions.merge(code, portionsPerCode, Integer::sum);
+            }
+        }
+        if (portions.values().stream().mapToInt(Integer::intValue).sum() > MAX_PORTIONS * Math.max(1, portionsPerCode)) {
+            throw new IllegalArgumentException("Business lunch order is too large");
+        }
+        List<BusinessLunchOrder.Item> items = new ArrayList<>();
+        for (Map.Entry<String, Integer> entry : portions.entrySet()) {
+            BusinessLunchOffer.Dish dish = offer.dish(entry.getKey())
+                    .orElseThrow(() -> new IllegalArgumentException("Unknown business lunch dish: " + entry.getKey()));
+            String course = offer.courseOf(dish.code()).map(BusinessLunchOffer.Course::code).orElse("");
+            items.add(new BusinessLunchOrder.Item(course, dish.code(), dish.title(), entry.getValue(), dish.priceRub()));
         }
         return List.copyOf(items);
+    }
+
+    /** What the guest will pay, when the venue has published the prices it takes to tell. */
+    private Integer total(BusinessLunchOffer.LunchSet set, List<BusinessLunchOrder.Item> dishes, int guests) {
+        if (set != null) {
+            return set.priceRub() == null ? null : set.priceRub() * guests;
+        }
+        if (dishes.stream().anyMatch(item -> item.priceRub() == null)) {
+            return null;
+        }
+        return dishes.stream().mapToInt(item -> item.priceRub() * item.quantity()).sum();
     }
 
     private BusinessLunchOrder order(
@@ -193,10 +225,11 @@ public class BusinessLunchService {
                 startAt,
                 endAt,
                 request.guests(),
-                set.code(),
-                set.title(),
-                set.priceRub(),
+                set == null ? null : set.code(),
+                set == null ? null : set.title(),
+                set == null ? null : set.priceRub(),
                 dishes,
+                total(set, dishes, request.guests()),
                 request.guestName(),
                 request.guestPhone(),
                 request.comment(),
@@ -211,13 +244,19 @@ public class BusinessLunchService {
         if ("CONCIERGE".equals(request.source())) {
             comment.append(" из Concierge");
         }
-        comment.append(": ").append(request.guests()).append(" × «").append(set.title()).append("»");
-        if (set.priceRub() != null) {
-            comment.append(", ").append(set.priceRub()).append(" ₽");
-        }
-        comment.append(". ");
-        if (!dishes.isEmpty()) {
-            comment.append(String.join(", ", dishes.stream().map(BusinessLunchOrder.Item::dishTitle).toList())).append(". ");
+        comment.append(": ");
+        if (set != null) {
+            comment.append(request.guests()).append(" × «").append(set.title()).append("»");
+            if (set.priceRub() != null) {
+                comment.append(", ").append(set.priceRub()).append(" ₽");
+            }
+            comment.append(". ").append(String.join(", ", dishes.stream().map(BusinessLunchOrder.Item::dishTitle).toList())).append(". ");
+        } else {
+            comment.append(String.join(", ", dishes.stream().map(item -> item.dishTitle() + " × " + item.quantity()).toList())).append(". ");
+            Integer total = total(null, dishes, request.guests());
+            if (total != null) {
+                comment.append("Итого ").append(total).append(" ₽. ");
+            }
         }
         if (request.comment() != null && !request.comment().isBlank()) {
             comment.append("Пожелание: ").append(request.comment().trim()).append(". ");

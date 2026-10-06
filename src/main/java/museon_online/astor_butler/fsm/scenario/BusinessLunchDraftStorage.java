@@ -68,13 +68,16 @@ public class BusinessLunchDraftStorage {
     }
 
     /**
-     * What the guest has chosen so far. {@code dishCodes} has one place per slot of the chosen set, empty until picked.
+     * What the guest has chosen so far.
+     * <p>With a set, {@code dishCodes} has one place per slot of the set, empty until picked. À la carte it is the order itself,
+     * one code per portion in the order the guest took them, and {@code courseStep} is the course the guest is choosing from.
      * {@code source} is CONCIERGE for a guest the Concierge sent and DIRECT for one who asked the bot.
      */
     public record Draft(
             String venueCode,
             String setCode,
             List<String> dishCodes,
+            Integer courseStep,
             Integer partySize,
             LocalDate date,
             LocalTime time,
@@ -87,33 +90,43 @@ public class BusinessLunchDraftStorage {
         }
 
         public static Draft start(String venueCode, String source, String conciergeRequestId) {
-            return new Draft(venueCode, null, List.of(), null, null, null, null, source, conciergeRequestId);
+            return new Draft(venueCode, null, List.of(), null, null, null, null, null, source, conciergeRequestId);
         }
 
         public Draft withSet(String code, List<String> dishes) {
-            return new Draft(venueCode, code, dishes, partySize, date, time, comment, source, conciergeRequestId);
+            return new Draft(venueCode, code, dishes, courseStep, partySize, date, time, comment, source, conciergeRequestId);
         }
 
         public Draft withDish(int slot, String dishCode) {
             List<String> dishes = new ArrayList<>(dishCodes);
             dishes.set(slot, dishCode);
-            return new Draft(venueCode, setCode, dishes, partySize, date, time, comment, source, conciergeRequestId);
+            return new Draft(venueCode, setCode, dishes, courseStep, partySize, date, time, comment, source, conciergeRequestId);
+        }
+
+        public Draft withPortion(String dishCode) {
+            List<String> dishes = new ArrayList<>(dishCodes);
+            dishes.add(dishCode);
+            return new Draft(venueCode, setCode, dishes, courseStep, partySize, date, time, comment, source, conciergeRequestId);
+        }
+
+        public Draft withCourseStep(Integer step) {
+            return new Draft(venueCode, setCode, dishCodes, step, partySize, date, time, comment, source, conciergeRequestId);
         }
 
         public Draft withPartySize(Integer guests) {
-            return new Draft(venueCode, setCode, dishCodes, guests, date, time, comment, source, conciergeRequestId);
+            return new Draft(venueCode, setCode, dishCodes, courseStep, guests, date, time, comment, source, conciergeRequestId);
         }
 
         public Draft withDate(LocalDate day) {
-            return new Draft(venueCode, setCode, dishCodes, partySize, day, time, comment, source, conciergeRequestId);
+            return new Draft(venueCode, setCode, dishCodes, courseStep, partySize, day, time, comment, source, conciergeRequestId);
         }
 
         public Draft withTime(LocalTime at) {
-            return new Draft(venueCode, setCode, dishCodes, partySize, date, at, comment, source, conciergeRequestId);
+            return new Draft(venueCode, setCode, dishCodes, courseStep, partySize, date, at, comment, source, conciergeRequestId);
         }
 
         public Draft withComment(String wish) {
-            return new Draft(venueCode, setCode, dishCodes, partySize, date, time, wish, source, conciergeRequestId);
+            return new Draft(venueCode, setCode, dishCodes, courseStep, partySize, date, time, wish, source, conciergeRequestId);
         }
     }
 }

@@ -7,8 +7,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The business lunch of one venue: when it is served, the courses with their dishes, and the sets a guest picks from.
- * A slot of a set names the courses it may be filled from, so "salad or soup + main" is two slots: [SALAD, SOUP] and [MAIN].
+ * The business lunch of one venue: when it is served, and what a guest orders from. Two shapes exist.
+ * <ul>
+ * <li>Sets: the guest picks one set and fills its slots. A slot names the courses it may be filled from,
+ * so "salad or soup + main" is two slots, [SALAD, SOUP] and [MAIN]. The price belongs to the set.</li>
+ * <li>À la carte, when there are no sets: the guest takes any dishes from any course and every dish has its own price.</li>
+ * </ul>
  */
 public record BusinessLunchOffer(
         String venueCode,
@@ -24,13 +28,26 @@ public record BusinessLunchOffer(
 ) {
     private static final int DEFAULT_SEATING_MINUTES = 90;
 
+    public BusinessLunchOffer {
+        courses = courses == null ? List.of() : List.copyOf(courses);
+        sets = sets == null ? List.of() : List.copyOf(sets);
+    }
+
     public record Course(String code, String title, List<Dish> dishes) {
     }
 
-    public record Dish(String code, String title) {
+    /** {@code portion} is how the menu states the size: "170 г", "500 мл". */
+    public record Dish(String code, String title, Integer priceRub, String portion) {
+        public Dish(String code, String title) {
+            this(code, title, null, null);
+        }
     }
 
     public record LunchSet(String code, String title, Integer priceRub, List<List<String>> slots) {
+    }
+
+    public boolean aLaCarte() {
+        return sets.isEmpty();
     }
 
     public int seating() {

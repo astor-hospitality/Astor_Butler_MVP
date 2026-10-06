@@ -75,7 +75,10 @@ public class BusinessLunchCatalog {
         }
         Set<String> courseCodes = new HashSet<>();
         Set<String> dishCodes = new HashSet<>();
-        for (BusinessLunchOffer.Course course : offer.courses() == null ? List.<BusinessLunchOffer.Course>of() : offer.courses()) {
+        if (offer.courses().isEmpty()) {
+            problems.add("courses are missing");
+        }
+        for (BusinessLunchOffer.Course course : offer.courses()) {
             if (blank(course.code()) || blank(course.title()) || !courseCodes.add(course.code())) {
                 problems.add("course code and title must be present and unique: " + course.code());
             }
@@ -87,11 +90,14 @@ public class BusinessLunchCatalog {
                 if (blank(dish.code()) || blank(dish.title()) || !dishCodes.add(dish.code())) {
                     problems.add("dish code and title must be present and unique: " + dish.code());
                 }
+                if (dish.priceRub() != null && dish.priceRub() <= 0) {
+                    problems.add("dish price must be positive or absent: " + dish.code());
+                }
+                // Without sets the guest pays per dish, so a dish without a price cannot be ordered.
+                if (offer.aLaCarte() && dish.priceRub() == null) {
+                    problems.add("a dish needs a price when there are no sets: " + dish.code());
+                }
             }
-        }
-        if (offer.sets() == null || offer.sets().isEmpty()) {
-            problems.add("sets are missing");
-            return problems;
         }
         Set<String> setCodes = new HashSet<>();
         for (BusinessLunchOffer.LunchSet set : offer.sets()) {
