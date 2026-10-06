@@ -1,8 +1,13 @@
 package museon_online.astor_butler.domain.booking;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.api.common.ApiException;
 import museon_online.astor_butler.api.common.ErrorCode;
+import museon_online.astor_butler.domain.booking.external.ExternalAvailabilityResult;
+import museon_online.astor_butler.domain.booking.external.ExternalReservationProvider;
+import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
+import museon_online.astor_butler.domain.booking.external.ExternalTableOccupancy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,10 +20,16 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TableReservationService {
+
+    /** The local order changed after it was written to the restaurant's system, which still has the old data. */
+    static final String EXTERNAL_CHANGE_NOT_SYNCED = "EXTERNAL_CHANGE_NOT_SYNCED";
+    private static final String EXTERNALLY_BUSY = "Table is busy in the restaurant booking system";
 
     private final TableReservationRepository repository;
     private final TableReservationNotificationService notificationService;
+    private final ExternalReservationProvider externalProvider;
 
     public List<VenueTable> listTables(String venueCode) {
         return repository.findTables(venueCode);
@@ -28,7 +39,9 @@ public class TableReservationService {
         validateWindow(startAt, endAt);
         validatePartySize(partySize);
         List<VenueTable> available = repository.findAvailableTables(venueCode, startAt, endAt, partySize);
+        ExternalTableOccupancy external = externalOccupancy(venueCode, startAt, endAt, partySize);
         return available.stream()
+                .filter(table -> !external.blocks(table.tableCode()))
                 .map(TableAvailability::available)
                 .toList();
     }
@@ -77,7 +90,9 @@ public class TableReservationService {
     public TableReservationOrder createReservation(TableReservationCommand command) {
         validateCommand(command);
 
-        VenueTable table = resolveTable(command);
+        ExternalTableOccupancy external = externalOccupancy(
+                command.venueCode(), command.requestedStartAt(), command.requestedEndAt(), command.partySize());
+        VenueTable table = resolveTable(command, external);
         if (Boolean.FALSE.equals(table.active()) || Boolean.FALSE.equals(table.bookable())) {
             throw conflict("Table is not bookable", table.tableCode());
         }
@@ -87,9 +102,14 @@ public class TableReservationService {
         if (repository.hasActiveConflict(table.id(), command.requestedStartAt(), command.requestedEndAt())) {
             throw conflict("Table already has an active hold for this time window", table.tableCode());
         }
+        if (external.blocks(table.tableCode())) {
+            throw conflict(EXTERNALLY_BUSY, table.tableCode());
+        }
 
         TableReservationOrder order = repository.createAwaitingManagerOrder(command, table);
-        notificationService.notifyHostessApprovalRequest(order);
+        ExternalReservationResult sync = reserveExternally(order, command.venueCode());
+        order = rememberExternalId(order, sync);
+        notificationService.notifyHostessApprovalRequest(order, sync);
         return order;
     }
 
@@ -125,6 +145,7 @@ public class TableReservationService {
 
         List<VenueTable> alternatives = alternativesForRejected(current);
         TableReservationOrder rejected = repository.reject(id);
+        cancelExternally(rejected);
         notificationService.notifyGuestRejected(rejected, alternatives);
         return rejected;
     }
@@ -141,6 +162,7 @@ public class TableReservationService {
         }
 
         TableReservationOrder cancelled = repository.cancel(id);
+        cancelExternally(cancelled);
         notificationService.notifyHostessGuestCancelled(cancelled);
         return cancelled;
     }
@@ -156,7 +178,9 @@ public class TableReservationService {
         validateWindow(resolved.requestedStartAt(), resolved.requestedEndAt());
         validatePartySize(resolved.partySize());
 
-        VenueTable table = resolveChangedTable(current, resolved);
+        ExternalTableOccupancy external = externalOccupancy(
+                resolved.venueCode(), resolved.requestedStartAt(), resolved.requestedEndAt(), resolved.partySize());
+        VenueTable table = resolveChangedTable(current, resolved, external);
         if (Boolean.FALSE.equals(table.active()) || Boolean.FALSE.equals(table.bookable())) {
             throw conflict("Table is not bookable", table.tableCode());
         }
@@ -166,9 +190,17 @@ public class TableReservationService {
         if (repository.hasActiveConflict(table.id(), resolved.requestedStartAt(), resolved.requestedEndAt(), current.id())) {
             throw conflict("Table already has an active hold for this time window", table.tableCode());
         }
+        if (!heldExternallyByThisOrder(current, table) && external.blocks(table.tableCode())) {
+            throw conflict(EXTERNALLY_BUSY, table.tableCode());
+        }
 
         TableReservationOrder changed = repository.changeReservation(current.id(), resolved, table);
-        notificationService.notifyHostessApprovalRequest(changed);
+        // The provider cannot change a booking yet: one that is already there is left for the hostess to fix.
+        ExternalReservationResult sync = hasExternalId(changed)
+                ? changeNotSynced(changed)
+                : reserveExternally(changed, resolved.venueCode());
+        changed = rememberExternalId(changed, sync);
+        notificationService.notifyHostessApprovalRequest(changed, sync);
         return changed;
     }
 
@@ -214,7 +246,7 @@ public class TableReservationService {
                 .toList();
     }
 
-    private VenueTable resolveTable(TableReservationCommand command) {
+    private VenueTable resolveTable(TableReservationCommand command, ExternalTableOccupancy external) {
         if (command.tableCode() != null && !command.tableCode().isBlank()) {
             return repository.findTableByCode(command.venueCode(), command.tableCode())
                     .orElseThrow(() -> new ApiException(
@@ -233,6 +265,7 @@ public class TableReservationService {
                         command.preferredZone()
                 )
                 .stream()
+                .filter(table -> !external.blocks(table.tableCode()))
                 .findFirst()
                 .or(() -> repository.findAvailableTables(
                                 command.venueCode(),
@@ -241,6 +274,7 @@ public class TableReservationService {
                                 command.partySize()
                         )
                         .stream()
+                        .filter(table -> !external.blocks(table.tableCode()))
                         .findFirst())
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.CONFLICT,
@@ -268,7 +302,11 @@ public class TableReservationService {
         );
     }
 
-    private VenueTable resolveChangedTable(TableReservationOrder current, TableReservationChangeCommand command) {
+    private VenueTable resolveChangedTable(
+            TableReservationOrder current,
+            TableReservationChangeCommand command,
+            ExternalTableOccupancy external
+    ) {
         if (command.tableCode() != null && !command.tableCode().isBlank()) {
             return repository.findTableByCode(command.venueCode(), command.tableCode())
                     .orElseThrow(() -> new ApiException(
@@ -293,7 +331,7 @@ public class TableReservationService {
                         command.requestedEndAt(),
                         command.partySize(),
                         command.preferredZone()
-                ).stream().findFirst())
+                ).stream().filter(table -> !external.blocks(table.tableCode())).findFirst())
                 .or(() -> repository.findAvailableTables(
                                 command.venueCode(),
                                 command.requestedStartAt(),
@@ -301,12 +339,96 @@ public class TableReservationService {
                                 command.partySize()
                         )
                         .stream()
+                        .filter(table -> !external.blocks(table.tableCode()))
                         .findFirst())
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.CONFLICT,
                         ErrorCode.CONFLICT,
                         "No available table for requested time window and party size"
                 ));
+    }
+
+    /** What the restaurant's own system says about tables for this time; blocks nothing when it gives no answer. */
+    private ExternalTableOccupancy externalOccupancy(String venueCode, Instant startAt, Instant endAt, Integer partySize) {
+        ExternalAvailabilityResult result = externalProvider.checkAvailability(
+                new ExternalReservationProvider.ExternalAvailabilityRequest(venueCode, startAt, endAt, partySize, null, null));
+        ExternalTableOccupancy occupancy = ExternalTableOccupancy.from(
+                result,
+                () -> repository.findTables(venueCode).stream().map(VenueTable::tableCode).toList()
+        );
+        if (result.providerConfigured() && !occupancy.authoritative()) {
+            log.warn("External table occupancy is not used, local availability decides: provider={}, reason={}",
+                    result.providerId(), occupancy.reason());
+        }
+        return occupancy;
+    }
+
+    /** Writes the stored order to the restaurant's system; the order id is the duplicate guard and the marker in its comment. */
+    private ExternalReservationResult reserveExternally(TableReservationOrder order, String venueCode) {
+        return externalProvider.reserve(new TableReservationCommand(
+                order.chatId(),
+                order.telegramUserId(),
+                order.userId(),
+                venueCode,
+                order.tableCode(),
+                order.preferredZone(),
+                order.seatingPreference(),
+                order.requestedStartAt(),
+                order.requestedEndAt(),
+                order.partySize(),
+                order.guestName(),
+                order.guestPhone(),
+                order.guestComment(),
+                order.managerTelegramId(),
+                order.hostessChatId()
+        ), String.valueOf(order.id()));
+    }
+
+    /**
+     * Stores the booking id of the restaurant's system on the local order. If that write fails the
+     * external booking is cancelled, so a rolled-back order does not leave a booking behind.
+     */
+    private TableReservationOrder rememberExternalId(TableReservationOrder order, ExternalReservationResult sync) {
+        String externalId = sync.externalReservationId();
+        if (!sync.created() || externalId == null || externalId.isBlank() || externalId.equals(order.sbisExternalId())) {
+            return order;
+        }
+        try {
+            return repository.attachExternalId(order.id(), externalId);
+        } catch (RuntimeException e) {
+            externalProvider.cancelReservation(externalId);
+            throw e;
+        }
+    }
+
+    private void cancelExternally(TableReservationOrder order) {
+        if (hasExternalId(order) && !externalProvider.cancelReservation(order.sbisExternalId())) {
+            notificationService.notifyHostessExternalCancelFailed(order);
+        }
+    }
+
+    private ExternalReservationResult changeNotSynced(TableReservationOrder order) {
+        return new ExternalReservationResult(
+                false,
+                true,
+                externalProvider.providerId(),
+                EXTERNAL_CHANGE_NOT_SYNCED,
+                order.sbisExternalId(),
+                "The booking in the restaurant system still has the data from before the change.",
+                List.of(),
+                Map.of()
+        );
+    }
+
+    private boolean hasExternalId(TableReservationOrder order) {
+        return order.sbisExternalId() != null && !order.sbisExternalId().isBlank();
+    }
+
+    /** The restaurant's system shows this table as busy because of the very booking being changed. */
+    private boolean heldExternallyByThisOrder(TableReservationOrder current, VenueTable table) {
+        return hasExternalId(current)
+                && current.tableCode() != null
+                && current.tableCode().equalsIgnoreCase(table.tableCode());
     }
 
     private void validateCommand(TableReservationCommand command) {

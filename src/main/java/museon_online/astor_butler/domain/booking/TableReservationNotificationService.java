@@ -2,6 +2,7 @@ package museon_online.astor_butler.domain.booking;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,8 +49,23 @@ public class TableReservationNotificationService {
     @Value("${telegram.booking.hostess-chat-id:}")
     private String defaultHostessChatId;
 
-    public void notifyHostessApprovalRequest(TableReservationOrder order) {
-        send(hostessChatId(order), hostessApprovalRequestText(order), approvalKeyboard(order.id()), "hostess-approval-request");
+    /**
+     * @param externalSync outcome of writing the order to the restaurant's own system; the card
+     *                     tells the hostess what is already there and what she has to enter herself
+     */
+    public void notifyHostessApprovalRequest(TableReservationOrder order, ExternalReservationResult externalSync) {
+        send(
+                hostessChatId(order),
+                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync),
+                approvalKeyboard(order.id()),
+                "hostess-approval-request"
+        );
+    }
+
+    public void notifyHostessExternalCancelFailed(TableReservationOrder order) {
+        send(hostessChatId(order), """
+                <b>Saby:</b> бронь #%s не снялась в Presto автоматически. Проверьте и отмените её там вручную.
+                """.formatted(order.id()), null, "hostess-external-cancel-failed");
     }
 
     public void notifyHostessConfirmed(TableReservationOrder order) {
@@ -188,6 +204,31 @@ public class TableReservationNotificationService {
                 recentMessages(order),
                 escape(humanStatus(order.status()))
         );
+    }
+
+    /** Empty while the restaurant's system is switched off, so the card stays as it was. */
+    String externalSyncLine(TableReservationOrder order, ExternalReservationResult sync) {
+        if (sync == null || !sync.providerConfigured()) {
+            return "";
+        }
+        if (sync.created()) {
+            return "\n<b>Saby:</b> бронь уже создана в Presto без стола — посадите её там на стол из заявки. "
+                    + "Если нажмёте «Нет», она снимется в Saby автоматически.\n";
+        }
+        String instruction = switch (sync.status() == null ? "" : sync.status()) {
+            case TableReservationService.EXTERNAL_CHANGE_NOT_SYNCED ->
+                    "изменение не попало в Presto. Поправьте бронь там вручную.";
+            case "PROVIDER_RESULT_UNKNOWN" ->
+                    "Saby не ответил, создана ли бронь. Найдите в Presto бронь с пометкой «Astor Butler #%s» и внесите её вручную, только если её там нет."
+                            .formatted(order.id());
+            case "SABY_WRITE_DISABLED" ->
+                    "запись из Butler выключена. Внесите бронь в Presto вручную.";
+            case "GUEST_DATA_REQUIRED" ->
+                    "нет имени или телефона гостя. Внесите бронь в Presto вручную.";
+            default ->
+                    "бронь не записалась в Presto. Внесите её вручную.";
+        };
+        return "\n<b>Saby:</b> " + instruction + "\n";
     }
 
     private String hostessText(TableReservationOrder order) {

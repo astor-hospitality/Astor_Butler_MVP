@@ -192,6 +192,11 @@ public class SabyReservationProvider implements ExternalReservationProvider {
                 "Raw Saby booking state; its meaning is not mapped yet.");
     }
 
+    @Override
+    public boolean cancelReservation(String externalReservationId) {
+        return cancel(externalReservationId).ok();
+    }
+
     /** Requests cancellation. Never retried; check {@link #state(String)} afterwards. */
     public SabyOrderResult cancel(String externalId) {
         SabyOrderResult precheck = orderPrecheck(externalId, true);
