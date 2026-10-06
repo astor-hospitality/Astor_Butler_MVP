@@ -22,6 +22,9 @@ public class HostessReservationApprovalService {
     @Value("${telegram.booking.hostess-chat-id:}")
     private String hostessChatId;
 
+    @Value("${astor.booking.confirmation-source:HOSTESS}")
+    private BookingConfirmationSource confirmationSource = BookingConfirmationSource.HOSTESS;
+
     @Transactional
     public boolean handle(IncomingMessage incoming) {
         if (!isHostessChat(incoming)) {
@@ -55,6 +58,9 @@ public class HostessReservationApprovalService {
         }
 
         if ("confirm".equals(action)) {
+            if (confirmedByVenueSystem(current)) {
+                return CallbackResult.handled("Бронь #" + orderId + " подтверждается в Presto: примите её там, гость получит ответ автоматически");
+            }
             TableReservationOrder confirmed = tableReservationService.confirm(orderId);
             notificationService.notifyHostessAcknowledged(confirmed);
             return CallbackResult.handled("Бронь #" + orderId + " подтверждена");
@@ -63,6 +69,21 @@ public class HostessReservationApprovalService {
         TableReservationOrder rejected = tableReservationService.reject(orderId);
         notificationService.notifyHostessRejected(rejected);
         return CallbackResult.handled("Бронь #" + orderId + " отменена");
+    }
+
+    /** The venue's system holds this booking and is the one to confirm it; Butler only follows. */
+    private boolean confirmedByVenueSystem(TableReservationOrder order) {
+        return confirmationSource == BookingConfirmationSource.VENUE_SYSTEM
+                && order.sbisExternalId() != null
+                && !order.sbisExternalId().isBlank();
+    }
+
+    void setConfirmationSource(BookingConfirmationSource confirmationSource) {
+        this.confirmationSource = confirmationSource;
+    }
+
+    void setHostessChatId(String hostessChatId) {
+        this.hostessChatId = hostessChatId;
     }
 
     private boolean isHostessChat(IncomingMessage incoming) {
