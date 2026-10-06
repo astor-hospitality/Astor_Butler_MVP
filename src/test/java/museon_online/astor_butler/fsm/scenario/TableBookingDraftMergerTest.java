@@ -54,6 +54,22 @@ class TableBookingDraftMergerTest {
         return merger.merge(guestSays(text, storedDate), state, understood.routeText(), understood);
     }
 
+    /** The party size the bot takes from an answer to "how many guests", when nothing is known yet. */
+    private Integer partyHeard(String text) {
+        UnderstoodInput understood = understanding.understand(text, BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE);
+        return merger.merge(firstAnswer(text), BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE, understood.routeText(), understood).partySize();
+    }
+
+    private Integer partyByMergerAlone(String text) {
+        return merger.merge(firstAnswer(text), BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE, text.toLowerCase().trim(), null).partySize();
+    }
+
+    private IncomingMessage firstAnswer(String text) {
+        lenient().when(draftStorage.find(any())).thenReturn(Optional.empty());
+        return IncomingMessage.telegram(1773317437L, 1773317437L, 356, 284069928, text, null,
+                "Наталья", "Поединенко", "Poedinenko", "ru", false, "284069928");
+    }
+
     private IncomingMessage guestSays(String text, LocalDate storedDate) {
         TableBookingDraftStorage.Draft stored = new TableBookingDraftStorage.Draft("AERIS", null, null, storedDate, null, 2,
                 null, null, null, true, "Забронировать стол");
@@ -155,6 +171,30 @@ class TableBookingDraftMergerTest {
 
         assertThat(draft.requestedDate()).isEqualTo(TODAY.plusDays(1));
         assertThat(draft.requestedTime()).isEqualTo(LocalTime.of(11, 30));
+    }
+
+    @Test
+    void adultsAndChildrenAreCountedTogether() {
+        String[][] cases = {
+                {"двое взрослых и ребёнок", "3"}, {"Двое взрослых и ребенок", "3"}, {"2 взрослых и 1 ребенок", "3"},
+                {"двое взрослых и двое детей", "4"}, {"трое взрослых, двое детей", "5"}, {"2 взрослых + 2 детей", "4"},
+                {"один взрослый и ребенок", "2"}, {"нас будет двое взрослых с ребёнком", "3"}};
+        for (String[] example : cases) {
+            Integer expected = Integer.valueOf(example[1]);
+
+            assertThat(partyHeard(example[0])).as(example[0]).isEqualTo(expected);
+            assertThat(partyByMergerAlone(example[0])).as(example[0] + ", merger alone").isEqualTo(expected);
+        }
+    }
+
+    @Test
+    void aPartyWithoutChildrenIsCountedAsBefore() {
+        assertThat(partyHeard("на двоих")).isEqualTo(2);
+        assertThat(partyHeard("двое взрослых")).isEqualTo(2);
+        assertThat(partyHeard("4")).isEqualTo(4);
+        // How many children is not said, so the number of adults is not passed off as the whole party.
+        assertThat(partyHeard("двое взрослых и дети")).isNull();
+        assertThat(partyByMergerAlone("двое взрослых и дети")).isNull();
     }
 
     @Test

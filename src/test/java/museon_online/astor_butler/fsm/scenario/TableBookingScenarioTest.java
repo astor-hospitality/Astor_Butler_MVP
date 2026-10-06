@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -505,6 +506,97 @@ class TableBookingScenarioTest {
         assertThat(commandCaptor.getValue().tableCode()).isNull();
         assertThat(commandCaptor.getValue().preferredZone()).isNull();
         assertThat(commandCaptor.getValue().partySize()).isEqualTo(3);
+    }
+
+    @Test
+    void theGuestCanLeaveTheBookingAtAnyStep() {
+        BotState[] steps = {
+                BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE,
+                BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION,
+                BotState.TABLE_BOOKING_COLLECT_DATE,
+                BotState.TABLE_BOOKING_COLLECT_TIME
+        };
+        for (BotState step : steps) {
+            for (String text : new String[]{"отмена", "Главное меню", "Отменить текущее действие", "стоп", "передумал"}) {
+                OutgoingMessage outgoing = scenario.handle(telegram(text), step, text);
+
+                assertThat(outgoing.nextState()).as(step + " / " + text).isEqualTo(BotState.READY_FOR_DIALOG.name());
+                assertThat(outgoing.actions()).as(step + " / " + text).contains("TABLE_BOOKING_CANCELLED_BY_GUEST", "RETURN_MAIN_MENU");
+                assertThat(outgoing.text()).as(step + " / " + text).contains("бронь не оформляю");
+            }
+        }
+        verify(draftStorage, org.mockito.Mockito.times(20)).clear(1773317437L);
+        verify(draftStorage, never()).save(any(), any());
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aWordThatOnlyLooksLikeLeavingIsStillAnAnswer() {
+        // "Нет" is how a guest declines a seating wish, and "отменить бронь" belongs to the change and cancel dialogue.
+        OutgoingMessage outgoing = scenario.handle(telegram("на двоих, без отмены"), BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE, "на двоих, без отмены");
+
+        assertThat(outgoing.actions()).doesNotContain("TABLE_BOOKING_CANCELLED_BY_GUEST");
+        verify(draftStorage, never()).clear(any());
+    }
+
+    @Test
+    void theSameGuestDoesNotGetASecondTableForTheSameTime() {
+        TableBookingDraftStorage.Draft complete = new TableBookingDraftStorage.Draft(
+                "AERIS",
+                Instant.parse("2026-06-27T15:00:00Z"),
+                Instant.parse("2026-06-27T17:00:00Z"),
+                LocalDate.of(2026, 6, 27),
+                LocalTime.of(20, 0),
+                2,
+                null,
+                null,
+                null,
+                "Хочу забронировать стол на двоих завтра в 20:00"
+        );
+        when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(complete));
+        // The guest already holds a table from 19:00 to 21:00 that evening.
+        when(tableReservationService.listActiveReservationsByChatId(1773317437L)).thenReturn(List.of(new TableReservationOrder(
+                51L, 1773317437L, 1773317437L, null, 4L, "4", "Стол 4 · у окна", null, null,
+                TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, "TELEGRAM",
+                Instant.parse("2026-06-27T14:00:00Z"), Instant.parse("2026-06-27T16:00:00Z"), 2,
+                "Наталья Поединенко", null, null, 876857557L, null, "-1004291419562", null,
+                Instant.parse("2026-06-26T09:00:00Z"), Instant.parse("2026-06-26T09:00:00Z"))));
+
+        OutgoingMessage outgoing = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(outgoing.actions()).contains("RESERVATION_ALREADY_EXISTS");
+        assertThat(outgoing.text()).contains("уже есть заявка #51", "27.06", "19:00");
+        verify(draftStorage).clear(1773317437L);
+    }
+
+    @Test
+    void anotherEveningIsNotADuplicate() {
+        TableBookingDraftStorage.Draft complete = new TableBookingDraftStorage.Draft(
+                "AERIS",
+                Instant.parse("2026-06-27T15:00:00Z"),
+                Instant.parse("2026-06-27T17:00:00Z"),
+                LocalDate.of(2026, 6, 27),
+                LocalTime.of(20, 0),
+                2,
+                null,
+                null,
+                null,
+                "Хочу забронировать стол на двоих завтра в 20:00"
+        );
+        when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(complete));
+        when(tableReservationService.listActiveReservationsByChatId(1773317437L)).thenReturn(List.of(new TableReservationOrder(
+                51L, 1773317437L, 1773317437L, null, 4L, "4", "Стол 4 · у окна", null, null,
+                TableReservationStatus.CONFIRMED, "TELEGRAM",
+                Instant.parse("2026-06-28T15:00:00Z"), Instant.parse("2026-06-28T17:00:00Z"), 2,
+                "Наталья Поединенко", null, null, 876857557L, null, "-1004291419562", null,
+                Instant.parse("2026-06-26T09:00:00Z"), Instant.parse("2026-06-26T09:00:00Z"))));
+
+        OutgoingMessage outgoing = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
+
+        verify(tableReservationService).createReservation(any());
+        assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
     }
 
     @Test
