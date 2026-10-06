@@ -13,11 +13,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -259,6 +261,24 @@ class BusinessLunchServiceTest {
         assertThatThrownBy(() -> service.place(new BusinessLunchService.Request(CHAT, CHAT, offer, ok.setCode(), ok.dishCodes(), 2, ok.date(), LocalTime.of(19, 0), null, null, null, "DIRECT", null)))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void tellsItsListenersAboutAPlacedLunchAndSurvivesOneThatFails() {
+        BusinessLunchService service = service(List.of());
+        List<BusinessLunchOrder> heard = new ArrayList<>();
+        ReflectionTestUtils.setField(service, "listeners", List.<BusinessLunchOrderListener>of(
+                (request, order, external) -> {
+                    throw new IllegalStateException("journal is down");
+                },
+                (request, order, external) -> heard.add(order)));
+        when(tableReservationService.createReservation(any())).thenReturn(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2));
+
+        BusinessLunchService.Placement placement = service.place(request("DIRECT", null));
+
+        assertThat(placement.order()).isNotNull();
+        assertThat(placement.external().attempted()).isFalse();
+        assertThat(heard).containsExactly(placement.order());
     }
 
     private BusinessLunchService.Request request(String source, String comment) {
