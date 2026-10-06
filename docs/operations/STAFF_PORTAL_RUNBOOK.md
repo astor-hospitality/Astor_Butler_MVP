@@ -101,6 +101,18 @@ synthetic account в finally. Не печатает токены/пароли и
 API/БД монолита. Реальный менеджер/directory/bootstrap и вход самого кабинета
 проверяются отдельно после согласованной migration.
 
+Live acceptance 2026-10-06: own PostgreSQL/Keycloak healthy; публичный TLS
+discovery/JWKS и assets 200, admin/master/health/metrics 404. Полный synthetic
+PKCE smoke прошёл, включая реальный code exchange, RS256/JWKS signature,
+issuer/aud/tenant/role/300s expiry, CORS, replay/wrong verifier и logout;
+synthetic account удалён (204). В 26.8 missing PKCE корректно возвращает
+302 с OAuth `invalid_request` на уже проверенный callback, без code/form;
+это отказ, не успешный вход. Credential/token values не печатались.
+Изоляция проверена по container metadata: live Astor DB/монолит/VEDAL/glasses
+не рестартовали и не подключали к identity networks; gateway только reload,
+его StartedAt не изменился. C3AG/Astor/VEDAL frontend и monolith health 200;
+media64m/unbuffered и glasses5m locations сохранены. Staff API всё ещё не deployed.
+
 Основа: [Keycloak container build](https://www.keycloak.org/server/containers),
 [hostname](https://www.keycloak.org/server/hostname),
 [reverse proxy](https://www.keycloak.org/server/reverseproxy).
