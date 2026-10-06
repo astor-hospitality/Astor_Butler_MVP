@@ -325,9 +325,8 @@ public class TableBookingScenario implements FsmScenario {
     }
 
     private OutgoingMessage createReservation(IncomingMessage incoming, TableBookingDraftStorage.Draft draft) {
-        Optional<TableReservationOrder> held = tableReservationService.listActiveReservationsByChatId(incoming.chatId()).stream()
-                .filter(order -> overlaps(order, draft))
-                .findFirst();
+        Optional<TableReservationOrder> held = tableReservationService.findOverlappingReservation(
+                incoming.chatId(), draft.venueCode(), draft.requestedStartAt(), draft.requestedEndAt());
         if (held.isPresent()) {
             return alreadyBooked(incoming, held.get());
         }
@@ -413,13 +412,6 @@ public class TableBookingScenario implements FsmScenario {
                 "RESERVATION_ALREADY_EXISTS",
                 "RETURN_MAIN_MENU"
         );
-    }
-
-    private boolean overlaps(TableReservationOrder order, TableBookingDraftStorage.Draft draft) {
-        if (order.requestedStartAt() == null || order.requestedEndAt() == null || draft.requestedStartAt() == null || draft.requestedEndAt() == null) {
-            return false;
-        }
-        return order.requestedStartAt().isBefore(draft.requestedEndAt()) && draft.requestedStartAt().isBefore(order.requestedEndAt());
     }
 
     private OutgoingMessage message(IncomingMessage incoming, String text, BotState nextState, String... actions) {

@@ -40,6 +40,9 @@ astor:
       voice-ttl-days: ${S3_VOICE_TTL_DAYS:3}
   message:
     log-conversations-enabled: ${ASTOR_LOG_CONVERSATIONS_ENABLED:true}
+  business-lunch:
+    enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
+    default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
   integrations:
     saby:
       enabled: ${ASTOR_SABY_ENABLED:false}

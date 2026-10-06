@@ -578,8 +578,9 @@ class TableBookingScenarioTest {
                 "Хочу забронировать стол на двоих завтра в 20:00"
         );
         when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(complete));
-        // The guest already holds a table from 19:00 to 21:00 that evening.
-        when(tableReservationService.listActiveReservationsByChatId(1773317437L)).thenReturn(List.of(new TableReservationOrder(
+        // The guest already holds a table from 19:00 to 21:00 that evening; the rule that finds it lives in the reservation service.
+        when(tableReservationService.findOverlappingReservation(1773317437L, "AERIS",
+                Instant.parse("2026-06-27T15:00:00Z"), Instant.parse("2026-06-27T17:00:00Z"))).thenReturn(Optional.of(new TableReservationOrder(
                 51L, 1773317437L, 1773317437L, null, 4L, "4", "Стол 4 · у окна", null, null,
                 TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, "TELEGRAM",
                 Instant.parse("2026-06-27T14:00:00Z"), Instant.parse("2026-06-27T16:00:00Z"), 2,
@@ -596,7 +597,7 @@ class TableBookingScenarioTest {
     }
 
     @Test
-    void anotherEveningIsNotADuplicate() {
+    void aGuestWithNothingInTheWayGetsTheTable() {
         TableBookingDraftStorage.Draft complete = new TableBookingDraftStorage.Draft(
                 "AERIS",
                 Instant.parse("2026-06-27T15:00:00Z"),
@@ -610,15 +611,13 @@ class TableBookingScenarioTest {
                 "Хочу забронировать стол на двоих завтра в 20:00"
         );
         when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(complete));
-        when(tableReservationService.listActiveReservationsByChatId(1773317437L)).thenReturn(List.of(new TableReservationOrder(
-                51L, 1773317437L, 1773317437L, null, 4L, "4", "Стол 4 · у окна", null, null,
-                TableReservationStatus.CONFIRMED, "TELEGRAM",
-                Instant.parse("2026-06-28T15:00:00Z"), Instant.parse("2026-06-28T17:00:00Z"), 2,
-                "Наталья Поединенко", null, null, 876857557L, null, "-1004291419562", null,
-                Instant.parse("2026-06-26T09:00:00Z"), Instant.parse("2026-06-26T09:00:00Z"))));
+        // Another evening, a cancelled request and a table at another venue are told apart in TableReservationServiceTest.
 
         OutgoingMessage outgoing = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
 
+        // The scenario asks about its own venue and exactly the hours it is about to hold.
+        verify(tableReservationService).findOverlappingReservation(1773317437L, "AERIS",
+                Instant.parse("2026-06-27T15:00:00Z"), Instant.parse("2026-06-27T17:00:00Z"));
         verify(tableReservationService).createReservation(any());
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
     }

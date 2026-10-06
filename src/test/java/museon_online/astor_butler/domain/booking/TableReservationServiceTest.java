@@ -206,6 +206,68 @@ class TableReservationServiceTest {
                 .hasMessage("requestedEndAt must be after requestedStartAt");
     }
 
+    @Test
+    void findsTheGuestsRequestThatCrossesAWindow() {
+        // The guest holds a table from 17:00 to 19:00.
+        when(repository.findActiveOrdersByChatId(1773317437L, "AERIS")).thenReturn(List.of(held(10L, "17:00", "19:00", TableReservationStatus.CONFIRMED)));
+
+        // The same hours, a later start, an earlier start, a window inside and a window around.
+        for (String[] window : new String[][]{{"17:00", "19:00"}, {"17:15", "18:45"}, {"16:45", "18:15"}, {"18:45", "20:15"}, {"16:00", "20:00"}}) {
+            assertThat(service.findOverlappingReservation(1773317437L, "AERIS", at(window[0]), at(window[1])))
+                    .as(window[0] + " to " + window[1])
+                    .map(TableReservationOrder::id)
+                    .contains(10L);
+        }
+    }
+
+    @Test
+    void aWindowThatOnlyTouchesARequestDoesNotCrossIt() {
+        when(repository.findActiveOrdersByChatId(1773317437L, "AERIS")).thenReturn(List.of(held(10L, "17:00", "19:00", TableReservationStatus.CONFIRMED)));
+
+        // Until 17:00 sharp, from 19:00 sharp, and well apart on either side.
+        for (String[] window : new String[][]{{"15:00", "17:00"}, {"19:00", "21:00"}, {"12:00", "13:30"}, {"21:00", "23:00"}}) {
+            assertThat(service.findOverlappingReservation(1773317437L, "AERIS", at(window[0]), at(window[1]))).as(window[0] + " to " + window[1]).isEmpty();
+        }
+        assertThat(service.findOverlappingReservation(1773317437L, "AERIS", at("17:00"), null)).isEmpty();
+        assertThat(service.findOverlappingReservation(1773317437L, "AERIS", null, at("19:00"))).isEmpty();
+    }
+
+    @Test
+    void aRequestThatNoLongerHoldsATableIsNotInTheWay() {
+        when(repository.findActiveOrdersByChatId(1773317437L, "AERIS")).thenReturn(List.of(
+                held(10L, "17:00", "19:00", TableReservationStatus.CANCELLED),
+                held(11L, "17:00", "19:00", TableReservationStatus.REJECTED),
+                held(12L, "17:00", "19:00", TableReservationStatus.EXPIRED),
+                held(13L, "17:00", "19:00", TableReservationStatus.DRAFT)));
+
+        assertThat(service.findOverlappingReservation(1773317437L, "AERIS", at("17:00"), at("19:00"))).isEmpty();
+    }
+
+    @Test
+    void looksOnlyAtTheVenueAskedAboutAndNamesTheEarliestRequest() {
+        when(repository.findActiveOrdersByChatId(1773317437L, "AERIS")).thenReturn(List.of(
+                held(21L, "18:30", "20:30", TableReservationStatus.AWAITING_MANAGER_CONFIRMATION),
+                held(20L, "16:30", "18:00", TableReservationStatus.CONFIRMED)));
+
+        assertThat(service.findOverlappingReservation(1773317437L, "AERIS", at("17:00"), at("19:00"))).map(TableReservationOrder::id).contains(20L);
+        // The guest holds nothing at the other venue, so the same hours are free there.
+        assertThat(service.findOverlappingReservation(1773317437L, "OTHER", at("17:00"), at("19:00"))).isEmpty();
+        verify(repository).findActiveOrdersByChatId(1773317437L, "OTHER");
+        assertThatThrownBy(() -> service.findOverlappingReservation(null, "AERIS", at("17:00"), at("19:00"))).isInstanceOf(ApiException.class);
+    }
+
+    private Instant at(String time) {
+        return Instant.parse("2026-06-06T" + time + ":00Z");
+    }
+
+    private TableReservationOrder held(Long id, String from, String to, TableReservationStatus status) {
+        TableReservationOrder order = order(id, table(4L, "4", 4, true, true), status);
+        return new TableReservationOrder(order.id(), order.chatId(), order.telegramUserId(), order.userId(), order.tableId(), order.tableCode(),
+                order.tableDisplayName(), order.preferredZone(), order.seatingPreference(), order.status(), order.source(), at(from), at(to),
+                order.partySize(), order.guestName(), order.guestPhone(), order.guestComment(), order.managerTelegramId(), order.managerUserId(),
+                order.hostessChatId(), order.sbisExternalId(), order.createdAt(), order.updatedAt());
+    }
+
     private TableReservationCommand command(String tableCode, Instant start, Instant end, int partySize) {
         return new TableReservationCommand(
                 1773317437L,

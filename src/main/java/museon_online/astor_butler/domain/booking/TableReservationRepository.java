@@ -304,6 +304,23 @@ public class TableReservationRepository {
         );
     }
 
+    /** The same, but only what the guest holds at one venue. A reservation belongs to the venue of its table. */
+    public List<TableReservationOrder> findActiveOrdersByChatId(Long chatId, String venueCode) {
+        return jdbcTemplate.query("""
+                SELECT tro.*, vt.table_code, vt.display_name AS table_display_name
+                FROM table_reservation_orders tro
+                JOIN venue_tables vt ON vt.id = tro.table_id
+                WHERE tro.chat_id = ?
+                  AND vt.venue_code = ?
+                  AND tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED')
+                ORDER BY tro.requested_start_at
+                """,
+                orderMapper(),
+                chatId,
+                normalizeVenue(venueCode)
+        );
+    }
+
     public Optional<TableReservationOrder> findLatestAwaitingManagerConfirmation(String hostessChatId) {
         List<TableReservationOrder> result = jdbcTemplate.query("""
                 SELECT tro.*, vt.table_code, vt.display_name AS table_display_name
@@ -323,6 +340,19 @@ public class TableReservationRepository {
                 blankToNull(hostessChatId)
         );
         return result.stream().findFirst();
+    }
+
+    public TableReservationOrder attachExternalId(Long id, String externalId) {
+        jdbcTemplate.update("""
+                UPDATE table_reservation_orders
+                SET sbis_external_id = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                externalId,
+                id
+        );
+        return findOrder(id).orElseThrow();
     }
 
     public TableReservationOrder confirm(Long id) {
