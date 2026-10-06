@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.ExpectedCount.twice;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -53,7 +54,8 @@ class SabyReservationStateSyncTest {
     void failedReadIsUnknownAndNeverThrows() {
         Fixture fixture = fixture();
         expectAuth(fixture.server());
-        fixture.server().expect(once(), requestTo(STATE_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        // A 5xx on a read is retried once by the client (SABY_MAX_RETRIES=1), so the stand-in answers twice.
+        fixture.server().expect(twice(), requestTo(STATE_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
 
         ExternalBookingSnapshot snapshot = fixture.provider().fetchReservationState(EXTERNAL_ID);
 
