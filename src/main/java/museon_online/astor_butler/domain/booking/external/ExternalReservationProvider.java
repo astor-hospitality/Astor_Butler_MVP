@@ -21,6 +21,12 @@ public interface ExternalReservationProvider {
      */
     boolean cancelReservation(String externalReservationId);
 
+    /**
+     * Reads what the venue's system now says about a booking Butler wrote there. Never throws: a failed read is
+     * {@link ExternalBookingState#UNKNOWN}, and the caller changes nothing on it.
+     */
+    ExternalBookingSnapshot fetchReservationState(String externalReservationId);
+
     record ExternalAvailabilityRequest(
             String venueCode,
             Instant requestedStartAt,

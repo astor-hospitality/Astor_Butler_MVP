@@ -138,6 +138,45 @@ public class TableReservationService {
 
     @Transactional
     public TableReservationOrder reject(Long id) {
+        return reject(id, true);
+    }
+
+    /**
+     * The venue accepted the booking in its own system: the local order follows, once. Nothing is written back.
+     * A rejected, cancelled or already confirmed order is returned as it is.
+     */
+    @Transactional
+    public TableReservationOrder confirmFromVenue(Long id) {
+        TableReservationOrder current = requireOrder(id);
+        if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
+            return current;
+        }
+        TableReservationOrder confirmed = repository.confirm(id);
+        notificationService.notifyHostessConfirmed(confirmed);
+        notificationService.notifyGuestConfirmed(confirmed);
+        return confirmed;
+    }
+
+    /**
+     * The venue dropped the booking in its own system: an awaiting order is rejected, a confirmed one is cancelled,
+     * the guest hears about it with alternatives. The venue's system is not asked to cancel what it already cancelled.
+     */
+    @Transactional
+    public TableReservationOrder cancelFromVenue(Long id) {
+        TableReservationOrder current = requireOrder(id);
+        return switch (current.status()) {
+            case AWAITING_MANAGER_CONFIRMATION -> reject(id, false);
+            case CONFIRMED -> {
+                List<VenueTable> alternatives = alternativesForRejected(current);
+                TableReservationOrder cancelled = repository.cancel(id);
+                notificationService.notifyGuestRejected(cancelled, alternatives);
+                yield cancelled;
+            }
+            default -> current;
+        };
+    }
+
+    private TableReservationOrder reject(Long id, boolean cancelInVenueSystem) {
         TableReservationOrder current = requireOrder(id);
         if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
             throw conflict("Only awaiting manager confirmation reservations can be rejected", current.tableCode());
@@ -145,7 +184,9 @@ public class TableReservationService {
 
         List<VenueTable> alternatives = alternativesForRejected(current);
         TableReservationOrder rejected = repository.reject(id);
-        cancelExternally(rejected);
+        if (cancelInVenueSystem) {
+            cancelExternally(rejected);
+        }
         notificationService.notifyGuestRejected(rejected, alternatives);
         return rejected;
     }

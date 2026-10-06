@@ -43,6 +43,12 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+  booking:
+    external-sync:
+      # Reads bookings back from the venue's own system (Saby) and confirms/cancels local orders accordingly.
+      # Runs only while a provider is enabled and configured; 0 is not supported, set a large value to slow it down.
+      fixed-delay-ms: ${ASTOR_EXTERNAL_SYNC_DELAY_MS:60000}
+      initial-delay-ms: ${ASTOR_EXTERNAL_SYNC_INITIAL_DELAY_MS:90000}
   integrations:
     saby:
       enabled: ${ASTOR_SABY_ENABLED:false}
