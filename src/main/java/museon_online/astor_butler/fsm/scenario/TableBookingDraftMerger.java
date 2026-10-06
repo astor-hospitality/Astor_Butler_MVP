@@ -24,6 +24,8 @@ public class TableBookingDraftMerger {
     // Either a whole clock time, or a bare hour that is not a piece of a date or of a clock time that does not exist ("25:00").
     private static final Pattern TIME = Pattern.compile(
             "(?<![:./-])\\b(?:([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)|([01]?\\d|2[0-3])(?:\\s*(?:час(?:ов|а)?|ч))?\\b(?![:./-]))");
+    private static final Pattern TABLE_NUMBER_AFTER_WORD = Pattern.compile("(?:^|\\s)стол(?:ик)?\\s*(?:№\\s*|номер\\s*)?(1\\d|[1-9])(?:\\s|$)");
+    private static final Pattern TABLE_NUMBER_ALONE = Pattern.compile("^(1\\d|[1-9])$");
     private static final Pattern TABLE_NUMBER_SELECTION = Pattern.compile("^(?:стол(?:ик)?\\s*)?(?:[1-9]|1\\d)$");
     private static final Pattern TABLE_NUMBER_IN_TEXT = Pattern.compile(".*(?:^|\\s)стол(?:ик)?\\s*(?:[1-9]|1\\d)(?:\\s|$).*");
     private static final Pattern TABLE_NUMBER_BEFORE_WORD = Pattern.compile(".*(?:^|\\s)(?:[1-9]|1\\d)\\s*стол(?:ик)?(?:\\s|$).*");
@@ -359,8 +361,14 @@ public class TableBookingDraftMerger {
         if (reverseMatcher.find()) {
             return reverseMatcher.group(1);
         }
-        Matcher matcher = Pattern.compile("(?:^|\\s)(?:стол(?:ик)?\\s*)?(1\\d|[1-9])(?:\\s|$)").matcher(text);
-        return matcher.find() ? matcher.group(1) : null;
+        // A number is a table only when the guest ties it to the word, "стол 5", or answers with it alone.
+        // Any other number in the phrase may be the party size or the hour: "стол на 2 гостей" is not table 2.
+        Matcher named = TABLE_NUMBER_AFTER_WORD.matcher(text);
+        if (named.find()) {
+            return named.group(1);
+        }
+        Matcher alone = TABLE_NUMBER_ALONE.matcher(text);
+        return alone.matches() ? alone.group(1) : null;
     }
 
     private Optional<String> preferredZone(String text) {
