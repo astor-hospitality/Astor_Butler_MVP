@@ -35,6 +35,11 @@ public final class NoExternalReservations implements ExternalReservationProvider
     }
 
     @Override
+    public ExternalReservationResult updateReservation(String externalReservationId, TableReservationCommand command, String butlerReference) {
+        return ExternalReservationResult.rejectedBecauseUnconfigured(PROVIDER_ID, List.of());
+    }
+
+    @Override
     public ExternalBookingSnapshot fetchReservationState(String externalReservationId) {
         return ExternalBookingSnapshot.unknown(PROVIDER_ID, externalReservationId, "PROVIDER_NOT_CONFIGURED");
     }

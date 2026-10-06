@@ -211,6 +211,9 @@ public class TableReservationNotificationService {
         if (sync == null || !sync.providerConfigured()) {
             return "";
         }
+        if (TableReservationService.EXTERNAL_CHANGE_SYNCED.equals(sync.status())) {
+            return "\n<b>Saby:</b> изменение уже в Presto — сверьте там время, число гостей и стол.\n";
+        }
         if (sync.created()) {
             return "\n<b>Saby:</b> бронь уже создана в Presto без стола — посадите её там на стол из заявки. "
                     + "Если нажмёте «Нет», она снимется в Saby автоматически.\n";

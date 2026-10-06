@@ -65,6 +65,11 @@ class SabyApiClient {
         return authorizedCall(HttpMethod.PUT, uri(path), null, path, false);
     }
 
+    /** Never retried; the body replaces the whole order on the Saby side, as its update contract asks. */
+    JsonNode put(String path, Object body) {
+        return authorizedCall(HttpMethod.PUT, uri(path), toJson(body), path, false);
+    }
+
     private URI uri(String path) {
         return UriComponentsBuilder.fromUriString(trimTrailingSlash(properties.getBaseUrl()))
                 .path(path)
