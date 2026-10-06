@@ -1,0 +1,188 @@
+{
+ "total": 6,
+ "parts": [
+  {
+   "uid": 801053506212,
+   "title": "All",
+   "sort": 1000000,
+   "root": true
+  },
+  {
+   "uid": 461847338072,
+   "title": "Закуски",
+   "sort": 1000200,
+   "root": false
+  },
+  {
+   "uid": 737030190632,
+   "title": "Горячие закуски",
+   "sort": 1000300,
+   "root": false
+  },
+  {
+   "uid": 968391482232,
+   "title": "Салаты",
+   "sort": 1000400,
+   "root": false
+  },
+  {
+   "uid": 521192288022,
+   "title": "Супы",
+   "sort": 1000500,
+   "root": false
+  },
+  {
+   "uid": 517066949332,
+   "title": "Пасты и ризотто",
+   "sort": 1000600,
+   "root": false
+  },
+  {
+   "uid": 972405333282,
+   "title": "Мясо",
+   "sort": 1000700,
+   "root": false
+  },
+  {
+   "uid": 942539427332,
+   "title": "Море",
+   "sort": 1000800,
+   "root": false
+  },
+  {
+   "uid": 496534333162,
+   "title": "Гарниры",
+   "sort": 1000900,
+   "root": false
+  },
+  {
+   "uid": 358026799422,
+   "title": "Десерты",
+   "sort": 1001000,
+   "root": false
+  }
+ ],
+ "products": [
+  {
+   "uid": 441829530012,
+   "title": "АНТИПАСТИ/СЫРЫ, ИТАЛЬЯНСКИЕ СЫРОВЯЛЫ, ВЯЛЕННЫЙ ТОМА, ОЛИВКИ, ГРИССИНИ",
+   "sku": "",
+   "price": "1590.0000",
+   "priceold": "",
+   "descr": "сыр пармезан, горганзолла, брезеола, пармская ветчина, колбаса сыровяленная с трюфелем, вяленные томаты, грисини, оливки каломато.",
+   "text": "",
+   "portion": 0,
+   "unit": "",
+   "quantity": "",
+   "mark": "",
+   "sort": 1000650,
+   "url": "https://aeris.bar/kitchen/tproduct/441829530012-antipastisiri-italyanskie-sirovyali-vyal",
+   "partuids": "[461847338072]",
+   "externalid": "vxhUs3J6A7jnfgozdnFY",
+   "gallery": "[{\"img\":\"https:\\/\\/static.tildacdn.com\\/stor3331-6138-4930-b738-353731623435\\/797dd0673fecfdfe828b4878ae811760.jpg\"}]",
+   "characteristics": [],
+   "editions": 1
+  },
+  {
+   "uid": 889111953762,
+   "title": "Паштет из печени цыпленка с вишней и маслом нуазет",
+   "sku": "",
+   "price": "540.0000",
+   "priceold": "",
+   "descr": "нежный паштет из печени цыпленка, подается с вишней в сахаре и каленым маслом Нуазет(масло с ярким ароматом ореха) падается с тартином",
+   "text": "",
+   "portion": 0,
+   "unit": "",
+   "quantity": "",
+   "mark": "",
+   "sort": 1000750,
+   "url": "https://aeris.bar/kitchen/tproduct/889111953762-pashtet-iz-pecheni-tsiplenka-s-vishnei-i",
+   "partuids": "[461847338072]",
+   "externalid": "KAkn7xjvVmpucYOfEKxz",
+   "gallery": "[{\"img\":\"https:\\/\\/static.tildacdn.com\\/stor6331-3165-4564-a632-363639653466\\/710fefe86b899cfb9e7a7b1c6cfab424.jpg\"}]",
+   "characteristics": [],
+   "editions": 1
+  },
+  {
+   "uid": 701838925482,
+   "title": "Гребешок на трюфельной подушке с черной вуалью",
+   "sku": "",
+   "price": "890.0000",
+   "priceold": "",
+   "descr": "Драгоценность моря в обрамлении леса Сочный морской гребешок обжаривается с чесноком и солью, затем выкладывается через кольцо на базу из трюфельных шампиньонов. Сверху — ажурный хрустящий чипс, салат микс и капля ароматного трюфельного масла. Три текстуры в одном укусе.",
+   "text": "",
+   "portion": 0,
+   "unit": "",
+   "quantity": "",
+   "mark": "",
+   "sort": 1001750,
+   "url": "https://aeris.bar/kitchen/tproduct/701838925482-grebeshok-na-tryufelnoi-podushke-s-chern",
+   "partuids": "[737030190632]",
+   "externalid": "faf40zFhgXICD83bEMyi",
+   "gallery": "[{\"img\":\"https:\\/\\/static.tildacdn.com\\/stor3162-6638-4631-b564-363264313165\\/058e139dbb274f8e89ddb575870455cb.jpg\"}]",
+   "characteristics": [],
+   "editions": 1
+  },
+  {
+   "uid": 723656057742,
+   "title": "Кальмар в соусе чимичури на карпаччо из томатов",
+   "sku": "",
+   "price": "890.0000",
+   "priceold": "",
+   "descr": "Кольца спелых томатов присыпаются сахаром и обжигаются горелкой — это дает легкую карамельную корочку и дымный шлейф. Сверху — кальмар, обжаренный на максимальной мощности ровно 60 секунд. Поливка острым соусом чимичури и горсть рукколы завершают порцию. Резинового кальмара не бывает — только нежный, как масло",
+   "text": "",
+   "portion": 0,
+   "unit": "",
+   "quantity": "",
+   "mark": "",
+   "sort": 1001850,
+   "url": "https://aeris.bar/kitchen/tproduct/723656057742-kalmar-v-souse-chimichuri-na-karpachcho",
+   "partuids": "[737030190632]",
+   "externalid": "MrnBizJEX9AllfS56edv",
+   "gallery": "[{\"img\":\"https:\\/\\/static.tildacdn.com\\/stor3538-6662-4764-b336-303363383933\\/adce1341ed789d03faf786f359a87ccf.jpg\"}]",
+   "characteristics": [],
+   "editions": 1
+  },
+  {
+   "uid": 939413970242,
+   "title": "Зеленый Гранд салат",
+   "sku": "",
+   "price": "790.0000",
+   "priceold": "",
+   "descr": "Брокколи, фасоль, кабачок, огурец — всё под чимичури Сочный микс из романо, айсберга и салатного микса. Отдельно бланшируются брокколи и стручковая фасоль. Кабачок и огурец нарезаются тонкими слайсами, виноград разрезается пополам. Всё смешивается и заправляется ярким соусом чимичури с кинзой, чесноком и лаймом.",
+   "text": "",
+   "portion": 0,
+   "unit": "",
+   "quantity": "",
+   "mark": "",
+   "sort": 1002150,
+   "url": "https://aeris.bar/kitchen/tproduct/939413970242-zelenii-grand-salat",
+   "partuids": "[968391482232]",
+   "externalid": "M0ZshFFFBseaZk7jy97R",
+   "gallery": "[{\"img\":\"https:\\/\\/static.tildacdn.com\\/stor6436-3337-4832-b030-393930633664\\/812ebeeffe5234ebff8f22e1c1e17eb8.jpg\"}]",
+   "characteristics": [],
+   "editions": 1
+  },
+  {
+   "uid": 100050800732,
+   "title": "Табуле с кускусом",
+   "sku": "",
+   "price": "450.0000",
+   "priceold": "",
+   "descr": "кускус, свежий огурец, свежий цукини, чеснок, много зелени, изюм, запавлены оливковым маслом.",
+   "text": "",
+   "portion": 0,
+   "unit": "",
+   "quantity": "",
+   "mark": "",
+   "sort": 1002250,
+   "url": "https://aeris.bar/kitchen/tproduct/100050800732-tabule-s-kuskusom",
+   "partuids": "[968391482232]",
+   "externalid": "FLtELK2PBfTY5adFSPch",
+   "gallery": "[{\"img\":\"https:\\/\\/static.tildacdn.com\\/stor6434-3536-4136-b164-373837353135\\/3ab8f36e7dc8a01da970eae9b3c02de9.jpg\"}]",
+   "characteristics": [],
+   "editions": 1
+  }
+ ],
+ "slice": 1
+}
