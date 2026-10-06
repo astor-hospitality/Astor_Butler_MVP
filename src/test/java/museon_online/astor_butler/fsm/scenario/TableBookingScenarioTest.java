@@ -511,6 +511,28 @@ class TableBookingScenarioTest {
     }
 
     @Test
+    void theGuestIsToldWhatWentToTheHostess() {
+        when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(new TableBookingDraftStorage.Draft(
+                "AERIS",
+                Instant.parse("2026-06-27T15:00:00Z"),
+                Instant.parse("2026-06-27T17:00:00Z"),
+                LocalDate.of(2026, 6, 27),
+                LocalTime.of(20, 0),
+                2,
+                null,
+                null,
+                null,
+                "Хочу забронировать стол на двоих завтра в 20:00"
+        )));
+
+        OutgoingMessage outgoing = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
+
+        // The numbers are the ones of the request the service returned, not of the draft: that is what the hostess sees.
+        assertThat(outgoing.text()).contains("Заявку #44 передал команде AERIS", "Стол 17\n06.06 в 20:00\nГостей: 2");
+        assertThat(outgoing.text()).doesNotContain("Бронь подтверждена");
+    }
+
+    @Test
     void theGuestCanLeaveTheBookingAtAnyStep() {
         BotState[] steps = {
                 BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE,

@@ -356,8 +356,10 @@ public class TableBookingScenario implements FsmScenario {
                     """
                     Готово. Заявку #%s передал команде AERIS на подтверждение. Как только хостес ответит, я вернусь с финальным статусом.
 
+                    %s
+
                     Пока стол держат, могу показать меню или тихо подсказать актуальное: с воскресенья по четверг в AERIS действует винный безлимит за 1700 ₽, а на пятницу и субботу я подскажу ближайшую афишу недели.
-                    """.formatted(order.id()),
+                    """.formatted(order.id(), whatWasBooked(order)),
                     BotState.READY_FOR_DIALOG,
                     "RESERVATION_CREATED",
                     "WAIT_HOSTESS_CONFIRMATION",
@@ -374,6 +376,28 @@ public class TableBookingScenario implements FsmScenario {
                     "ASK_TABLE_SELECTION"
             );
         }
+    }
+
+    /** What went to the hostess, so the guest can see it and catch a mistake: the table, the day and time, the party. */
+    private String whatWasBooked(TableReservationOrder order) {
+        List<String> lines = new ArrayList<>();
+        String table = order.tableDisplayName() == null || order.tableDisplayName().isBlank()
+                ? (order.tableCode() == null || order.tableCode().isBlank() ? "" : "Стол " + order.tableCode())
+                : order.tableDisplayName().trim();
+        if (table.startsWith("Table ")) {
+            table = "Стол " + table.substring("Table ".length());
+        }
+        if (!table.isBlank()) {
+            lines.add(table);
+        }
+        if (order.requestedStartAt() != null) {
+            java.time.ZonedDateTime startAt = order.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE);
+            lines.add(startAt.format(DATE_BUTTON) + " в " + startAt.format(TIME_BUTTON));
+        }
+        if (order.partySize() != null) {
+            lines.add("Гостей: " + order.partySize());
+        }
+        return String.join("\n", lines);
     }
 
     /** One guest cannot sit at two tables at once, so a second request for an overlapping time is not created. */
