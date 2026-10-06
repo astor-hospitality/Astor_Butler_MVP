@@ -1,6 +1,7 @@
 package museon_online.astor_butler.fsm.scenario;
 
 import museon_online.astor_butler.fsm.core.BotState;
+import museon_online.astor_butler.fsm.understanding.GuestPartyText;
 import museon_online.astor_butler.fsm.understanding.SlotValue;
 import museon_online.astor_butler.fsm.understanding.UnderstoodInput;
 import museon_online.astor_butler.service.message.IncomingMessage;
@@ -278,6 +279,10 @@ public class TableBookingDraftMerger {
     }
 
     private Optional<Integer> extractPartySize(String text) {
+        Optional<Integer> family = GuestPartyText.adultsWithChildren(text);
+        if (family.isPresent() || GuestPartyText.childrenWithoutACount(text)) {
+            return family;
+        }
         if (containsAny(text, "одного", "один", "одна", "одному", "соло", "я один", "я одна", "буду один", "буду одна", "только я")) {
             return Optional.of(1);
         }

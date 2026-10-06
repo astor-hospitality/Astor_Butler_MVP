@@ -6,6 +6,7 @@ import museon_online.astor_butler.api.common.ApiException;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
+import museon_online.astor_butler.domain.booking.VenueOpeningHours;
 import museon_online.astor_butler.domain.media.AerisMediaCatalog;
 import museon_online.astor_butler.domain.media.MediaAsset;
 import museon_online.astor_butler.fsm.core.BotState;
@@ -36,6 +37,8 @@ public class TableBookingScenario implements FsmScenario {
     private static final DateTimeFormatter DATE_BUTTON = DateTimeFormatter.ofPattern("dd.MM");
     private static final DateTimeFormatter TIME_BUTTON = DateTimeFormatter.ofPattern("HH:mm");
     private static final Locale RU = Locale.forLanguageTag("ru-RU");
+    private static final java.util.Set<String> LEAVE_WORDS = java.util.Set.of(
+            "отмена", "стоп", "главное меню", "выйти", "передумал", "передумала", "не надо", "не нужно");
 
     private final FSMStorage fsmStorage;
     private final TableBookingDraftStorage draftStorage;
@@ -45,6 +48,7 @@ public class TableBookingScenario implements FsmScenario {
     private final TableBookingStepRegistry stepRegistry;
     private final BookingPhraseService phraseService;
     private final BookingTimeProvider timeProvider;
+    private final VenueOpeningHours openingHours;
 
     @Value("${telegram.booking.plan-pdf-asset-code:AERIS_FLOOR_PLAN}")
     private String planPdfAssetCode;
@@ -79,13 +83,83 @@ public class TableBookingScenario implements FsmScenario {
     public OutgoingMessage handle(IncomingMessage incoming, BotState currentState, String text, UnderstoodInput understood) {
         String normalized = normalize(text);
         BotState state = currentState == null ? BotState.UNKNOWN : currentState.canonical();
+        if (isTableBookingState(state) && wantsToLeave(normalized)) {
+            return leave(incoming);
+        }
         TableBookingDraftStorage.Draft draft = draftMerger.merge(incoming, state, normalized, understood);
 
+        if (draft.requestedDate() != null && draft.requestedTime() != null && !openingHours.isOpen(draft.requestedDate(), draft.requestedTime())) {
+            return askForAnOpenHour(incoming, state, draft);
+        }
         Optional<TableBookingStepRegistry.Step> nextStep = stepRegistry.nextMissingStep(draft);
         if (nextStep.isPresent()) {
             return askForStep(incoming, state, draft, nextStep.get(), normalized);
         }
         return createReservation(incoming, draft);
+    }
+
+    /**
+     * The guest named a time when the venue is closed. The time is dropped, the guest is told the hours of that day,
+     * and the booking goes on with whatever is still missing, which now includes the time.
+     */
+    private OutgoingMessage askForAnOpenHour(IncomingMessage incoming, BotState state, TableBookingDraftStorage.Draft draft) {
+        TableBookingDraftStorage.Draft withoutTime = new TableBookingDraftStorage.Draft(
+                draft.venueCode(),
+                null,
+                null,
+                draft.requestedDate(),
+                null,
+                draft.partySize(),
+                draft.tableCode(),
+                draft.preferredZone(),
+                draft.seatingPreference(),
+                draft.seatingPreferenceResolved(),
+                draft.originalText()
+        );
+        draftStorage.save(incoming.chatId(), withoutTime);
+        String hours = openingHours.describe(draft.requestedDate())
+                .map(open -> "В это время AERIS закрыт. В этот день ждем гостей " + open + ".")
+                .orElse("В это время AERIS закрыт.");
+        TableBookingStepRegistry.Step next = stepRegistry.nextMissingStep(withoutTime).orElseThrow();
+        // An empty guest text keeps "не хочу гадать со временем" out: the time was understood, the venue is just closed then.
+        OutgoingMessage question = askForStep(incoming, state, withoutTime, next, "");
+        return new OutgoingMessage(
+                question.channel(),
+                question.externalUserId(),
+                question.chatId(),
+                hours + "\n\n" + question.text(),
+                question.nextState(),
+                question.html(),
+                question.requestContact(),
+                question.removeKeyboard(),
+                question.fallback(),
+                question.adminAlert(),
+                java.util.stream.Stream.concat(java.util.stream.Stream.of("TIME_OUTSIDE_OPENING_HOURS"), question.actions().stream()).toList(),
+                question.metadata(),
+                question.createdAt()
+        );
+    }
+
+    /** The guest changed their mind in the middle of the booking: nothing is kept, nothing is created. */
+    private OutgoingMessage leave(IncomingMessage incoming) {
+        draftStorage.clear(incoming.chatId());
+        fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+        return message(
+                incoming,
+                "Хорошо, бронь не оформляю. Главное меню оставил под рукой.",
+                BotState.READY_FOR_DIALOG,
+                "TABLE_BOOKING_CANCELLED_BY_GUEST",
+                "RETURN_MAIN_MENU"
+        );
+    }
+
+    /**
+     * Only a whole reply counts, so "на двоих, без отмены" stays an answer. "Нет" is not here: that is how a guest
+     * declines a seating wish.
+     */
+    private boolean wantsToLeave(String normalized) {
+        String words = normalized.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
+        return LEAVE_WORDS.contains(words) || words.startsWith("отменить") || words.startsWith("отмени ");
     }
 
     private OutgoingMessage askForStep(
@@ -219,10 +293,17 @@ public class TableBookingScenario implements FsmScenario {
         if (requestedDate != null && requestedDate.isAfter(timeProvider.today())) {
             start = LocalTime.of(12, 0);
         }
+        LocalDate day = requestedDate == null ? timeProvider.today() : requestedDate;
         List<String> labels = new ArrayList<>();
         LocalTime time = start;
         for (int i = 0; i < 12; i++) {
-            labels.add(time.format(TIME_BUTTON));
+            // Only hours of that same day when the venue is open: a button past midnight would mean the morning already gone.
+            if (openingHours.isOpen(day, time)) {
+                labels.add(time.format(TIME_BUTTON));
+            }
+            if (time.plusHours(1).isBefore(time)) {
+                break;
+            }
             time = time.plusHours(1);
         }
         return rows(labels, 4);
@@ -244,6 +325,12 @@ public class TableBookingScenario implements FsmScenario {
     }
 
     private OutgoingMessage createReservation(IncomingMessage incoming, TableBookingDraftStorage.Draft draft) {
+        Optional<TableReservationOrder> held = tableReservationService.listActiveReservationsByChatId(incoming.chatId()).stream()
+                .filter(order -> overlaps(order, draft))
+                .findFirst();
+        if (held.isPresent()) {
+            return alreadyBooked(incoming, held.get());
+        }
         try {
             TableReservationOrder order = tableReservationService.createReservation(new TableReservationCommand(
                     incoming.chatId(),
@@ -269,8 +356,10 @@ public class TableBookingScenario implements FsmScenario {
                     """
                     Готово. Заявку #%s передал команде AERIS на подтверждение. Как только хостес ответит, я вернусь с финальным статусом.
 
+                    %s
+
                     Пока стол держат, могу показать меню или тихо подсказать актуальное: с воскресенья по четверг в AERIS действует винный безлимит за 1700 ₽, а на пятницу и субботу я подскажу ближайшую афишу недели.
-                    """.formatted(order.id()),
+                    """.formatted(order.id(), whatWasBooked(order)),
                     BotState.READY_FOR_DIALOG,
                     "RESERVATION_CREATED",
                     "WAIT_HOSTESS_CONFIRMATION",
@@ -287,6 +376,50 @@ public class TableBookingScenario implements FsmScenario {
                     "ASK_TABLE_SELECTION"
             );
         }
+    }
+
+    /** What went to the hostess, so the guest can see it and catch a mistake: the table, the day and time, the party. */
+    private String whatWasBooked(TableReservationOrder order) {
+        List<String> lines = new ArrayList<>();
+        String table = order.tableDisplayName() == null || order.tableDisplayName().isBlank()
+                ? (order.tableCode() == null || order.tableCode().isBlank() ? "" : "Стол " + order.tableCode())
+                : order.tableDisplayName().trim();
+        if (table.startsWith("Table ")) {
+            table = "Стол " + table.substring("Table ".length());
+        }
+        if (!table.isBlank()) {
+            lines.add(table);
+        }
+        if (order.requestedStartAt() != null) {
+            java.time.ZonedDateTime startAt = order.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE);
+            lines.add(startAt.format(DATE_BUTTON) + " в " + startAt.format(TIME_BUTTON));
+        }
+        if (order.partySize() != null) {
+            lines.add("Гостей: " + order.partySize());
+        }
+        return String.join("\n", lines);
+    }
+
+    /** One guest cannot sit at two tables at once, so a second request for an overlapping time is not created. */
+    private OutgoingMessage alreadyBooked(IncomingMessage incoming, TableReservationOrder held) {
+        draftStorage.clear(incoming.chatId());
+        fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+        java.time.ZonedDateTime startAt = held.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE);
+        return message(
+                incoming,
+                "У вас уже есть заявка #%s на %s в %s, вторую на это же время не создаю. Изменить или отменить ее можно кнопкой «Изменить / отменить». Если нужен еще один стол, напишите «менеджер»."
+                        .formatted(held.id(), startAt.format(DATE_BUTTON), startAt.format(TIME_BUTTON)),
+                BotState.READY_FOR_DIALOG,
+                "RESERVATION_ALREADY_EXISTS",
+                "RETURN_MAIN_MENU"
+        );
+    }
+
+    private boolean overlaps(TableReservationOrder order, TableBookingDraftStorage.Draft draft) {
+        if (order.requestedStartAt() == null || order.requestedEndAt() == null || draft.requestedStartAt() == null || draft.requestedEndAt() == null) {
+            return false;
+        }
+        return order.requestedStartAt().isBefore(draft.requestedEndAt()) && draft.requestedStartAt().isBefore(order.requestedEndAt());
     }
 
     private OutgoingMessage message(IncomingMessage incoming, String text, BotState nextState, String... actions) {
