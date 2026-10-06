@@ -46,16 +46,16 @@ astor:
   integrations:
     saby:
       enabled: ${ASTOR_SABY_ENABLED:false}
-      base-url: ${SABY_API_BASE_URL:}
-      auth-method: ${SABY_AUTH_METHOD:}
-      api-token: ${SABY_API_TOKEN:}
-      client-id: ${SABY_CLIENT_ID:}
-      client-secret: ${SABY_CLIENT_SECRET:}
-      refresh-token: ${SABY_REFRESH_TOKEN:}
-      organization-id: ${SABY_ORGANIZATION_ID:}
-      restaurant-id: ${SABY_RESTAURANT_ID:}
-      availability-path: ${SABY_AVAILABILITY_PATH:}
-      reservation-path: ${SABY_RESERVATION_PATH:}
+      write-enabled: ${SABY_WRITE_ENABLED:false}
+      base-url: ${SABY_API_BASE_URL:https://api.sbis.ru}
+      auth-url: ${SABY_AUTH_URL:https://online.sbis.ru/oauth/service/}
+      app-client-id: ${SABY_APP_CLIENT_ID:}
+      app-secret: ${SABY_APP_SECRET:}
+      secret-key: ${SABY_SECRET_KEY:}
+      point-id: ${SABY_POINT_ID:}
+      hall-id: ${SABY_HALL_ID:}
+      venue-code: ${SABY_VENUE_CODE:AERIS}
+      zone-id: ${SABY_ZONE_ID:Asia/Yekaterinburg}
       timeout-ms: ${SABY_TIMEOUT_MS:3000}
       max-retries: ${SABY_MAX_RETRIES:1}
   startup:

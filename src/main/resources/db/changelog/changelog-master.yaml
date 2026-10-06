@@ -67,3 +67,5 @@ databaseChangeLog:
       file: db/changelog/2026-07-23-smart-solution-group-qa.yaml
   - include:
       file: db/changelog/2026-08-02-aeris-astor-entity.yaml
+  - include:
+      file: db/changelog/2026-10-05-staff-portal.yaml

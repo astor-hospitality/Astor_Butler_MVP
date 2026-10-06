@@ -1,0 +1,11 @@
+# Include with the existing gateway's Compose files on future recreations.
+# Scoped live deployment can connect this network without recreating the gateway.
+services:
+  api-gateway:
+    networks:
+      default: {}
+      astor-identity-proxy: {}
+networks:
+  astor-identity-proxy:
+    external: true
+    name: astor-identity_proxy

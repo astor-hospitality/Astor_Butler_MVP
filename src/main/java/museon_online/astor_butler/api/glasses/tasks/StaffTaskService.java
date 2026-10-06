@@ -57,6 +57,8 @@ public final class StaffTaskService {
 
     /** Delivery is tracked apart from the status: delivered or voiced does not mean accepted. */
     public synchronized StaffTask delivery(StaffScope scope, String taskId, String eventId, Delivery kind) {
+        own(scope, taskId); // A stored idempotent response is not an authorization bypass.
+        if (kind == null) throw malformed("Delivery kind is required");
         return once(scope, eventId, fingerprint("delivery", scope.staffId(), taskId, kind), () -> {
             StaffTask task = own(scope, taskId);
             Instant now = clock.instant();
@@ -74,6 +76,7 @@ public final class StaffTaskService {
     public synchronized StaffTask command(StaffScope scope, String taskId, String eventId, Command type,
                                           long expectedVersion, String stageCode) {
         if (type == null) throw malformed("Command type is required");
+        own(scope, taskId);
         return once(scope, eventId, fingerprint("command", scope.staffId(), taskId, type, expectedVersion, stageCode), () -> {
             StaffTask task = open(own(scope, taskId), expectedVersion);
             return save(switch (type) {
@@ -88,6 +91,7 @@ public final class StaffTaskService {
     /** A received photo is counted on its stage. It closes neither the stage nor the task. */
     public synchronized StaffTask evidence(StaffScope scope, String taskId, String eventId, String stageCode,
                                            Instant capturedAt) {
+        own(scope, taskId);
         return once(scope, eventId, fingerprint("evidence", scope.staffId(), taskId, stageCode, capturedAt), () -> {
             StaffTask task = working(notClosed(own(scope, taskId)));
             StaffTask.Stage stage = stage(task, stageCode);
