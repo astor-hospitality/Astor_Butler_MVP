@@ -32,7 +32,8 @@
       {"code": "LEMONADE_RASPBERRY", "title": "Лимонад малина-бузина", "priceRub": 200, "portion": null},
       {"code": "LEMONADE_BASIL", "title": "Лимонад базилик-жасмин", "priceRub": 200, "portion": null},
       {"code": "LEMONADE_PASSION_FRUIT", "title": "Лимонад маракуйя-ананас", "priceRub": 200, "portion": null},
-      {"code": "CRANBERRY_MORS", "title": "Домашний клюквенный морс", "priceRub": 140, "portion": "200 мл"}
+      {"code": "CRANBERRY_MORS", "title": "Домашний клюквенный морс", "priceRub": 140, "portion": "200 мл"},
+      {"code": "WINE_OF_THE_DAY", "title": "Вино дня", "priceRub": 350, "portion": "125 мл"}
     ]}
   ],
   "sets": []

@@ -18,7 +18,7 @@ class BusinessLunchCatalogTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
-    /** The AERIS lunch menu as printed, from the photo Mikhail sent on 2026-10-06. Wine of the day is left out on purpose. */
+    /** The AERIS lunch menu as printed, from the photo Mikhail sent on 2026-10-06. */
     @Test
     void theShippedAerisOfferIsThePrintedLunchMenu() {
         BusinessLunchCatalog catalog = new BusinessLunchCatalog(objectMapper);
@@ -49,7 +49,8 @@ class BusinessLunchCatalogTest {
                         "Лимонад малина-бузина 200 null",
                         "Лимонад базилик-жасмин 200 null",
                         "Лимонад маракуйя-ананас 200 null",
-                        "Домашний клюквенный морс 140 200 мл");
+                        "Домашний клюквенный морс 140 200 мл",
+                        "Вино дня 350 125 мл");
         assertThat(catalog.find("NOWHERE")).isEmpty();
     }
 
