@@ -6,6 +6,7 @@ import museon_online.astor_butler.domain.booking.EventBookingStatus;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.booking.VenueOpeningHours;
 import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
 import museon_online.astor_butler.domain.lunch.BusinessLunchFixtures;
 import museon_online.astor_butler.domain.lunch.BusinessLunchService;
@@ -57,10 +58,17 @@ class ChangeCancelScenarioTest {
 
     private ChangeCancelScenario scenario;
 
+    /**
+     * Every test sees Monday 15.06.2026, 14:00 in Yekaterinburg. The bookings below are on Thursday 18.06,
+     * and a move is checked against the clock, so the tests must not depend on the day they are run.
+     */
+    private static final BookingTimeProvider MONDAY_14_00 =
+            new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-15T09:00:00Z"), BookingTimeProvider.VENUE_ZONE));
+
     @BeforeEach
     void setUp() {
         lenient().when(changeDraftStorage.find(anyLong())).thenReturn(Optional.empty());
-        scenario = scenarioAt(new BookingTimeProvider());
+        scenario = scenarioAt(MONDAY_14_00);
     }
 
     private ChangeCancelScenario scenarioAt(BookingTimeProvider clock) {
@@ -71,7 +79,8 @@ class ChangeCancelScenarioTest {
                 changeDraftStorage,
                 new museon_online.astor_butler.fsm.understanding.GuestInputUnderstandingService(),
                 clock,
-                new BusinessLunchService(tableReservationService, List.of(), clock, new BusinessLunchCatalog(List.of(BusinessLunchFixtures.fullMenu())))
+                new BusinessLunchService(tableReservationService, List.of(), clock, new BusinessLunchCatalog(List.of(BusinessLunchFixtures.fullMenu()))),
+                new VenueOpeningHours()
         );
         ReflectionTestUtils.setField(created, "adminChatId", "100500");
         return created;
@@ -82,7 +91,7 @@ class ChangeCancelScenarioTest {
         lenient().when(changeDraftStorage.find(1773317437L))
                 .thenReturn(Optional.of(new ChangeCancelDraftStorage.Draft(44L, pendingAction)));
         lenient().when(tableReservationService.getReservation(44L)).thenReturn(lunchReservation(Instant.parse("2026-06-18T08:00:00Z")));
-        return scenarioAt(new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-15T09:00:00Z"), BookingTimeProvider.VENUE_ZONE)));
+        return scenarioAt(MONDAY_14_00);
     }
 
     private TableReservationOrder lunchReservation(Instant startAt) {
@@ -458,6 +467,138 @@ class ChangeCancelScenarioTest {
         assertThat(scenario.supports(incoming, BotState.READY_FOR_DIALOG, incoming.text())).isTrue();
         assertThat(scenario.supports(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, "завтра 20:00")).isTrue();
         assertThat(scenario.supports(incoming, BotState.TABLE_BOOKING_COLLECT_TIME, "завтра 20:00")).isFalse();
+    }
+
+    /** The guest is in the middle of this change of booking #44, which starts at the given moment. */
+    private void pendingChange(String action, Instant startAt) {
+        when(changeDraftStorage.find(1773317437L)).thenReturn(Optional.of(new ChangeCancelDraftStorage.Draft(44L, action)));
+        when(tableReservationService.getReservation(44L)).thenReturn(changedReservation(startAt, startAt.plusSeconds(2 * 3600), 2, "A7", "Окно у бара"));
+    }
+
+    @Test
+    void aTableIsNotMovedToAnHourWhenTheVenueIsClosed() {
+        // The table is on Thursday 18.06 at 20:00. On Thursdays AERIS is open from 12:00 to 02:00.
+        for (String closedHour : new String[]{"05:00", "10:30"}) {
+            pendingChange("CHANGE_TIME", Instant.parse("2026-06-18T15:00:00Z"));
+            IncomingMessage incoming = telegram(closedHour);
+
+            OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+            assertThat(outgoing.text()).as(closedHour).isEqualTo(
+                    "В это время AERIS закрыт. В этот день ждем гостей с 12:00 до 02:00. Выберите другое время кнопкой или напишите в формате 17:30.");
+            assertThat(outgoing.nextState()).isEqualTo(BotState.TABLE_BOOKING_CHANGE_REQUESTED.name());
+            assertThat(outgoing.actions()).containsExactly("CHANGE_CANCEL", "CHANGE_TIME", "TIME_OUTSIDE_OPENING_HOURS");
+            assertThat(buttons(outgoing)).startsWith("12:00", "13:00").contains("23:00").endsWith("↩️ Отменить действие");
+        }
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+        verify(changeDraftStorage, never()).clear(anyLong());
+    }
+
+    @Test
+    void aLateHourOfTheSameEveningIsStillServed() {
+        pendingChange("CHANGE_TIME", Instant.parse("2026-06-18T15:00:00Z"));
+        when(tableReservationService.changeByGuest(eq(44L), any())).thenReturn(awaitingReservation());
+        IncomingMessage incoming = telegram("23:30");
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        var captor = forClass(museon_online.astor_butler.domain.booking.TableReservationChangeCommand.class);
+        verify(tableReservationService).changeByGuest(eq(44L), captor.capture());
+        assertThat(captor.getValue().requestedStartAt()).isEqualTo(Instant.parse("2026-06-18T18:30:00Z"));
+        assertThat(outgoing.actions()).contains("RESERVATION_CHANGED");
+    }
+
+    @Test
+    void aTableIsNotMovedIntoAnHourAlreadyGone() {
+        // The table is today, Monday 15.06, at 20:00, and it is 14:00 now.
+        pendingChange("CHANGE_TIME", Instant.parse("2026-06-15T15:00:00Z"));
+        IncomingMessage incoming = telegram("13:00");
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+        assertThat(outgoing.text()).isEqualTo("Это время уже прошло. Выберите более позднее кнопкой или напишите в формате 17:30.");
+        assertThat(outgoing.actions()).containsExactly("CHANGE_CANCEL", "CHANGE_TIME", "TIME_ALREADY_PASSED");
+        assertThat(buttons(outgoing)).startsWith("15:00", "16:00").doesNotContain("12:00", "13:00", "14:00");
+    }
+
+    @Test
+    void aTableIsNotMovedToADayWhenItsHourIsClosed() {
+        // The table is on Thursday 18.06 at 12:30. On Saturdays and Sundays AERIS opens at 14:00.
+        pendingChange("CHANGE_DATE", Instant.parse("2026-06-18T07:30:00Z"));
+        IncomingMessage incoming = telegram("в субботу");
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+        assertThat(outgoing.text()).isEqualTo(
+                "В 12:30 в этот день AERIS закрыт, ждем гостей с 14:00 до 04:00. Выберите другой день или сначала перенесите время брони.");
+        assertThat(outgoing.actions()).containsExactly("CHANGE_CANCEL", "CHANGE_DATE", "TIME_OUTSIDE_OPENING_HOURS");
+        // Today 12:30 is gone, the weekends open later; the other days of the two weeks are offered.
+        assertThat(buttons(outgoing)).contains("Завтра 16.06", "19.06", "22.06").doesNotContain("Сегодня 15.06", "20.06", "21.06", "27.06", "28.06");
+    }
+
+    @Test
+    void aTableMovedToADayWhenItsHourIsServedGoesToTheHostess() {
+        pendingChange("CHANGE_DATE", Instant.parse("2026-06-18T15:00:00Z"));
+        when(tableReservationService.changeByGuest(eq(44L), any())).thenReturn(awaitingReservation());
+        IncomingMessage incoming = telegram("в субботу");
+
+        scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        var captor = forClass(museon_online.astor_butler.domain.booking.TableReservationChangeCommand.class);
+        verify(tableReservationService).changeByGuest(eq(44L), captor.capture());
+        assertThat(captor.getValue().requestedStartAt()).isEqualTo(Instant.parse("2026-06-20T15:00:00Z"));
+    }
+
+    @Test
+    void theHoursOfferedForAMoveAreTheOpenOnesOfThatDay() {
+        // The table is on Saturday 20.06 at 20:00, and on Saturdays AERIS opens at 14:00.
+        pendingChange("", Instant.parse("2026-06-20T15:00:00Z"));
+        IncomingMessage incoming = telegram("🕰 Перенести время");
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        assertThat(outgoing.text()).isEqualTo("Понял, переносим время. Выберите новое время кнопкой или напишите в формате 17:30.");
+        assertThat(buttons(outgoing)).containsExactly("14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00", "22:00", "23:00", "↩️ Отменить действие");
+    }
+
+    @Test
+    void anAnswerThatIsNotATimeIsAskedAgainWithTheOpenHoursOfThatDay() {
+        pendingChange("CHANGE_TIME", Instant.parse("2026-06-20T15:00:00Z"));
+        IncomingMessage incoming = telegram("попозже");
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+        assertThat(outgoing.text()).startsWith("Не хочу гадать со временем.");
+        assertThat(buttons(outgoing)).startsWith("14:00").doesNotContain("12:00", "13:00");
+    }
+
+    @Test
+    void anotherActionOfTheMenuNamedInTheMiddleOfAChangeIsFollowed() {
+        // The bot has just said "сначала перенесите время брони": the guest does exactly that while the day is still being asked.
+        pendingChange("CHANGE_DATE", Instant.parse("2026-06-18T07:30:00Z"));
+        IncomingMessage incoming = telegram("🕰 Перенести время");
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        assertThat(outgoing.text()).isEqualTo("Понял, переносим время. Выберите новое время кнопкой или напишите в формате 17:30.");
+        assertThat(outgoing.actions()).containsExactly("CHANGE_CANCEL", "CHANGE_TIME");
+        assertThat(buttons(outgoing)).startsWith("12:00").endsWith("↩️ Отменить действие");
+        verify(changeDraftStorage).save(1773317437L, new ChangeCancelDraftStorage.Draft(44L, "CHANGE_TIME"));
+        verify(tableReservationService, never()).changeByGuest(anyLong(), any());
+    }
+
+    @Test
+    void wordsOfTheSameActionAreAnAnswerNotASwitch() {
+        pendingChange("CHANGE_TIME", Instant.parse("2026-06-18T15:00:00Z"));
+        IncomingMessage incoming = telegram("на другое время");
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_CHANGE_REQUESTED, incoming.text());
+
+        assertThat(outgoing.text()).startsWith("Не хочу гадать со временем.");
+        verify(changeDraftStorage, never()).save(anyLong(), any());
     }
 
     private IncomingMessage telegram(String text) {
