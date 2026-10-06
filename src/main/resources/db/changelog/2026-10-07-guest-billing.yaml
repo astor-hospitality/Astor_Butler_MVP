@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-07-guest-billing
+      author: dmtrshm
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-07-guest-billing.sql

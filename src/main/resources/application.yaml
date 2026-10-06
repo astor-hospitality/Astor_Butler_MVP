@@ -43,6 +43,11 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+  billing:
+    # Butler never takes the money. On: a bill and its journal are kept for every order Butler places.
+    enabled: ${ASTOR_BILLING_ENABLED:false}
+    # On: every HTTP call to Saby is journalled (method, path, status, duration; no bodies, tokens or guest data).
+    saby-call-log-enabled: ${ASTOR_SABY_CALL_LOG_ENABLED:false}
   integrations:
     saby:
       enabled: ${ASTOR_SABY_ENABLED:false}
