@@ -1,7 +1,7 @@
 {
   "venueCode": "AERIS",
   "venueName": "AERIS",
-  "confirmedByVenue": true,
+  "confirmedByVenue": false,
   "days": ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"],
   "from": "12:00",
   "to": "16:00",

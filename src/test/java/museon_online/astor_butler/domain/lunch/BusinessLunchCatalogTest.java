@@ -18,7 +18,10 @@ class BusinessLunchCatalogTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
-    /** The AERIS lunch menu as printed, from the photo Mikhail sent on 2026-10-06. */
+    /**
+     * The AERIS lunch menu, typed in by hand from the photo of the printed menu that Mikhail sent on 2026-10-06.
+     * It stays unconfirmed until Mikhail has checked the prices against the menu himself.
+     */
     @Test
     void theShippedAerisOfferIsThePrintedLunchMenu() {
         BusinessLunchCatalog catalog = new BusinessLunchCatalog(objectMapper);
@@ -26,7 +29,7 @@ class BusinessLunchCatalogTest {
         BusinessLunchOffer aeris = catalog.find("aeris").orElseThrow();
 
         assertThat(aeris.aLaCarte()).isTrue();
-        assertThat(aeris.confirmedByVenue()).isTrue();
+        assertThat(aeris.confirmedByVenue()).isFalse();
         assertThat(aeris.days()).containsExactly(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY);
         assertThat(aeris.from()).isEqualTo(LocalTime.of(12, 0));
         assertThat(aeris.to()).isEqualTo(LocalTime.of(16, 0));
