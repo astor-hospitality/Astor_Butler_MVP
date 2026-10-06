@@ -29,13 +29,13 @@ Frontend — презентационный сайт плюс WEB lead чат. �
 
 На VM установлен root-owned `/usr/local/sbin/astor-glasses-admin`: help/version/status/health/restart-glasses/restart-frontend, только фиксированные контейнеры Astor. Исходник: `scripts/astor-glasses-admin`. Нет arbitrary shell/deploy/log/secret read или Docker group. VM shared с VEDAL/C3AG: Docker/root-доступ не выдавать.
 
-SSH login Ромы пока не создан: требуется подтверждённый публичный SSH key. После его получения создать отдельного пользователя без Docker group, ограничить sudo исключительно wrapper и проверить отказ любых других команд. Доступ к private runtime.env/cloud key не нужен. Отчёт подготовлен здесь; внешняя отправка требует адреса/канала Ромы.
+2026-10-04 Михаил передал публичный SSH key: создан `astor-roma`, вход через `restrict` + forced root-owned `astor-glasses-ssh`. Только whitelist операций выше; shell/SFTP/PTY/forwarding и произвольный sudo запрещены. Home/authorized_keys/wrappers root-owned, Docker group/socket недоступны. Реальные SSH проверки с временным ключом прошли; он удалён, остался только operator key. Первый вход с приватным ключом проверяет его владелец. Адрес и host fingerprint передаются приватно. `health` проверяет HTTPS frontend и защищённый маршрут Glass API, а не model readiness. Подробности: `ROMA_CLAUDE_START.md`. Доступ к private runtime.env/cloud key не нужен.
 
 На VM: `/opt/astor-glasses/releases/v1`, model cache `/opt/astor-glasses/models` read-only, secret env `/opt/astor-glasses/private/runtime.env` root 0600. Контейнеры `astor_glasses_api`, `astor_presentation`, restart unless-stopped. Gateway изменения узкие; backups `/opt/astor-glasses/backups/<UTC timestamp>` содержат прежние template/active configs. Не заменять фронт C3AG или другие проекты.
 
 ## Следующие шаги
 
 1. Физический mic → iPhone AAC → STT → ответ → HFP TTS; cancel/offline/reconnect/lock/call interruption. Записать реальные latency/status/requestId и результат, без raw credentials/media в отчёте.
-2. Принять GitHub invitation, провести review и дождаться required CI. SSH подключать только после получения ключа; Claude работает через PR и wrapper.
+2. Принять GitHub invitation, провести review и дождаться required CI. SSH настроен по предоставленному ключу; проверить первый вход. Claude работает через PR и wrapper, локально требуется восстановить OAuth-вход.
 3. P1: staff identity/shift/tenant, assigned task feed, разрешённый restaurant context, task/order/table/stage/version, evidence retention, отдельные commands/ACK/replay/offline. Пока нет реальных поручений — учебный сценарий явно маркируется как учебный.
 4. Ротация mobile access после expiry и cloud API key до 2026-10-11 18:00 UTC. Keys только server-side, logging provider отключён.

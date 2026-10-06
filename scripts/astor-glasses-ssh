@@ -1,0 +1,14 @@
+#!/bin/sh
+# Root-owned forced SSH command; invoked through a restricted authorized_keys entry.
+set -eu
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+case "${SSH_ORIGINAL_COMMAND:-help}" in
+  ''|help) operation=help ;;
+  version|status|health|restart-glasses|restart-frontend)
+    operation=$SSH_ORIGINAL_COMMAND
+    ;;
+  *) echo 'Operation denied' >&2; exit 64 ;;
+esac
+
+exec /usr/bin/sudo -n -- /usr/local/sbin/astor-glasses-admin "$operation"

@@ -7,7 +7,12 @@ case "${1:-help}" in
   help) echo 'Allowed: help, version, status, health, restart-glasses, restart-frontend' ;;
   version) /usr/bin/docker inspect --format '{{.Name}} image={{.Image}}' astor_glasses_api astor_presentation ;;
   status) /usr/bin/docker inspect --format '{{.Name}} state={{.State.Status}} started={{.State.StartedAt}}' astor_glasses_api astor_presentation aeris_astor_butler_bot ;;
-  health) /usr/bin/curl --fail --silent --max-time 5 http://127.0.0.1:8089/actuator/health ; echo ;;
+  health)
+    glasses_status=$(/usr/bin/curl --proto '=https' --tlsv1.2 --silent --show-error --output /dev/null --max-time 8 --write-out '%{http_code}' https://c3ag.ru/api/glasses/capabilities)
+    frontend_status=$(/usr/bin/curl --proto '=https' --tlsv1.2 --silent --show-error --output /dev/null --max-time 8 --write-out '%{http_code}' https://c3ag.ru/astor/astor_butler/)
+    [[ "$glasses_status" == 401 && "$frontend_status" == 200 ]] || { echo "Health check failed: glasses=$glasses_status frontend=$frontend_status" >&2; exit 1; }
+    echo '{"glasses":"reachable_auth_required","frontend":"UP"}'
+    ;;
   restart-glasses) /usr/bin/docker restart astor_glasses_api ;;
   restart-frontend) /usr/bin/docker restart astor_presentation ;;
   *) echo 'Operation denied' >&2; exit 64 ;;
