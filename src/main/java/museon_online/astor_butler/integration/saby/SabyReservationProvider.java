@@ -154,6 +154,11 @@ public class SabyReservationProvider implements ExternalReservationProvider {
             return reservation("GUEST_DATA_REQUIRED",
                     "Saby needs the guest name and phone; the request stays with the hostess.", Map.of());
         }
+        if (SabyOrderPayload.phone(command.guestPhone()).isEmpty()) {
+            return reservation("GUEST_DATA_REQUIRED",
+                    "Saby needs a Russian phone number as digits; the request stays with the hostess.",
+                    Map.of("reason", "PHONE_FORMAT"));
+        }
 
         // Atomic per key: a concurrent or repeated call with the same key never sends a second create.
         // Only outcomes that must not be retried are cached; rejections can be retried after a fix.
@@ -169,7 +174,32 @@ public class SabyReservationProvider implements ExternalReservationProvider {
         return cached != null ? cached : notCached[0];
     }
 
-    /** Reads the booking status. The meaning of the raw codes is not documented yet (B5), so nothing is mapped. */
+    /**
+     * Resolves a {@code PROVIDER_RESULT_UNKNOWN} by hand: the hostess found the booking in Saby under the Butler marker,
+     * so Butler adopts its id and a repeat with the same key never sends a second create. Returns the adopted result.
+     */
+    public ExternalReservationResult adopt(String idempotencyKey, String externalId) {
+        if (externalId == null || !EXTERNAL_ID.matcher(externalId).matches()) {
+            return reservation("INVALID_EXTERNAL_ID", "Saby booking id must be a UUID-like value.", Map.of());
+        }
+        ExternalReservationResult adopted = new ExternalReservationResult(true, true, PROVIDER_ID, "SABY_ORDER_ADOPTED",
+                externalId, "Booking found in Saby by hand and attached to this request; not confirmed until Saby says so.",
+                List.of(), Map.of("butlerMarker", SabyOrderPayload.BUTLER_MARKER + idempotencyKey));
+        reservations.put(idempotencyKey, adopted);
+        return adopted;
+    }
+
+    /**
+     * Resolves a {@code PROVIDER_RESULT_UNKNOWN} the other way: the hostess found nothing in Saby, so the key is
+     * released and the next reserve with it may send one more create. Returns whether anything was cached for it.
+     */
+    public boolean forget(String idempotencyKey) {
+        boolean known = reservations.getIfPresent(idempotencyKey) != null;
+        reservations.invalidate(idempotencyKey);
+        return known;
+    }
+
+    /** Reads the booking status and maps the documented codes; see {@link SabyBookingState}. */
     public SabyOrderResult state(String externalId) {
         SabyOrderResult precheck = orderPrecheck(externalId, false);
         if (precheck != null) {
@@ -187,9 +217,13 @@ public class SabyReservationProvider implements ExternalReservationProvider {
             return SabyOrderResult.failure(externalId, "PROVIDER_INVALID_RESPONSE",
                     "Saby order state response has no state.");
         }
-        return new SabyOrderResult(true, "SABY_STATE_" + state, externalId, state,
-                intOrNull(response, "productState"), intOrNull(response, "payState"),
-                "Raw Saby booking state; its meaning is not mapped yet.");
+        Integer productState = intOrNull(response, "productState");
+        SabyBookingState mapped = SabyBookingState.of(state, productState);
+        return new SabyOrderResult(true, "SABY_STATE_" + state, externalId, state, productState,
+                intOrNull(response, "payState"), mapped,
+                mapped == SabyBookingState.UNKNOWN
+                        ? "Saby booking state code is outside the documented set; treat as not confirmed."
+                        : "Saby booking state " + mapped + " (documented codes).");
     }
 
     @Override
@@ -214,7 +248,7 @@ public class SabyReservationProvider implements ExternalReservationProvider {
             };
             return SabyOrderResult.failure(externalId, status, exception.getMessage());
         }
-        return new SabyOrderResult(true, "CANCEL_REQUESTED", externalId, null, null, null,
+        return new SabyOrderResult(true, "CANCEL_REQUESTED", externalId, null, null, null, SabyBookingState.UNKNOWN,
                 "Saby accepted the cancellation request; check the booking state to confirm.");
     }
 
@@ -272,6 +306,15 @@ public class SabyReservationProvider implements ExternalReservationProvider {
         if (externalId.isBlank()) {
             return resultUnknown(idempotencyKey, metadata);
         }
+        if (!EXTERNAL_ID.matcher(externalId).matches()) {
+            // Same policy as state/cancel: an id those calls would refuse is not a usable booking id. The value itself
+            // stays out of the result, only the fact and its length, so nothing odd from Saby ends up in logs or chats.
+            log.warn("Saby create answered with an unusable booking id ({} chars) for {}", externalId.length(),
+                    SabyOrderPayload.BUTLER_MARKER + idempotencyKey);
+            metadata.put("externalIdRejected", true);
+            metadata.put("externalIdLength", externalId.length());
+            return resultUnknown(idempotencyKey, metadata);
+        }
         return new ExternalReservationResult(
                 true,
                 true,
@@ -295,11 +338,13 @@ public class SabyReservationProvider implements ExternalReservationProvider {
         return new ExternalReservationResult(false, true, PROVIDER_ID, status, "", message, List.of(), metadata);
     }
 
+    /** A booking id is a non-blank string or an integral number; a boolean, object or array is not an id. */
     private static String firstText(JsonNode node, String... fields) {
         for (String field : fields) {
-            String value = node.path(field).asText("");
-            if (!value.isBlank()) {
-                return value;
+            JsonNode value = node.path(field);
+            String text = value.isTextual() ? value.asText().trim() : value.isIntegralNumber() ? value.asText() : "";
+            if (!text.isBlank()) {
+                return text;
             }
         }
         return "";
