@@ -42,7 +42,6 @@ public class ChangeCancelScenario implements FsmScenario {
             .withZone(ZoneId.of("Asia/Yekaterinburg"));
     private static final Pattern EXPLICIT_TIME = Pattern.compile("\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b");
     private static final Pattern SHORT_HOUR = Pattern.compile("^(?:в\\s+|к\\s+)?([1-9]|1[0-1]|1\\d|2[0-3])$");
-    private static final Pattern DATE_PATTERN = Pattern.compile("\\b(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?\\b");
 
     private final FSMStorage fsmStorage;
     private final TableReservationService tableReservationService;
@@ -820,15 +819,7 @@ public class ChangeCancelScenario implements FsmScenario {
         if (day.isPresent()) {
             return Optional.of(today.with(TemporalAdjusters.nextOrSame(day.get())));
         }
-        Matcher matcher = DATE_PATTERN.matcher(text);
-        if (!matcher.find()) {
-            return Optional.empty();
-        }
-        int date = Integer.parseInt(matcher.group(1));
-        int month = Integer.parseInt(matcher.group(2));
-        int year = matcher.group(3) == null ? today.getYear() : parseYear(matcher.group(3));
-        LocalDate parsed = LocalDate.of(year, month, date);
-        return Optional.of(matcher.group(3) == null && parsed.isBefore(today) ? parsed.plusYears(1) : parsed);
+        return GuestDateText.dayMonth(text, today);
     }
 
     private Optional<java.time.DayOfWeek> weekdayFromText(String text) {
@@ -918,11 +909,6 @@ public class ChangeCancelScenario implements FsmScenario {
             return Optional.of(LocalTime.of(Integer.parseInt(explicit.group(1)), Integer.parseInt(explicit.group(2))));
         }
         return Optional.empty();
-    }
-
-    private int parseYear(String value) {
-        int year = Integer.parseInt(value);
-        return year < 100 ? 2000 + year : year;
     }
 
     private String appendGuestComment(TableReservationOrder current, String addition) {

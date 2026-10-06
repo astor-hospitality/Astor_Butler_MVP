@@ -21,7 +21,6 @@ import java.util.regex.Pattern;
 public class TableBookingDraftMerger {
 
     private static final Pattern ISO_DATE = Pattern.compile("^\\d{4}-\\d{2}-\\d{2}$");
-    private static final Pattern DATE = Pattern.compile("\\b(\\d{1,2})[./-](\\d{1,2})(?:[./-](\\d{2,4}))?\\b");
     private static final Pattern TIME = Pattern.compile("(?<![./-])\\b([01]?\\d|2[0-3])(?::([0-5]\\d)|\\s*(?:час(?:ов|а)?|ч))?\\b(?![./-])");
     private static final Pattern TABLE_NUMBER_SELECTION = Pattern.compile("^(?:стол(?:ик)?\\s*)?(?:[1-9]|1\\d)$");
     private static final Pattern TABLE_NUMBER_IN_TEXT = Pattern.compile(".*(?:^|\\s)стол(?:ик)?\\s*(?:[1-9]|1\\d)(?:\\s|$).*");
@@ -213,7 +212,7 @@ public class TableBookingDraftMerger {
 
     private Optional<LocalDate> extractDate(String text) {
         if (ISO_DATE.matcher(text).matches()) {
-            return Optional.of(LocalDate.parse(text));
+            return GuestDateText.isoDate(text);
         }
         if (text.contains("послезавтра")) {
             return Optional.of(timeProvider.today().plusDays(2));
@@ -222,10 +221,10 @@ public class TableBookingDraftMerger {
         if (weekday.isPresent()) {
             return weekday;
         }
-        if (text.contains("сегодня") || text.contains("завтра") || DATE.matcher(text).find()) {
+        if (text.contains("сегодня") || text.contains("завтра")) {
             return Optional.of(requestedDate(text));
         }
-        return Optional.empty();
+        return GuestDateText.dayMonth(text, timeProvider.today());
     }
 
     private Optional<LocalDate> extractWeekdayDate(String text) {
@@ -266,6 +265,11 @@ public class TableBookingDraftMerger {
     private Optional<LocalTime> extractTime(String text) {
         if (looksLikePartySizeAnswer(text) || looksLikeTableSelection(text)) {
             return Optional.empty();
+        }
+        // "19.30" is how many guests write a time; the TIME pattern deliberately skips digits next to a dot.
+        Optional<LocalTime> dotted = GuestDateText.dottedTime(text, timeProvider.today());
+        if (dotted.isPresent()) {
+            return dotted.map(time -> LocalTime.of(eveningHour(time.getHour(), text), time.getMinute()));
         }
         Matcher matcher = TIME.matcher(text);
         return matcher.find() ? Optional.of(parseTime(matcher, text)) : Optional.empty();
@@ -342,15 +346,7 @@ public class TableBookingDraftMerger {
         if (text.contains("завтра")) {
             return today.plusDays(1);
         }
-        Matcher matcher = DATE.matcher(text);
-        if (matcher.find()) {
-            int day = Integer.parseInt(matcher.group(1));
-            int month = Integer.parseInt(matcher.group(2));
-            int year = matcher.group(3) == null ? today.getYear() : parseYear(matcher.group(3));
-            LocalDate parsed = LocalDate.of(year, month, day);
-            return matcher.group(3) == null && parsed.isBefore(today) ? parsed.plusYears(1) : parsed;
-        }
-        return today;
+        return GuestDateText.dayMonth(text, today).orElse(today);
     }
 
     private String tableCode(String text) {
@@ -432,16 +428,11 @@ public class TableBookingDraftMerger {
     private LocalTime parseTime(Matcher matcher, String text) {
         int hour = Integer.parseInt(matcher.group(1));
         int minute = matcher.group(2) == null ? 0 : Integer.parseInt(matcher.group(2));
-        String normalized = normalize(text);
-        if (hour >= 1 && hour <= 11 && containsAny(normalized, "вечера", "вечер", "ночи")) {
-            hour += 12;
-        }
-        return LocalTime.of(hour, minute);
+        return LocalTime.of(eveningHour(hour, text), minute);
     }
 
-    private int parseYear(String value) {
-        int year = Integer.parseInt(value);
-        return year < 100 ? 2000 + year : year;
+    private int eveningHour(int hour, String text) {
+        return hour >= 1 && hour <= 11 && containsAny(normalize(text), "вечера", "вечер", "ночи") ? hour + 12 : hour;
     }
 
     private String mergeOriginalText(String existing, String next) {
