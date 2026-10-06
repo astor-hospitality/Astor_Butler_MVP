@@ -261,4 +261,28 @@ class TableBookingDraftMergerTest {
         assertThat(answer(BotState.TABLE_BOOKING_INTENT, "стол на 3 гостей завтра в 2 дня", null).requestedTime()).isEqualTo(LocalTime.of(14, 0));
         assertThat(answer(BotState.TABLE_BOOKING_INTENT, "стол на 2 гостей завтра в 9 утра", null).requestedTime()).isEqualTo(LocalTime.of(9, 0));
     }
+
+    @Test
+    void anHourSaidAsAnHourIsHeardNextToATable() {
+        String[][] cases = {
+                {"стол 5 на двоих завтра в 20", "5", "20:00"}, {"Стол 5 на двоих завтра к 8 вечера", "5", "20:00"},
+                {"4 стол у окна завтра в 19", "4", "19:00"}, {"столик номер 7 завтра в 21 час", "7", "21:00"}};
+        for (String[] example : cases) {
+            TableBookingDraftStorage.Draft draft = askedAtOnce(example[0]);
+
+            assertThat(draft.tableCode()).as(example[0]).isEqualTo(example[1]);
+            assertThat(draft.requestedTime()).as(example[0]).isEqualTo(LocalTime.parse(example[2]));
+        }
+        assertThat(askedAtOnce("Забронируй стол на двоих завтра в 21 у окна").requestedTime()).isEqualTo(LocalTime.of(21, 0));
+        assertThat(askedAtOnce("Забронируй стол на двоих завтра в 21 у окна").preferredZone()).isEqualTo("WINDOW");
+    }
+
+    @Test
+    void aLoneNumberNextToATableIsStillNotTheHour() {
+        // At the table step these are answers about the table and nothing else.
+        for (String reply : new String[]{"5", "стол 12", "4 стол у окна", "стол 5", "у окна 7", "столик 9 в углу"}) {
+            assertThat(answeredAtTheTableStep(reply).requestedTime()).as(reply).isNull();
+        }
+        assertThat(askedAtOnce("стол 12 на двоих завтра").requestedTime()).isNull();
+    }
 }
