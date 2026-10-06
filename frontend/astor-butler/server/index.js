@@ -14,6 +14,12 @@ const ASSET_MANIFEST = {
   "/js/feed.js": "js/feed.js",
   "/js/feed-ratings.js": "js/feed-ratings.js",
   "/data/venues.json": "data/venues.json",
+  "/staff": "staff/index.html",
+  "/staff.html": "staff/index.html",
+  "/staff/index.html": "staff/index.html",
+  "/css/staff.css": "css/staff.css",
+  "/js/staff.js": "js/staff.js",
+  "/js/staff-auth.js": "js/staff-auth.js",
   "/data/ratings/snapshot.json": "data/ratings/snapshot.json",
   "/css/style.css": "css/style.css",
   "/js/main.js": "js/main.js",
@@ -46,6 +52,10 @@ const MIME_TYPES = {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/staff" || url.pathname === "/staff.html") {
+      url.pathname = "/staff/";
+      return Response.redirect(url.href, 303);
+    }
     const pathname = normalizePath(url.pathname);
     const assetPath = ASSET_MANIFEST[pathname];
 
@@ -78,6 +88,7 @@ function contentType(assetPath) {
 }
 
 function cacheControl(assetPath) {
+  if (assetPath.startsWith("staff/") || assetPath === "js/staff.js" || assetPath === "js/staff-auth.js") return "no-store";
   if (assetPath.endsWith(".html")) {
     return "public, max-age=60";
   }

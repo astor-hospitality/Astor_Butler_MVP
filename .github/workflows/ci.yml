@@ -16,6 +16,22 @@ jobs:
   backend:
     name: Backend tests and image build
     runs-on: ubuntu-latest
+    services:
+      staff-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: staff_portal_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test-fixture-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      ASTOR_STAFF_TEST_JDBC: jdbc:postgresql://127.0.0.1:5432/staff_portal_test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,6 +55,19 @@ jobs:
 
       - name: Run tests
         run: mvn -B test
+
+      - name: Set up Node for staff auth checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Staff frontend auth and asset checks
+        run: node --test frontend/astor-butler/tests/*.test.mjs
+
+      - name: Astor identity manifest and proxy boundaries
+        run: |
+          node --test docker/keycloak/tests/*.test.mjs
+          bash -n docker/keycloak/entrypoint.sh docker/keycloak/prepare-runtime.sh
 
       - name: Package
         run: mvn -B -DskipTests package

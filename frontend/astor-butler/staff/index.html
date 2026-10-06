@@ -3,35 +3,51 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Astor — кабинет поручений (прототип)</title>
-<meta name="description" content="Прототип кабинета менеджера Astor: смена, лента поручений, шаги и фото. Учебные данные.">
+<title>Astor — кабинет поручений</title>
+<meta name="description" content="Кабинет менеджера Astor: смены, поручения и серверная история.">
 <meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#080a0d">
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=20260707-aa">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../css/staff.css">
+<script src="../js/staff-auth.js" defer></script>
 <script src="../js/staff.js" defer></script>
 </head>
 <body>
 
 <a class="skip-link" href="#feed">Перейти к ленте</a>
 
-<p class="demo-banner" role="note">Прототип на учебных данных. К серверу не подключён: действия меняют только эту страницу.</p>
+<div class="demo-banner" role="status">
+  <span id="connectionStatus">Подключаю кабинет к серверу Astor…</span>
+  <button class="btn btn-small" id="loginButton" type="button" hidden>Войти в Astor</button>
+  <button class="btn btn-small" id="logoutButton" type="button" hidden>Выйти</button>
+</div>
 
 <header class="top">
   <div>
     <p class="top-brand">Astor · кабинет поручений</p>
     <h1 class="top-title" id="tenantTitle">Заведение</h1>
   </div>
-  <button class="btn btn-primary" id="newTaskButton" type="button">Новое поручение</button>
+  <button class="btn btn-primary" id="newTaskButton" type="button" disabled>Новое поручение</button>
 </header>
 
 <div class="layout">
   <aside class="shift" aria-labelledby="shiftTitle">
     <h2 class="section-title" id="shiftTitle">Смена</h2>
     <ul class="staff-list" id="staffList"></ul>
+    <details id="memberRegistration" hidden>
+      <summary>Добавить сотрудника Astor</summary>
+      <form id="memberForm" class="task-form">
+        <label class="field">Subject ID существующего пользователя Keycloak<input name="staffId" required maxlength="128"></label>
+        <label class="field">Имя<input name="displayName" required maxlength="120"></label>
+        <label class="field">Роль в справочнике<select name="role"><option value="WAITER">Официант</option><option value="HOSTESS">Хостес</option><option value="MANAGER">Менеджер</option></select></label>
+        <p class="staff-meta">Вход и роли токена выдаются отдельно в Keycloak Astor. Эта форма не создаёт учётную запись.</p>
+        <button class="btn btn-small" type="submit">Добавить в заведение</button>
+      </form>
+    </details>
   </aside>
 
   <main class="feed" id="feed">
@@ -71,9 +87,7 @@
       <label class="field">Шаги, по одному в строке
         <textarea name="stages" rows="3" required maxlength="400"></textarea>
       </label>
-      <label class="check">
-        <input type="checkbox" name="evidence" checked> Требовать фото на последнем шаге
-      </label>
+      <p class="task-meta">Фото шагов подключается отдельно к приватному хранилищу. Учебное подтверждение фото недоступно.</p>
       <label class="field">Кому
         <select name="assignee" id="newTaskAssignee" required></select>
       </label>

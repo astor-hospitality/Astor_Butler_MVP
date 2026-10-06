@@ -1,18 +1,13 @@
 /* ============================================================
-   Astor — manager cabinet prototype: shift, task feed, stages, photos.
-
-   No backend. Data comes from data/staff-demo.json and every action
-   changes only this page. The rules below mirror the proposed contract
-   in docs/operations/GLASSES_STAFF_TASKS_P1_DRAFT.md so the prototype
-   can be used to discuss it: versions, allowed transitions, photo
-   required before a stage or the task can be closed.
+   Astor — server-backed manager cabinet. Only server acknowledgements
+   change the displayed data. No demo-data fallback or waiter impersonation.
    ============================================================ */
 
 (function () {
   "use strict";
 
-  const DATA_URL = new URL("../data/staff-demo.json", window.location.href);
-  const MINUTE = 60000;
+  const api = window.AstorStaffApi;
+  let authenticated = false, busy = false, pendingMutation = null;
 
   const STATUS_LABELS = {
     ASSIGNED: "Назначено",
@@ -43,7 +38,7 @@
     ["done", "Закрытые"],
   ];
 
-  const state = { tenant: "", staff: [], tasks: [], filter: "all", openTaskId: null, message: "", nextId: 200 };
+  const state = { tenant: "", staff: [], tasks: [], manageStaff: false, filter: "all", openTaskId: null, message: "" };
 
   /* ---------- Helpers ---------- */
   function el(tag, className, text) {
@@ -87,9 +82,8 @@
 
   /* ---------- Data ---------- */
   function normalize(data) {
-    const now = Date.now();
-    const ago = (minutes) => (typeof minutes === "number" ? now - minutes * MINUTE : null);
     state.tenant = data.tenant || "";
+    state.manageStaff = data.manageStaff === true;
     state.staff = Array.isArray(data.staff) ? data.staff : [];
     state.tasks = (Array.isArray(data.tasks) ? data.tasks : []).map((task) => ({
       taskId: task.taskId,
@@ -98,104 +92,63 @@
       title: task.title,
       instruction: task.instruction || "",
       priority: task.priority === "HIGH" ? "HIGH" : "NORMAL",
-      deadlineAt: typeof task.deadlineInMinutes === "number" ? now + task.deadlineInMinutes * MINUTE : null,
+      deadlineAt: task.deadline ? Date.parse(task.deadline) : null,
       assigneeStaffId: task.assigneeStaffId,
       status: task.status,
       version: task.version,
-      deliveredAt: ago(task.deliveredMinutesAgo),
-      voicedAt: ago(task.voicedMinutesAgo),
+      deliveredAt: task.deliveredAt ? Date.parse(task.deliveredAt) : null,
+      voicedAt: task.voicedAt ? Date.parse(task.voicedAt) : null,
       stages: task.stages.map((stage) => ({ ...stage })),
-      events: task.events.map((event) => ({ type: event.type, actor: event.actor, at: ago(event.minutesAgo), detail: event.detail || "" })),
+      events: [],
     }));
   }
 
-  /* ---------- Rules: what the server would accept ---------- */
-  function reject(message) {
-    return { ok: false, message };
+  /* ---------- Server commands ---------- */
+  let connected = false;
+  function message(error) {
+    const codes = { VERSION_CONFLICT: "Поручение уже изменено. Данные обновлены — проверьте и повторите действие.",
+      ASSIGNEE_OFF_SHIFT: "У сотрудника закрыта смена.", STAFF_INACTIVE: "Сотрудник не активен в заведении.",
+      EVENT_CONFLICT: "Запрос уже использован для другого действия.", FORBIDDEN: "Недостаточно прав для кабинета.",
+      NOT_FOUND: "Поручение или сотрудник не найден.", EVIDENCE_REQUIRED: "Для шага требуется настоящее фото." };
+    return codes[error.code] || (error.status === 401 ? "Сессия истекла. Войдите снова." : error.message || "Нет связи с сервером.");
   }
-
-  function record(task, type, actor, detail) {
-    task.events.push({ type, actor, at: Date.now(), detail: detail || "" });
-  }
-
-  function apply(task, type, payload) {
-    const waiter = staffName(task.assigneeStaffId);
-    if (isFinal(task)) return reject("Поручение уже закрыто, статус не меняется.");
-    const working = task.status === "ACCEPTED" || task.status === "IN_PROGRESS";
-    const stage = currentStage(task);
-
-    switch (type) {
-      case "DELIVER":
-        if (task.deliveredAt) return reject("Поручение уже доставлено.");
-        task.deliveredAt = task.voicedAt = Date.now();
-        record(task, "DELIVERED", "телефон сотрудника");
-        record(task, "VOICED", "очки");
-        return { ok: true }; // delivery is tracked separately and does not change the version
-      case "ACCEPT":
-        if (task.status !== "ASSIGNED") return reject("Принять можно только назначенное поручение.");
-        // Accepting proves the task reached the person, even if the delivery mark was lost on the way.
-        if (!task.deliveredAt) {
-          task.deliveredAt = Date.now();
-          record(task, "DELIVERED", "телефон сотрудника");
-        }
-        task.status = "ACCEPTED";
-        record(task, "ACCEPT", waiter);
-        break;
-      case "EVIDENCE":
-        if (!working) return reject("Фото принимается только по принятому поручению.");
-        if (!stage) return reject("Все шаги уже закрыты, фото прикрепить не к чему.");
-        stage.evidence += 1;
-        record(task, "EVIDENCE", "очки", stage.title);
-        break;
-      case "STAGE_DONE":
-        if (!working) return reject("Шаг закрывается только по принятому поручению.");
-        if (!stage) return reject("Все шаги уже закрыты.");
-        if (stage.evidenceRequired && !stage.evidence) return reject("Для шага «" + stage.title + "» нужно фото.");
-        stage.done = true;
-        task.status = "IN_PROGRESS";
-        record(task, "STAGE_DONE", waiter, stage.title);
-        break;
-      case "HELP":
-        if (!working) return reject("Помощь запрашивается по принятому поручению.");
-        task.status = "HELP_REQUESTED";
-        record(task, "HELP", waiter);
-        break;
-      case "HELP_RESOLVED":
-        if (task.status !== "HELP_REQUESTED") return reject("Сотрудник не просил помощь.");
-        task.status = "IN_PROGRESS";
-        record(task, "HELP_RESOLVED", "Менеджер");
-        break;
-      case "COMPLETE":
-        if (!working) return reject("Завершить можно только принятое поручение.");
-        if (stage) return reject("Остались незакрытые шаги: «" + stage.title + "».");
-        task.status = "DONE";
-        record(task, "COMPLETE", waiter);
-        break;
-      case "CANCEL":
-        task.status = "CANCELLED";
-        record(task, "CANCEL", "Менеджер");
-        break;
-      case "REASSIGN": {
-        const target = staffById(payload);
-        if (!target || target.staffId === task.assigneeStaffId) return reject("Выберите другого сотрудника.");
-        if (target.shift !== "OPEN") return reject("У сотрудника закрыта смена.");
-        task.assigneeStaffId = target.staffId;
-        task.status = "ASSIGNED";
-        task.deliveredAt = task.voicedAt = null;
-        record(task, "REASSIGN", "Менеджер", target.displayName);
-        break;
-      }
-      default:
-        return reject("Неизвестная команда.");
+  async function mutate(path, body, method = "POST", withEvent = true) {
+    if (busy || !connected) return false;
+    busy = true;
+    document.getElementById("newTaskButton").disabled = true;
+    const key = method + path + JSON.stringify(body);
+    if (withEvent) {
+      if (!pendingMutation || pendingMutation.key !== key) pendingMutation = { key, eventId: crypto.randomUUID() };
+      body = { ...body, eventId: pendingMutation.eventId };
     }
-    task.version += 1;
-    return { ok: true };
+    try {
+      await api.request(path, { method, body: JSON.stringify(body) });
+      pendingMutation = null;
+      state.message = "Изменение подтверждено сервером.";
+      await refresh();
+      return true;
+    } catch (error) {
+      if (error.status && error.status < 500) pendingMutation = null;
+      state.message = message(error);
+      if (error.status === 409) await refresh();
+      if (error.status === 401 || error.status === 403) disconnect(error);
+      else {
+        if (!error.status || error.status >= 500) connected = false;
+        document.getElementById("connectionStatus").textContent = "Запрос не подтверждён. " + message(error)
+          + (!connected ? " Последние данные устарели, действия недоступны." : "");
+      }
+      render();
+      return false;
+    } finally {
+      busy = false;
+      document.getElementById("newTaskButton").disabled = !connected;
+    }
   }
-
-  function run(task, type, payload) {
-    const result = apply(task, type, payload);
-    state.message = result.ok ? "" : result.message;
-    render();
+  function run(task, type, staffId) {
+    const routes = { REASSIGN: "reassign", CANCEL: "cancel", HELP_RESOLVED: "resolve-help" };
+    if (!routes[type]) return;
+    return mutate("/api/admin/staff-tasks/" + encodeURIComponent(task.taskId) + "/" + routes[type],
+      { expectedVersion: task.version, ...(staffId ? { staffId } : {}) });
   }
 
   /* ---------- Rendering ---------- */
@@ -275,6 +228,9 @@
       const line = onShift ? "На смене · поручений: " + open.length : "Смена закрыта";
       item.append(el("p", "staff-meta" + (onShift ? "" : " is-off"), line));
       if (open.some((task) => task.status === "HELP_REQUESTED")) item.append(el("span", "chip chip-help-requested", "Просит помощь"));
+      if (person.active && state.manageStaff && connected) item.append(button(onShift ? "Закрыть смену" : "Открыть смену", "btn btn-small",
+        () => mutate("/api/admin/staff/members/" + encodeURIComponent(person.staffId) + "/shift",
+          { open: !onShift, deviceId: person.deviceId || null }, "POST", false)));
       return item;
     }));
   }
@@ -299,7 +255,7 @@
     const wrap = el("div", "inline-control");
     const select = el("select");
     select.setAttribute("aria-label", "Кому переназначить");
-    state.staff.filter((person) => person.staffId !== task.assigneeStaffId).forEach((person) => {
+    state.staff.filter((person) => person.active && person.shift === "OPEN" && person.staffId !== task.assigneeStaffId).forEach((person) => {
       const option = el("option", "", person.displayName + (person.shift === "OPEN" ? "" : " (смена закрыта)"));
       option.value = person.staffId;
       select.append(option);
@@ -334,19 +290,13 @@
     message.setAttribute("role", "status");
     nodes.push(message);
 
-    if (!isFinal(task)) {
+    if (!isFinal(task) && connected) {
       const manager = el("div", "actions");
       if (task.status === "HELP_REQUESTED") manager.append(button("Помощь оказана", "btn btn-primary btn-small", () => run(task, "HELP_RESOLVED")));
       manager.append(reassignControl(task), button("Отменить поручение", "btn btn-quiet btn-small", () => run(task, "CANCEL")));
       nodes.push(el("h3", "sub-title", "Действия менеджера"), manager);
 
-      const waiter = el("div", "actions");
-      [["DELIVER", "Доставить и озвучить"], ["ACCEPT", "Принять"], ["EVIDENCE", "Фото шага"], ["STAGE_DONE", "Шаг готов"],
-        ["HELP", "Нужна помощь"], ["COMPLETE", "Завершить"]].forEach(([type, label]) => {
-        waiter.append(button(label, "btn btn-quiet btn-small", () => run(task, type)));
-      });
-      nodes.push(el("h3", "sub-title", "Сыграть за официанта"),
-        el("p", "task-meta", "Учебная имитация команд из очков. Отказы показывают, что отклонил бы сервер."), waiter);
+      nodes.push(el("p", "task-meta", "Принятие, выполнение и отметки доставки поступают от авторизованного сотрудника, не из кабинета менеджера."));
     }
 
     const history = el("ol", "history");
@@ -363,6 +313,7 @@
   }
 
   function render() {
+    document.getElementById("memberRegistration").hidden = !state.manageStaff || !connected;
     document.getElementById("tenantTitle").textContent = state.tenant;
     renderFilters();
     renderStaff();
@@ -374,10 +325,20 @@
     renderTaskDialog();
   }
 
-  function openTask(taskId) {
+  async function openTask(taskId, preserveMessage = false) {
     state.openTaskId = taskId;
-    state.message = "";
+    if (!preserveMessage) state.message = "";
     render();
+    try {
+      const events = await api.request("/api/admin/staff-tasks/" + encodeURIComponent(taskId) + "/history");
+      if (state.openTaskId !== taskId) return;
+      const task = state.tasks.find((item) => item.taskId === taskId);
+      if (task) task.events = events.map((event) => ({ ...event, at: Date.parse(event.at) })).reverse();
+      render();
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) disconnect(error);
+      else { state.message = "История не загружена. " + message(error); render(); }
+    }
   }
 
   /* ---------- New task ---------- */
@@ -386,42 +347,38 @@
     const form = document.getElementById("newTaskForm");
     document.getElementById("newTaskButton").addEventListener("click", () => {
       const select = document.getElementById("newTaskAssignee");
-      select.replaceChildren(...state.staff.filter((person) => person.shift === "OPEN").map((person) => {
+      select.replaceChildren(...state.staff.filter((person) => person.active && person.shift === "OPEN").map((person) => {
         const option = el("option", "", person.displayName + " · " + (ROLE_LABELS[person.role] || person.role));
         option.value = person.staffId;
         return option;
       }));
       dialog.showModal();
     });
-    form.addEventListener("submit", () => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
       const data = new FormData(form);
       const titles = String(data.get("stages")).split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 6);
-      state.nextId += 1;
-      state.tasks.push({
-        taskId: "t-" + state.nextId,
+      if (!titles.length) return;
+      const task = {
         sourceRef: "Менеджер",
         tableCode: String(data.get("tableCode")).trim(),
         title: String(data.get("title")).trim(),
         instruction: String(data.get("instruction")).trim(),
         priority: data.get("high") ? "HIGH" : "NORMAL",
-        deadlineAt: null,
+        deadline: null,
         assigneeStaffId: data.get("assignee"),
-        status: "ASSIGNED",
-        version: 1,
-        deliveredAt: null,
-        voicedAt: null,
         stages: titles.map((title, index) => ({
           code: "s" + (index + 1),
           title,
-          evidenceRequired: Boolean(data.get("evidence")) && index === titles.length - 1,
-          done: false,
-          evidence: 0,
+          evidenceRequired: false,
         })),
-        events: [{ type: "ASSIGNED", actor: "Менеджер", at: Date.now(), detail: "" }],
-      });
-      form.reset();
-      state.filter = "all";
-      render();
+      };
+      if (await mutate("/api/admin/staff-tasks", { task })) {
+        form.reset(); dialog.close(); state.filter = "all"; render();
+      } else {
+        // Keep entered fields for a safe retry with the same event id after a network failure.
+        if (connected) document.getElementById("connectionStatus").textContent = state.message;
+      }
     });
   }
 
@@ -441,22 +398,55 @@
     document.body.classList.toggle("light-theme", (stored || (systemLight ? "light" : "dark")) === "light");
   }
 
+  function disconnect(error) {
+    authenticated = connected = false;
+    state.staff = []; state.tasks = []; state.tenant = ""; state.manageStaff = false; state.openTaskId = null;
+    document.getElementById("loginButton").hidden = false;
+    document.getElementById("logoutButton").hidden = true;
+    document.getElementById("connectionStatus").textContent = message(error);
+    document.getElementById("newTaskButton").disabled = true;
+    render();
+  }
+  async function refresh() {
+    try {
+      const data = await api.request("/api/admin/staff-tasks/dashboard");
+      connected = true;
+      normalize(data);
+      document.getElementById("connectionStatus").textContent = "Сервер Astor · обновлено " + time(Date.now());
+      document.getElementById("newTaskButton").disabled = busy;
+      render();
+      if (state.openTaskId) await openTask(state.openTaskId, true);
+    } catch (error) {
+      connected = false;
+      document.getElementById("newTaskButton").disabled = true;
+      if (error.status === 401 || error.status === 403) disconnect(error);
+      else {
+        document.getElementById("connectionStatus").textContent = "Нет актуальной связи. Показаны последние полученные данные, действия недоступны.";
+        render();
+      }
+    }
+  }
   async function load() {
     try {
-      const response = await fetch(DATA_URL, { cache: "no-cache" });
-      if (!response.ok) throw new Error("Demo data error: " + response.status);
-      normalize(await response.json());
-      render();
-    } catch (error) {
-      document.getElementById("feedStatus").textContent = "Не удалось загрузить учебные данные. Обновите страницу.";
-    }
+      authenticated = await api.initialize();
+      document.getElementById("loginButton").hidden = authenticated;
+      document.getElementById("logoutButton").hidden = !authenticated;
+      if (authenticated) await refresh();
+      else document.getElementById("connectionStatus").textContent = "Войдите через Keycloak Astor. Учебные данные не используются.";
+    } catch (error) { disconnect(error); }
   }
 
   applyTheme();
   setupDialogs();
   setupNewTask();
+  document.getElementById("loginButton").addEventListener("click", () => api.login().catch(disconnect));
+  document.getElementById("logoutButton").addEventListener("click", () => api.logout());
+  document.getElementById("memberForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget, data = new FormData(form);
+    if (await mutate("/api/admin/staff/members/" + encodeURIComponent(data.get("staffId")),
+      { displayName: data.get("displayName"), role: data.get("role"), active: true }, "PUT", false)) form.reset();
+  });
   load();
-
-  // Expose the rules for checks.
-  window.AstorStaff = { state, apply };
+  setInterval(() => { if (authenticated && !busy && !document.hidden) refresh(); }, 15000);
 })();
