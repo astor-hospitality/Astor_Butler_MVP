@@ -2,8 +2,9 @@
    Astor Concierge — venue feed.
 
    Order: pinned venues first (editorial choice), the rest by the
-   average of Yandex Maps and 2GIS ratings. Data lives in
-   data/venues.json; ratings are entered by hand, never scraped.
+   average of Yandex Maps and 2GIS ratings. Venues live in
+   data/venues.json; ratings come from data/ratings/snapshot.json,
+   published by scripts/concierge_ratings, and ranked by js/feed-ratings.js.
    Works as a Telegram Mini App and as a plain web page.
    ============================================================ */
 
@@ -11,6 +12,10 @@
   "use strict";
 
   const DATA_URL = new URL("../../data/venues.json", window.location.href);
+  const RATINGS_URL = new URL("../../data/ratings/snapshot.json", window.location.href);
+  const Ratings = window.AstorFeedRatings;
+  // False while the snapshot cannot be read: then nothing on the page may look like a ranking.
+  let ratingsAvailable = false;
   const telegram = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
   const insideTelegram = Boolean(telegram && telegram.initData);
 
@@ -21,31 +26,6 @@
     const systemLight = window.matchMedia("(prefers-color-scheme: light)").matches;
     const scheme = insideTelegram ? telegram.colorScheme : stored || (systemLight ? "light" : "dark");
     document.body.classList.toggle("light-theme", scheme === "light");
-  }
-
-  /* ---------- Ranking ---------- */
-  function validRating(value) {
-    return typeof value === "number" && value > 0 && value <= 5;
-  }
-
-  function averageRating(ratings) {
-    const values = [ratings && ratings.yandex, ratings && ratings.gis].filter(validRating);
-    if (!values.length) return null;
-    // Rounded so that float noise (4.6999… vs 4.7) never decides the order.
-    return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100;
-  }
-
-  function rank(venues) {
-    const pinned = venues.filter((venue) => venue.pinned);
-    const rest = venues
-      .filter((venue) => !venue.pinned)
-      .map((venue) => ({ venue, average: averageRating(venue.ratings) }));
-    // Venues without any rating go last; ties are ordered by name.
-    rest.sort((a, b) => {
-      const byRating = (b.average === null ? -1 : b.average) - (a.average === null ? -1 : a.average);
-      return byRating || String(a.venue.name).localeCompare(String(b.venue.name), "ru");
-    });
-    return { pinned, rest };
   }
 
   /* ---------- Rendering helpers ---------- */
@@ -86,24 +66,41 @@
     return anchor;
   }
 
-  function sourceLabels(ratings) {
-    const parts = [];
-    if (ratings && validRating(ratings.yandex)) parts.push("Яндекс " + formatRating(ratings.yandex));
-    if (ratings && validRating(ratings.gis)) parts.push("2ГИС " + formatRating(ratings.gis));
-    return parts;
+  const SOURCE_NAMES = { yandex: "Яндекс", gis: "2ГИС" };
+  const MAP_NAMES = { yandex: "Яндекс Карты", gis: "2ГИС" };
+
+  function formatDate(ms) {
+    return new Date(ms).toLocaleDateString("ru-RU");
+  }
+
+  // A stale rating is still the last value we know, so it is shown, marked and dated.
+  // compact: the narrow score column has no room for the word, so the mark there is the italic style.
+  function sourceLabel(item, compact) {
+    const text = SOURCE_NAMES[item.key] + " " + formatRating(item.rating);
+    const label = el("span", item.stale ? "rating-stale" : null, item.stale && !compact ? text + " · устарел" : text);
+    if (item.stale) label.setAttribute("aria-label", text + ", давно не проверялся");
+    if (item.checkedAt !== null) label.title = "Проверено " + formatDate(item.checkedAt);
+    return label;
   }
 
   // stacked: one source per line, for the narrow score column of the ranked list.
-  function ratingBlock(ratings, className, stacked) {
+  function ratingBlock(entry, className, stacked) {
     const block = el("div", className);
-    const average = averageRating(ratings);
-    if (average === null) {
-      block.append(el("span", "rating-sources", "Рейтинг не внесён"));
+    if (entry.average === null) {
+      block.append(el("span", "rating-sources", ratingsAvailable ? "Рейтинг пока не проверен" : "Рейтинг недоступен"));
       return block;
     }
-    block.append(el("span", "rating-value", formatRating(average)));
-    const labels = sourceLabels(ratings);
-    (stacked ? labels : [labels.join(" · ")]).forEach((label) => block.append(el("span", "rating-sources", label)));
+    block.append(el("span", "rating-value", formatRating(entry.average)));
+    let line = null;
+    entry.ratings.forEach((item) => {
+      if (stacked || !line) {
+        line = el("span", "rating-sources");
+        block.append(line);
+      } else {
+        line.append(" · ");
+      }
+      line.append(sourceLabel(item, stacked));
+    });
     return block;
   }
 
@@ -144,11 +141,12 @@
     return box;
   }
 
-  function pinnedCard(venue) {
+  function pinnedCard(entry) {
+    const venue = entry.venue;
     const card = el("article", "venue-card");
     const body = el("div", "venue-body");
     body.append(el("h2", "venue-name", venue.name), el("p", "venue-meta", metaText(venue)));
-    body.append(ratingBlock(venue.ratings, "venue-rating"));
+    body.append(ratingBlock(entry, "venue-rating"));
 
     const actions = el("div", "venue-actions");
     const booking = venue.connected ? httpsUrl(venue.bookingUrl) : null;
@@ -179,38 +177,62 @@
     else links.append(el("span", "rank-state", "Бронь через Astor пока недоступна"));
     info.append(links);
 
-    item.append(el("span", "rank-pos", String(position)), info, ratingBlock(venue.ratings, "rank-score", true));
+    item.append(el("span", "rank-pos", String(position)), info, ratingBlock(entry, "rank-score", true));
     return item;
   }
 
-  function render(data) {
+  // What the footer may honestly say about the ratings on the page.
+  function ratingsNote(entries) {
+    if (!ratingsAvailable) return "Рейтинги сейчас недоступны, поэтому список идёт по названию.";
+    const summary = Ratings.checks(entries);
+    const parts = Object.keys(MAP_NAMES).filter((key) => key in summary.oldest)
+      .map((key) => MAP_NAMES[key] + " — " + formatDate(summary.oldest[key]));
+    if (!parts.length) return "Рейтинги пока не проверены.";
+    return "Рейтинги проверены: " + parts.join(", ") + "." + (summary.stale ? " Курсивом — те, что давно не проверялись." : "");
+  }
+
+  function render(data, snapshot) {
     const venues = Array.isArray(data && data.venues) ? data.venues.filter((venue) => venue && venue.name) : [];
-    const ranked = rank(venues);
+    ratingsAvailable = Ratings.usable(snapshot);
+    const ranked = Ratings.rank(venues, snapshot, Date.now());
     const status = document.getElementById("feedStatus");
     const pinnedBox = document.getElementById("feedPinned");
     const rankedBox = document.getElementById("feedRanked");
     const list = document.getElementById("feedRankList");
 
     document.getElementById("feedCity").textContent = (data && data.city) || "";
-    pinnedBox.replaceChildren(...ranked.pinned.map(pinnedCard));
+    pinnedBox.replaceChildren(...ranked.pinned.map((entry) => pinnedCard(entry)));
     pinnedBox.hidden = !ranked.pinned.length;
     list.replaceChildren(...ranked.rest.map((entry, index) => rankItem(entry, index + 1)));
     rankedBox.hidden = !ranked.rest.length;
+    document.getElementById("feedRankedTitle").textContent = ratingsAvailable ? "По рейтингу" : "Заведения";
+    rankedBox.querySelector(".feed-section-note").textContent = ratingsAvailable
+      ? "Среднее между Яндекс Картами и 2ГИС."
+      : "По названию: рейтинги сейчас недоступны.";
 
     status.hidden = venues.length > 0;
     if (!venues.length) status.textContent = "Заведения пока не добавлены.";
 
-    const date = document.getElementById("feedRatingsDate");
-    const updated = data && data.ratingsUpdatedAt ? new Date(data.ratingsUpdatedAt) : null;
-    date.hidden = !updated || Number.isNaN(updated.getTime());
-    if (!date.hidden) date.textContent = "Рейтинги внесены вручную " + updated.toLocaleDateString("ru-RU") + ".";
+    const note = document.getElementById("feedRatingsDate");
+    note.hidden = !venues.length;
+    note.textContent = ratingsNote(ranked.pinned.concat(ranked.rest));
+  }
+
+  // Venues are required. Ratings are not: without them the feed still opens, just unranked.
+  async function loadRatings() {
+    try {
+      const response = await fetch(RATINGS_URL, { cache: "no-cache" });
+      return response.ok ? await response.json() : null;
+    } catch (error) {
+      return null;
+    }
   }
 
   async function load() {
     try {
-      const response = await fetch(DATA_URL, { cache: "no-cache" });
+      const [response, snapshot] = await Promise.all([fetch(DATA_URL, { cache: "no-cache" }), loadRatings()]);
       if (!response.ok) throw new Error("Feed data error: " + response.status);
-      render(await response.json());
+      render(await response.json(), snapshot);
     } catch (error) {
       const status = document.getElementById("feedStatus");
       status.hidden = false;
@@ -227,5 +249,5 @@
   load();
 
   // Expose for checks and future backend integration.
-  window.AstorFeed = { averageRating, rank, render };
+  window.AstorFeed = { render };
 })();
