@@ -59,6 +59,18 @@ public class VenueOpeningHours {
         return !today.known();
     }
 
+    /**
+     * Whether this time is a late hour of the evening that starts on that day: after midnight and before the close.
+     * Half past midnight is a late hour of a day that closes at 02:00; noon and three in the morning are not.
+     */
+    public boolean isLateHourOf(LocalDate eveningOf, LocalTime time) {
+        if (!enabled || eveningOf == null || time == null) {
+            return false;
+        }
+        Service evening = service(eveningOf.getDayOfWeek());
+        return evening.known() && evening.runsPastMidnight() && time.isBefore(evening.close());
+    }
+
     /** The service that starts on that day, in words: "с 12:00 до 02:00". Empty when the venue is closed or the hours are unknown. */
     public Optional<String> describe(LocalDate date) {
         if (!enabled || date == null) {
