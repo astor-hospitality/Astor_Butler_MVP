@@ -20,7 +20,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class ShiftBriefingServiceTest {
-    private static final ZoneId MOSCOW = ZoneId.of("Europe/Moscow");
+    private static final ZoneId VENUE = ZoneId.of("Asia/Yekaterinburg");
     private static final LocalDate DAY = LocalDate.of(2026, 10, 7);
     private final TableReservationRepository reservations = mock(TableReservationRepository.class);
     private final GuestBillRepository bills = mock(GuestBillRepository.class);
@@ -36,7 +36,7 @@ class ShiftBriefingServiceTest {
     }
 
     private ShiftBriefingProperties properties(boolean enabled, boolean on) {
-        return new ShiftBriefingProperties(enabled, "AERIS", "Europe/Moscow", on, on, on, on);
+        return new ShiftBriefingProperties(enabled, "AERIS", "Asia/Yekaterinburg", on, on, on, on);
     }
 
     private ShiftBriefingService service(ShiftBriefingProperties properties) {
@@ -45,7 +45,7 @@ class ShiftBriefingServiceTest {
 
     private TableReservationOrder order(int hour, int minute, int party, TableReservationStatus status,
                                         String table, String guest, String comment) {
-        Instant start = ZonedDateTime.of(DAY, LocalTime.of(hour, minute), MOSCOW).toInstant();
+        Instant start = ZonedDateTime.of(DAY, LocalTime.of(hour, minute), VENUE).toInstant();
         return new TableReservationOrder(1L, 10L, null, null, 5L, "5", table, "WINDOW", null, status, "TELEGRAM",
                 start, start.plusSeconds(5400), party, guest, "+79990000000", comment, null, null, null, null,
                 start, start);

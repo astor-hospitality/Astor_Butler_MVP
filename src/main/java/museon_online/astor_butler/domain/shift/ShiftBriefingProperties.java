@@ -12,7 +12,7 @@ import java.util.List;
 public class ShiftBriefingProperties {
     private boolean enabled;
     private String venueCode = "AERIS";
-    private String timezone = "Europe/Moscow";
+    private String timezone = "Asia/Yekaterinburg";
     private boolean sabyEnabled;
     private boolean sabyWriteEnabled;
     private boolean paymentEnabled;
@@ -21,7 +21,7 @@ public class ShiftBriefingProperties {
     public ShiftBriefingProperties(
             @Value("${astor.shift.briefing.enabled:false}") boolean enabled,
             @Value("${astor.shift.briefing.venue-code:AERIS}") String venueCode,
-            @Value("${astor.shift.briefing.timezone:Europe/Moscow}") String timezone,
+            @Value("${astor.shift.briefing.timezone:Asia/Yekaterinburg}") String timezone,
             @Value("${astor.integrations.saby.enabled:false}") boolean sabyEnabled,
             @Value("${astor.integrations.saby.write-enabled:false}") boolean sabyWriteEnabled,
             @Value("${astor.integrations.saby.payment-enabled:false}") boolean paymentEnabled,
@@ -42,7 +42,7 @@ public class ShiftBriefingProperties {
         try {
             return ZoneId.of(timezone);
         } catch (RuntimeException e) {
-            return ZoneId.of("Europe/Moscow");
+            return ZoneId.of("Asia/Yekaterinburg");
         }
     }
 

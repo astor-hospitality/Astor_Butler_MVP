@@ -31,12 +31,12 @@ public class ShiftBriefingScheduler {
         this.properties = properties;
     }
 
-    @Scheduled(cron = "${astor.shift.briefing.morning-cron:0 5 10 * * *}", zone = "${astor.shift.briefing.timezone:Europe/Moscow}")
+    @Scheduled(cron = "${astor.shift.briefing.morning-cron:0 5 10 * * *}", zone = "${astor.shift.briefing.timezone:Asia/Yekaterinburg}")
     public void morning() {
         send(ShiftBriefing.Kind.MORNING, LocalDate.now(properties.zone()));
     }
 
-    @Scheduled(cron = "${astor.shift.briefing.evening-cron:0 30 23 * * *}", zone = "${astor.shift.briefing.timezone:Europe/Moscow}")
+    @Scheduled(cron = "${astor.shift.briefing.evening-cron:0 30 23 * * *}", zone = "${astor.shift.briefing.timezone:Asia/Yekaterinburg}")
     public void evening() {
         send(ShiftBriefing.Kind.EVENING, LocalDate.now(properties.zone()));
     }

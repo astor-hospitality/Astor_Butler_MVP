@@ -64,7 +64,7 @@ astor:
       # Off by default; turning it on is a separate step from deploying it.
       enabled: ${ASTOR_SHIFT_BRIEFING_ENABLED:false}
       venue-code: ${ASTOR_SHIFT_BRIEFING_VENUE_CODE:AERIS}
-      timezone: ${ASTOR_SHIFT_BRIEFING_TIMEZONE:Europe/Moscow}
+      timezone: ${ASTOR_SHIFT_BRIEFING_TIMEZONE:Asia/Yekaterinburg}
       morning-cron: ${ASTOR_SHIFT_BRIEFING_MORNING_CRON:0 5 10 * * *}
       evening-cron: ${ASTOR_SHIFT_BRIEFING_EVENING_CRON:0 30 23 * * *}
   booking:
