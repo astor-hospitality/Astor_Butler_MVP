@@ -1,8 +1,8 @@
 # Astor Glass iPhone companion
 
-Updated 2026-10-05 against Butler main a4023a7. Source snapshot of the signed iPhone training companion. The phone connects the AIBuds glasses SDK to the isolated HTTPS pilot API. Staff task transport/auth/persistence being developed separately are not connected here.
+Updated 2026-10-07 against Butler main. Source of the working app for a staff member on shift: the phone connects the AIBuds glasses SDK to the isolated HTTPS pilot API. Staff task transport/auth/persistence being developed separately are not connected here, so nothing in this app acknowledges an assignment.
 
-R&D closed by Mikhail on 2026-10-06. Use the default project.yml. The optional offline-wake spec and CPU decoder are preserved as a frozen prototype, with ASTOR_ENABLE_EXPERIMENTAL_WAKE=0. Its positive synthetic wake test failed; it is not included as an enabled feature. The actual iPhone reported Apple localRussian=false, so start dialogue through the button. See [final handoff](../../docs/operations/GLASSES_RD_HANDOFF.md).
+The demo for a named guest, the "Астор" wake word (with its offline decoder and project variant) and Wi-Fi import of the glasses' own memory were removed on 2026-10-07: the wake word has no local Russian recognition on this iPhone and Wi-Fi import needs a HotspotConfiguration entitlement this build cannot have. History is in [the R&D handoff](../../docs/operations/GLASSES_RD_HANDOFF.md). The double tap now always starts and ends a question; the back tap repeats the current step or the last answer.
 
 ## Build
 
@@ -19,11 +19,11 @@ Set your signing team in project.yml. Personal Team Debug builds omit the Hotspo
 
 ## Table photos
 
-Explicitly start training for two guests. Stages: TABLE_PREPARE, PLACE_SETTINGS, WATER_MENU, FINAL_CHECK. The second and fourth require a matching archived photo receipt before manual advance. Other photos are optional. The SDK takes one JPEG; no continuous camera feed.
+Explicitly start the lunch for two guests. Stages: TABLE_PREPARE, PLACE_SETTINGS, WATER_MENU, FINAL_CHECK. The second and fourth require a matching archived photo receipt before manual advance. Other photos are optional. The SDK takes one JPEG; no continuous camera feed.
 
-The context carries session UUID, BUSINESS_LUNCH_TWO, stage and revision. Server guidance and informational vision produce a private JPEG + reply.json with that context. Only matching request UUID/context and archived:true enable the local checkpoint. Delayed response, changed step, cancellation and missing receipt cannot advance it. No restaurant task/table identifiers are invented.
+The context carries session UUID, BUSINESS_LUNCH_TWO, stage and revision, and now rides along with a spoken or typed question too, so the shift report can show it. Server guidance and informational vision produce a private JPEG + reply.json with that context. Only matching request UUID/context and archived:true enable the local checkpoint. Delayed response, changed step, cancellation and missing receipt cannot advance it. No restaurant task/table identifiers are invented.
 
-The analysis retry JPEG stays in memory. Retry keeps the same bytes, UUID and context for at most 110 seconds; server successful-reply cache lasts 120 seconds. Starting a session, advancing, cancellation and expiry clear pending analysis media. An explicitly opened archive session also retains a private file copy until its own server receipt. The training receipt confirms storage, not image accuracy or a real assignment's completion.
+The analysis retry JPEG stays in memory. Retry keeps the same bytes, UUID and context for at most 110 seconds; server successful-reply cache lasts 120 seconds. Starting a session, advancing, cancellation and expiry clear pending analysis media. An explicitly opened archive session also retains a private file copy until its own server receipt. The receipt confirms storage, not image accuracy or a real assignment's completion.
 
 ## Archive on charging
 
@@ -31,15 +31,17 @@ Select “Подготовить архив сессии” before capture. The 
 
 The separate /api/glasses/media archive stores JPEG/audio MP4/video MP4 up to 64 MiB. It does not run analysis or satisfy a training checkpoint. Saved video import from glasses memory requires Wi-Fi and a signing team with HotspotConfiguration; this Personal Team build does not enable it. See [DOCK_ARCHIVE.md](docs/DOCK_ARCHIVE.md) for the queue contract and separate physical acceptance results.
 
-## Greeting and “Астор”
+## Greeting when worn
 
 Greeting listens only to SDK didWearStatusChanged when the model reports supported, enabled wear detection. Reconnection is not a wear event. Duplicate events, 30-second cooldown, busy audio/call state and 10-second pending expiry guard playback. UI may enable a configurable wear detector. Actual model support still needs a device test.
 
-The explicit “Слушать «Астор»” mode uses glasses Bluetooth HFP and Apple Speech. It checks supportsOnDeviceRecognition and requires local recognition. Unavailable local Russian speech, missing permissions or missing glasses input leave it off. Standby audio/transcripts are not logged, saved or sent to the server; there is no cloud fallback.
+## Messages to the staff member
 
-An exact Астор/Astor segment stops standby and starts the existing bounded AAC question recorder. Wait for its cue, then ask. A silence heuristic stops after 1.8 seconds following detected speech, 8 seconds without speech, or a 30-second hard limit. Only that question goes to backend STT/assist. Restaurant-noise testing remains open.
+A message addressed to the staff member is spoken in the glasses only while they are not talking. `AstorQuietDelivery` holds the queue and the decision; `main.m` feeds it our own audio and call state and, while something waits, the microphone's loudness. Speech nearby, our own audio, a call or music hold the message back; after all of that stops, delivery waits three quiet seconds, so a message never lands mid-sentence.
 
-Standby pauses for questions, replies, photos, music and calls. Stop/disconnect/interruption turn it off. Recognizer sessions rotate every 50 seconds with a short restart gap. Locked-phone continuous operation and long-running reliability are not accepted yet. HFP microphone selection does not identify the speaker; voice-owner verification is not implemented.
+The microphone opens only while a message waits and closes as soon as the queue is empty or the message has been spoken. It measures loudness only: nothing is recognized, recorded, kept or sent. The -38 dBFS speaking threshold is a starting value to check in a noisy room.
+
+Messages come from `GET /api/glasses/messages` beside the assist endpoint, polled no more often than every 20 seconds with the same bearer, at most 20 per answer and 600 characters each. A missing endpoint (404) is logged once and the queue stays empty. A repeated id is never spoken twice; an interrupted message returns to the front of the queue. Playing a message is informational: nothing is acknowledged and nothing is sent back, so an unanswered message stays unanswered for the restaurant.
 
 ## Checks
 
@@ -47,7 +49,7 @@ Standby pauses for questions, replies, photos, music and calls. Stop/disconnect/
     /tmp/lunch-test
     clang -fobjc-arc -framework Foundation tests/wear-greeting.m Sources/AstorWearGreeting.m -o /tmp/wear-test
     /tmp/wear-test
-    clang -fobjc-arc -framework Foundation tests/wake-policy.m Sources/AstorVoiceActivity.m -o /tmp/wake-test
-    /tmp/wake-test
+    clang -fobjc-arc -framework Foundation tests/quiet-delivery.m Sources/AstorQuietDelivery.m -o /tmp/quiet-test
+    /tmp/quiet-test
 
-Build/sign/install, camera/audio, server media, wake recognition and wear events are separate acceptance results.
+Build/sign/install, camera/audio, server media, quiet message delivery in a real room and wear events are separate acceptance results.

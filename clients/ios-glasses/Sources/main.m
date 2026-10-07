@@ -8,9 +8,8 @@
 #import "AstorLunchGuide.h"
 #import "AstorAssistReply.h"
 #import "AstorWearGreeting.h"
-#import "AstorWakeListener.h"
-#import "AstorVoiceActivity.h"
 #import "AstorDockArchive.h"
+#import "AstorQuietDelivery.h"
 #import "AstorCallPolicy.h"
 #import "AstorGlassesProbe-Swift.h"
 #import <math.h>
@@ -65,13 +64,7 @@
 @property(nonatomic,strong) AstorLunchGuide *lunch;
 @property(nonatomic,strong) UILabel *lunchStepLabel, *lunchHint;
 @property(nonatomic,strong) UIButton *lunchBriefButton, *lunchNextButton, *lunchPhotoButton, *lunchStopButton;
-@property(nonatomic,strong) UIButton *lunchGlassesButton;
-@property(nonatomic,strong) UIButton *yanaDemoButton;
-@property(nonatomic,assign) BOOL yanaDemo;
 @property(nonatomic,strong) NSDate *pendingSiriStart;
-@property(nonatomic,assign) BOOL lunchHandsfreeActive, lunchOwnsPocket;
-@property(nonatomic,assign) NSInteger lunchPreviousPocketAction;
-@property(nonatomic,strong) UISegmentedControl *pocketAction;
 @property(nonatomic,strong) NSDictionary *photoContext;
 @property(nonatomic,strong) NSDate *photoDeadline;
 @property(nonatomic,strong) UILabel *lunchPhotoStatus;
@@ -84,13 +77,15 @@
 @property(nonatomic,strong) UILabel *wearLabel;
 @property(nonatomic,strong) UISwitch *wearGreetingSwitch;
 @property(nonatomic,strong) NSString *wearDiagnosticDevice;
-@property(nonatomic,strong) AstorWakeListener *wakeListener;
-@property(nonatomic,strong) AstorVoiceActivity *wakeActivity;
-@property(nonatomic,strong) UILabel *wakeLabel;
-@property(nonatomic,strong) UIButton *wakeButton;
-@property(nonatomic,strong) NSDate *wakePauseUntil;
-@property(nonatomic,assign) BOOL wakeEnabled, wakeDialogue;
 @property(nonatomic,assign) NSUInteger requestGeneration;
+@property(nonatomic,strong) AstorQuietDelivery *messages;
+@property(nonatomic,strong) UILabel *messageLabel;
+@property(nonatomic,strong) UISwitch *messageSwitch;
+@property(nonatomic,strong) AVAudioRecorder *silenceMonitor;
+@property(nonatomic,strong) NSURL *silenceMonitorURL;
+@property(nonatomic,strong) NSDate *messagePollAt;
+@property(nonatomic,strong) AstorQuietDeliveryMessage *speakingMessage;
+@property(nonatomic,assign) BOOL messagePolling, messageChannelMissingLogged;
 @property(nonatomic,assign) NSTimeInterval lastBriefCommand;
 - (void)refreshGestures;
 - (void)assignChanges:(NSDictionary *)changes restoring:(BOOL)restoring;
@@ -143,36 +138,34 @@
     UIStackView *shift=pages[0],*device=pages[1],*activity=pages[2];
     [shift addArrangedSubview:[self label:@"Ваш помощник\nна смене" size:30]];
     self.statusLabel=[self label:@"Подключите очки во вкладке «Очки»." size:16];
-    self.yanaDemoButton=[self button:@"Показ для Яны · начать" action:@selector(startYanaDemo)];[shift addArrangedSubview:self.yanaDemoButton];
     self.callLabel=[self label:@"Звонок · два касания боковой панели — принять или завершить.\nНа время звонка подсказки приостановятся." size:14];[shift addArrangedSubview:self.callLabel];
     self.wearLabel=[self label:@"Приветствие при надевании · ждём данные датчика" size:14];
     self.wearGreetingSwitch=[UISwitch new];self.wearGreetingSwitch.on=[NSUserDefaults.standardUserDefaults boolForKey:@"AstorWearGreetingEnabled"];
     [self.wearGreetingSwitch addTarget:self action:@selector(wearGreetingChanged) forControlEvents:UIControlEventValueChanged];
     [shift addArrangedSubview:[self card:@[[self label:@"Приветствие при надевании" size:17],self.wearGreetingSwitch,self.wearLabel]]];
     self.lunchStepLabel=[self label:@"Бизнес-ланч на двоих" size:22];
-    self.lunchHint=[self label:@"Четыре подсказки по сервировке. Учебный пример для показа; это не поручение от портала." size:15];
-    self.lunchBriefButton=[self button:@"Начать тренировку" action:@selector(lunchBrief)];
-    self.lunchGlassesButton=[self button:@"Подсказки в очках · включить" action:@selector(startLunchInGlasses)];
-    self.lunchNextButton=[self button:@"Следующая подсказка" action:@selector(lunchNext)];
+    self.lunchHint=[self label:@"Четыре шага подачи: стол, приборы, вода и меню, проверка перед встречей." size:15];
+    self.lunchBriefButton=[self button:@"Начать подачу" action:@selector(lunchBrief)];
+    self.lunchNextButton=[self button:@"Следующий шаг" action:@selector(lunchNext)];
     self.lunchPhotoButton=[self button:@"Фото · проверить этот шаг" action:@selector(lunchPhoto)];
     self.lunchPhotoStatus=[self label:@"Фото по шагу" size:14];
     self.lunchPhotoRetry=[self button:@"Повторить отправку этого фото" action:@selector(retryLunchPhoto)];
-    self.lunchStopButton=[self button:@"Завершить тренировку" action:@selector(lunchStop)];
-    [shift addArrangedSubview:[self card:@[[self label:@"ТРЕНИРОВКА · 2 ГОСТЯ" size:12],self.lunchStepLabel,self.lunchHint,self.lunchBriefButton,self.lunchGlassesButton,[self label:@"Двойное нажатие повторит шаг. Фото сервировки и финального вида сохраняются на сервере; следующий шаг выбираете вы." size:14],self.lunchPhotoStatus,self.lunchPhotoButton,self.lunchPhotoRetry,self.lunchNextButton,self.lunchStopButton]]];
+    self.lunchStopButton=[self button:@"Завершить подачу" action:@selector(lunchStop)];
+    [shift addArrangedSubview:[self card:@[[self label:@"ПОДАЧА · 2 ГОСТЯ" size:12],self.lunchStepLabel,self.lunchHint,self.lunchBriefButton,[self label:@"Фото приборов и финального вида сохраняются на сервере; следующий шаг выбираете вы." size:14],self.lunchPhotoStatus,self.lunchPhotoButton,self.lunchPhotoRetry,self.lunchNextButton,self.lunchStopButton]]];
+    self.messageSwitch=[UISwitch new];self.messageSwitch.on=[NSUserDefaults.standardUserDefaults boolForKey:@"AstorQuietMessagesEnabled"];
+    [self.messageSwitch addTarget:self action:@selector(messageDeliveryChanged) forControlEvents:UIControlEventValueChanged];
+    self.messageLabel=[self label:@"Сообщений нет" size:14];
+    [shift addArrangedSubview:[self card:@[[self label:@"СООБЩЕНИЯ СОТРУДНИКУ" size:12],self.messageSwitch,self.messageLabel,[self label:@"Сообщения читаются в очках только в тишине. Если вы говорите, сообщение ждёт и прозвучит через три секунды после разговора. Пока сообщение ждёт, микрофон измеряет только громкость: без распознавания, записи и отправки." size:14]]]];
     [self refreshLunch];
     [self refreshPower];
     [shift addArrangedSubview:[self card:@[[self label:@"ЗАДАЧИ ОТ BUTLER" size:12],[self label:@"Ждём подключение портала" size:21],[self label:@"Здесь появятся назначенные вам столы и этапы обслуживания. Сервер задач ещё не подключён." size:15]]]];
     self.voiceButton=[self button:@"Говорить с Butler" action:@selector(voice)];self.voiceButton.backgroundColor=[self silver];UIButtonConfiguration *voiceStyle=self.voiceButton.configuration;voiceStyle.baseForegroundColor=[self ink];self.voiceButton.configuration=voiceStyle;
     [shift addArrangedSubview:self.voiceButton];[shift addArrangedSubview:self.statusLabel];
-    self.wakeLabel=[self label:@"Команда «Астор» · выключена" size:14];
-    self.wakeButton=[self button:@"Слушать «Астор» · включить" action:@selector(toggleWake)];
-    [shift addArrangedSubview:[self card:@[self.wakeButton,self.wakeLabel,[self label:@"Микрофон очков слушает команду локально. После сигнала скажите вопрос. На сервер отправляется только этот вопрос. Остановить можно общей кнопкой ниже." size:14]]]];
     [shift addArrangedSubview:[self button:@"Фото · что я вижу?" action:@selector(takePhoto)]];
-    self.pocketAction=[[UISegmentedControl alloc]initWithItems:@[@"Голос",@"Подсказка"]];self.pocketAction.selectedSegmentIndex=0;self.pocketAction.selectedSegmentTintColor=[UIColor colorWithWhite:.28 alpha:1];[self.pocketAction.heightAnchor constraintGreaterThanOrEqualToConstant:46].active=YES;[self.pocketAction addTarget:self action:@selector(pocketActionChanged) forControlEvents:UIControlEventValueChanged];
-    [shift addArrangedSubview:[self card:@[[self label:@"Двойное нажатие в очках" size:17],self.pocketAction,[self label:@"Выберите действие и включите «Без экрана». В режиме подсказки микрофон не записывает." size:14]]]];
+    [shift addArrangedSubview:[self card:@[[self label:@"Двойное нажатие в очках" size:17],[self label:@"Двойное нажатие начинает и завершает вопрос. Касание назад повторяет текущий шаг или последний ответ. Включите «Без экрана»." size:14]]]];
     self.pocketButton=[self button:@"Без экрана · включить тест" action:@selector(togglePocket)];[shift addArrangedSubview:self.pocketButton];
     if([NSFileManager.defaultManager fileExistsAtPath:[self musicURL].path])[shift addArrangedSubview:[self button:@"Ilkutki · слушать / пауза" action:@selector(playMusic)]];
-    [shift addArrangedSubview:[self label:@"Фото этапа с привязкой к столу станет доступно после подключения API задач. Сейчас можно проверить камеру и голос." size:14]];
+    [shift addArrangedSubview:[self label:@"Фото этапа с привязкой к столу станет доступно после подключения API задач. Сейчас фото и вопросы идут в журнал смены." size:14]];
     self.question=[self field:@"Или напишите вопрос"];[shift addArrangedSubview:self.question];[shift addArrangedSubview:[self button:@"Отправить вопрос" action:@selector(ask)]];
     self.answerLabel=[self label:@"Ответ Butler появится здесь и прозвучит в очках." size:17];[shift addArrangedSubview:[self card:@[[self label:@"BUTLER" size:12],self.answerLabel,[self button:@"Повторить ответ" action:@selector(repeatAnswer)]]]];
     self.preview=[UIImageView new];self.preview.contentMode=UIViewContentModeScaleAspectFit;self.preview.layer.cornerRadius=16;self.preview.clipsToBounds=YES;self.preview.hidden=YES;[self.preview.heightAnchor constraintEqualToConstant:210].active=YES;[shift addArrangedSubview:self.preview];
@@ -182,7 +175,7 @@
     self.capabilityLabel=[self label:@"Модель 563B-E1769\nФото, микрофон и динамики проверены.\nПостоянный видеопоток эта прошивка не предоставляет." size:16];[device addArrangedSubview:[self card:@[self.capabilityLabel,[self button:@"Проверить динамики" action:@selector(testSpeaker)]]]];
     self.voiceLabel=[self label:@"Голос Butler" size:16];[device addArrangedSubview:[self card:@[self.voiceLabel,[self button:@"Выбрать голос" action:@selector(chooseRussianVoice)]]]];
     [device addArrangedSubview:[self card:@[[self label:@"Архив сессии" size:20],[self.dock makePanel]]]];
-    [device addArrangedSubview:[self card:@[[self label:@"Голосовой старт" size:20],[self label:@"Скажите: «Привет, Siri. Астор». Если Siri не распознает имя, попробуйте «Запусти Астор». Начнётся учебный показ для Яны. iPhone может попросить разблокировку." size:15],[self button:@"Открыть Shortcuts" action:@selector(openShortcuts)]]]];
+    [device addArrangedSubview:[self card:@[[self label:@"Голосовой старт" size:20],[self label:@"Скажите: «Привет, Siri. Астор». Если Siri не распознает имя, попробуйте «Запусти Астор». Откроется подача бизнес-ланча. iPhone может попросить разблокировку." size:15],[self button:@"Открыть Shortcuts" action:@selector(openShortcuts)]]]];
     [device addArrangedSubview:[self label:@"Жесты и кнопки" size:24]];self.gestureHint=[self label:@"Подключите очки: покажем только жесты, которые сообщает устройство." size:15];[device addArrangedSubview:self.gestureHint];
     [device addArrangedSubview:[self button:@"Настроить профиль Butler" action:@selector(applyButlerProfile)]];
     [device addArrangedSubview:[self button:@"Вернуть прежние назначения" action:@selector(restoreGestures)]];
@@ -200,13 +193,12 @@
 - (BOOL)lunchIsBusy {return self.callActive || self.audioInterruptionActive || self.busy || self.waitingPhoto || self.recorder || self.startingVoice || self.music || self.dock.busy;}
 - (void)refreshLunch {
     BOOL active=self.lunch.active;
-    self.lunchStepLabel.text=active?[NSString stringWithFormat:@"%lu / %lu · %@",(unsigned long)self.lunch.stepIndex+1,(unsigned long)AstorLunchGuide.steps.count,self.lunch.step[@"title"]]:self.lunch.finished?@"Учебный план пройден":@"Бизнес-ланч на двоих";
-    self.lunchHint.text=active?self.lunch.step[@"hint"]:@"Четыре подсказки по сервировке. Учебный пример для показа; это не поручение от портала.";
-    UIButtonConfiguration *style=self.lunchBriefButton.configuration;style.title=active?@"Слушать подсказку":self.lunch.finished?@"Начать заново":@"Начать тренировку";self.lunchBriefButton.configuration=style;
-    style=self.lunchNextButton.configuration;style.title=self.lunch.stepIndex+1==AstorLunchGuide.steps.count?@"Закончить учебный план":@"Следующая подсказка";self.lunchNextButton.configuration=style;
+    self.lunchStepLabel.text=active?[NSString stringWithFormat:@"%lu / %lu · %@",(unsigned long)self.lunch.stepIndex+1,(unsigned long)AstorLunchGuide.steps.count,self.lunch.step[@"title"]]:self.lunch.finished?@"Подача пройдена":@"Бизнес-ланч на двоих";
+    self.lunchHint.text=active?self.lunch.step[@"hint"]:@"Четыре шага подачи: стол, приборы, вода и меню, проверка перед встречей.";
+    UIButtonConfiguration *style=self.lunchBriefButton.configuration;style.title=active?@"Слушать шаг":self.lunch.finished?@"Начать заново":@"Начать подачу";self.lunchBriefButton.configuration=style;
+    style=self.lunchNextButton.configuration;style.title=self.lunch.stepIndex+1==AstorLunchGuide.steps.count?@"Завершить подачу":@"Следующий шаг";self.lunchNextButton.configuration=style;
     self.lunchNextButton.hidden=!active;self.lunchPhotoButton.hidden=!active;self.lunchStopButton.hidden=!active && !self.lunch.finished;
-    style=self.lunchGlassesButton.configuration;style.title=self.lunchHandsfreeActive && self.pocketMode && self.pocketAction.selectedSegmentIndex==1?@"Подсказки в очках · повторить":@"Подсказки в очках · включить";self.lunchGlassesButton.configuration=style;
-    BOOL idle=![self lunchIsBusy];self.yanaDemoButton.enabled=idle;self.lunchBriefButton.enabled=idle;self.lunchGlassesButton.enabled=idle;self.lunchNextButton.enabled=idle;self.lunchPhotoButton.enabled=idle;self.pocketAction.enabled=idle;
+    BOOL idle=![self lunchIsBusy];self.lunchBriefButton.enabled=idle;self.lunchNextButton.enabled=idle;self.lunchPhotoButton.enabled=idle;
     self.lunchNextButton.enabled=idle && self.lunch.canAdvance;
     self.lunchPhotoStatus.text=self.lunch.photoStatus;
     style=self.lunchPhotoButton.configuration;style.title=self.lunch.photoReceived?@"Переснять этот шаг":self.lunch.photoRequired?@"Снять обязательное фото шага":@"Фото · подсказка по шагу";self.lunchPhotoButton.configuration=style;
@@ -216,33 +208,10 @@
 - (void)readLunchBrief {
     if([self lunchIsBusy]){[self log:@"Дождитесь записи или запроса перед подсказкой."];return;}
     [self.answerAudio stop];self.answerAudio=nil;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-    NSString *brief=self.yanaDemo?(self.lunch.finished?@"Учебный показ завершён. Спасибо, Яна.":self.lunch.compactBrief):self.lunch.brief;
-    self.lastAnswer=brief;self.answerLabel.text=brief;[self log:@"Учебная подсказка доступна на экране."];[self speakAnswer:brief];
+    NSString *brief=self.pocketMode?self.lunch.compactBrief:self.lunch.brief;
+    self.lastAnswer=brief;self.answerLabel.text=brief;[self log:@"Шаг подачи озвучен и показан на экране."];[self speakAnswer:brief];
 }
 - (void)lunchBrief {if([self lunchIsBusy])return;if(!self.lunch.active){[self clearPendingPhoto];[self.lunch start];}[self refreshLunch];[self readLunchBrief];}
-- (BOOL)prepareLunchInGlasses {
-    if([self lunchIsBusy])return NO;
-    if(!self.device.isConnectedAndReady || ![self hasGlassesOutput]){[self log:@"Подключите очки и их Bluetooth-звук, затем включите подсказки."];return NO;}
-    if(!self.lunchHandsfreeActive || !self.pocketMode){self.lunchPreviousPocketAction=self.pocketAction.selectedSegmentIndex;self.lunchOwnsPocket=!self.pocketMode;}
-    self.pocketAction.selectedSegmentIndex=1;
-    if(!self.pocketMode)[self togglePocketAnnouncing:NO];
-    if(!self.pocketMode){self.pocketAction.selectedSegmentIndex=self.lunchPreviousPocketAction;self.lunchHandsfreeActive=NO;self.lunchOwnsPocket=NO;return NO;}
-    self.lunchHandsfreeActive=YES;
-    [self log:@"Учебные подсказки в очках включены: двойное нажатие повторяет текущий шаг, микрофон не записывает."];
-    return YES;
-}
-- (void)startLunchInGlasses {
-    if(![self prepareLunchInGlasses])return;
-    self.yanaDemo=NO;
-    [self lunchBrief];
-}
-- (void)startYanaDemo {
-    if(![self prepareLunchInGlasses])return;
-    self.yanaDemo=YES;[self clearPendingPhoto];[self.lunch start];[self refreshLunch];
-    [self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-    NSString *welcome=@"Яна, привет! Я Астор. Покажу учебный бизнес-ланч. Два нажатия справа — подсказка.";
-    self.lastAnswer=welcome;self.answerLabel.text=welcome;[self log:@"Персональный учебный показ начат; двойное нажатие озвучит короткий первый шаг."];[self speakAnswer:welcome];
-}
 - (void)lunchNext {if([self lunchIsBusy])return;if(![self.lunch advance]){[self log:@"Сначала получите подтверждение сохранения фото этого шага."];return;}[self clearPendingPhoto];[self refreshLunch];[self readLunchBrief];}
 - (void)lunchPhoto {NSDictionary *context=[self.lunch photoContext];if(context)[self beginPhotoForGuide:context];}
 - (void)clearPendingPhoto {self.pendingPhotoImage=nil;self.pendingPhotoContext=nil;self.pendingPhotoRequestId=nil;self.pendingPhotoCreated=nil;}
@@ -253,12 +222,7 @@
 }
 - (void)lunchStop {
     [self cancelAgent];[self.lunch stop];
-    if(self.lunchHandsfreeActive){if(self.lunchOwnsPocket && self.pocketMode)[self togglePocket];self.pocketAction.selectedSegmentIndex=self.lunchPreviousPocketAction;}
-    self.lunchHandsfreeActive=NO;self.lunchOwnsPocket=NO;self.yanaDemo=NO;[self refreshLunch];self.lastAnswer=nil;self.answerLabel.text=@"Тренировка завершена.";[self log:@"Тренировка завершена. Голос и фото остановлены."];
-}
-- (void)pocketActionChanged {
-    if([self lunchIsBusy])return;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-    [self restoreAssistantMedia];[self log:self.pocketAction.selectedSegmentIndex==1?@"Двойное нажатие повторяет учебную подсказку. Запись голоса выключена для этой кнопки.":@"Двойное нажатие начинает или завершает голосовой вопрос."];
+    [self refreshLunch];self.lastAnswer=nil;self.answerLabel.text=@"Подача завершена.";[self log:@"Подача завершена. Голос и фото остановлены."];
 }
 - (void)remoteBrief {
     NSTimeInterval now=NSDate.timeIntervalSinceReferenceDate;if(now-self.lastBriefCommand<.8)return;self.lastBriefCommand=now;
@@ -279,12 +243,12 @@
 - (void)viewDidLoad {
     [super viewDidLoad]; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.lunch=[AstorLunchGuide new];
+    self.messages=[AstorQuietDelivery new];
     [NSUserDefaults.standardUserDefaults registerDefaults:@{@"AstorWearGreetingEnabled":@YES}];
     self.wearGreeting=[AstorWearGreeting new];id last=[NSUserDefaults.standardUserDefaults objectForKey:@"AstorWearGreetingAt"];
-    self.wakeListener=[AstorWakeListener new];
     self.dock=[AstorDockArchive shared];__weak typeof(self) dockWeak=self;
     self.dock.changed=^(NSString *status){[dockWeak log:status];};
-    self.dock.prepareForImport=^{[dockWeak suspendWake];dockWeak.wakePauseUntil=[NSDate dateWithTimeIntervalSinceNow:10];[dockWeak refreshDock];};
+    self.dock.prepareForImport=^{[dockWeak refreshDock];};
     if([last isKindOfClass:NSDate.class])self.wearGreeting.lastGreeting=last;
     self.autoProbe=[NSProcessInfo.processInfo.arguments containsObject:@"--astor-auto-probe"];
     self.glassesVoiceEnabled=[NSProcessInfo.processInfo.arguments containsObject:@"--astor-gesture-probe"];
@@ -305,7 +269,6 @@
     AVSpeechSynthesisVoice *voice=[self russianVoice];self.voiceLabel.text=voice?[NSString stringWithFormat:@"Голос Butler · %@%@",voice.name,voice.quality>AVSpeechSynthesisVoiceQualityDefault?@" · улучшенный":@""]:@"Русский голос пока недоступен";
     for(AVSpeechSynthesisVoice *v in AVSpeechSynthesisVoice.speechVoices)if([v.language.lowercaseString hasPrefix:@"ru"])[self log:[NSString stringWithFormat:@"Русский голос iPhone: %@, gender=%ld, quality=%ld.",v.name,(long)v.gender,(long)v.quality]];
     [self log:voice?[NSString stringWithFormat:@"Для Butler выбран голос: %@.",voice.name]:@"Для озвучки нужен русский голос iPhone."];
-    NSDictionary *wake=[AstorWakeListener capabilities];[self log:[NSString stringWithFormat:@"Локальная команда «Астор»: ru=%@, recognizerAvailable=%@.",[wake[@"localRussian"] boolValue]?@"да":@"нет",[wake[@"available"] boolValue]?@"да":@"нет"]];
     AIBudsSDKConfiguration *configuration=[AIBudsSDKConfiguration defaultConfiguration];
     configuration.logLevel=AIBudsLogLevelMute;
     configuration.onlyDiscoverKnownDevices=NO;
@@ -372,7 +335,7 @@
     [self refreshLunch];
     [self refreshPower];
     [self refreshWearGreeting];
-    [self refreshWake];
+    [self refreshMessages];
     [self refreshDock];
     self.metrics.text=[NSString stringWithFormat:@"Ready: %@ | кадров: %lu | Opus: %lu | PCM: %lu",
       self.device.isConnectedAndReady?@"да":@"нет",(unsigned long)self.frames,(unsigned long)self.opusBytes,(unsigned long)self.pcmBytes];
@@ -396,9 +359,7 @@
         if([NSProcessInfo.processInfo.arguments containsObject:@"--astor-photo-probe"])[self takePhoto];
         if([NSProcessInfo.processInfo.arguments containsObject:@"--astor-music-probe"])dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),^{[self playMusic];});
         if([NSProcessInfo.processInfo.arguments containsObject:@"--astor-voice-probe"])dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),^{[self testSpeaker];});
-        if([NSProcessInfo.processInfo.arguments containsObject:@"--astor-lunch-probe"])dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),^{[self startLunchInGlasses];});
-        if([NSProcessInfo.processInfo.arguments containsObject:@"--astor-yana-probe"])dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),^{[self startYanaDemo];});
-        if([NSProcessInfo.processInfo.arguments containsObject:@"--astor-wake-probe"])dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(!self.wakeEnabled)[self toggleWake];});
+        if([NSProcessInfo.processInfo.arguments containsObject:@"--astor-lunch-probe"])dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4*NSEC_PER_SEC),dispatch_get_main_queue(),^{[self lunchBrief];});
         id<AIBudsLiveStreamingAPI> d=[self readyStream];
         if(d.supportsJPEGImageLiveStreaming && [NSProcessInfo.processInfo.arguments containsObject:@"--astor-auto-probe"]) {
             [self jpeg];
@@ -408,6 +369,104 @@
             });
         }
     }
+}
+- (void)messageDeliveryChanged {
+    [NSUserDefaults.standardUserDefaults setBool:self.messageSwitch.on forKey:@"AstorQuietMessagesEnabled"];
+    if(!self.messageSwitch.on){[self stopSilenceMonitor];[self.messages reset];[self log:@"Сообщения сотруднику выключены. Очередь очищена, микрофон не слушает."];}
+    else [self log:@"Сообщения сотруднику включены: прозвучат в паузе разговора."];
+    [self refreshMessages];
+}
+/* Measures loudness only, to know whether the staff member is talking. No recognition, no upload:
+   the file is truncated by the recorder and deleted as soon as the queue is empty. */
+- (void)startSilenceMonitor {
+    if(self.silenceMonitor || self.recorder || self.startingVoice || self.callActive || self.audioInterruptionActive)return;
+    if(![self hasGlassesOutput])return;
+    NSString *directory=[NSTemporaryDirectory() stringByAppendingPathComponent:@"AstorVoice"];
+    self.silenceMonitorURL=[NSURL fileURLWithPath:[directory stringByAppendingPathComponent:@"silence.m4a"]];
+    NSDictionary *settings=@{AVFormatIDKey:@(kAudioFormatMPEG4AAC),AVSampleRateKey:@16000,AVNumberOfChannelsKey:@1,AVEncoderAudioQualityKey:@(AVAudioQualityLow)};
+    NSError *error=nil;self.silenceMonitor=[[AVAudioRecorder alloc]initWithURL:self.silenceMonitorURL settings:settings error:&error];
+    self.silenceMonitor.meteringEnabled=YES;
+    if(!self.silenceMonitor || ![self.silenceMonitor record]){self.silenceMonitor=nil;[self log:@"Микрофон для паузы недоступен; сообщение прозвучит после текущего действия."];return;}
+    [self log:@"Слушаю только громкость, чтобы не прервать разговор."];
+}
+- (void)stopSilenceMonitor {
+    if(!self.silenceMonitor)return;
+    [self.silenceMonitor stop];self.silenceMonitor=nil;
+    if(self.silenceMonitorURL)[NSFileManager.defaultManager removeItemAtURL:self.silenceMonitorURL error:nil];
+    self.silenceMonitorURL=nil;
+}
+- (BOOL)speechNearby {
+    if(!self.silenceMonitor.isRecording)return NO;
+    [self.silenceMonitor updateMeters];
+    // −38 dBFS separates ordinary room noise from someone speaking a step away; verify on the device.
+    return [self.silenceMonitor averagePowerForChannel:0]>-38;
+}
+- (void)refreshMessages {
+    BOOL own=self.recorder!=nil || self.startingVoice || self.busy || self.waitingPhoto || self.speaker.isSpeaking || self.answerAudio.isPlaying || self.cue.isPlaying || self.dock.busy;
+    if(!self.messageSwitch.on){self.messageLabel.text=@"Сообщения выключены";[self stopSilenceMonitor];return;}
+    [self pollMessages];
+    if(self.messages.waiting && !own && !self.callActive && !self.audioInterruptionActive)[self startSilenceMonitor];else [self stopSilenceMonitor];
+    AstorQuietDeliveryState state={0};
+    state.speechNearby=[self speechNearby];
+    state.ownAudioActive=own;
+    state.callActive=self.callActive || self.audioInterruptionActive;
+    state.musicActive=self.music.isPlaying;
+    state.glassesReady=self.device.isConnectedAndReady && [self hasGlassesOutput];
+    AstorQuietDeliveryMessage *next=[self.messages nextAt:NSDate.date state:state];
+    self.messageLabel.text=self.messages.status;
+    if(!next || self.speakingMessage)return;
+    [self stopSilenceMonitor];
+    self.speakingMessage=next;
+    [self.messages startedSpeaking:next at:NSDate.date];
+    [self log:@"Читаю сообщение сотруднику в паузе разговора."];
+    [self speakAnswer:next.text];
+    // The synthesizer reports completion; a message that never started playing returns to the queue.
+    AstorQuietDeliveryMessage *spoken=next;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)((2+next.text.length/12.)*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        if(self.speakingMessage!=spoken)return;
+        BOOL delivered=!self.speaker.isSpeaking && !self.callActive && !self.audioInterruptionActive;
+        self.speakingMessage=nil;
+        [self.messages finishedSpeaking:spoken at:NSDate.date delivered:delivered];
+        self.messageLabel.text=self.messages.status;
+        [self log:delivered?@"Сообщение прочитано.":@"Сообщение прервано; прозвучит в следующую паузу."];
+    });
+}
+/* Pulls messages addressed to this server-bound scope. Informational: nothing is acknowledged and
+   nothing is sent back, so the restaurant still sees an unanswered message as unanswered. */
+- (void)pollMessages {
+    if(self.messagePolling || self.messages.waiting>=10)return;
+    if(self.messagePollAt && -self.messagePollAt.timeIntervalSinceNow<20)return;
+    NSURL *assist=[self validEndpoint:NO];NSString *token=[self token];
+    if(!assist || !token.length)return;
+    // The assist URL ends with /api/glasses/assist; messages live beside it, built from the same components.
+    NSURLComponents *components=[NSURLComponents componentsWithURL:assist resolvingAgainstBaseURL:NO];
+    if(![components.path hasSuffix:@"/assist"])return;
+    components.path=[[components.path substringToIndex:components.path.length-@"assist".length] stringByAppendingString:@"messages"];
+    NSURL *url=components.URL;
+    if(!url)return;
+    self.messagePollAt=NSDate.date;self.messagePolling=YES;
+    NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];request.timeoutInterval=15;
+    [request setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+    NSURLSessionConfiguration *config=NSURLSessionConfiguration.ephemeralSessionConfiguration;config.URLCache=nil;
+    NSURLSession *session=[NSURLSession sessionWithConfiguration:config delegate:(id<NSURLSessionDelegate>)self delegateQueue:nil];
+    [[session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error){dispatch_async(dispatch_get_main_queue(),^{
+        [session finishTasksAndInvalidate];self.messagePolling=NO;
+        NSInteger status=((NSHTTPURLResponse *)response).statusCode;
+        if(error || status!=200){
+            if(status==404 && !self.messageChannelMissingLogged){self.messageChannelMissingLogged=YES;[self log:@"Канал сообщений на сервере не включён; очередь остаётся пустой."];}
+            return;
+        }
+        NSDictionary *reply=data.length<=256*1024?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+        NSArray *items=[reply isKindOfClass:NSDictionary.class]?reply[@"messages"]:nil;
+        if(![items isKindOfClass:NSArray.class] || items.count>20)return;
+        NSUInteger added=0;
+        for(id item in items){
+            if(![item isKindOfClass:NSDictionary.class])continue;
+            AstorQuietDeliveryMessage *message=[AstorQuietDeliveryMessage withId:item[@"id"] text:item[@"text"] at:NSDate.date];
+            if([self.messages enqueue:message])added++;
+        }
+        if(added){[self log:[NSString stringWithFormat:@"Новых сообщений сотруднику: %lu. Прозвучат в паузе.",(unsigned long)added]];self.messageLabel.text=self.messages.status;}
+    });}] resume];
 }
 - (void)refreshSiriStart {
     id requested=[NSUserDefaults.standardUserDefaults objectForKey:@"AstorSiriStartRequestedAt"];
@@ -419,7 +478,7 @@
     if(!self.pendingSiriStart)return;
     if(-self.pendingSiriStart.timeIntervalSinceNow>45){self.pendingSiriStart=nil;self.statusLabel.text=@"Подключите очки и повторите «Сири, Астор».";[self log:@"Голосовой старт истёк: очки или аудиосессия не готовы."];return;}
     if(-self.pendingSiriStart.timeIntervalSinceNow<2 || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || self.callActive || self.audioInterruptionActive || !self.device.isConnectedAndReady || ![self hasGlassesOutput])return;
-    self.pendingSiriStart=nil;[self cancelAgent];self.tabs.selectedSegmentIndex=0;[self changeTab];[self startYanaDemo];
+    self.pendingSiriStart=nil;[self cancelAgent];self.tabs.selectedSegmentIndex=0;[self changeTab];[self lunchBrief];
 }
 - (void)wearGreetingChanged {
     [NSUserDefaults.standardUserDefaults setBool:self.wearGreetingSwitch.on forKey:@"AstorWearGreetingEnabled"];
@@ -446,30 +505,6 @@
         [NSUserDefaults.standardUserDefaults setObject:self.wearGreeting.lastGreeting forKey:@"AstorWearGreetingAt"];
         [self log:@"Приветствие по событию надевания."];[self speakAnswer:@"Привет! Я Астор. Готов помочь на смене."];
     }
-}
-- (void)suspendWake { [self.wakeListener stop];self.wakePauseUntil=[NSDate dateWithTimeIntervalSinceNow:1]; }
-- (void)toggleWake {
-    if(self.wakeEnabled){self.wakeEnabled=NO;[self suspendWake];if(!self.pocketMode)self.sessionToken=nil;self.wakeLabel.text=@"Команда «Астор» · выключена";[self refreshWake];return;}
-    if([self lunchIsBusy] || !self.device.isConnectedAndReady || ![self hasGlassesOutput]){[self log:@"Сначала подключите очки и дождитесь окончания текущего действия."];return;}
-    if(![self validEndpoint:YES])return;
-    if(![[AstorWakeListener capabilities][@"localRussian"] boolValue]){self.wakeLabel.text=@"Русское локальное распознавание недоступно на этом iPhone";[self log:@"Команда «Астор» недоступна локально; микрофон не включён."];return;}
-    self.sessionToken=[self token];self.wakeEnabled=YES;self.wakePauseUntil=nil;[self refreshWake];
-}
-- (void)refreshWake {
-    UIButtonConfiguration *style=self.wakeButton.configuration;style.title=self.wakeEnabled?@"Слушать «Астор» · выключить":@"Слушать «Астор» · включить";self.wakeButton.configuration=style;
-    if(self.recorder && self.wakeDialogue){[self.recorder updateMeters];if([self.wakeActivity shouldFinishAt:self.recorder.currentTime power:[self.recorder averagePowerForChannel:0]]){[self finishVoice];return;}}
-    BOOL allowed=self.wakeEnabled && !self.dockCharging && self.device.isConnectedAndReady && [self hasGlassesOutput] && ![self lunchIsBusy] && !self.speaker.isSpeaking && !self.answerAudio.isPlaying && !self.cue.isPlaying && self.wakePauseUntil.timeIntervalSinceNow<=0;
-    if(!allowed){if(self.wakeListener.running || self.wakeListener.starting)[self suspendWake];if(self.wakeEnabled)self.wakeLabel.text=@"Команда «Астор» · пауза на время действия";return;}
-    if(self.wakeListener.running || self.wakeListener.starting)return;
-    __weak typeof(self) weak=self;
-    [self.wakeListener startWithTrigger:^{
-        if(!weak.wakeEnabled || [weak lunchIsBusy])return;
-        [weak log:@"Команда «Астор» услышана локально; начинаю голосовой вопрос."];
-        weak.wakeDialogue=YES;weak.wakeActivity=[AstorVoiceActivity new];[weak voice];
-    } status:^(NSString *message){
-        weak.wakeLabel.text=message;
-        if(!weak.wakeListener.running && !weak.wakeListener.starting && ![message hasPrefix:@"Обновляю"]){weak.wakeEnabled=NO;[weak log:message];}
-    }];
 }
 - (void)device:(id<AIBudsDeviceConvertible>)device didWearStatusChanged:(enum AIBudsWearStatus)status {
     dispatch_async(dispatch_get_main_queue(),^{
@@ -643,7 +678,7 @@
 #endif
 }
 - (NSString *)token {
-    if((self.pocketMode || self.wakeEnabled) && self.sessionToken.length)return self.sessionToken;
+    if(self.pocketMode && self.sessionToken.length)return self.sessionToken;
     NSMutableDictionary *query=[[self keyQuery] mutableCopy];query[(__bridge id)kSecReturnData]=@YES;CFTypeRef result=NULL;
     if(SecItemCopyMatching((__bridge CFDictionaryRef)query,&result)!=errSecSuccess)return nil;
     NSData *data=CFBridgingRelease(result);return [[NSString alloc]initWithData:data encoding:NSUTF8StringEncoding];
@@ -676,7 +711,6 @@
     if(self.photoDeadline.timeIntervalSinceNow>0){[self log:@"Предыдущее фото отменено. Дождитесь окончания его передачи перед новой съёмкой."];return;}
     if(!self.device.isConnectedAndReady || ![self.device conformsToProtocol:@protocol(AIBudsDeviceCameraAPI)]){[self log:@"Сначала подключите очки."];return;}
     if(context && ![self validEndpoint:YES])return;
-    [self suspendWake];
     [self clearPendingPhoto];
     self.photoContext=context;self.photoDeadline=[NSDate dateWithTimeIntervalSinceNow:30];
     [self beginWork];self.preview.image=nil;self.waitingPhoto=YES;NSUInteger generation=++self.photoGeneration;
@@ -687,7 +721,7 @@
 - (void)receivePhoto:(NSData *)data {
     dispatch_async(dispatch_get_main_queue(),^{if(!self.waitingPhoto)return;self.waitingPhoto=NO;
         NSDictionary *context=self.photoContext;self.photoContext=nil;self.photoDeadline=nil;
-        if(context && ![self.lunch acceptsPhotoContext:context]){[self endWork];[self log:@"Учебный шаг изменился. Кадр не отправлен."];return;}
+        if(context && ![self.lunch acceptsPhotoContext:context]){[self endWork];[self log:@"Шаг подачи изменился. Кадр не отправлен."];return;}
         if(data.length>12*1024*1024){[self endWork];[self log:@"Слишком большое фото."];return;}
         UIImage *image=[UIImage imageWithData:data];if(!image || image.size.width<1 || image.size.height<1){[self endWork];[self log:@"Некорректное фото."];return;}
         CGFloat ratio=MIN(1.0,1280.0/MAX(image.size.width,image.size.height));CGSize size=CGSizeMake(image.size.width*ratio,image.size.height*ratio);
@@ -710,7 +744,6 @@
     [self sendText:text image:image audio:audio photoContext:nil requestId:NSUUID.UUID.UUIDString.lowercaseString];
 }
 - (void)sendText:(NSString *)text image:(NSData *)image audio:(NSData *)audio photoContext:(NSDictionary *)context requestId:(NSString *)requestId {
-    [self suspendWake];
     if(self.callActive || self.audioInterruptionActive){[self log:@"Дождитесь окончания звонка или другого аудио перед запросом."];return;}
     if(self.busy){[self log:@"Запрос уже выполняется."];return;}if(text.length>4000 || image.length>2*1024*1024 || audio.length>2*1024*1024){[self log:@"Запрос превышает допустимый размер."];return;}NSURL *url=[self validEndpoint:YES];if(!url){[self endWork];return;}[self beginWork];
     if(context && ![self.lunch acceptsPhotoContext:context]){[self endWork];[self log:@"Шаг изменился; фото не отправлено."];return;}
@@ -729,7 +762,7 @@
         NSInteger status=((NSHTTPURLResponse *)response).statusCode;if(status!=200){[self log:[NSString stringWithFormat:@"Astor: HTTP %ld. Фото шага не подтверждено. При временной ошибке нажмите повтор отправки.",(long)status]];return;}
         NSDictionary *reply=data.length<=3*1024*1024?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;NSString *answer=[reply isKindOfClass:NSDictionary.class]?reply[@"text"]:nil;
         if(!AstorAssistReplyMatches(reply,requestId)){[self log:@"Ответ не соответствует запросу или согласованному контракту."];return;}
-        if(context){if(![self.lunch acceptPhotoReceipt:reply[@"photoReceipt"] context:context requestId:requestId]){[self log:@"Нет подтверждения сохранения фото для этого шага. Переход остаётся закрыт."];return;}[self clearPendingPhoto];[self refreshLunch];[self log:[NSString stringWithFormat:@"Фото текущего учебного шага сохранено сервером. Всего шагов с фото: %lu.",(unsigned long)self.lunch.photoCount]];}
+        if(context){if(![self.lunch acceptPhotoReceipt:reply[@"photoReceipt"] context:context requestId:requestId]){[self log:@"Нет подтверждения сохранения фото для этого шага. Переход остаётся закрыт."];return;}[self clearPendingPhoto];[self refreshLunch];[self log:[NSString stringWithFormat:@"Фото текущего шага сохранено сервером. Всего шагов с фото: %lu.",(unsigned long)self.lunch.photoCount]];}
         self.lastAnswer=answer;self.answerLabel.text=answer;self.statusLabel.text=@"Butler ответил"; // Assistant content stays in memory, outside diagnostics.
         NSString *encoded=reply[@"audioBase64"],*mime=reply[@"audioMimeType"],*gender=reply[@"audioVoiceGender"];
         if([encoded isKindOfClass:NSString.class] && encoded.length && encoded.length<=((2*1024*1024+2)/3)*4 && [gender isEqual:@"male"] && ([mime isEqual:@"audio/mpeg"] || [mime isEqual:@"audio/mp4"])){
@@ -741,7 +774,6 @@
 }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *))completionHandler {completionHandler(nil);}
 - (void)playBackendSpeech:(NSData *)data {
-    [self suspendWake];
     [self audioRoute];NSUInteger generation=self.photoGeneration;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];[self.answerAudio stop];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,500*NSEC_PER_MSEC),dispatch_get_main_queue(),^{if(generation!=self.photoGeneration)return;
         if(![self hasGlassesOutput]){[self log:@"Ответ на экране. Подключите аудиовыход AI Glasses для озвучки."];return;}
@@ -770,7 +802,6 @@
 }
 - (void)speakAnswer:(NSString *)answer {
     if(self.dock.busy){[self log:@"Дождитесь импорта перед озвучкой."];return;}
-    [self suspendWake];
     if(self.callActive || self.audioInterruptionActive){[self log:@"Озвучка отложена: идёт звонок или другое аудио. Ответ сохранён на экране."];return;}
     [self audioRoute];BOOL output=NO;
     for(AVAudioSessionPortDescription *port in AVAudioSession.sharedInstance.currentRoute.outputs)
@@ -794,7 +825,6 @@
         if(event==AIBudsAIChatSessionEventInterruptByStateConflict){[self cancelAgent];return;}
         if(event==AIBudsAIChatSessionEventInitiateWithSCO){
             if(!self.pocketMode && UIApplication.sharedApplication.applicationState!=UIApplicationStateActive){[self log:@"Фоновый голосовой режим требует отдельного теста; запись не начата."];return;}
-            if(self.pocketMode && self.pocketAction.selectedSegmentIndex==1 && !self.recorder){[self remoteBrief];return;}
             if(!self.recorder)[self voice];
         } else if(event==AIBudsAIChatSessionEventInitiateWithOpus){
             [self log:@"Очки запросили Opus-канал; для этого пилота проверен HFP. Opus-сессия не запускается."];
@@ -812,7 +842,6 @@
     if(self.startingVoice)return;
     if(self.music){[self.music stop];self.music=nil;[self restoreAssistantMedia];}
     if(self.recorder){[self finishVoice];return;}if(self.busy || self.waitingPhoto || self.startingVoice)return;[self.answerAudio stop];self.answerAudio=nil;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
-    [self suspendWake];
     NSUInteger generation=self.photoGeneration;
     if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive && AVAudioSession.sharedInstance.recordPermission!=AVAudioSessionRecordPermissionGranted){[self log:@"Сначала разрешите микрофон с открытым приложением."];return;}
     self.startingVoice=YES;[AVAudioSession.sharedInstance requestRecordPermission:^(BOOL granted){dispatch_async(dispatch_get_main_queue(),^{
@@ -822,7 +851,7 @@
         if(!input || ![session setPreferredInput:input error:nil]){[self log:@"Подключите AI Glasses как гарнитуру в Settings → Bluetooth: Bluetooth-микрофон недоступен."];return;}
         [self beginWork];self.recordingURL=[NSURL fileURLWithPath:[[NSTemporaryDirectory() stringByAppendingPathComponent:@"AstorVoice"] stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@".m4a"]]];
         self.recorder=[[AVAudioRecorder alloc]initWithURL:self.recordingURL settings:@{AVFormatIDKey:@(kAudioFormatMPEG4AAC),AVSampleRateKey:@16000,AVNumberOfChannelsKey:@1,AVEncoderBitRateKey:@32000} error:nil];
-        self.recorder.meteringEnabled=self.wakeDialogue;
+        self.recorder.meteringEnabled=NO;
         if(![self.recorder prepareToRecord]){[self log:@"Микрофон не готов к записи."];[self cancelAgent];return;}
         self.startingVoice=YES;[self playCue:YES];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,180*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
@@ -833,7 +862,6 @@
     });}];
 }
 - (void)finishVoice {
-    self.wakeDialogue=NO;self.wakeActivity=nil;
     [self.recorder stop];self.recorder=nil;[self playCue:NO];NSData *audio=[NSData dataWithContentsOfURL:self.recordingURL];
     if(audio.length && audio.length<2*1024*1024)[self.dock captureAudioFile:self.recordingURL];
     if(self.recordingURL)[NSFileManager.defaultManager removeItemAtURL:self.recordingURL error:nil];self.recordingURL=nil;
@@ -856,7 +884,7 @@
 - (void)device:(id<AIBudsDeviceConvertible>)device didCallStatusChanged:(enum AIBudsCallStatus)status {
     dispatch_async(dispatch_get_main_queue(),^{if(device!=self.device)return;
         [self syncPhoneCalls];
-        BOOL ownHFP=self.recorder!=nil || self.startingVoice || self.wakeListener.running || self.wakeListener.starting || self.speaker.isSpeaking || self.answerAudio.isPlaying || self.cue.isPlaying;
+        BOOL ownHFP=self.recorder!=nil || self.startingVoice || self.speaker.isSpeaking || self.answerAudio.isPlaying || self.cue.isPlaying;
         BOOL ringing=status==AIBudsCallStatusRinging || status==AIBudsCallStatusThreeWayRinging;
         self.glassesCallActive=AstorCallShouldInterrupt(NO,ringing,status==AIBudsCallStatusInCall,ownHFP);
         [self log:[NSString stringWithFormat:@"Состояние звонка SDK: %ld; системный звонок=%@, собственное HFP=%@.",(long)status,self.phoneCallActive?@"да":@"нет",ownHFP?@"да":@"нет"]];
@@ -877,7 +905,7 @@
 - (void)refreshPower {self.powerLabel.text=[NSString stringWithFormat:@"%@\n%@",[self powerLine:@"Очки" component:@"0"],[self powerLine:@"Кейс" component:@"3"]];}
 - (void)refreshDock {
     BOOL foreground=UIApplication.sharedApplication.applicationState!=UIApplicationStateBackground;
-    BOOL idle=!self.callActive && !self.audioInterruptionActive && !self.busy && !self.waitingPhoto && !self.recorder && !self.startingVoice && !self.assigning && !self.connecting && !self.speaker.isSpeaking && !self.answerAudio.isPlaying && !self.cue.isPlaying && !self.music.isPlaying && !self.wakeListener.running && !self.wakeListener.starting;
+    BOOL idle=!self.callActive && !self.audioInterruptionActive && !self.busy && !self.waitingPhoto && !self.recorder && !self.startingVoice && !self.assigning && !self.connecting && !self.speaker.isSpeaking && !self.answerAudio.isPlaying && !self.cue.isPlaying && !self.music.isPlaying;
     NSString *token=[self token];
     if(foreground || token.length)[self.dock configureBaseURL:[NSURL URLWithString:[NSUserDefaults.standardUserDefaults stringForKey:@"backendURL"]?:@""] bearer:token];
     [self.dock updateDevice:self.device foreground:foreground idle:idle];
@@ -887,7 +915,7 @@
         if(!self.powerStatus)self.powerStatus=[NSMutableDictionary new];if(!self.freshPowerComponents)self.freshPowerComponents=[NSMutableSet new];
         for(NSNumber *component in @[@(AIBudsBatteryComponentGlass),@(AIBudsBatteryComponentChargingCase)]){
             AIBudsBatteryInfoModel *info=[status infoForComponent:component.integerValue];if(!info)continue;
-            if(component.integerValue==AIBudsBatteryComponentGlass && info.chargingState!=AIBudsChargingStateUnknown){self.dockCharging=info.chargingState==AIBudsChargingStateCharging;if(self.dockCharging)[self suspendWake];}
+            if(component.integerValue==AIBudsBatteryComponentGlass && info.chargingState!=AIBudsChargingStateUnknown){self.dockCharging=info.chargingState==AIBudsChargingStateCharging;if(self.dockCharging)}
             [self refreshDock];[self.dock observeChargingForDevice:device component:component.integerValue state:info.chargingState];
             NSString *key=component.stringValue;NSDictionary *previous=self.powerStatus[key];NSMutableDictionary *entry=previous?[previous mutableCopy]:[NSMutableDictionary new];NSDate *now=NSDate.date;
             NSNumber *level=info.batteryLevel;BOOL valid=[level isKindOfClass:NSNumber.class] && isfinite(level.doubleValue) && level.doubleValue>=0 && level.doubleValue<=100 && floor(level.doubleValue)==level.doubleValue;
@@ -908,7 +936,7 @@
 - (void)updateCallState {
     BOOL active=self.phoneCallActive || self.glassesCallActive;
     if(active==self.callActive)return;self.callActive=active;
-    if(active){[self cancelAgent];self.callLabel.text=@"Звонок · два касания боковой панели — принять или завершить.\nЗапись и подсказки приостановлены.";[self log:@"Звонок: запись и озвучка Астор остановлены; учебный шаг сохранён."];}
+    if(active){[self cancelAgent];self.callLabel.text=@"Звонок · два касания боковой панели — принять или завершить.\nЗапись и подсказки приостановлены.";[self log:@"Звонок: запись и озвучка Астор остановлены; текущий шаг сохранён."];}
     else {self.callLabel.text=@"Звонок завершён · повторите подсказку двойным нажатием справа";[self log:@"Звонок завершён. Запись и озвучка автоматически не возобновляются."];}
     [self refreshLunch];
 }
@@ -926,7 +954,9 @@
     });
 }
 - (void)cancelAgent {
-    self.wakeEnabled=NO;self.wakeDialogue=NO;self.wakeActivity=nil;[self suspendWake];if(!self.pocketMode)self.sessionToken=nil;self.wakeLabel.text=@"Команда «Астор» · выключена";
+    if(self.speakingMessage){AstorQuietDeliveryMessage *interrupted=self.speakingMessage;self.speakingMessage=nil;[self.messages finishedSpeaking:interrupted at:NSDate.date delivered:NO];}
+    [self stopSilenceMonitor];
+    if(!self.pocketMode)self.sessionToken=nil;
     [self clearPendingPhoto];self.preview.image=nil;self.waitingPhoto=NO;self.photoContext=nil;self.startingVoice=NO;self.requestGeneration++;self.busy=NO;if(self.music){[self.music stop];self.music=nil;[self restoreAssistantMedia];}[self.answerAudio stop];self.answerAudio=nil;[self.cue stop];self.photoGeneration++;[self endWork];[self.recorder stop];self.recorder=nil;if(self.recordingURL)[NSFileManager.defaultManager removeItemAtURL:self.recordingURL error:nil];self.recordingURL=nil;[self.request cancel];self.request=nil;[self.http invalidateAndCancel];self.http=nil;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];[self stop];
 }
 
@@ -990,13 +1020,13 @@
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,8*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(answered || generation!=self.bindingGeneration)return;answered=YES;self.assigning=NO;self.bindingGeneration++;[self refreshGestures];[self log:@"SDK не ответил на настройку. Состояние неизвестно; сохранена возможность восстановления."];});
 }
 - (void)beginWork {
-    if((!self.pocketMode && !self.wakeEnabled) || self.backgroundTask!=UIBackgroundTaskInvalid)return;
+    if(!self.pocketMode || self.backgroundTask!=UIBackgroundTaskInvalid)return;
     self.backgroundTask=[UIApplication.sharedApplication beginBackgroundTaskWithName:@"Astor bounded request" expirationHandler:^{[self cancelAgent];[self log:@"iOS завершила фоновое время. Откройте приложение для повторения."];}];
 }
 - (void)endWork {if(self.backgroundTask!=UIBackgroundTaskInvalid){UIBackgroundTaskIdentifier task=self.backgroundTask;self.backgroundTask=UIBackgroundTaskInvalid;[UIApplication.sharedApplication endBackgroundTask:task];}}
-- (void)enteredBackground {if(!self.pocketMode && !self.wakeEnabled)[self cancelAgent];else if(self.recorder || self.waitingPhoto || self.busy)[self beginWork];[self refreshDock];}
+- (void)enteredBackground {if(!self.pocketMode)[self cancelAgent];else if(self.recorder || self.waitingPhoto || self.busy)[self beginWork];[self refreshDock];}
 - (void)restoreAssistantMedia {
-    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo=self.pocketMode?@{MPMediaItemPropertyTitle:@"Astor • помощник на смене",MPMediaItemPropertyArtist:self.pocketAction.selectedSegmentIndex==1?@"Учебная подсказка / фото / повтор":@"Голос / фото / повтор",MPNowPlayingInfoPropertyIsLiveStream:@YES}:nil;
+    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo=self.pocketMode?@{MPMediaItemPropertyTitle:@"Astor • помощник на смене",MPMediaItemPropertyArtist:@"Голос / фото / повтор шага",MPNowPlayingInfoPropertyIsLiveStream:@YES}:nil;
     MPNowPlayingInfoCenter.defaultCenter.playbackState=MPNowPlayingPlaybackStatePaused;
 }
 - (NSURL *)musicURL {return [NSURL fileURLWithPath:[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"Ilkutki.m4a"]];}
@@ -1041,17 +1071,18 @@
                     else if(action==1)[weak.music play];else if(action==2)[weak.music pause];else if(action==4){weak.music.currentTime=0;[weak.music play];}else if(action==5){[weak.music stop];weak.music=nil;[weak restoreAssistantMedia];}
                     MPNowPlayingInfoCenter.defaultCenter.playbackState=weak.music.isPlaying?MPNowPlayingPlaybackStatePlaying:MPNowPlayingPlaybackStatePaused;return;
                 }
-                if(weak.pocketAction.selectedSegmentIndex==1 && !weak.recorder && !weak.startingVoice){
-                    if(action<=2)[weak remoteBrief];else if(action==3){if(weak.lunch.active)[weak lunchPhoto];else [weak takePhoto];}else if(action==4)[weak remoteBrief];else [weak cancelAgent];return;
-                }
-                if(action==2 && weak.startingVoice){[weak cancelAgent];return;}if(action<=2){if(action==0 || (action==1 && !weak.recorder) || (action==2 && weak.recorder))[weak voice];}else if(action==3)[weak takePhoto];else if(action==4)[weak repeatAnswer];else [weak cancelAgent];
+                if(action==2 && weak.startingVoice){[weak cancelAgent];return;}
+                if(action<=2){if(action==0 || (action==1 && !weak.recorder) || (action==2 && weak.recorder))[weak voice];}
+                else if(action==3){if(weak.lunch.active)[weak lunchPhoto];else [weak takePhoto];}
+                else if(action==4){if(weak.lunch.active && !weak.recorder && !weak.startingVoice)[weak remoteBrief];else [weak repeatAnswer];}
+                else [weak cancelAgent];
             });return MPRemoteCommandHandlerStatusSuccess;
         }];[self.remoteTargets addObject:handler];
     }
     [self restoreAssistantMedia];
     UIButtonConfiguration *style=self.pocketButton.configuration;style.title=@"Без экрана · выключить тест";self.pocketButton.configuration=style;
     [self log:@"Тест без экрана включён. Доставка кнопок и работа при блокировке ещё не проверены. Нет постоянной записи."];
-    if(announce && ![NSProcessInfo.processInfo.arguments containsObject:@"--astor-music-probe"])[self speakAnswer:@"Тест без экрана включён. Проверим двойное касание: голос, фото и повтор. Для ответа Butler нужно подключить сервер."];
+    if(announce && ![NSProcessInfo.processInfo.arguments containsObject:@"--astor-music-probe"])[self speakAnswer:@"Режим без экрана включён. Двойное касание — вопрос, касание назад — повтор шага."];
 }
 
 - (void)stop {

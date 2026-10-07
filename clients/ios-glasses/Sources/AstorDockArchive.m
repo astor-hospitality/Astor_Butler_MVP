@@ -18,8 +18,9 @@
     if(!(self=[super init]))return nil;
     NSURL *directory=[[NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"AstorDockArchive" isDirectory:YES];
     _queue=[[AstorDockQueue alloc]initWithDirectory:directory];_sync=[[AstorDockSync alloc]initWithQueue:_queue];_uploader=[[AstorDockUploader alloc]initWithQueue:_queue];
-    // Enabled only in a build whose signed HotspotConfiguration entitlement was verified.
-    _sync.wifiImportEnabled=[NSBundle.mainBundle.infoDictionary[@"AstorWiFiImportEnabled"] boolValue];
+    // Wi-Fi import of the glasses' own memory is not part of the working app: it needs a signed
+    // HotspotConfiguration entitlement this build cannot have. The path stays unreachable.
+    _sync.wifiImportEnabled=NO;
     __weak typeof(self) weak=self;
     _sync.changed=^(NSString *status){[weak status:status];};
     _uploader.changed=^(NSString *status){[weak status:status];};
@@ -37,7 +38,7 @@
 - (UIStackView *)makePanel {
     self.label=[UILabel new];self.label.numberOfLines=0;self.label.textColor=[UIColor colorWithWhite:.9 alpha:1];self.label.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];self.label.adjustsFontForContentSizeCategory=YES;
     self.progress=[UILabel new];self.progress.numberOfLines=0;self.progress.textColor=[UIColor colorWithWhite:.7 alpha:1];self.progress.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];self.progress.adjustsFontForContentSizeCategory=YES;
-    self.progress.text=self.sync.wifiImportEnabled?@"Перед съёмкой подготовьте сессию. Зарядка очков поставит новые записи на выгрузку. Исходники остаются на очках.":@"В этой сборке архивируем фото и голос, полученные приложением. Сначала подготовьте сессию. Записи в памяти очков требуют доступа к их Wi-Fi.";
+    self.progress.text=@"Архивируем фото и голос, полученные приложением. Подготовьте сессию: зарядка очков поставит её на выгрузку. Записи из памяти очков в этой сборке не импортируются.";
     UIStackView *panel=[[UIStackView alloc]initWithArrangedSubviews:@[self.label,self.progress,[self button:@"Подготовить архив сессии" action:@selector(prepare)],[self button:@"Выгрузить сейчас" action:@selector(importNow)],[self button:@"Повторить отправку" action:@selector(retry)]]];
     panel.axis=UILayoutConstraintAxisVertical;panel.spacing=12;[self refresh];return panel;
 }

@@ -21,7 +21,6 @@ targets:
       - sdk: MobileCoreServices.framework
       - sdk: MediaPlayer.framework
       - sdk: CallKit.framework
-      - sdk: Speech.framework
       - sdk: AppIntents.framework
         weak: true
     info:
@@ -32,16 +31,12 @@ targets:
         INAlternativeAppNames:
           - INAlternativeAppName: Астор
             INAlternativeAppNamePronunciationHint: астор
-          - INAlternativeAppName: Астра
-            INAlternativeAppNamePronunciationHint: астра
         UILaunchScreen: {}
         UIBackgroundModes: [bluetooth-central, audio]
         NSBluetoothAlwaysUsageDescription: Подключение к вашим очкам для проверки камеры и звука.
         NSBluetoothPeripheralUsageDescription: Подключение к вашим очкам.
         NSBluetoothWhileInUseUsageDescription: Подключение к вашим очкам.
-        NSLocalNetworkUsageDescription: Получение видеопотока и записей с ваших очков по Wi-Fi.
-        NSMicrophoneUsageDescription: Проверка микрофона очков для голосового агента.
-        NSSpeechRecognitionUsageDescription: Локальное распознавание команды «Астор» для запуска голосового вопроса.
+        NSMicrophoneUsageDescription: Вопросы к Астору и пауза в разговоре перед сообщением сотруднику.
     settings:
       configs:
         Debug:
