@@ -21,6 +21,7 @@ targets:
       - sdk: MobileCoreServices.framework
       - sdk: MediaPlayer.framework
       - sdk: CallKit.framework
+      - sdk: UserNotifications.framework
       - sdk: AppIntents.framework
         weak: true
     info:
