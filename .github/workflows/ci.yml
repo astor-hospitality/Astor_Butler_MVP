@@ -96,6 +96,9 @@ jobs:
       - name: AERIS menu sync tests
         run: node --test scripts/aeris_menu/test/*.test.mjs
 
+      - name: Saby stub tests
+        run: node --test scripts/saby_stub/test/*.test.mjs
+
   android-glasses:
     name: Android glasses client rules
     runs-on: ubuntu-latest
