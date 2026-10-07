@@ -21,7 +21,8 @@ class GlassesReportControllerTest {
     private final GlassesAccess access = new GlassesAccess("", "test-venue", "test-staff", "");
     private final GlassesS3Storage storage = mock(GlassesS3Storage.class);
     private final GlassesSessionJournal journal = new GlassesSessionJournal(storage, Clock.systemUTC(), false);
-    private final GlassesReportController controller = new GlassesReportController(access, journal, storage, PASSWORD);
+    private final GlassesReportController controller =
+            new GlassesReportController(new GlassesReportAuth(access, PASSWORD), journal, storage);
 
     private MockHttpServletRequest get(String path, String user, String password) {
         var request = new MockHttpServletRequest("GET", path);
@@ -82,7 +83,7 @@ class GlassesReportControllerTest {
         var bearer = new MockHttpServletRequest("GET", "/api/glasses/sessions");
         bearer.addHeader("Authorization", "Bearer " + PASSWORD);
         assertThat(controller.sessions(bearer).getStatusCode().value()).isEqualTo(401);
-        var unconfigured = new GlassesReportController(access, journal, storage, "");
+        var unconfigured = new GlassesReportController(new GlassesReportAuth(access, ""), journal, storage);
         var result = unconfigured.sessions(get("/api/glasses/sessions", "astor", ""));
         assertThat(result.getStatusCode().value()).isEqualTo(503);
         assertThat(((GlassesController.ErrorResponse) result.getBody()).error()).containsEntry("code", "REPORT_UNAVAILABLE");

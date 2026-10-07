@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpResponse.BodyHandler;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -23,6 +24,11 @@ class GlassesSpeechTest {
         return response;
     }
 
+    /** Mockito cannot infer the body type of send(), so the matcher names it. */
+    private org.mockito.stubbing.OngoingStubbing<HttpResponse<byte[]>> whenSent() throws Exception {
+        return when(client.send(any(HttpRequest.class), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any()));
+    }
+
     private String sentForm(HttpRequest request) {
         AtomicReference<String> form = new AtomicReference<>("");
         request.bodyPublisher().ifPresent(publisher -> publisher.subscribe(new java.util.concurrent.Flow.Subscriber<>() {
@@ -36,7 +42,7 @@ class GlassesSpeechTest {
 
     @Test void asksForOneMalePremiumVoiceWithTheKeyInTheHeader() throws Exception {
         byte[] mp3 = {(byte) 0xFF, (byte) 0xFB, 1, 2};
-        when(client.send(any(), any())).thenReturn(response(200, mp3));
+        whenSent().thenReturn(response(200, mp3));
         var speech = new GlassesSpeech(client, true, "filipp");
 
         assertThat(speech.synthesize("  Стол пять ждёт счёт.  ")).isEqualTo(mp3);
@@ -44,7 +50,7 @@ class GlassesSpeechTest {
         assertThat(speech.voiceName()).isEqualTo("filipp");
 
         var captor = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
-        verify(client).send(captor.capture(), any());
+        verify(client).send(captor.capture(), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any());
         HttpRequest request = captor.getValue();
         assertThat(request.uri().toString()).isEqualTo("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize");
         assertThat(request.headers().firstValue("Authorization")).hasValue("Api-Key unit-key");
@@ -64,18 +70,18 @@ class GlassesSpeechTest {
     }
 
     @Test void aProviderFailureLeavesTheTextToThePhoneWithoutLeakingAnything() throws Exception {
-        when(client.send(any(), any())).thenReturn(response(401, new byte[]{1}));
+        whenSent().thenReturn(response(401, new byte[]{1}));
         var speech = new GlassesSpeech(client, true, "filipp");
         assertThat(speech.synthesize("Строка")).isNull();
         assertThat(speech.ready()).isFalse();
 
-        when(client.send(any(), any())).thenReturn(response(200, new byte[0]));
+        whenSent().thenReturn(response(200, new byte[0]));
         assertThat(speech.synthesize("Строка")).isNull();
 
-        when(client.send(any(), any())).thenReturn(response(200, new byte[GlassesSpeech.AUDIO_LIMIT + 1]));
+        whenSent().thenReturn(response(200, new byte[GlassesSpeech.AUDIO_LIMIT + 1]));
         assertThat(speech.synthesize("Строка")).isNull();
 
-        when(client.send(any(), any())).thenThrow(new java.io.IOException("private tts key diagnostic"));
+        whenSent().thenThrow(new java.io.IOException("private tts key diagnostic"));
         assertThat(speech.synthesize("Строка")).isNull();
         assertThat(speech.ready()).isFalse();
     }
