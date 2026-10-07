@@ -1,15 +1,22 @@
 package museon_online.astor_butler.domain.booking;
 
 import museon_online.astor_butler.api.common.ApiException;
+import museon_online.astor_butler.domain.booking.external.ExternalAvailabilityResult;
+import museon_online.astor_butler.domain.booking.external.ExternalReservationProvider;
+import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,7 +27,18 @@ class TableReservationServiceTest {
 
     private final TableReservationRepository repository = mock(TableReservationRepository.class);
     private final TableReservationNotificationService notificationService = mock(TableReservationNotificationService.class);
-    private final TableReservationService service = new TableReservationService(repository, notificationService);
+    private final ExternalReservationProvider externalProvider = mock(ExternalReservationProvider.class);
+    private final TableReservationService service =
+            new TableReservationService(repository, notificationService, externalProvider);
+
+    @BeforeEach
+    void restaurantSystemIsSwitchedOffByDefault() {
+        when(externalProvider.providerId()).thenReturn("SABY");
+        when(externalProvider.checkAvailability(any()))
+                .thenReturn(ExternalAvailabilityResult.unavailableBecauseUnconfigured("SABY", List.of()));
+        when(externalProvider.reserve(any(), any()))
+                .thenReturn(ExternalReservationResult.rejectedBecauseUnconfigured("SABY", List.of()));
+    }
 
     @Test
     void createsReservationWhenTableIsAvailable() {
@@ -38,7 +56,133 @@ class TableReservationServiceTest {
 
         assertThat(result).isEqualTo(expected);
         verify(repository).createAwaitingManagerOrder(command, table);
-        verify(notificationService).notifyHostessApprovalRequest(expected);
+        verify(notificationService).notifyHostessApprovalRequest(eq(expected), any());
+        verify(repository, never()).attachExternalId(any(), any());
+    }
+
+    @Test
+    void writesTheStoredOrderToTheRestaurantSystemAndKeepsItsId() {
+        Instant start = Instant.parse("2026-06-06T17:00:00Z");
+        Instant end = Instant.parse("2026-06-06T19:00:00Z");
+        VenueTable table = table(5L, "5", 4, true, true);
+        TableReservationCommand command = command(null, start, end, 3);
+        TableReservationOrder local = order(10L, table);
+        TableReservationOrder linked = withExternalId(local, "saby-1");
+        ExternalReservationResult created = externalResult(true, "SABY_ORDER_CREATED_UNCONFIRMED", "saby-1");
+
+        when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("AVAILABLE", "Стол 5"));
+        when(externalProvider.reserve(any(), eq("10"))).thenReturn(created);
+        when(repository.findTables("AERIS")).thenReturn(List.of(table));
+        when(repository.findAvailableTables("AERIS", start, end, 3)).thenReturn(List.of(table));
+        when(repository.createAwaitingManagerOrder(command, table)).thenReturn(local);
+        when(repository.attachExternalId(10L, "saby-1")).thenReturn(linked);
+
+        TableReservationOrder result = service.createReservation(command);
+
+        var sent = forClass(TableReservationCommand.class);
+        verify(externalProvider).reserve(sent.capture(), eq("10"));
+        // The provider gets the table that was chosen and the phone as stored, not the guest's raw request.
+        assertThat(sent.getValue().tableCode()).isEqualTo("5");
+        assertThat(sent.getValue().venueCode()).isEqualTo("AERIS");
+        assertThat(sent.getValue().requestedStartAt()).isEqualTo(local.requestedStartAt());
+        assertThat(sent.getValue().partySize()).isEqualTo(3);
+        assertThat(sent.getValue().guestName()).isEqualTo("Наталья");
+        assertThat(sent.getValue().guestPhone()).isEqualTo("+79990000000");
+        assertThat(result.sbisExternalId()).isEqualTo("saby-1");
+        verify(notificationService).notifyHostessApprovalRequest(linked, created);
+    }
+
+    @Test
+    void refusesATableTheRestaurantSystemDoesNotOffer() {
+        Instant start = Instant.parse("2026-06-06T17:00:00Z");
+        Instant end = Instant.parse("2026-06-06T19:00:00Z");
+        VenueTable table = table(5L, "5", 4, true, true);
+
+        when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("AVAILABLE", "6"));
+        when(repository.findTables("AERIS")).thenReturn(List.of(table, table(6L, "6", 4, true, true)));
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table));
+
+        assertThatThrownBy(() -> service.createReservation(command("5", start, end, 3)))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("Table is busy in the restaurant booking system");
+        verify(repository, never()).createAwaitingManagerOrder(any(), any());
+        verify(externalProvider, never()).reserve(any(), any());
+    }
+
+    @Test
+    void offersAndAutoSelectsOnlyTablesTheRestaurantSystemOffers() {
+        Instant start = Instant.parse("2026-06-06T17:00:00Z");
+        Instant end = Instant.parse("2026-06-06T19:00:00Z");
+        VenueTable busyInSaby = table(17L, "17", 2, true, true);
+        VenueTable free = table(18L, "18", 2, true, true);
+        TableReservationCommand command = command(null, start, end, 2);
+
+        when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("AVAILABLE", "18"));
+        when(repository.findTables("AERIS")).thenReturn(List.of(busyInSaby, free));
+        when(repository.findAvailableTables("AERIS", start, end, 2)).thenReturn(List.of(busyInSaby, free));
+        when(repository.createAwaitingManagerOrder(command, free)).thenReturn(order(11L, free));
+
+        TableReservationOrder result = service.createReservation(command);
+        List<TableAvailability> offered = service.availability("AERIS", start, end, 2);
+
+        assertThat(result.tableCode()).isEqualTo("18");
+        assertThat(offered).hasSize(1);
+        assertThat(offered.get(0).table().tableCode()).isEqualTo("18");
+    }
+
+    @Test
+    void aFullRestaurantSystemLeavesNoTableToBook() {
+        Instant start = Instant.parse("2026-06-06T17:00:00Z");
+        Instant end = Instant.parse("2026-06-06T19:00:00Z");
+        VenueTable table = table(17L, "17", 2, true, true);
+
+        when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("NO_TABLES_AVAILABLE"));
+        when(repository.findAvailableTables("AERIS", start, end, 2)).thenReturn(List.of(table));
+
+        assertThat(service.availability("AERIS", start, end, 2)).isEmpty();
+        assertThatThrownBy(() -> service.createReservation(command(null, start, end, 2)))
+                .isInstanceOf(ApiException.class)
+                .hasMessage("No available table for requested time window and party size");
+    }
+
+    @Test
+    void anUnreachableRestaurantSystemDoesNotStopTheLocalFlow() {
+        Instant start = Instant.parse("2026-06-06T17:00:00Z");
+        Instant end = Instant.parse("2026-06-06T19:00:00Z");
+        VenueTable table = table(5L, "5", 4, true, true);
+        TableReservationCommand command = command("5", start, end, 3);
+        TableReservationOrder local = order(10L, table);
+        ExternalReservationResult unknown = externalResult(false, "PROVIDER_RESULT_UNKNOWN", "");
+
+        when(externalProvider.checkAvailability(any())).thenReturn(
+                new ExternalAvailabilityResult(false, true, "SABY", "PROVIDER_TIMEOUT", "", List.of(), Map.of()));
+        when(externalProvider.reserve(any(), any())).thenReturn(unknown);
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table));
+        when(repository.createAwaitingManagerOrder(command, table)).thenReturn(local);
+
+        TableReservationOrder result = service.createReservation(command);
+
+        assertThat(result).isEqualTo(local);
+        verify(repository, never()).attachExternalId(any(), any());
+        verify(notificationService).notifyHostessApprovalRequest(local, unknown);
+    }
+
+    @Test
+    void cancelsTheExternalBookingWhenItsIdCannotBeStored() {
+        Instant start = Instant.parse("2026-06-06T17:00:00Z");
+        Instant end = Instant.parse("2026-06-06T19:00:00Z");
+        VenueTable table = table(5L, "5", 4, true, true);
+        TableReservationCommand command = command("5", start, end, 3);
+
+        when(externalProvider.reserve(any(), any()))
+                .thenReturn(externalResult(true, "SABY_ORDER_CREATED_UNCONFIRMED", "saby-1"));
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table));
+        when(repository.createAwaitingManagerOrder(command, table)).thenReturn(order(10L, table));
+        when(repository.attachExternalId(10L, "saby-1")).thenThrow(new IllegalStateException("database is down"));
+
+        assertThatThrownBy(() -> service.createReservation(command))
+                .isInstanceOf(IllegalStateException.class);
+        verify(externalProvider).cancelReservation("saby-1");
     }
 
     @Test
@@ -179,7 +323,37 @@ class TableReservationServiceTest {
         verify(repository).changeReservation(eq(12L), captor.capture(), eq(betterFit));
         assertThat(captor.getValue().partySize()).isEqualTo(5);
         assertThat(captor.getValue().seatingPreference()).isEqualTo("Хочу спокойный стол");
-        verify(notificationService).notifyHostessApprovalRequest(changed);
+        verify(notificationService).notifyHostessApprovalRequest(eq(changed), any());
+        verify(externalProvider).reserve(any(), eq("12"));
+    }
+
+    @Test
+    void aChangedOrderThatIsAlreadyInTheRestaurantSystemIsLeftForTheHostessToFixThere() {
+        VenueTable table = table(5L, "5", 4, true, true);
+        TableReservationOrder current = withExternalId(order(12L, table, TableReservationStatus.CONFIRMED), "saby-1");
+        TableReservationOrder changed = withExternalId(order(12L, table), "saby-1");
+        Instant newStart = Instant.parse("2026-06-06T17:30:00Z");
+        Instant newEnd = Instant.parse("2026-06-06T19:30:00Z");
+        TableReservationChangeCommand command = new TableReservationChangeCommand(
+                "AERIS", null, null, null, newStart, newEnd, 3, null);
+
+        // The restaurant system offers only table 6: table 5 is taken there by this very booking.
+        when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("AVAILABLE", "6"));
+        when(repository.findTables("AERIS")).thenReturn(List.of(table, table(6L, "6", 4, true, true)));
+        when(repository.findOrder(12L)).thenReturn(Optional.of(current));
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table));
+        when(repository.changeReservation(eq(12L), any(TableReservationChangeCommand.class), eq(table))).thenReturn(changed);
+
+        TableReservationOrder result = service.changeByGuest(12L, command);
+
+        var sync = forClass(ExternalReservationResult.class);
+        assertThat(result).isEqualTo(changed);
+        verify(notificationService).notifyHostessApprovalRequest(eq(changed), sync.capture());
+        assertThat(sync.getValue().status()).isEqualTo(TableReservationService.EXTERNAL_CHANGE_NOT_SYNCED);
+        assertThat(sync.getValue().providerConfigured()).isTrue();
+        assertThat(sync.getValue().created()).isFalse();
+        verify(externalProvider, never()).reserve(any(), any());
+        verify(repository, never()).attachExternalId(any(), any());
     }
 
     @Test
@@ -194,6 +368,31 @@ class TableReservationServiceTest {
         TableReservationOrder result = service.reject(12L);
 
         assertThat(result.status()).isEqualTo(TableReservationStatus.REJECTED);
+        verify(externalProvider, never()).cancelReservation(any());
+    }
+
+    @Test
+    void rejectionAndGuestCancellationRemoveTheExternalBooking() {
+        VenueTable table = table(5L, "5", 4, true, true);
+        TableReservationOrder awaiting = withExternalId(order(12L, table), "saby-1");
+        TableReservationOrder rejected = withExternalId(order(12L, table, TableReservationStatus.REJECTED), "saby-1");
+        TableReservationOrder confirmed = withExternalId(order(13L, table, TableReservationStatus.CONFIRMED), "saby-2");
+        TableReservationOrder cancelled = withExternalId(order(13L, table, TableReservationStatus.CANCELLED), "saby-2");
+
+        when(repository.findOrder(12L)).thenReturn(Optional.of(awaiting));
+        when(repository.reject(12L)).thenReturn(rejected);
+        when(repository.findOrder(13L)).thenReturn(Optional.of(confirmed));
+        when(repository.cancel(13L)).thenReturn(cancelled);
+        when(externalProvider.cancelReservation("saby-1")).thenReturn(true);
+        when(externalProvider.cancelReservation("saby-2")).thenReturn(false);
+
+        service.reject(12L);
+        service.cancelByGuest(13L);
+
+        verify(externalProvider).cancelReservation("saby-1");
+        verify(externalProvider).cancelReservation("saby-2");
+        verify(notificationService, never()).notifyHostessExternalCancelFailed(rejected);
+        verify(notificationService).notifyHostessExternalCancelFailed(cancelled);
     }
 
     @Test
@@ -305,6 +504,46 @@ class TableReservationServiceTest {
                 Integer.parseInt(code),
                 Instant.parse("2026-06-05T00:00:00Z"),
                 Instant.parse("2026-06-05T00:00:00Z")
+        );
+    }
+
+    private ExternalAvailabilityResult externalAnswer(String status, String... freeTableNames) {
+        List<Map<String, Object>> candidates = Arrays.stream(freeTableNames)
+                .map(name -> Map.<String, Object>of("tableName", name, "capacity", 4))
+                .toList();
+        return new ExternalAvailabilityResult(
+                !candidates.isEmpty(), true, "SABY", status, "", List.of(), Map.of("candidates", candidates, "hasMore", false));
+    }
+
+    private ExternalReservationResult externalResult(boolean created, String status, String externalId) {
+        return new ExternalReservationResult(created, true, "SABY", status, externalId, "", List.of(), Map.of());
+    }
+
+    private TableReservationOrder withExternalId(TableReservationOrder order, String externalId) {
+        return new TableReservationOrder(
+                order.id(),
+                order.chatId(),
+                order.telegramUserId(),
+                order.userId(),
+                order.tableId(),
+                order.tableCode(),
+                order.tableDisplayName(),
+                order.preferredZone(),
+                order.seatingPreference(),
+                order.status(),
+                order.source(),
+                order.requestedStartAt(),
+                order.requestedEndAt(),
+                order.partySize(),
+                order.guestName(),
+                order.guestPhone(),
+                order.guestComment(),
+                order.managerTelegramId(),
+                order.managerUserId(),
+                order.hostessChatId(),
+                externalId,
+                order.createdAt(),
+                order.updatedAt()
         );
     }
 

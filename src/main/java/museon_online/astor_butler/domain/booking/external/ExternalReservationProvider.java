@@ -14,6 +14,13 @@ public interface ExternalReservationProvider {
 
     ExternalReservationResult reserve(TableReservationCommand command, String idempotencyKey);
 
+    /**
+     * Asks the provider to cancel a booking it created.
+     *
+     * @return false when the booking is not known to be cancelled, so a person has to check it
+     */
+    boolean cancelReservation(String externalReservationId);
+
     record ExternalAvailabilityRequest(
             String venueCode,
             Instant requestedStartAt,

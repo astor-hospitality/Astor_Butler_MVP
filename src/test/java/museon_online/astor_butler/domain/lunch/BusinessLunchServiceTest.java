@@ -8,6 +8,7 @@ import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
 import museon_online.astor_butler.domain.booking.VenueTable;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
+import museon_online.astor_butler.domain.booking.external.NoExternalReservations;
 import museon_online.astor_butler.fsm.scenario.BookingTimeProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -267,7 +268,8 @@ class BusinessLunchServiceTest {
     }
 
     private BusinessLunchService overTheRealReservationRules(TableReservationRepository repository) {
-        TableReservationService reservations = new TableReservationService(repository, mock(TableReservationNotificationService.class));
+        TableReservationService reservations = new TableReservationService(
+                repository, mock(TableReservationNotificationService.class), new NoExternalReservations());
         return new BusinessLunchService(reservations, List.of(), timeProvider, new BusinessLunchCatalog(List.of(offer)));
     }
 
