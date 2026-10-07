@@ -97,10 +97,14 @@ class GlassesSessionEventsControllerTest {
                 mapper.writeValueAsString(Map.of("requestId", BATCH, "sessionId", SESSION, "scenarioCode", "LIVE", "events", List.of(event("STEP_DONE", null)))),
                 mapper.writeValueAsString(Map.of("requestId", BATCH, "sessionId", SESSION, "scenarioCode", "BUSINESS_LUNCH_TWO", "staffId", "x", "events", List.of(event("STEP_DONE", null)))),
                 mapper.writeValueAsString(Map.of("requestId", "nope", "sessionId", SESSION, "scenarioCode", "BUSINESS_LUNCH_TWO", "events", List.of(event("STEP_DONE", null)))));
+        // A fresh controller per body: the pilot's ten requests a minute are shared with assist.
         for (String body : rejected) {
-            var result = controller.events(request(body, TOKEN));
-            assertThat(result.getStatusCode().value()).as(body).isEqualTo(400);
-            assertThat(code(result.getBody())).isEqualTo("MALFORMED_REQUEST");
+            try (var budget = new GlassesAssistService(mock(ModelGateway.class), true, 1000)) {
+                var fresh = new GlassesSessionEventsController(access(), budget, journal, mapper);
+                var result = fresh.events(request(body, TOKEN));
+                assertThat(result.getStatusCode().value()).as(body).isEqualTo(400);
+                assertThat(code(result.getBody())).isEqualTo("MALFORMED_REQUEST");
+            }
         }
         assertThat(journal.sessions(new GlassesAccess.Scope("test-venue", "test-staff"))).isEmpty();
     }
