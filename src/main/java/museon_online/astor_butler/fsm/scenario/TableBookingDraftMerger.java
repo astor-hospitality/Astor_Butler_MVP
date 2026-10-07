@@ -26,6 +26,8 @@ public class TableBookingDraftMerger {
     // Either a whole clock time, or a bare hour that is not a piece of a date or of a clock time that does not exist ("25:00").
     private static final Pattern TIME = Pattern.compile(
             "(?<![:./-])\\b(?:([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)|([01]?\\d|2[0-3])(?:\\s*(?:час(?:ов|а)?|ч))?\\b(?![:./-]))");
+    /** How sure a number is the hour when the guest put "в" or "к" before it; a word of the time of day or a clock time is surer still. */
+    private static final int SAID_AS_AN_HOUR = 2;
     private static final Pattern TABLE_NUMBER_AFTER_WORD = Pattern.compile("(?:^|\\s)стол(?:ик)?\\s*(?:№\\s*|номер\\s*)?(1\\d|[1-9])(?:\\s|$)");
     private static final Pattern TABLE_NUMBER_ALONE = Pattern.compile("^(1\\d|[1-9])$");
     private static final Pattern TABLE_NUMBER_SELECTION = Pattern.compile("^(?:стол(?:ик)?\\s*)?(?:[1-9]|1\\d)$");
@@ -202,9 +204,6 @@ public class TableBookingDraftMerger {
         if (state == BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE || state == BotState.TABLE_BOOKING_COLLECT_SEATING_PREFERENCE) {
             return true;
         }
-        if (looksLikeTableSelection(normalized)) {
-            return true;
-        }
         return state == BotState.TABLE_BOOKING_COLLECT_DATE && extractedDate.isEmpty();
     }
 
@@ -282,9 +281,12 @@ public class TableBookingDraftMerger {
     }
 
     private Optional<LocalTime> extractTime(String text) {
-        if (looksLikePartySizeAnswer(text) || looksLikeTableSelection(text)) {
+        if (looksLikePartySizeAnswer(text)) {
             return Optional.empty();
         }
+        // In a phrase that names a table or a zone a lone number is the table: "5", "стол 12", "у окна 7".
+        // There only a number said as an hour is the time: "стол 5 в 20", "у окна к 8 вечера", "vip 21:00".
+        int atLeast = looksLikeTableSelection(text) ? SAID_AS_AN_HOUR : 1;
         // "19.30" is how many guests write a time; the TIME pattern deliberately skips digits next to a dot.
         Optional<LocalTime> dotted = GuestDateText.dottedTime(text, timeProvider.today());
         if (dotted.isPresent()) {
@@ -295,7 +297,7 @@ public class TableBookingDraftMerger {
         int surest = 0;
         while (matcher.find()) {
             int sure = howSureItIsTheHour(matcher, text);
-            if (sure > surest) {
+            if (sure >= atLeast && sure > surest) {
                 surest = sure;
                 hour = matcher.toMatchResult();
             }
@@ -481,7 +483,7 @@ public class TableBookingDraftMerger {
             return 3;
         }
         if (before.equals("в") || before.endsWith(" в") || before.equals("к") || before.endsWith(" к")) {
-            return 2;
+            return SAID_AS_AN_HOUR;
         }
         return 1;
     }
