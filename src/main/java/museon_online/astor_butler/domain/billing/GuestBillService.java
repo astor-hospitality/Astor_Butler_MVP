@@ -106,6 +106,62 @@ public class GuestBillService {
         return Optional.of(updated);
     }
 
+    /** The guest was sent the venue's payment page. The link itself is not kept: it is the venue's and can be asked again. */
+    @Transactional
+    public GuestBill paymentLinkSent(Long billId, String externalProvider) {
+        GuestBill bill = require(billId);
+        GuestBill updated = bills.markPaymentLinkSent(bill.id());
+        journal.append(bill.id(), BillOperationType.PAYMENT_LINK_ISSUED, true, BillActor.SYSTEM, null, "provider=" + externalProvider);
+        return updated;
+    }
+
+    /** The venue's payment page could not be had this time; the bill stays as it is and the prompter tries again. */
+    @Transactional
+    public void paymentLinkFailed(Long billId, String externalProvider, String errorCode) {
+        require(billId);
+        journal.append(billId, BillOperationType.PAYMENT_LINK_FAILED, false, BillActor.SYSTEM, errorCode, "provider=" + externalProvider);
+    }
+
+    /** The guest was told the venue saw the payment. */
+    @Transactional
+    public GuestBill paidNotified(Long billId) {
+        GuestBill bill = require(billId);
+        GuestBill updated = bills.markPaidNotified(bill.id());
+        journal.append(bill.id(), BillOperationType.PAID_NOTIFIED, true, BillActor.SYSTEM, null, null);
+        return updated;
+    }
+
+    /** A note in the journal about the guest's word after the visit; the word itself lives in {@link VisitReview}. */
+    @Transactional
+    public void reviewNoted(Long billId, BillOperationType type, String details) {
+        if (type != BillOperationType.REVIEW_PROMPTED && type != BillOperationType.REVIEW_RECEIVED && type != BillOperationType.TIP_REQUESTED) {
+            throw new IllegalArgumentException("Not a review note: " + type);
+        }
+        require(billId);
+        journal.append(billId, type, true, type == BillOperationType.REVIEW_PROMPTED ? BillActor.SYSTEM : BillActor.GUEST, null, details);
+    }
+
+    /** Issued bills whose guest has not been sent the payment link yet. */
+    public List<GuestBill> awaitingPaymentLink(int limit) {
+        return bills.findAwaitingPaymentLink(Math.max(1, Math.min(limit, 200)));
+    }
+
+    /** Bills whose visit ended inside the window and that were not asked about yet. */
+    public List<GuestBill> visitsEndedWithoutReview(java.time.Instant from, java.time.Instant to, int limit) {
+        return bills.findVisitsEndedWithoutReview(from, to, Math.max(1, Math.min(limit, 200)));
+    }
+
+    public Optional<GuestBill> find(Long billId) {
+        return billId == null ? Optional.empty() : bills.find(billId);
+    }
+
+    public Optional<GuestBill> findByExternalOrder(String externalProvider, String externalOrderId) {
+        if (isBlank(externalProvider) || isBlank(externalOrderId)) {
+            return Optional.empty();
+        }
+        return bills.findByExternalOrder(externalProvider, externalOrderId);
+    }
+
     /** A paid bill is the venue's to refund, so it cannot be cancelled here. */
     @Transactional
     public GuestBill cancel(Long billId, BillActor actor, String reason) {

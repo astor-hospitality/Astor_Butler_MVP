@@ -31,7 +31,8 @@ public class LunchBillRecorder implements BusinessLunchOrderListener {
                 order.source(),
                 order.tableReservationId(),
                 "business-lunch:" + order.venueCode(),
-                estimate(order)
+                estimate(order),
+                order.endAt()
         ));
         if (external == null || !external.attempted()) {
             return;

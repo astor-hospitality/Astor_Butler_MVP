@@ -20,6 +20,7 @@ public final class BillingTestDatabase {
                 "jdbc:h2:mem:billing-" + UUID.randomUUID() + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
         try (Connection connection = dataSource.getConnection()) {
             ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/changelog/2026-10-07-guest-billing.sql"));
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/changelog/2026-10-08-guest-billing-payment-review.sql"));
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot build the billing test database", e);
         }

@@ -20,6 +20,8 @@ public class SabyReservationProperties {
 
     private boolean enabled = false;
     private boolean writeEnabled = false;
+    /** Hand guests the payment page Saby issues for their order; needs acquiring set up in Presto. */
+    private boolean paymentEnabled = false;
     private String baseUrl = "https://api.sbis.ru";
     private String authUrl = "https://online.sbis.ru/oauth/service/";
     private String appClientId = "";

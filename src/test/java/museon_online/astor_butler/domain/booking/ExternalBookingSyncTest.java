@@ -1,5 +1,6 @@
 package museon_online.astor_butler.domain.booking;
 
+import museon_online.astor_butler.domain.billing.BillingSync;
 import museon_online.astor_butler.domain.booking.external.ExternalBookingSnapshot;
 import museon_online.astor_butler.domain.booking.external.ExternalBookingState;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationProvider;
@@ -33,7 +34,8 @@ class ExternalBookingSyncTest {
     private final TableReservationNotificationService notificationService = mock(TableReservationNotificationService.class);
     private final ExternalReservationProvider externalProvider = mock(ExternalReservationProvider.class);
     private final TableReservationService service = new TableReservationService(repository, notificationService, externalProvider);
-    private final ExternalBookingSync sync = new ExternalBookingSync(repository, service, externalProvider);
+    private final BillingSync billingSync = mock(BillingSync.class);
+    private final ExternalBookingSync sync = new ExternalBookingSync(repository, service, externalProvider, billingSync);
 
     @BeforeEach
     void providerIsOn() {
@@ -113,6 +115,10 @@ class ExternalBookingSyncTest {
         verify(repository, never()).reject(any());
         verify(repository, never()).cancel(any());
         verifyNoMoreInteractions(notificationService);
+        // Billing hears every read, including the one that said nothing, and the completed visit above all.
+        verify(billingSync).onVenueSnapshot(eq("SABY"), eq("ext-13"), eq(ExternalBookingState.PENDING), any());
+        verify(billingSync).onVenueSnapshot(eq("SABY"), eq("ext-14"), eq(ExternalBookingState.UNKNOWN), any());
+        verify(billingSync).onVenueSnapshot(eq("SABY"), eq("ext-15"), eq(ExternalBookingState.COMPLETED), any());
     }
 
     @Test
