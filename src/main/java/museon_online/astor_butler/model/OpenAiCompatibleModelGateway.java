@@ -1,0 +1,302 @@
+package museon_online.astor_butler.model;
+
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.restclient.RestTemplateBuilder;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * Model provider for any service that speaks the OpenAI HTTP API: {@code POST /chat/completions}
+ * and {@code POST /embeddings} under one base URL, with a bearer key.
+ *
+ * <p>Selected with {@code ASTOR_MODEL_PROVIDER=openai-compatible}. Model names belong to the
+ * service ({@code GET /models} lists them), so none is assumed: text needs
+ * {@code OPENAI_COMPATIBLE_MODEL}; images and embeddings answer with a fallback until their own
+ * model is set. Model names that callers pass for another provider are ignored.
+ */
+@Slf4j
+@Service
+@ConditionalOnProperty(prefix = "astor.model", name = "provider", havingValue = "openai-compatible", matchIfMissing = false)
+public class OpenAiCompatibleModelGateway implements ModelGateway {
+
+    static final String PROVIDER = "openai-compatible";
+
+    private final RestTemplate restTemplate;
+    private final String baseUrl;
+    private final String apiKey;
+    private final String frontlineModel;
+    private final String qualityModel;
+    private final String visionModel;
+    private final String embeddingModel;
+    private final int maxTokens;
+    private final double temperature;
+    private final boolean jsonMode;
+
+    public OpenAiCompatibleModelGateway(
+            RestTemplateBuilder restTemplateBuilder,
+            @Value("${astor.model.openai-compatible.base-url:}") String baseUrl,
+            @Value("${astor.model.openai-compatible.api-key:}") String apiKey,
+            @Value("${astor.model.openai-compatible.model:}") String frontlineModel,
+            @Value("${astor.model.openai-compatible.quality-model:}") String qualityModel,
+            @Value("${astor.model.openai-compatible.vision-model:}") String visionModel,
+            @Value("${astor.model.openai-compatible.embedding-model:}") String embeddingModel,
+            @Value("${astor.model.openai-compatible.timeout-ms:15000}") int timeoutMs,
+            @Value("${astor.model.openai-compatible.max-tokens:256}") int maxTokens,
+            @Value("${astor.model.openai-compatible.temperature:0.1}") double temperature,
+            @Value("${astor.model.openai-compatible.json-mode:true}") boolean jsonMode
+    ) {
+        Duration timeout = Duration.ofMillis(Math.max(1, timeoutMs));
+        this.restTemplate = restTemplateBuilder
+                .connectTimeout(timeout)
+                .readTimeout(timeout)
+                .build();
+        this.baseUrl = blankToNull(baseUrl) == null ? null : baseUrl.trim().replaceFirst("/+$", "");
+        this.apiKey = blankToNull(apiKey);
+        this.frontlineModel = blankToNull(frontlineModel);
+        this.qualityModel = blankToNull(qualityModel);
+        this.visionModel = blankToNull(visionModel);
+        this.embeddingModel = blankToNull(embeddingModel);
+        this.maxTokens = Math.max(1, maxTokens);
+        this.temperature = temperature;
+        this.jsonMode = jsonMode;
+
+        List<String> missing = new ArrayList<>();
+        if (this.baseUrl == null) {
+            missing.add("OPENAI_COMPATIBLE_BASE_URL");
+        }
+        if (this.apiKey == null) {
+            missing.add("OPENAI_COMPATIBLE_API_KEY");
+        }
+        if (this.frontlineModel == null) {
+            missing.add("OPENAI_COMPATIBLE_MODEL");
+        }
+        if (!missing.isEmpty()) {
+            log.error("Model provider {} is selected but not configured, every model call will fail: missing {}",
+                    PROVIDER, missing);
+        }
+    }
+
+    @Override
+    public ModelTextResponse generateText(ModelTextRequest request) {
+        String model = textModel(request.profile());
+        Map<String, Object> body = completionBody(model, request.prompt() == null ? "" : request.prompt());
+        if (jsonMode && expectsJson(request)) {
+            body.put("response_format", Map.of("type", "json_object"));
+        }
+        long startedAt = System.nanoTime();
+
+        Map<?, ?> response = post("/chat/completions", body);
+
+        Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
+        log.debug(
+                "ModelGateway text generation provider={} profile={} model={} scenario={} state={} purpose={} latencyMs={}",
+                PROVIDER,
+                request.profile(),
+                model,
+                request.scenario(),
+                request.state(),
+                request.purpose(),
+                latency.toMillis()
+        );
+        return new ModelTextResponse(
+                readText(response),
+                PROVIDER,
+                model,
+                ModelCapability.TEXT_GENERATION,
+                latency,
+                false,
+                completionMetadata(response)
+        );
+    }
+
+    @Override
+    public ModelEmbeddingResponse generateEmbedding(ModelEmbeddingRequest request) {
+        if (embeddingModel == null) {
+            return new ModelEmbeddingResponse(
+                    List.of(),
+                    PROVIDER,
+                    "",
+                    ModelCapability.EMBEDDING,
+                    Duration.ZERO,
+                    true,
+                    Map.of("reason", "No embedding model is configured: set OPENAI_COMPATIBLE_EMBEDDING_MODEL")
+            );
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", embeddingModel);
+        body.put("input", request.text() == null ? "" : request.text());
+        long startedAt = System.nanoTime();
+
+        Map<?, ?> response = post("/embeddings", body);
+
+        Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
+        List<Double> embedding = readEmbedding(response);
+        return new ModelEmbeddingResponse(
+                embedding,
+                PROVIDER,
+                embeddingModel,
+                ModelCapability.EMBEDDING,
+                latency,
+                embedding.isEmpty(),
+                Map.of("dimension", embedding.size())
+        );
+    }
+
+    @Override
+    public ModelVisionResponse analyzeImage(ModelVisionRequest request) {
+        if (visionModel == null) {
+            return new ModelVisionResponse(
+                    "",
+                    PROVIDER,
+                    "",
+                    ModelCapability.IMAGE_UNDERSTANDING,
+                    Duration.ZERO,
+                    true,
+                    Map.of("reason", "No vision model is configured: set OPENAI_COMPATIBLE_VISION_MODEL")
+            );
+        }
+        String mimeType = blankToNull(request.mimeType()) == null ? "image/jpeg" : request.mimeType().trim();
+        List<Map<String, Object>> content = List.of(
+                Map.of("type", "text", "text", request.prompt() == null ? "" : request.prompt()),
+                Map.of("type", "image_url", "image_url",
+                        Map.of("url", "data:" + mimeType + ";base64," + (request.imageBase64() == null ? "" : request.imageBase64())))
+        );
+        Map<String, Object> body = completionBody(visionModel, content);
+        long startedAt = System.nanoTime();
+
+        Map<?, ?> response = post("/chat/completions", body);
+
+        Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
+        String text = readText(response);
+        return new ModelVisionResponse(
+                text,
+                PROVIDER,
+                visionModel,
+                ModelCapability.IMAGE_UNDERSTANDING,
+                latency,
+                text.isBlank(),
+                completionMetadata(response)
+        );
+    }
+
+    private String textModel(ModelProfile profile) {
+        if (frontlineModel == null) {
+            throw new IllegalStateException("OpenAI-compatible model is not configured: set OPENAI_COMPATIBLE_MODEL");
+        }
+        return profile == ModelProfile.QUALITY && qualityModel != null ? qualityModel : frontlineModel;
+    }
+
+    private Map<String, Object> completionBody(String model, Object userContent) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("messages", List.of(Map.of("role", "user", "content", userContent)));
+        body.put("max_tokens", maxTokens);
+        // Some models accept only their default temperature; a negative setting leaves it out.
+        if (temperature >= 0) {
+            body.put("temperature", Math.min(2.0, temperature));
+        }
+        body.put("stream", false);
+        return body;
+    }
+
+    private Map<?, ?> post(String path, Map<String, Object> body) {
+        if (baseUrl == null) {
+            throw new IllegalStateException("OpenAI-compatible base URL is not configured: set OPENAI_COMPATIBLE_BASE_URL");
+        }
+        if (apiKey == null) {
+            throw new IllegalStateException("OpenAI-compatible API key is not configured: set OPENAI_COMPATIBLE_API_KEY");
+        }
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+        headers.setBearerAuth(apiKey);
+        ResponseEntity<Map> response = restTemplate.exchange(
+                baseUrl + path,
+                HttpMethod.POST,
+                new HttpEntity<>(body, headers),
+                Map.class
+        );
+        return response.getBody() == null ? Map.of() : response.getBody();
+    }
+
+    private boolean expectsJson(ModelTextRequest request) {
+        Object metadataFlag = request.metadata().get("jsonObject");
+        if (metadataFlag instanceof Boolean flag) {
+            return flag;
+        }
+        String purpose = request.purpose() == null ? "" : request.purpose().toLowerCase(Locale.ROOT);
+        return purpose.contains("json");
+    }
+
+    private Map<?, ?> firstChoice(Map<?, ?> response) {
+        if (response.get("choices") instanceof List<?> choices
+                && !choices.isEmpty()
+                && choices.getFirst() instanceof Map<?, ?> choice) {
+            return choice;
+        }
+        return Map.of();
+    }
+
+    /** The answer text: a plain string, or the text parts of a content list. */
+    private String readText(Map<?, ?> response) {
+        if (!(firstChoice(response).get("message") instanceof Map<?, ?> message)) {
+            return "";
+        }
+        Object content = message.get("content");
+        if (content instanceof String text) {
+            return text;
+        }
+        if (content instanceof List<?> parts) {
+            StringBuilder text = new StringBuilder();
+            for (Object part : parts) {
+                if (part instanceof Map<?, ?> partMap && partMap.get("text") instanceof String partText) {
+                    text.append(partText);
+                }
+            }
+            return text.toString();
+        }
+        return "";
+    }
+
+    private Map<String, Object> completionMetadata(Map<?, ?> response) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("usage", response.get("usage") instanceof Map<?, ?> usage ? usage : Map.of());
+        Object finishReason = firstChoice(response).get("finish_reason");
+        metadata.put("finishReason", finishReason == null ? "" : finishReason.toString());
+        return metadata;
+    }
+
+    private List<Double> readEmbedding(Map<?, ?> response) {
+        if (!(response.get("data") instanceof List<?> data)
+                || data.isEmpty()
+                || !(data.getFirst() instanceof Map<?, ?> first)
+                || !(first.get("embedding") instanceof List<?> values)) {
+            return List.of();
+        }
+        List<Double> embedding = new ArrayList<>(values.size());
+        for (Object value : values) {
+            if (value instanceof Number number) {
+                embedding.add(number.doubleValue());
+            }
+        }
+        return embedding;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+}

@@ -20,7 +20,8 @@ class ModelGatewayProviderTest {
                     SpringAiOllamaModelGateway.class,
                     OllamaModelGateway.class,
                     YandexModelGateway.class,
-                    YandexAiStudioAgentModelGateway.class
+                    YandexAiStudioAgentModelGateway.class,
+                    OpenAiCompatibleModelGateway.class
             )
             .withPropertyValues(
                     "llm.ollama.base-url=http://localhost:11434",
@@ -57,6 +58,21 @@ class ModelGatewayProviderTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(ModelGateway.class);
                     assertThat(context.getBean(ModelGateway.class)).isInstanceOf(YandexModelGateway.class);
+                });
+    }
+
+    @Test
+    void openAiCompatibleProviderCanBeSelectedExplicitly() {
+        contextRunner
+                .withPropertyValues(
+                        "astor.model.provider=openai-compatible",
+                        "astor.model.openai-compatible.base-url=https://models.test/v1",
+                        "astor.model.openai-compatible.api-key=test-key",
+                        "astor.model.openai-compatible.model=test-model"
+                )
+                .run(context -> {
+                    assertThat(context).hasSingleBean(ModelGateway.class);
+                    assertThat(context.getBean(ModelGateway.class)).isInstanceOf(OpenAiCompatibleModelGateway.class);
                 });
     }
 
