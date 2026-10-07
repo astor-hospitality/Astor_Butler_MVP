@@ -57,7 +57,24 @@ jobs:
           cache: maven
 
       - name: Run tests
-        run: mvn -B test
+        run: |
+          set -o pipefail
+          mvn -B test 2>&1 | tee /tmp/maven-test.log
+      # The job log lives in blob storage that some environments cannot read; the run summary can be read
+      # through the API, so a failure says what broke without anyone having to open the web page.
+      - name: Test failure summary
+        if: failure()
+        run: |
+          {
+            echo '### Maven errors'
+            echo '```'
+            grep -E '^\[ERROR\]' /tmp/maven-test.log | head -60 || echo 'no [ERROR] lines captured'
+            echo '```'
+            echo '### Failed tests'
+            echo '```'
+            grep -rhE 'Tests run:.*(Failures: [1-9]|Errors: [1-9])' target/surefire-reports 2>/dev/null | head -20 || echo 'no surefire reports'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node for staff auth checks
         uses: actions/setup-node@v4
