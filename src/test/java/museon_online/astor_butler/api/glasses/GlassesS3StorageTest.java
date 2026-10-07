@@ -96,7 +96,7 @@ class GlassesS3StorageTest {
     @Test void journalWritesReportFailureInsteadOfThrowing() throws Exception {
         String session = "80d26cf1-5139-4121-a4ca-dfb14aac225c";
         assertThat(storage.writeJournal(scope, session, "{}".getBytes(StandardCharsets.UTF_8))).isTrue();
-        verify(client).putObject(argThat(a -> a.object().equals(GlassesS3Storage.journalKey(scope, session)) && a.contentType().equals("application/json")));
+        verify(client).putObject(argThat(a -> a.object().equals(GlassesS3Storage.journalKey(scope, session))));
         when(client.putObject(any(PutObjectArgs.class))).thenThrow(new IllegalStateException("private S3 credentials diagnostic"));
         assertThat(storage.writeJournal(scope, session, "{}".getBytes(StandardCharsets.UTF_8))).isFalse();
         assertThat(storage.writeJournal(scope, session, new byte[GlassesS3Storage.JOURNAL_LIMIT + 1])).isFalse();

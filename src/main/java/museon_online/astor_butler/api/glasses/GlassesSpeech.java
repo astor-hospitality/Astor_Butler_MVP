@@ -1,5 +1,6 @@
 package museon_online.astor_butler.api.glasses;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -34,6 +35,7 @@ public class GlassesSpeech {
     private final HttpClient client;
     private volatile Instant readyUntil = Instant.MIN;
 
+    @Autowired
     public GlassesSpeech(@Value("${astor.glasses.tts-enabled:false}") boolean enabled,
                          @Value("${astor.glasses.tts-endpoint:https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize}") String endpoint,
                          @Value("${astor.glasses.tts-api-key:}") String apiKey,
