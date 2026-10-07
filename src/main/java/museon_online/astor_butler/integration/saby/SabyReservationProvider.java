@@ -1,6 +1,8 @@
 package museon_online.astor_butler.integration.saby;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
@@ -262,7 +264,29 @@ public class SabyReservationProvider implements ExternalReservationProvider {
         metadata.put("localStart", localStart);
         metadata.put("partySize", command.partySize());
         try {
-            client.put(ORDER_PATH + externalReservationId + "/update", body);
+            // Update replaces the order: never reconstruct it from the local booking alone.
+            JsonNode existing = client.get(ORDER_PATH + externalReservationId, Map.of());
+            if (!(existing instanceof ObjectNode snapshot)
+                    || !snapshot.path("booking").isObject()
+                    || !snapshot.path("customer").isObject()
+                    || !"restaurant".equals(snapshot.path("product").asText())
+                    || !snapshot.path("pointId").asText().equals(String.valueOf(body.get("pointId")))) {
+                return reservation(RESULT_UNKNOWN, "Cannot safely read the complete restaurant booking; update was not sent.", metadata);
+            }
+            ObjectNode update = snapshot.deepCopy();
+            ObjectNode changes = new ObjectMapper().valueToTree(body);
+            update.set("datetime", changes.get("datetime"));
+            ((ObjectNode) update.get("booking")).set("visitors", changes.path("booking").get("visitors"));
+            ObjectNode customer = (ObjectNode) update.get("customer");
+            customer.set("name", changes.path("customer").get("name"));
+            customer.set("phone", changes.path("customer").get("phone"));
+            String oldComment = snapshot.path("comment").asText("");
+            String newComment = changes.path("comment").asText();
+            update.put("comment", oldComment.isBlank() || oldComment.equals(newComment)
+                    ? newComment : oldComment + " · Изменение Butler: " + newComment);
+            // Preserve the restaurant's table, hall, dishes and other order fields.
+            // A changed Butler table remains a seating request for the hostess, not a Saby table id.
+            client.put(ORDER_PATH + externalReservationId + "/update", update);
         } catch (SabyApiException exception) {
             log.warn("Saby booking update failed: {} (HTTP {})", exception.kind(), exception.httpStatus());
             metadata.put("httpStatus", exception.httpStatus());
