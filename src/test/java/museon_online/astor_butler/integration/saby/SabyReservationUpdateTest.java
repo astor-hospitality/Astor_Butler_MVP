@@ -33,6 +33,7 @@ class SabyReservationUpdateTest {
     void rewritesTheWholeBookingWithTheButlerMarker() {
         Fixture fixture = fixture(writable());
         expectAuth(fixture.server());
+        expectOrder(fixture.server());
         fixture.server().expect(once(), requestTo(UPDATE_URL))
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
@@ -41,6 +42,12 @@ class SabyReservationUpdateTest {
                 .andExpect(jsonPath("$.datetime").value("2026-10-07 15:30:00"))
                 .andExpect(jsonPath("$.customer.phone").value("79990000000"))
                 .andExpect(jsonPath("$.booking.visitors").value(3))
+                .andExpect(jsonPath("$.booking.table").value(42))
+                .andExpect(jsonPath("$.booking.woTable").value(false))
+                .andExpect(jsonPath("$.booking.hall").value(7))
+                .andExpect(jsonPath("$.customer.email").value("guest@example.test"))
+                .andExpect(jsonPath("$.nomenclatures[0].id").value(101))
+                .andExpect(jsonPath("$.comment").value(containsString("Hostess note")))
                 .andExpect(jsonPath("$.comment").value(containsString("Astor Butler #12")))
                 .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
 
@@ -56,6 +63,7 @@ class SabyReservationUpdateTest {
     void rejectionAndTimeoutAreNotReportedAsDone() {
         Fixture rejected = fixture(writable());
         expectAuth(rejected.server());
+        expectOrder(rejected.server());
         rejected.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.CONFLICT));
         ExternalReservationResult conflict = rejected.provider().updateReservation(EXTERNAL_ID, command(3, "2026-10-07T10:30:00Z"), "12");
         assertThat(conflict.created()).isFalse();
@@ -64,6 +72,7 @@ class SabyReservationUpdateTest {
 
         Fixture failed = fixture(writable());
         expectAuth(failed.server());
+        expectOrder(failed.server());
         failed.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
         ExternalReservationResult unknown = failed.provider().updateReservation(EXTERNAL_ID, command(3, "2026-10-07T10:30:00Z"), "12");
         assertThat(unknown.created()).isFalse();
@@ -85,6 +94,47 @@ class SabyReservationUpdateTest {
         assertThat(on.provider().updateReservation(EXTERNAL_ID, foreign, "12").status()).isEqualTo("GUEST_DATA_REQUIRED");
         fixture.server().verify();
         on.server().verify();
+    }
+
+    @Test
+    void incompleteSnapshotNeverTriggersAWrite() {
+        Fixture fixture = fixture(writable());
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo("https://api.saby.test/retail/order/" + EXTERNAL_ID))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+        assertThat(fixture.provider().updateReservation(EXTERNAL_ID, command(3, "2026-10-07T10:30:00Z"), "12").created()).isFalse();
+        fixture.server().verify();
+    }
+
+    @Test
+    void failedReadNeverTriggersAWrite() {
+        Fixture fixture = fixture(writable());
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo("https://api.saby.test/retail/order/" + EXTERNAL_ID))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+        assertThat(fixture.provider().updateReservation(EXTERNAL_ID, command(3, "2026-10-07T10:30:00Z"), "12").created()).isFalse();
+        fixture.server().verify();
+    }
+
+    @Test
+    void orderFromAnotherPointNeverTriggersAWrite() {
+        Fixture fixture = fixture(writable());
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo("https://api.saby.test/retail/order/" + EXTERNAL_ID))
+                .andRespond(withSuccess("{\"product\":\"restaurant\",\"pointId\":999,\"booking\":{},\"customer\":{}}", MediaType.APPLICATION_JSON));
+        assertThat(fixture.provider().updateReservation(EXTERNAL_ID, command(3, "2026-10-07T10:30:00Z"), "12").created()).isFalse();
+        fixture.server().verify();
+    }
+
+    private static void expectOrder(MockRestServiceServer server) {
+        server.expect(once(), requestTo("https://api.saby.test/retail/order/" + EXTERNAL_ID))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"product":"restaurant","pointId":206,"comment":"Hostess note",
+                         "customer":{"name":"Old name","phone":"79991111111","email":"guest@example.test"},
+                         "booking":{"visitors":2,"table":42,"hall":7,"woTable":false},
+                         "nomenclatures":[{"id":101,"count":2}]}
+                        """, MediaType.APPLICATION_JSON));
     }
 
     private static TableReservationCommand command(int partySize, String startUtc) {
