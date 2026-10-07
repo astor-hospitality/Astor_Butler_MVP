@@ -19,6 +19,8 @@ services:
       SABY_STUB_PRICE_LIST_ID: "4"
       # >0 makes bookings confirm themselves after N seconds, as if the staff accepted them; 0 = confirm by /__admin only.
       SABY_STUB_AUTO_CONFIRM_SECONDS: ${SABY_STUB_AUTO_CONFIRM_SECONDS:-0}
+      # Where a guest's phone reaches the payment page; the bot sends this link. Without it the link points at saby-stub:8090 and opens only on the stand.
+      SABY_STUB_PUBLIC_URL: ${SABY_STUB_PUBLIC_URL:-}
     volumes:
       - ./scripts/saby_stub:/app/scripts/saby_stub:ro
       - ./src/main/resources/business-lunch:/app/src/main/resources/business-lunch:ro
@@ -38,5 +40,10 @@ services:
       SABY_POINT_ID: "206"
       SABY_HALL_ID: "271"
       SABY_PRICE_LIST_ID: "4"
+      # The whole guest loop on the stand: bill, payment page of the stub, call log, review right after the venue closes the order.
+      SABY_PAYMENT_ENABLED: "true"
+      ASTOR_BILLING_ENABLED: "true"
+      ASTOR_SABY_CALL_LOG_ENABLED: "true"
+      ASTOR_BILLING_REVIEW_DELAY_MINUTES: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:-5}
     depends_on:
       - saby-stub
