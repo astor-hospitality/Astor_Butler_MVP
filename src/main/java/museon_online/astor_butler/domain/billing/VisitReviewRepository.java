@@ -94,6 +94,23 @@ public class VisitReviewRepository {
         return findByBill(billId).orElseThrow();
     }
 
+    /** Reviews left inside the window, for the shift briefing. */
+    public List<VisitReview> findCreatedBetween(java.time.Instant from, java.time.Instant to, int limit) {
+        return jdbcTemplate.query("""
+                SELECT *
+                FROM visit_reviews
+                WHERE created_at >= ?
+                  AND created_at < ?
+                ORDER BY created_at
+                LIMIT ?
+                """,
+                mapper(),
+                java.sql.Timestamp.from(from),
+                java.sql.Timestamp.from(to),
+                limit
+        );
+    }
+
     private RowMapper<VisitReview> mapper() {
         return (rs, rowNum) -> new VisitReview(
                 rs.getLong("id"),

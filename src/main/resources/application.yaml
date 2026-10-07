@@ -58,6 +58,15 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+  shift:
+    briefing:
+      # Twice a day into the analytics chat: the plan in the first minutes of the shift, the look back once it is over.
+      # Off by default; turning it on is a separate step from deploying it.
+      enabled: ${ASTOR_SHIFT_BRIEFING_ENABLED:false}
+      venue-code: ${ASTOR_SHIFT_BRIEFING_VENUE_CODE:AERIS}
+      timezone: ${ASTOR_SHIFT_BRIEFING_TIMEZONE:Europe/Moscow}
+      morning-cron: ${ASTOR_SHIFT_BRIEFING_MORNING_CRON:0 5 10 * * *}
+      evening-cron: ${ASTOR_SHIFT_BRIEFING_EVENING_CRON:0 30 23 * * *}
   booking:
     # HOSTESS: the hostess button in Telegram confirms. VENUE_SYSTEM: a booking that is in Presto is confirmed only
     # there (read back by the external sync); the hostess can still reject. Orders Presto does not know stay with the hostess.

@@ -169,6 +169,25 @@ public class GuestBillRepository {
     }
 
     /** Issued bills whose guest has not been sent the venue's payment link yet, oldest first. */
+    /** Bills opened inside the window, for the shift briefing. */
+    public List<GuestBill> findOpenedBetween(String venueCode, java.time.Instant from, java.time.Instant to, int limit) {
+        return jdbcTemplate.query("""
+                SELECT *
+                FROM guest_bills
+                WHERE venue_code = ?
+                  AND created_at >= ?
+                  AND created_at < ?
+                ORDER BY created_at
+                LIMIT ?
+                """,
+                billMapper(),
+                venueCode,
+                java.sql.Timestamp.from(from),
+                java.sql.Timestamp.from(to),
+                limit
+        );
+    }
+
     public List<GuestBill> findAwaitingPaymentLink(int limit) {
         return findAwaitingPaymentLinkAfter(0L, limit);
     }
