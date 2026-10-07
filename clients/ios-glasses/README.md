@@ -69,9 +69,16 @@ usual bounded recorder, and that recording goes to `POST /api/glasses/transcribe
 no model call. The text becomes a draft in `AstorReplyDrafts`, shown in the app with its question.
 
 Nothing is sent from here. "Отправить ответ в Telegram" opens Telegram with the text prefilled
-(`tg://msg?text=…`); the staff member picks the chat and taps send in their own account. A draft is
-replaced if the same message is answered again, expires after twelve hours, and twenty are kept at
-most. A draft nobody sent simply expires, and the restaurant still sees the message as unanswered.
+(`tg://msg?text=…`); the staff member picks the chat and taps send in their own account. Opening
+Telegram does not remove the draft — they may still change their mind there — so it stays, marked as
+opened but unconfirmed, until "Отправил · убрать черновик". A draft is replaced if the same message is
+answered again, expires after twelve hours, and twenty are kept at most. A draft nobody sent simply
+expires, and the restaurant still sees the message as unanswered.
+
+Before the audio of a message is played, the room is checked again: the server may have taken a second
+to synthesize, and a conversation, a call or the phone coming into the staff member's hands in that
+time sends the message back to the queue instead of into the middle of a sentence. A message counts as
+read only if it actually reached the output.
 
 ## Checks
 

@@ -38,9 +38,17 @@ int main(void) { @autoreleasepool {
     assert([url.absoluteString containsString:@"msg?text="]);
     assert(![url.absoluteString containsString:@" "]);
 
-    // Sending or discarding removes it; an unknown id changes nothing.
-    assert([drafts markSent:[drafts firstAt:at(60)].draftId]);
-    assert([drafts countAt:at(60)]==1);
+    // Opening Telegram does not remove the draft: the staff member can still decide not to send it.
+    AstorReplyDraft *opened=[drafts firstAt:at(60)];
+    assert([drafts markHandedOver:opened.draftId at:at(61)]);
+    assert([drafts countAt:at(61)]==2);
+    assert([drafts firstAt:at(61)].handedOverAt!=nil);
+    assert([[drafts statusAt:at(61)] containsString:@"отправка не подтверждена"]);
+    assert(![drafts markHandedOver:@"unknown" at:at(61)]);
+
+    // Only the staff member's own confirmation removes it.
+    assert([drafts markSent:opened.draftId]);
+    assert([drafts countAt:at(61)]==1);
     assert(![drafts discard:@"unknown"]);
     assert([drafts countAt:at(60)]==1);
 

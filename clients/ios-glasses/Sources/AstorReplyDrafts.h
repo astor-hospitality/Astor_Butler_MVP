@@ -15,6 +15,7 @@ static const NSTimeInterval AstorReplyDraftTTL = 12 * 60 * 60;
 @property(nonatomic,readonly) NSString *messageText;  // what was asked, for the staff member to see
 @property(nonatomic,readonly) NSString *text;         // what the recognizer heard
 @property(nonatomic,readonly) NSDate *createdAt;
+@property(nonatomic,readonly) NSDate *handedOverAt;   // Telegram was opened with this text; sending is still unconfirmed
 + (instancetype)answering:(NSString *)messageId asked:(NSString *)messageText text:(NSString *)text at:(NSDate *)date;
 @end
 
@@ -23,6 +24,9 @@ static const NSTimeInterval AstorReplyDraftTTL = 12 * 60 * 60;
 - (BOOL)add:(AstorReplyDraft *)draft;
 - (NSArray<AstorReplyDraft *> *)draftsAt:(NSDate *)date;
 - (AstorReplyDraft *)firstAt:(NSDate *)date;
+/** Telegram was opened with the text. The draft stays: the staff member may still decide not to send it. */
+- (BOOL)markHandedOver:(NSString *)draftId at:(NSDate *)date;
+/** The staff member confirms they sent it; only then does the draft go away. */
 - (BOOL)markSent:(NSString *)draftId;
 - (BOOL)discard:(NSString *)draftId;
 - (NSUInteger)countAt:(NSDate *)date;

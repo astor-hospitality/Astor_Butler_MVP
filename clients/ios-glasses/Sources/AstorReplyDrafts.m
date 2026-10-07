@@ -2,7 +2,7 @@
 
 @interface AstorReplyDraft ()
 @property(nonatomic,readwrite) NSString *draftId, *messageId, *messageText, *text;
-@property(nonatomic,readwrite) NSDate *createdAt;
+@property(nonatomic,readwrite) NSDate *createdAt, *handedOverAt;
 @end
 
 @implementation AstorReplyDraft
@@ -53,6 +53,11 @@ static const NSUInteger AstorReplyDraftLimit = 20;
     return _drafts.firstObject;
 }
 
+- (BOOL)markHandedOver:(NSString *)draftId at:(NSDate *)date {
+    for(AstorReplyDraft *draft in _drafts)if([draft.draftId isEqual:draftId]){draft.handedOverAt=date;return YES;}
+    return NO;
+}
+
 - (BOOL)markSent:(NSString *)draftId { return [self discard:draftId]; }
 
 - (BOOL)discard:(NSString *)draftId {
@@ -72,6 +77,7 @@ static const NSUInteger AstorReplyDraftLimit = 20;
     NSUInteger count=[self countAt:date];
     if(!count)return @"Черновиков ответа нет";
     AstorReplyDraft *first=_drafts.firstObject;
+    if(first.handedOverAt)return [NSString stringWithFormat:@"Открыт в Telegram, отправка не подтверждена (%lu): %@",(unsigned long)count,first.text];
     return [NSString stringWithFormat:@"Черновик ответа (%lu): %@",(unsigned long)count,first.text];
 }
 

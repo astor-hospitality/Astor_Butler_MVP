@@ -90,10 +90,10 @@
 @property(nonatomic,assign) BOOL messagePolling, messageChannelMissingLogged, notificationsAllowed;
 @property(nonatomic,strong) AstorReplyDrafts *drafts;
 @property(nonatomic,strong) UILabel *draftLabel;
-@property(nonatomic,strong) UIButton *draftSendButton, *draftDiscardButton;
+@property(nonatomic,strong) UIButton *draftSendButton, *draftSentButton, *draftDiscardButton;
 @property(nonatomic,strong) AstorQuietDeliveryMessage *answeringMessage;
 @property(nonatomic,strong) NSDate *replyDeadline;
-@property(nonatomic,assign) BOOL replyRecording;
+@property(nonatomic,assign) BOOL replyRecording, messageHandedToOutput;
 @property(nonatomic,assign) NSTimeInterval lastBriefCommand;
 - (void)refreshGestures;
 - (void)assignChanges:(NSDictionary *)changes restoring:(BOOL)restoring;
@@ -166,8 +166,9 @@
     [shift addArrangedSubview:[self card:@[[self label:@"СООБЩЕНИЯ СОТРУДНИКУ" size:12],self.messageSwitch,self.messageLabel,[self label:@"Сообщения читаются в очках только в тишине. Если вы говорите, сообщение ждёт и прозвучит через три секунды после разговора. Пока сообщение ждёт, микрофон измеряет только громкость: без распознавания, записи и отправки." size:14]]]];
     self.draftLabel=[self label:@"Черновиков ответа нет" size:14];
     self.draftSendButton=[self button:@"Отправить ответ в Telegram" action:@selector(sendDraft)];
+    self.draftSentButton=[self button:@"Отправил · убрать черновик" action:@selector(confirmDraftSent)];
     self.draftDiscardButton=[self button:@"Стереть черновик" action:@selector(discardDraft)];
-    [shift addArrangedSubview:[self card:@[[self label:@"ОТВЕТ ГОЛОСОМ" size:12],self.draftLabel,[self label:@"Пока экран заблокирован, Астор читает сообщение и записывает ваш ответ. Текст ждёт здесь: отправляете вы сами, из своего Telegram." size:14],self.draftSendButton,self.draftDiscardButton]]];
+    [shift addArrangedSubview:[self card:@[[self label:@"ОТВЕТ ГОЛОСОМ" size:12],self.draftLabel,[self label:@"Пока экран заблокирован, Астор читает сообщение и записывает ваш ответ. Текст ждёт здесь: отправляете вы сами, из своего Telegram. Черновик исчезнет, только когда вы подтвердите отправку." size:14],self.draftSendButton,self.draftSentButton,self.draftDiscardButton]]];
     [self refreshLunch];
     [self refreshPower];
     [shift addArrangedSubview:[self card:@[[self label:@"ЗАДАЧИ ОТ BUTLER" size:12],[self label:@"Ждём подключение портала" size:21],[self label:@"Здесь появятся назначенные вам столы и этапы обслуживания. Сервер задач ещё не подключён." size:15]]]];
@@ -440,6 +441,7 @@
     if(!next || self.speakingMessage)return;
     [self stopSilenceMonitor];
     self.speakingMessage=next;
+    self.messageHandedToOutput=NO;
     [self.messages startedSpeaking:next at:NSDate.date];
     [self log:@"Читаю сообщение сотруднику в паузе разговора."];
     [self speakMessage:next.text];
@@ -447,7 +449,7 @@
     AstorQuietDeliveryMessage *spoken=next;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)((2+next.text.length/12.)*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
         if(self.speakingMessage!=spoken)return;
-        BOOL delivered=!self.speaker.isSpeaking && !self.callActive && !self.audioInterruptionActive;
+        BOOL delivered=self.messageHandedToOutput && !self.speaker.isSpeaking && !self.callActive && !self.audioInterruptionActive;
         self.speakingMessage=nil;
         [self.messages finishedSpeaking:spoken at:NSDate.date delivered:delivered];
         self.messageLabel.text=self.messages.status;
@@ -483,9 +485,24 @@
     [UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:request withCompletionHandler:nil];
 }
 /* Astor's own voice when the server has one; otherwise the voice of the phone. */
+/* The room can change while the server is synthesizing, so the decision to speak is taken again when
+   the audio arrives — a message is never dropped into a conversation that started in the meantime. */
+- (BOOL)canSpeakMessageNow {
+    return !self.callActive && !self.audioInterruptionActive && !self.recorder && !self.startingVoice
+            && ![self screenInHands] && ![self speechNearby] && self.device.isConnectedAndReady && [self hasGlassesOutput];
+}
+- (void)abandonSpokenMessage:(NSString *)reason {
+    AstorQuietDeliveryMessage *message=self.speakingMessage;
+    if(!message)return;
+    self.speakingMessage=nil;
+    self.messageHandedToOutput=NO;
+    [self.messages finishedSpeaking:message at:NSDate.date delivered:NO];
+    self.messageLabel.text=self.messages.status;
+    [self log:reason];
+}
 - (void)speakMessage:(NSString *)text {
     NSURL *url=[self speechEndpoint];NSString *token=[self token];
-    if(!url || !token.length){[self speakAnswer:text];return;}
+    if(!url || !token.length){self.messageHandedToOutput=YES;[self speakAnswer:text];return;}
     NSString *requestId=NSUUID.UUID.UUIDString.lowercaseString;
     NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];request.HTTPMethod=@"POST";request.timeoutInterval=12;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
@@ -497,11 +514,13 @@
         [session finishTasksAndInvalidate];
         NSInteger status=((NSHTTPURLResponse *)response).statusCode;
         NSDictionary *reply=(!error && status==200 && data.length<=3*1024*1024)?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+        if(![self canSpeakMessageNow]){[self abandonSpokenMessage:@"Пока готовился голос, началось другое действие: сообщение прозвучит в следующую паузу."];return;}
         NSString *encoded=[reply isKindOfClass:NSDictionary.class]?reply[@"audioBase64"]:nil;
         if([encoded isKindOfClass:NSString.class] && encoded.length && [reply[@"audioMimeType"] isEqual:@"audio/mpeg"]){
             NSData *speech=[[NSData alloc]initWithBase64EncodedString:encoded options:0];
-            if(speech.length && speech.length<=2*1024*1024){[self playBackendSpeech:speech];return;}
+            if(speech.length && speech.length<=2*1024*1024){self.messageHandedToOutput=YES;[self playBackendSpeech:speech];return;}
         }
+        self.messageHandedToOutput=YES;
         [self speakAnswer:text];
     });}] resume];
 }
@@ -526,9 +545,14 @@
 - (BOOL)replyWanted { return self.answeringMessage!=nil && self.replyDeadline.timeIntervalSinceNow>0; }
 - (void)refreshDrafts {
     NSUInteger count=[self.drafts countAt:NSDate.date];
+    AstorReplyDraft *first=[self.drafts firstAt:NSDate.date];
     self.draftLabel.text=[self.drafts statusAt:NSDate.date];
     self.draftSendButton.hidden=count==0;
     self.draftDiscardButton.hidden=count==0;
+    self.draftSentButton.hidden=count==0 || !first.handedOverAt;
+    UIButtonConfiguration *style=self.draftSendButton.configuration;
+    style.title=first.handedOverAt?@"Открыть в Telegram снова":@"Отправить ответ в Telegram";
+    self.draftSendButton.configuration=style;
 }
 - (void)sendDraft {
     AstorReplyDraft *draft=[self.drafts firstAt:NSDate.date];
@@ -537,11 +561,17 @@
     if(!url){[self log:@"Не удалось подготовить текст для Telegram."];return;}
     [UIApplication.sharedApplication openURL:url options:@{} completionHandler:^(BOOL success){dispatch_async(dispatch_get_main_queue(),^{
         if(!success){[self log:@"Telegram не открылся. Текст можно скопировать с экрана."];return;}
-        // Telegram is open with the text prefilled; sending is the staff member's own tap, in their own account.
-        [self.drafts markSent:draft.draftId];
+        // Telegram is open with the text prefilled. The draft stays until the staff member says they sent it:
+        // they may still change their mind in Telegram, and a vanished draft would lose the answer.
+        [self.drafts markHandedOver:draft.draftId at:NSDate.date];
         [self refreshDrafts];
-        [self log:@"Текст передан в Telegram. Отправку подтверждаете вы."];
+        [self log:@"Текст открыт в Telegram. Черновик останется здесь, пока вы не подтвердите отправку."];
     });}];
+}
+- (void)confirmDraftSent {
+    AstorReplyDraft *draft=[self.drafts firstAt:NSDate.date];
+    if(draft && [self.drafts markSent:draft.draftId])[self log:@"Отправка подтверждена; черновик убран."];
+    [self refreshDrafts];
 }
 - (void)discardDraft {
     AstorReplyDraft *draft=[self.drafts firstAt:NSDate.date];
