@@ -54,5 +54,13 @@ public class GlassesAccess {
         return new Scope(tenant, staff);
     }
 
+    /** The one server-bound scope, for server-side readers that authenticate another way (the report). */
+    Scope configuredScope() {
+        if (tenant.isBlank() || staff.isBlank()) {
+            throw new GlassesFailure(503, "ACCESS_UNAVAILABLE", "Pilot scope is not configured");
+        }
+        return new Scope(tenant, staff);
+    }
+
     record Scope(String tenant, String staff) { }
 }

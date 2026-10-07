@@ -27,13 +27,21 @@ public class GlassesController {
             "imageBase64", "imageMimeType", "photoContext");
     private final GlassesAccess access;
     private final GlassesAssistService service;
+    private final GlassesSessionJournal journal;
     private final ObjectMapper mapper;
 
-    public GlassesController(GlassesAccess access, GlassesAssistService service, ObjectMapper mapper) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public GlassesController(GlassesAccess access, GlassesAssistService service, GlassesSessionJournal journal,
+                             ObjectMapper mapper) {
         this.access = access;
         this.service = service;
+        this.journal = journal;
         this.mapper = mapper.copy().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+    }
+
+    GlassesController(GlassesAccess access, GlassesAssistService service, ObjectMapper mapper) {
+        this(access, service, new GlassesSessionJournal(GlassesS3Storage.disabled(), java.time.Clock.systemUTC(), false), mapper);
     }
 
     @GetMapping("/capabilities")
@@ -50,8 +58,12 @@ public class GlassesController {
     @PostMapping("/assist")
     public ResponseEntity<?> assist(HttpServletRequest request) {
         String requestId = null;
+        GlassesPhotoContext photoContext = null;
+        GlassesAccess.Scope scope = null;
+        String kind = null;
+        long started = System.nanoTime();
         try {
-            var scope = access.check(request.getHeader("Authorization"));
+            scope = access.check(request.getHeader("Authorization"));
             service.checkRate();
             if (request.getContentLengthLong() > BODY_LIMIT) throw tooLarge();
             if (request.getContentType() == null
@@ -74,8 +86,7 @@ public class GlassesController {
             String image = field(body, "imageBase64");
             String audioMime = field(body, "audioMimeType");
             String imageMime = field(body, "imageMimeType");
-            GlassesPhotoContext photoContext = photoContext(body.get("photoContext"));
-            if (photoContext != null && image == null) throw malformed();
+            photoContext = photoContext(body.get("photoContext"));
             if ((audio != null && image != null) || (audio == null && audioMime != null)
                     || (image == null && imageMime != null)) throw malformed();
             if (audio != null) {
@@ -87,23 +98,42 @@ public class GlassesController {
                 }
                 long boxSize = Integer.toUnsignedLong(ByteBuffer.wrap(media).getInt());
                 if (boxSize < 16 || boxSize > media.length) throw malformed();
-                String answer = service.assistAudio(scope, requestId, text, media);
+                kind = "audio";
+                String answer = service.assistAudio(scope, requestId, text, media, photoContext);
+                record(scope, photoContext, requestId, kind, answer, null, started);
                 return success(requestId, answer);
             }
             if (image != null) {
                 if (!"image/jpeg".equals(imageMime)) throw malformed();
                 byte[] media = decode(image);
                 validateJpeg(media);
+                kind = "image";
                 String answer = service.assistImage(scope, requestId, text, media, photoContext);
+                record(scope, photoContext, requestId, kind, answer, null, started);
                 return success(requestId, answer, photoContext);
             }
             if (text.isBlank()) throw malformed();
-            String answer = service.assist(scope, requestId, text);
+            kind = "text";
+            String answer = service.assist(scope, requestId, text, photoContext);
+            record(scope, photoContext, requestId, kind, answer, null, started);
             return success(requestId, answer);
         } catch (GlassesFailure e) {
+            if (kind != null) record(scope, photoContext, requestId, kind, null, e.code, started);
             return error(requestId, e);
         } catch (IOException | IllegalArgumentException e) {
             return error(requestId, malformed());
+        }
+    }
+
+    // The journal is for the report people read afterwards; it must never change the answer or fail the request.
+    private void record(GlassesAccess.Scope scope, GlassesPhotoContext context, String requestId, String kind,
+                        String answer, String errorCode, long started) {
+        if (context == null) return;
+        try {
+            journal.recordAssist(scope, context, requestId, kind, answer, errorCode,
+                    (System.nanoTime() - started) / 1_000_000, errorCode == null && service.archivesEnabled());
+        } catch (RuntimeException ignored) {
+            // A full or failing journal is a reporting gap, not a reason to answer differently.
         }
     }
 

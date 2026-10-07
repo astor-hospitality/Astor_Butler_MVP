@@ -89,8 +89,16 @@ public class GlassesAssistService implements AutoCloseable {
         return assist(scope, id, "text", text, new byte[0]);
     }
 
+    String assist(GlassesAccess.Scope scope, String id, String text, GlassesPhotoContext photoContext) {
+        return assist(scope, id, "text", text, new byte[0], photoContext);
+    }
+
     String assistAudio(GlassesAccess.Scope scope, String id, String text, byte[] audio) {
         return assist(scope, id, "audio", text, audio);
+    }
+
+    String assistAudio(GlassesAccess.Scope scope, String id, String text, byte[] audio, GlassesPhotoContext photoContext) {
+        return assist(scope, id, "audio", text, audio, photoContext);
     }
 
     String assistImage(GlassesAccess.Scope scope, String id, String text, byte[] image) {
@@ -118,11 +126,13 @@ public class GlassesAssistService implements AutoCloseable {
             String answer = replies.find(scope, id, signature);
             if (answer == null) {
                 String context = storage.context(scope);
+                // A stage hint only frames the question; the answer stays informational either way.
+                String stage = photoContext == null ? "" : photoContext.questionPrompt();
                 answer = switch (kind) {
-                    case "audio" -> generate(voice.transcribe(media), context);
+                    case "audio" -> generate(stage + voice.transcribe(media), context);
                     case "image" -> image((photoContext == null ? "" : photoContext.prompt()) + text,
                             Base64.getEncoder().encodeToString(media), context);
-                    default -> generate(text, context);
+                    default -> generate(stage + text, context);
                 };
                 if (cancelled.get()) throw unavailable();
                 replies.remember(scope, id, signature, answer);
