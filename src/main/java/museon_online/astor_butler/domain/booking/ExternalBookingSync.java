@@ -27,6 +27,7 @@ public class ExternalBookingSync {
     private final TableReservationRepository repository;
     private final TableReservationService reservationService;
     private final ExternalReservationProvider externalProvider;
+    private long lastCheckedId;
 
     public record Report(int checked, int confirmed, int cancelled, int unknown, int failed) {
         static final Report NOTHING = new Report(0, 0, 0, 0, 0);
@@ -44,12 +45,17 @@ public class ExternalBookingSync {
         }
     }
 
-    public Report run() {
+    public synchronized Report run() {
         ExternalReservationStatus status = externalProvider.status();
         if (status == null || !status.enabled() || !status.configured()) {
             return Report.NOTHING;
         }
-        List<TableReservationOrder> orders = repository.findActiveOrdersWithExternalId(BATCH);
+        List<TableReservationOrder> orders = lastCheckedId == 0
+                ? repository.findActiveOrdersWithExternalId(BATCH)
+                : repository.findActiveOrdersWithExternalIdAfter(lastCheckedId, BATCH);
+        // Rotate across all active bookings, including those whose state never changes.
+        // Keyset paging stays stable when orders are cancelled or updated during the sweep.
+        lastCheckedId = orders.size() == BATCH ? orders.getLast().id() : 0L;
         int confirmed = 0;
         int cancelled = 0;
         int unknown = 0;

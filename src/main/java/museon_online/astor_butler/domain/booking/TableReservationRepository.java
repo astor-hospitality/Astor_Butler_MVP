@@ -323,6 +323,10 @@ public class TableReservationRepository {
 
     /** Orders still alive locally that were also written to the venue's own system, oldest change first. */
     public List<TableReservationOrder> findActiveOrdersWithExternalId(int limit) {
+        return findActiveOrdersWithExternalIdAfter(0L, limit);
+    }
+
+    public List<TableReservationOrder> findActiveOrdersWithExternalIdAfter(long afterId, int limit) {
         return jdbcTemplate.query("""
                 SELECT tro.*, vt.table_code, vt.display_name AS table_display_name
                 FROM table_reservation_orders tro
@@ -330,10 +334,12 @@ public class TableReservationRepository {
                 WHERE tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED')
                   AND tro.sbis_external_id IS NOT NULL
                   AND tro.sbis_external_id <> ''
-                ORDER BY tro.updated_at ASC
+                  AND tro.id > ?
+                ORDER BY tro.id ASC
                 LIMIT ?
                 """,
                 orderMapper(),
+                afterId,
                 Math.max(1, limit)
         );
     }
