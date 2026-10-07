@@ -1,6 +1,6 @@
 #import <Foundation/Foundation.h>
 
-// Local training progress only; this object never represents a portal task or ACK.
+// Local step progress only; this object never represents a portal task or ACK.
 @interface AstorLunchGuide : NSObject
 @property(nonatomic,readonly) BOOL active, finished;
 @property(nonatomic,readonly) NSUInteger stepIndex, revision;

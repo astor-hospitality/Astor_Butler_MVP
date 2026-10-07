@@ -26,18 +26,18 @@
 - (void)stop {self.active=NO;self.finished=NO;self.stepIndex=0;self.revision++;self.sessionId=nil;[self.receipts removeAllObjects];}
 - (NSDictionary<NSString *,NSString *> *)step {return self.active?self.class.steps[self.stepIndex]:nil;}
 - (NSString *)brief {
-    if(self.finished)return @"Учебный план пройден. Для реального обслуживания откройте поручение от Butler.";
-    if(!self.active)return @"Учебный бизнес-ланч на двоих ещё не начат. Откройте Astor Glasses и нажмите «Начать тренировку».";
-    return [NSString stringWithFormat:@"Учебный бизнес-ланч. Два гостя. Шаг %lu из %lu: %@. %@",(unsigned long)self.stepIndex+1,(unsigned long)self.class.steps.count,self.step[@"title"],self.step[@"hint"]];
+    if(self.finished)return @"Все шаги подачи пройдены. Назначенные поручения появятся, когда подключим портал задач.";
+    if(!self.active)return @"Подача бизнес-ланча на двоих не начата. Откройте Astor Glasses и нажмите «Начать подачу».";
+    return [NSString stringWithFormat:@"Бизнес-ланч на двоих. Шаг %lu из %lu: %@. %@",(unsigned long)self.stepIndex+1,(unsigned long)self.class.steps.count,self.step[@"title"],self.step[@"hint"]];
 }
 - (NSString *)compactBrief {
-    if(self.finished)return @"Учебный показ завершён.";
-    if(!self.active)return @"Начните учебный показ на телефоне.";
-    return [NSString stringWithFormat:@"Учебный шаг %lu: %@.",(unsigned long)self.stepIndex+1,self.step[@"shortHint"]];
+    if(self.finished)return @"Подача завершена.";
+    if(!self.active)return @"Начните подачу на телефоне.";
+    return [NSString stringWithFormat:@"Шаг %lu: %@.",(unsigned long)self.stepIndex+1,self.step[@"shortHint"]];
 }
 - (NSDictionary *)photoContext {
     if(!self.active)return nil;
-    NSString *prompt=[NSString stringWithFormat:@"Учебная сервировка бизнес-ланча для двух гостей. Текущий шаг: %@. Подсказка: %@. Рассмотри только приложенное фото. Ответь кратко по-русски: что видно и что стоит проверить на этом шаге. Если детали неразличимы, скажи об этом. Не определяй личность гостей или номер стола. Не утверждай, что поручение выполнено или сервировка подтверждена: это подсказка для учебного сценария.",self.step[@"title"],self.step[@"hint"]];
+    NSString *prompt=[NSString stringWithFormat:@"Сервировка бизнес-ланча для двух гостей. Текущий шаг: %@. Подсказка: %@. Рассмотри только приложенное фото. Ответь кратко по-русски: что видно и что стоит проверить на этом шаге. Если детали неразличимы, скажи об этом. Не определяй личность гостей или номер стола. Не утверждай, что поручение выполнено или сервировка подтверждена: это подсказка сотруднику.",self.step[@"title"],self.step[@"hint"]];
     NSDictionary *wire=@{@"sessionId":self.sessionId,@"scenarioCode":@"BUSINESS_LUNCH_TWO",@"stageCode":self.step[@"stageCode"],@"revision":@(self.revision)};
     return @{@"training":@YES,@"sessionId":self.sessionId,@"revision":@(self.revision),@"stepIndex":@(self.stepIndex),@"wire":wire,@"prompt":prompt};
 }
@@ -50,7 +50,7 @@
 - (NSUInteger)photoCount {return self.receipts.count;}
 - (NSString *)photoStatus {
     if(!self.active)return [NSString stringWithFormat:@"Фото сохранено на сервере: %lu",(unsigned long)self.photoCount];
-    return self.photoReceived?@"Фото этого шага сохранено в S3. Проверьте ответ и перейдите дальше.":self.photoRequired?@"Нужно фото этого шага. Переход откроется после подтверждения сохранения.":@"Фото необязательно; снимите, если нужна подсказка.";
+    return self.photoReceived?@"Фото этого шага сохранено на сервере. Проверьте ответ и перейдите дальше.":self.photoRequired?@"Нужно фото этого шага. Переход откроется после подтверждения сохранения.":@"Фото необязательно; снимите, если нужна подсказка.";
 }
 - (BOOL)acceptPhotoReceipt:(NSDictionary *)receipt context:(NSDictionary *)context requestId:(NSString *)requestId {
     if(![self acceptsPhotoContext:context] || ![receipt isKindOfClass:NSDictionary.class] || ![receipt[@"archived"] isEqual:@YES] || ![receipt[@"context"] isEqual:context[@"wire"]])return NO;

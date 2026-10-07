@@ -18,7 +18,11 @@ public class GlassesAssistService implements AutoCloseable {
     private final ModelGateway gateway;
     private final GlassesVoice voice;
     private final GlassesS3Storage storage;
+    private final GlassesSpeech speech;
+    private final GlassesTranscriptRelay relay;
     private final GlassesReplyCache replies = new GlassesReplyCache();
+    // Speech is a separate provider: one call at a time, and never a reason for an assist to fail.
+    private final java.util.concurrent.Semaphore speechSlot = new java.util.concurrent.Semaphore(1);
     private final boolean textEnabled;
     private final long timeoutMs;
     // No queue: a stuck provider cannot create an unbounded backlog, even after client timeout.
@@ -34,18 +38,33 @@ public class GlassesAssistService implements AutoCloseable {
     private int requests;
 
     @Autowired
-    public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage,
+    public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, GlassesSpeech speech,
+                                GlassesTranscriptRelay relay,
                                 @Value("${astor.glasses.text-enabled:false}") boolean textEnabled,
                                 @Value("${astor.glasses.timeout-ms:10000}") long timeoutMs) {
         this.gateway = gateway;
         this.voice = voice;
         this.storage = storage;
+        this.speech = speech;
+        this.relay = relay;
         this.textEnabled = textEnabled;
         this.timeoutMs = Math.max(1, Math.min(timeoutMs, 45000));
     }
 
     public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, boolean enabled, long timeoutMs) {
-        this(gateway, voice, GlassesS3Storage.disabled(), enabled, timeoutMs);
+        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), GlassesTranscriptRelay.disabled(), enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, boolean enabled, long timeoutMs) {
+        this(gateway, voice, storage, GlassesSpeech.disabled(), GlassesTranscriptRelay.disabled(), enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesSpeech speech, boolean enabled, long timeoutMs) {
+        this(gateway, voice, GlassesS3Storage.disabled(), speech, GlassesTranscriptRelay.disabled(), enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesTranscriptRelay relay, boolean enabled, long timeoutMs) {
+        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, enabled, timeoutMs);
     }
 
     public GlassesAssistService(ModelGateway gateway, boolean enabled, long timeoutMs) {
@@ -54,14 +73,14 @@ public class GlassesAssistService implements AutoCloseable {
 
     public record Capabilities(boolean text, boolean voice, boolean vision, boolean storage, boolean documents, int maxAudioSeconds,
                                int maxAudioBytes, int maxImageBytes, int maxImageDimension, int maxTextChars,
-                               int maxBodyBytes, GlassesS3Storage.ArchiveCapabilities mediaArchive) { }
+                               int maxBodyBytes, GlassesS3Storage.ArchiveCapabilities mediaArchive, boolean speech) { }
 
     Capabilities capabilities() {
         // A switch is permission to attempt text, not proof that a provider is ready.
         boolean textReady = textEnabled && Instant.now().isBefore(textReadyUntil);
         return new Capabilities(textReady, textReady && voice.ready(), Instant.now().isBefore(visionReadyUntil),
                 storage.mediaReady(), storage.documentsReady(),
-                30, 2097152, 2097152, 1280, 4000, 5242880, storage.archiveCapabilities());
+                30, 2097152, 2097152, 1280, 4000, 5242880, storage.archiveCapabilities(), speech.configured());
     }
 
     synchronized void checkRate() {
@@ -89,8 +108,16 @@ public class GlassesAssistService implements AutoCloseable {
         return assist(scope, id, "text", text, new byte[0]);
     }
 
+    String assist(GlassesAccess.Scope scope, String id, String text, GlassesPhotoContext photoContext) {
+        return assist(scope, id, "text", text, new byte[0], photoContext);
+    }
+
     String assistAudio(GlassesAccess.Scope scope, String id, String text, byte[] audio) {
         return assist(scope, id, "audio", text, audio);
+    }
+
+    String assistAudio(GlassesAccess.Scope scope, String id, String text, byte[] audio, GlassesPhotoContext photoContext) {
+        return assist(scope, id, "audio", text, audio, photoContext);
     }
 
     String assistImage(GlassesAccess.Scope scope, String id, String text, byte[] image) {
@@ -102,6 +129,25 @@ public class GlassesAssistService implements AutoCloseable {
     }
 
     boolean archivesEnabled() { return storage.enabled(); }
+
+    boolean speechConfigured() { return speech.configured(); }
+    String voiceName() { return speech.voiceName(); }
+
+    /** Astor's own voice for one line, or null when server speech is off or the provider fails. */
+    byte[] speak(String line) {
+        if (!speech.configured()) return null;
+        if (!speechSlot.tryAcquire()) throw new GlassesFailure(429, "BUSY", "Voice is busy");
+        try {
+            return speech.synthesize(line);
+        } finally {
+            speechSlot.release();
+        }
+    }
+
+    /** One bounded recording turned into text. No model call, no answer, nothing sent anywhere. */
+    String transcribe(GlassesAccess.Scope scope, String requestId, byte[] audio) {
+        return execute(() -> voice.transcribe(audio), false);
+    }
 
     private String assist(GlassesAccess.Scope scope, String id, String kind, String text, byte[] media) {
         return assist(scope, id, kind, text, media, null);
@@ -116,20 +162,31 @@ public class GlassesAssistService implements AutoCloseable {
                     text.getBytes(java.nio.charset.StandardCharsets.UTF_8), media,
                     (photoContext == null ? "" : photoContext.signature()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             String answer = replies.find(scope, id, signature);
+            // What the staff member actually asked, for the system chat: the typed text, or what the
+            // recorder heard. Empty when the answer came from the cache and no new question was spoken.
+            String question = kind.equals("audio") ? "" : text;
             if (answer == null) {
                 String context = storage.context(scope);
-                answer = switch (kind) {
-                    case "audio" -> generate(voice.transcribe(media), context);
-                    case "image" -> image((photoContext == null ? "" : photoContext.prompt()) + text,
+                // A stage hint only frames the question; the answer stays informational either way.
+                String stage = photoContext == null ? "" : photoContext.questionPrompt();
+                switch (kind) {
+                    case "audio" -> {
+                        question = voice.transcribe(media);
+                        answer = generate(stage + question, context);
+                    }
+                    case "image" -> answer = image((photoContext == null ? "" : photoContext.prompt()) + text,
                             Base64.getEncoder().encodeToString(media), context);
-                    default -> generate(text, context);
-                };
+                    default -> answer = generate(stage + text, context);
+                }
                 if (cancelled.get()) throw unavailable();
                 replies.remember(scope, id, signature, answer);
             }
             if (cancelled.get()) throw unavailable();
             if (photoContext == null) storage.archive(scope, id, kind, media, answer);
             else storage.archive(scope, id, kind, media, answer, photoContext);
+            // Queued, not sent here: the provider slot is released with the answer, and the chat catches up
+            // on its own. The relay never changes the answer and never delays it.
+            relay.sendLater(scope, id, kind, question, answer, photoContext, kind.equals("image") ? media : null);
             return answer;
         }, kind.equals("image"), cancelled);
     }

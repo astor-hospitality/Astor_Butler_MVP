@@ -157,6 +157,47 @@ public class GlassesS3Storage {
         }
     }
 
+    static final int JOURNAL_LIMIT = 1024 * 1024;
+    static final int MATERIAL_LIMIT = 2 * 1024 * 1024;
+
+    /** True when written. A failure is reported to the caller, never thrown: the journal is best effort. */
+    boolean writeJournal(GlassesAccess.Scope scope, String sessionId, byte[] json) {
+        if (client == null || json.length > JOURNAL_LIMIT) return false;
+        try {
+            put(journalKey(scope, sessionId), json, "application/json");
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The stored journal, or null when storage is off, the object is missing or reading is not allowed. */
+    byte[] readJournal(GlassesAccess.Scope scope, String sessionId) {
+        return read(journalKey(scope, sessionId), JOURNAL_LIMIT);
+    }
+
+    /** One archived input of a request (input.jpg / input.m4a), or null when missing or not readable. */
+    byte[] material(GlassesAccess.Scope scope, String requestId, String name) {
+        if (!name.equals("input.jpg") && !name.equals("input.m4a")) return null;
+        return read("materials/" + scopeKey(scope) + "/" + UUID.fromString(requestId) + "/" + name, MATERIAL_LIMIT);
+    }
+
+    private byte[] read(String key, int limit) {
+        if (client == null) return null;
+        try (var input = client.getObject(GetObjectArgs.builder().bucket(bucket).object(key).build())) {
+            byte[] bytes = input.readNBytes(limit + 1);
+            if (bytes.length == 0 || bytes.length > limit) return null;
+            return bytes;
+        } catch (Exception e) {
+            // 403 (policy without GET), 404 and transport failures all read as "not available"; no diagnostics leak.
+            return null;
+        }
+    }
+
+    static String journalKey(GlassesAccess.Scope scope, String sessionId) {
+        return "materials/" + scopeKey(scope) + "/sessions/" + UUID.fromString(sessionId) + "/journal.json";
+    }
+
     private void put(String key, byte[] bytes, String contentType) throws Exception {
         try (var input = new ByteArrayInputStream(bytes)) {
             client.putObject(PutObjectArgs.builder().bucket(bucket).object(key)
