@@ -2,6 +2,11 @@ databaseChangeLog:
   - changeSet:
       id: 2026-07-23-smart-solution-ops-seed
       author: codex
+      # The existing AERIS DB records this exact checksum. The SQL and YAML in the
+      # running image match the candidate byte-for-byte (deployment audit 2026-10-07).
+      # Accept only that historical value; do not clear checksums or rerun this seed.
+      validCheckSum:
+        - "9:e6afd2bb6afee12c66f701b305274429"
       changes:
         - sqlFile:
             path: db/changelog/2026-07-23-smart-solution-ops-seed.sql
