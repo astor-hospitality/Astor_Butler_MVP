@@ -915,7 +915,7 @@
         if(!self.powerStatus)self.powerStatus=[NSMutableDictionary new];if(!self.freshPowerComponents)self.freshPowerComponents=[NSMutableSet new];
         for(NSNumber *component in @[@(AIBudsBatteryComponentGlass),@(AIBudsBatteryComponentChargingCase)]){
             AIBudsBatteryInfoModel *info=[status infoForComponent:component.integerValue];if(!info)continue;
-            if(component.integerValue==AIBudsBatteryComponentGlass && info.chargingState!=AIBudsChargingStateUnknown){self.dockCharging=info.chargingState==AIBudsChargingStateCharging;if(self.dockCharging)}
+            if(component.integerValue==AIBudsBatteryComponentGlass && info.chargingState!=AIBudsChargingStateUnknown){self.dockCharging=info.chargingState==AIBudsChargingStateCharging;}
             [self refreshDock];[self.dock observeChargingForDevice:device component:component.integerValue state:info.chargingState];
             NSString *key=component.stringValue;NSDictionary *previous=self.powerStatus[key];NSMutableDictionary *entry=previous?[previous mutableCopy]:[NSMutableDictionary new];NSDate *now=NSDate.date;
             NSNumber *level=info.batteryLevel;BOOL valid=[level isKindOfClass:NSNumber.class] && isfinite(level.doubleValue) && level.doubleValue>=0 && level.doubleValue<=100 && floor(level.doubleValue)==level.doubleValue;
