@@ -2,6 +2,7 @@ package museon_online.astor_butler.domain.booking;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.domain.billing.BillingSync;
 import museon_online.astor_butler.domain.booking.external.ExternalBookingSnapshot;
 import museon_online.astor_butler.domain.booking.external.ExternalBookingState;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationProvider;
@@ -27,6 +28,7 @@ public class ExternalBookingSync {
     private final TableReservationRepository repository;
     private final TableReservationService reservationService;
     private final ExternalReservationProvider externalProvider;
+    private final BillingSync billingSync;
     private long lastCheckedId;
 
     public record Report(int checked, int confirmed, int cancelled, int unknown, int failed) {
@@ -78,6 +80,9 @@ public class ExternalBookingSync {
                     case PENDING, COMPLETED -> {
                         // Nothing to move: still waiting, or the visit is over and the local order ages out on its own.
                     }
+                }
+                if (snapshot != null) {
+                    billingSync.onVenueSnapshot(snapshot.providerId(), order.sbisExternalId(), snapshot.state(), snapshot.metadata());
                 }
             } catch (RuntimeException e) {
                 failed++;

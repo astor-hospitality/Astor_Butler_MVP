@@ -217,7 +217,8 @@ class GuestBillServiceTest {
     }
 
     private static BillDraft draft(Long chatId, Long reservationId, OrderEstimate estimate) {
-        return new BillDraft(chatId, chatId, "aeris", GuestBillKind.BUSINESS_LUNCH, "direct", reservationId, "business-lunch:AERIS", estimate);
+        return new BillDraft(chatId, chatId, "aeris", GuestBillKind.BUSINESS_LUNCH, "direct", reservationId, "business-lunch:AERIS", estimate,
+                java.time.Instant.parse("2026-10-06T09:30:00Z"));
     }
 
     private static OrderEstimate twoDishes() {

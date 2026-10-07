@@ -56,6 +56,7 @@ astor:
     saby:
       enabled: ${ASTOR_SABY_ENABLED:false}
       write-enabled: ${SABY_WRITE_ENABLED:false}
+      payment-enabled: ${SABY_PAYMENT_ENABLED:false}
       base-url: ${SABY_API_BASE_URL:https://api.sbis.ru}
       auth-url: ${SABY_AUTH_URL:https://online.sbis.ru/oauth/service/}
       app-client-id: ${SABY_APP_CLIENT_ID:}
@@ -73,6 +74,10 @@ astor:
     enabled: ${ASTOR_BILLING_ENABLED:false}
     # On: every HTTP call to Saby is journalled (method, path, status, duration; no bodies, tokens or guest data).
     saby-call-log-enabled: ${ASTOR_SABY_CALL_LOG_ENABLED:false}
+    # How often confirmed bookings are checked for a payment link to hand the guest, and how long after the visit the review is asked.
+    payment-prompt-delay-ms: ${ASTOR_BILLING_PAYMENT_PROMPT_DELAY_MS:30000}
+    review-delay-minutes: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:60}
+    review-lookback-hours: ${ASTOR_BILLING_REVIEW_LOOKBACK_HOURS:24}
   startup:
     admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}

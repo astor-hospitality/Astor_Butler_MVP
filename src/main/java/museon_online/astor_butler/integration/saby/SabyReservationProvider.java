@@ -317,6 +317,7 @@ public class SabyReservationProvider implements ExternalReservationProvider {
         metadata.put("state", result.state());
         metadata.put("productState", result.productState());
         metadata.put("payState", result.payState());
+        metadata.put("billPayState", SabyPayState.fromCode(result.payState()));
         return new ExternalBookingSnapshot(PROVIDER_ID, externalReservationId, toExternal(result.bookingState()),
                 result.status(), metadata);
     }

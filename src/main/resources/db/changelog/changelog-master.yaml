@@ -71,3 +71,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-05-staff-portal.yaml
   - include:
       file: db/changelog/2026-10-07-guest-billing.yaml
+  - include:
+      file: db/changelog/2026-10-08-guest-billing-payment-review.yaml

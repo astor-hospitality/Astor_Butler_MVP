@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.core.event.InboundEvent;
 import museon_online.astor_butler.fsm.core.idempotency.IdempotencyGuard;
+import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.MessageGatewayService;
@@ -59,6 +60,7 @@ public class TelegramRouter {
     private final TelegramVoiceEnrichmentGuard voiceEnrichmentGuard;
     private final HostessReservationApprovalService hostessReservationApprovalService;
     private final TelegramMediaSender telegramMediaSender;
+    private final VisitReviewService visitReviewService;
 
     @Value("${telegram.ui.preview-enabled:true}")
     private boolean previewEnabled;
@@ -123,6 +125,21 @@ public class TelegramRouter {
                     .text(safePlayAnswer.answerText())
                     .showAlert(false)
                     .build());
+            return true;
+        }
+
+        VisitReviewService.CallbackResult review = visitReviewService.handleCallback(callbackQuery.getData(), chatId);
+        if (review.handled()) {
+            execute(sender, AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackQuery.getId())
+                    .text(review.answerText())
+                    .showAlert(false)
+                    .build());
+            if (review.guestText() != null) {
+                // The button stands for words the guest could have typed; the bot answers them the usual way.
+                IncomingMessage asTyped = typedByGuest(callbackQuery, chatId, review.guestText());
+                send(asTyped, messageGatewayService.handle(asTyped), sender);
+            }
             return true;
         }
 
@@ -231,6 +248,24 @@ public class TelegramRouter {
                 user == null ? null : user.getIsBot(),
                 update.getUpdateId() == null ? UUID.randomUUID().toString() : update.getUpdateId().toString(),
                 payload
+        );
+    }
+
+    private IncomingMessage typedByGuest(CallbackQuery callbackQuery, Long chatId, String text) {
+        User user = callbackQuery.getFrom();
+        return IncomingMessage.telegram(
+                chatId,
+                user == null ? null : user.getId(),
+                null,
+                null,
+                text,
+                null,
+                user == null ? null : user.getFirstName(),
+                user == null ? null : user.getLastName(),
+                user == null ? null : user.getUserName(),
+                user == null ? null : user.getLanguageCode(),
+                user == null ? null : user.getIsBot(),
+                "callback:" + callbackQuery.getId()
         );
     }
 

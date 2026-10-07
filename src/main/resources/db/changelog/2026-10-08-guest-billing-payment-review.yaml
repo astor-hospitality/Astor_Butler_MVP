@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-08-guest-billing-payment-review
+      author: dmtrshm
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-08-guest-billing-payment-review.sql

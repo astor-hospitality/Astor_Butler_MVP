@@ -1,5 +1,6 @@
 package museon_online.astor_butler.integration.saby;
 
+import museon_online.astor_butler.domain.billing.BillPayState;
 import museon_online.astor_butler.domain.booking.external.ExternalBookingSnapshot;
 import museon_online.astor_butler.domain.booking.external.ExternalBookingState;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,23 @@ class SabyReservationStateSyncTest {
             assertThat(snapshot.externalReservationId()).isEqualTo(EXTERNAL_ID);
             assertThat(snapshot.providerId()).isEqualTo("SABY");
             fixture.server().verify();
+        }
+    }
+
+    @Test
+    void thePayStateRidesAlongForBilling() {
+        for (var expected : new Object[][] {
+                {"{\"state\": 20, \"payState\": 200}", BillPayState.PAID},
+                {"{\"state\": 20, \"payState\": 0}", BillPayState.UNPAID},
+                {"{\"state\": 20}", BillPayState.UNKNOWN},
+        }) {
+            Fixture fixture = fixture();
+            expectAuth(fixture.server());
+            fixture.server().expect(once(), requestTo(STATE_URL)).andRespond(withSuccess((String) expected[0], MediaType.APPLICATION_JSON));
+
+            ExternalBookingSnapshot snapshot = fixture.provider().fetchReservationState(EXTERNAL_ID);
+
+            assertThat(snapshot.metadata().get("billPayState")).as((String) expected[0]).isEqualTo(expected[1]);
         }
     }
 

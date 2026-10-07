@@ -28,9 +28,9 @@ public class GuestBillRepository {
             PreparedStatement statement = connection.prepareStatement("""
                     INSERT INTO guest_bills (
                         chat_id, telegram_user_id, venue_code, kind, source, table_reservation_id,
-                        status, pay_state, estimate_minor, currency, price_source, created_at, updated_at
+                        status, pay_state, estimate_minor, currency, price_source, visit_ends_at, created_at, updated_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUB', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUB', ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """,
                     new String[]{"id"}
             );
@@ -44,6 +44,7 @@ public class GuestBillRepository {
             statement.setString(8, BillPayState.NOT_REPORTED.name());
             statement.setObject(9, draft.estimate().totalMinor(), Types.BIGINT);
             statement.setString(10, blankToNull(draft.priceSource()));
+            statement.setTimestamp(11, draft.visitEndsAt() == null ? null : Timestamp.from(draft.visitEndsAt()));
             return statement;
         }, keyHolder);
         Long id = keyHolder.getKey().longValue();
@@ -167,6 +168,73 @@ public class GuestBillRepository {
         return find(id).orElseThrow();
     }
 
+    /** Issued bills whose guest has not been sent the venue's payment link yet, oldest first. */
+    public List<GuestBill> findAwaitingPaymentLink(int limit) {
+        return findAwaitingPaymentLinkAfter(0L, limit);
+    }
+
+    public List<GuestBill> findAwaitingPaymentLinkAfter(long afterId, int limit) {
+        return jdbcTemplate.query("""
+                SELECT *
+                FROM guest_bills
+                WHERE status = ?
+                  AND payment_link_sent_at IS NULL
+                  AND external_order_id IS NOT NULL
+                  AND id > ?
+                ORDER BY id
+                LIMIT ?
+                """,
+                billMapper(),
+                GuestBillStatus.ISSUED.name(),
+                afterId,
+                limit
+        );
+    }
+
+    /** Bills whose visit ended inside the window and that have no review row yet, oldest first. */
+    public List<GuestBill> findVisitsEndedWithoutReview(Instant from, Instant to, int limit) {
+        return jdbcTemplate.query("""
+                SELECT b.*
+                FROM guest_bills b
+                WHERE b.visit_ends_at >= ?
+                  AND b.visit_ends_at <= ?
+                  AND b.status <> ?
+                  AND NOT EXISTS (SELECT 1 FROM visit_reviews r WHERE r.bill_id = b.id)
+                ORDER BY b.visit_ends_at, b.id
+                LIMIT ?
+                """,
+                billMapper(),
+                Timestamp.from(from),
+                Timestamp.from(to),
+                GuestBillStatus.CANCELLED.name(),
+                limit
+        );
+    }
+
+    public GuestBill markPaymentLinkSent(Long id) {
+        jdbcTemplate.update("""
+                UPDATE guest_bills
+                SET payment_link_sent_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                id
+        );
+        return find(id).orElseThrow();
+    }
+
+    public GuestBill markPaidNotified(Long id) {
+        jdbcTemplate.update("""
+                UPDATE guest_bills
+                SET paid_notified_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                id
+        );
+        return find(id).orElseThrow();
+    }
+
     public GuestBill updateStatus(Long id, GuestBillStatus status) {
         jdbcTemplate.update("""
                 UPDATE guest_bills
@@ -197,6 +265,9 @@ public class GuestBillRepository {
                 nullableLong(rs, "venue_amount_minor"),
                 rs.getString("currency"),
                 rs.getString("price_source"),
+                instant(rs, "visit_ends_at"),
+                instant(rs, "payment_link_sent_at"),
+                instant(rs, "paid_notified_at"),
                 instant(rs, "created_at"),
                 instant(rs, "updated_at")
         );
