@@ -142,13 +142,23 @@ public class GlassesController {
     }
 
     private ResponseEntity<?> success(String requestId, String answer, GlassesPhotoContext photoContext) {
+        // Astor's own voice when the server has one; otherwise the phone reads the text itself.
+        byte[] audio = null;
+        try {
+            audio = service.speak(answer);
+        } catch (RuntimeException ignored) {
+            // A busy or failing voice never changes the answer.
+        }
         return ResponseEntity.ok().header("Cache-Control", "no-store")
                 .body(new AssistResponse(requestId, answer, service.capabilities(), photoContext == null ? null
-                        : new PhotoReceipt(requestId, photoContext, service.archivesEnabled())));
+                        : new PhotoReceipt(requestId, photoContext, service.archivesEnabled()),
+                        audio == null ? null : Base64.getEncoder().encodeToString(audio),
+                        audio == null ? null : "audio/mpeg", audio == null ? null : "male"));
     }
 
     public record AssistResponse(String requestId, String text, GlassesAssistService.Capabilities capabilities,
-                                 PhotoReceipt photoReceipt) { }
+                                 PhotoReceipt photoReceipt, String audioBase64, String audioMimeType,
+                                 String audioVoiceGender) { }
     public record PhotoReceipt(String requestId, GlassesPhotoContext context, boolean archived) { }
     public record ErrorResponse(String requestId, Map<String, String> error) { }
 
