@@ -103,7 +103,8 @@ class GlassesTranscriptRelayTest {
         var relay = new GlassesTranscriptRelay(client, true, TOKEN, true);
         assertThat(relay.send(scope, ID, "text", "q", "   ", null, null)).isFalse();
 
-        whenSent().thenReturn(response(500));
+        HttpResponse<Void> refused = response(500);
+        whenSent().thenReturn(refused);
         assertThat(relay.send(scope, ID, "text", "q", "a", null, null)).isFalse();
         whenSent().thenThrow(new java.io.IOException("butler is away"));
         assertThat(relay.send(scope, ID, "text", "q", "a", null, null)).isFalse();
