@@ -20,6 +20,8 @@
 | `GET /retail/order/{id}/state`, `/states?externalIds=[…]` | `state` 10 → 20 → 220, `productState` 1000 → 1001 → 1998 — по документации |
 | `PUT /retail/order/{id}/update` | вся бронь заново; отменённую не трогает (409) |
 | `PUT /retail/order/{id}/cancel` | 220 / 1998 |
+| `GET /retail/order/{id}/payment-link` | `{link, amount}` — страница оплаты стаба `/__pay/{id}` и сумма по каталогу **(форма — наше предположение, B4)** |
+| `GET/POST /__pay/{id}` | страница с одной кнопкой «Оплатить»; после неё `payState` 200 и запись в `payments[]` |
 | `GET /retail/nomenclature/price-list` | прайс-лист 4 |
 | `GET /retail/v2/nomenclature/list?searchString` | блюда из `business-lunch/aeris.json` и `menu/aeris/site/kitchen.json` |
 
@@ -28,10 +30,14 @@
     POST /__admin/confirm/{id}     принять бронь (state 20)
     POST /__admin/seat/{id}        {"table": 3035} — посадить woTable-бронь на стол
     POST /__admin/cancel/{id}      снять бронь
+    POST /__admin/pay/{id}         отметить оплаченным (payState 200) без страницы
+    POST /__admin/close/{id}       закрыть заказ после визита (state 200 / productState 1999) — у гостя спросят оценку
     GET  /__admin/orders           все брони
     POST /__admin/reset            очистить
 
 `SABY_STUB_AUTO_CONFIRM_SECONDS=30` — брони подтверждаются сами через 30 с (занятый персонал); 0 — только руками.
+
+`SABY_STUB_PUBLIC_URL=https://<домен стенда>/presto` — адрес, по которому телефон гостя откроет страницу оплаты; без него ссылка ведёт на хост запроса (`saby-stub:8090` внутри стенда).
 
 ## На стенде
 

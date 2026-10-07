@@ -169,3 +169,61 @@ test("recorded fixtures carry no guest data, tokens or keys", () => {
   const record = redact({ token: "abc", customer: { name: "Иван", phone: "79990000000" }, booking: { table: 3035 }, nested: [{ app_secret: "x", id: 7 }] });
   assert.deepEqual(record, { token: "<secret>", customer: { name: "<name:4>", phone: "<phone:11>" }, booking: { table: 3035 }, nested: [{ app_secret: "<secret>", id: 7 }] });
 });
+
+test("payment: the link leads to a page that pays the order, the state shows it, closing ends the visit", async () => {
+  const token = await auth();
+  const found = await call("GET", "/retail/v2/nomenclature/list?pointId=206&priceListId=4&searchString=борщ", { token });
+  const dish = found.json.nomenclatures.find((n) => !n.isParent);
+  const { json: created } = await call("POST", "/retail/order/create", { token, body: booking({ nomenclatures: [{ id: dish.id, count: 2, priceListId: 4, name: dish.name }] }) });
+  const id = created.externalId;
+
+  const link = await call("GET", `/retail/order/${id}/payment-link`, { token });
+  assert.equal(link.status, 200);
+  assert.equal(link.json.link, `${base}/__pay/${id}`);
+  assert.equal(link.json.amount, 540);
+  assert.equal((await call("GET", `/retail/order/${id}/payment-link`)).status, 401, "the link needs the token like every Saby route");
+
+  const page = await fetch(link.json.link);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /540 ₽/);
+  assert.equal((await call("GET", `/retail/order/${id}/state`, { token })).json.payState, 0);
+
+  const paid = await fetch(link.json.link, { method: "POST" });
+  assert.equal(paid.status, 200);
+  assert.match(await paid.text(), /Оплачено/);
+  const state = (await call("GET", `/retail/order/${id}/state`, { token })).json;
+  assert.equal(state.payState, 200);
+  assert.equal(state.payments.length, 1);
+  assert.equal(state.payments[0].sum, 540);
+  assert.match(await (await fetch(link.json.link)).text(), /Уже оплачено/);
+
+  const closed = await call("POST", `/__admin/close/${id}`);
+  assert.equal(closed.status, 200);
+  assert.equal(closed.json.state, STATE.CLOSED);
+  assert.equal(closed.json.productState, PRODUCT_STATE.DONE);
+  assert.equal((await call("GET", `/retail/order/${id}/payment-link`, { token })).status, 409, "a closed order has no payment page");
+  assert.equal((await call("GET", `/retail/order/missing/payment-link`, { token })).status, 404);
+});
+
+test("payment: the admin can mark an order paid, and a public URL replaces the request host in the link", async () => {
+  const token = await auth();
+  const { json: created } = await call("POST", "/retail/order/create", { token, body: booking() });
+  const paid = await call("POST", `/__admin/pay/${created.externalId}`);
+  assert.equal(paid.status, 200);
+  assert.equal(paid.json.payState, 200);
+  assert.equal((await call("GET", `/retail/order/${created.externalId}/payment-link`, { token })).json.amount, null, "no dishes, no sum");
+
+  const demo = createStubServer(createWorld(), { publicUrl: "https://demo.example.org/presto/" });
+  await new Promise((resolve) => demo.listen(0, "127.0.0.1", resolve));
+  try {
+    const demoBase = `http://127.0.0.1:${demo.address().port}`;
+    const authed = await fetch(demoBase + "/oauth/service/", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ app_client_id: "c", app_secret: "s", secret_key: "k" }) });
+    const demoToken = (await authed.json()).token;
+    const made = await fetch(demoBase + "/retail/order/create", { method: "POST", headers: { "content-type": "application/json", "X-SBISAccessToken": demoToken }, body: JSON.stringify(booking()) });
+    const { externalId } = await made.json();
+    const link = await fetch(`${demoBase}/retail/order/${externalId}/payment-link`, { headers: { "X-SBISAccessToken": demoToken } });
+    assert.equal((await link.json()).link, `https://demo.example.org/presto/__pay/${externalId}`);
+  } finally {
+    await new Promise((resolve) => demo.close(resolve));
+  }
+});

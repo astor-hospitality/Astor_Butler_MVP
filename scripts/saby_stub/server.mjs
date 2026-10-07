@@ -6,6 +6,7 @@
 
    Environment (stub):   SABY_STUB_PORT=8090  SABY_STUB_POINT_ID=206  SABY_STUB_HALL_ID=271  SABY_STUB_PRICE_LIST_ID=4
                          SABY_STUB_AUTO_CONFIRM_SECONDS=0   (>0: bookings confirm themselves after N seconds, like busy staff)
+   Environment (stub):   SABY_STUB_PUBLIC_URL=https://demo.example.org/presto   where a guest's phone reaches the payment page (default: the request host)
    Environment (record): SABY_UPSTREAM=https://api.sbis.ru  SABY_AUTH_UPSTREAM=https://online.sbis.ru  SABY_STUB_FIXTURES=<dir>
 
    Point Butler at it:   SABY_API_BASE_URL=http://localhost:8090  SABY_AUTH_URL=http://localhost:8090/oauth/service/
@@ -62,7 +63,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       autoConfirmSeconds: Number(env.SABY_STUB_AUTO_CONFIRM_SECONDS || 0),
       dishes,
     });
-    const server = createStubServer(world, { log });
+    const server = createStubServer(world, { log, publicUrl: env.SABY_STUB_PUBLIC_URL || "" });
     server.listen(port, () => log(`Saby stub on :${port}: point ${world.point.id}, hall ${world.hallId}, ${world.tables.length} tables, ${dishes.length} dishes, auto-confirm ${env.SABY_STUB_AUTO_CONFIRM_SECONDS || 0}s`));
   }
 }

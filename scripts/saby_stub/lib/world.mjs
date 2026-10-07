@@ -143,9 +143,54 @@ export function createWorld({ pointId = 206, hallId = 271, priceListId = 4, tabl
       customer: { ...body.customer },
       booking: { hall: hallId, table: table ? table.id : null, visitors, woTable: !table },
       nomenclatures: nomenclatures.map((n) => ({ ...n })),
+      payments: [],
     };
     orders.set(externalId, order);
     return { externalId };
+  }
+
+  /** The sum of the order by the catalog, in rubles; null when a position has no price. */
+  function total(order) {
+    let sum = 0;
+    for (const item of order.nomenclatures) {
+      const dish = catalog.find((c) => c.id === item.id || c.externalId === item.externalId);
+      if (!dish || dish.cost === null || dish.cost === undefined) return null;
+      sum += Number(dish.cost) * Number(item.count || 1);
+    }
+    return order.nomenclatures.length ? sum : null;
+  }
+
+  /** GET /retail/order/{id}/payment-link: the page where the guest pays. The shape of the real answer is unknown (B4). */
+  function paymentLink(externalId, publicUrl) {
+    tick();
+    const order = orders.get(externalId);
+    if (!order) return null;
+    if (!active(order)) return { error: 409, message: "order is cancelled or closed" };
+    return { link: publicUrl.replace(/\/+$/, "") + "/__pay/" + externalId, amount: total(order) };
+  }
+
+  /** What the guest does on the payment page, or the staff on the terminal: the order is paid in full. */
+  function pay(externalId) {
+    tick();
+    const order = orders.get(externalId);
+    if (!order) return null;
+    if (!active(order)) return { error: 409, message: "order is cancelled or closed" };
+    if (order.payState !== 200) {
+      order.payState = 200;
+      order.payments.push({ type: "online", sum: total(order), at: new Date(now()).toISOString() });
+    }
+    return publicOrder(order);
+  }
+
+  /** What the staff do in Presto after the visit: close the order ("Завершить"). */
+  function close(externalId) {
+    tick();
+    const order = orders.get(externalId);
+    if (!order) return null;
+    if (order.state === STATE.CANCELLED) return { error: 409, message: "order is cancelled" };
+    order.state = STATE.CLOSED;
+    order.productState = PRODUCT_STATE.DONE;
+    return publicOrder(order);
   }
 
   function get(externalId) {
@@ -157,7 +202,7 @@ export function createWorld({ pointId = 206, hallId = 271, priceListId = 4, tabl
   function state(externalId) {
     tick();
     const order = orders.get(externalId);
-    return order ? { state: order.state, payState: order.payState, payments: [], productState: order.productState } : null;
+    return order ? { state: order.state, payState: order.payState, payments: order.payments.map((p) => ({ ...p })), productState: order.productState } : null;
   }
 
   function update(externalId, body) {
@@ -246,7 +291,7 @@ export function createWorld({ pointId = 206, hallId = 271, priceListId = 4, tabl
       customer: { ...order.customer }, booking: { ...order.booking }, nomenclatures: order.nomenclatures.map((n) => ({ ...n })) };
   }
 
-  return { point, hallId, priceListId, tables, catalog, issueToken, validToken, hallList, calendar, create, get, state, update, cancel, confirm, seat, priceList, nomenclatureList, list, reset };
+  return { point, hallId, priceListId, tables, catalog, issueToken, validToken, hallList, calendar, create, get, state, update, cancel, confirm, seat, paymentLink, pay, close, total, priceList, nomenclatureList, list, reset };
 }
 
 export function defaultTables() {
