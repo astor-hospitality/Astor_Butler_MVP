@@ -184,8 +184,9 @@ public class GlassesAssistService implements AutoCloseable {
             if (cancelled.get()) throw unavailable();
             if (photoContext == null) storage.archive(scope, id, kind, media, answer);
             else storage.archive(scope, id, kind, media, answer, photoContext);
-            // The relay is the last step and never changes the answer: the staff member hears it either way.
-            relay.send(scope, id, kind, question, answer, photoContext, kind.equals("image") ? media : null);
+            // Queued, not sent here: the provider slot is released with the answer, and the chat catches up
+            // on its own. The relay never changes the answer and never delays it.
+            relay.sendLater(scope, id, kind, question, answer, photoContext, kind.equals("image") ? media : null);
             return answer;
         }, kind.equals("image"), cancelled);
     }

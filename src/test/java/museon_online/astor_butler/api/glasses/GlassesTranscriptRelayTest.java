@@ -110,6 +110,30 @@ class GlassesTranscriptRelayTest {
         assertThat(relay.send(scope, ID, "text", "q", "a", null, null)).isFalse();
     }
 
+    @Test void queuedSendingLeavesTheAnswerPathImmediately() throws Exception {
+        var latch = new java.util.concurrent.CountDownLatch(1);
+        HttpResponse<Void> ok = response(200);
+        when(client.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class))).thenAnswer(invocation -> {
+            latch.countDown();
+            return ok;
+        });
+        var relay = new GlassesTranscriptRelay(client, true, TOKEN, true);
+        byte[] photo = {(byte) 0xFF, (byte) 0xD8, 5};
+
+        relay.sendLater(scope, ID, "image", "Что на столе?", "Видны приборы.", null, photo);
+        photo[2] = 9; // the queued copy is the frame as it was, not whatever the caller does next
+
+        assertThat(latch.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        var captor = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
+        verify(client).send(captor.capture(), any());
+        var json = mapper.readTree(body(captor.getValue()));
+        assertThat(java.util.Base64.getDecoder().decode(json.path("photoBase64").asText())[2]).isEqualTo((byte) 5);
+
+        // Nothing is queued while it is off, so no thread touches the client at all.
+        GlassesTranscriptRelay.disabled().sendLater(scope, ID, "text", "q", "a", null, null);
+        verifyNoMoreInteractions(client);
+    }
+
     @Test void aHugeAnswerIsCutRatherThanRefused() throws Exception {
         HttpResponse<Void> ok = response(200);
         whenSent().thenReturn(ok);

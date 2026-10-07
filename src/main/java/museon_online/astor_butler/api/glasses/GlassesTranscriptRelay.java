@@ -15,7 +15,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Sends what was said through the glasses to the rest of Butler, so a staff member's question, Astor's
@@ -43,6 +46,15 @@ public class GlassesTranscriptRelay {
     private final HttpClient client;
     // Two at a time: the relay is a courtesy, never a queue that can grow while the shift goes on.
     private final Semaphore slots = new Semaphore(2);
+    /* Sending happens off the assist path. The single provider slot must be free the moment the answer is
+       ready: the person wearing the glasses waits for Astor, never for Butler's chat. A full queue drops
+       the oldest pending relay rather than delaying anyone. */
+    private final ThreadPoolExecutor sender = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(8), runnable -> {
+                Thread thread = new Thread(runnable, "glasses-transcript-relay");
+                thread.setDaemon(true);
+                return thread;
+            }, new ThreadPoolExecutor.DiscardOldestPolicy());
 
     @Autowired
     public GlassesTranscriptRelay(
@@ -71,6 +83,18 @@ public class GlassesTranscriptRelay {
     }
 
     boolean configured() { return enabled && token.length() >= 16; }
+
+    /** Queues one exchange and returns at once; the answer never waits for Butler. */
+    void sendLater(GlassesAccess.Scope scope, String requestId, String kind, String question, String answer,
+                   GlassesPhotoContext context, byte[] photo) {
+        if (!configured() || answer == null || answer.isBlank()) return;
+        byte[] copy = photo == null ? null : photo.clone();
+        try {
+            sender.execute(() -> send(scope, requestId, kind, question, answer, context, copy));
+        } catch (RuntimeException e) {
+            log.debug("Glasses transcript relay not queued: {}", e.getClass().getSimpleName());
+        }
+    }
 
     /** Hands one exchange to Butler. Returns true when Butler took it; never throws. */
     boolean send(GlassesAccess.Scope scope, String requestId, String kind, String question, String answer,
@@ -120,6 +144,9 @@ public class GlassesTranscriptRelay {
             slots.release();
         }
     }
+
+    @jakarta.annotation.PreDestroy
+    void close() { sender.shutdownNow(); }
 
     private static String cut(String text) {
         if (text == null) return "";
