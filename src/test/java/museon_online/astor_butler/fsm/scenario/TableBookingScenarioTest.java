@@ -66,19 +66,7 @@ class TableBookingScenarioTest {
                 Instant.parse("2026-06-26T09:32:00Z"),
                 BookingTimeProvider.VENUE_ZONE
         ));
-        TableBookingDraftMerger draftMerger = new TableBookingDraftMerger(draftStorage, timeProvider);
-        ReflectionTestUtils.setField(draftMerger, "defaultVenueCode", "AERIS");
-        scenario = new TableBookingScenario(
-                fsmStorage,
-                draftStorage,
-                tableReservationService,
-                mediaCatalog,
-                draftMerger,
-                new TableBookingStepRegistry(),
-                new BookingPhraseService(),
-                timeProvider,
-                new VenueOpeningHours()
-        );
+        scenario = scenarioAt(timeProvider);
         lenient().when(mediaCatalog.floorPlan()).thenReturn(new MediaAsset(
                 "AERIS_FLOOR_PLAN",
                 "AERIS",
@@ -91,10 +79,27 @@ class TableBookingScenarioTest {
                 "application/pdf",
                 true
         ));
-        ReflectionTestUtils.setField(scenario, "planPdfAssetCode", "AERIS_FLOOR_PLAN");
-        ReflectionTestUtils.setField(scenario, "managerTelegramId", 876857557L);
-        ReflectionTestUtils.setField(scenario, "hostessChatId", "-1004291419562");
         lenient().when(tableReservationService.createReservation(any(TableReservationCommand.class))).thenReturn(order(44L));
+    }
+
+    private TableBookingScenario scenarioAt(BookingTimeProvider clock) {
+        TableBookingDraftMerger draftMerger = new TableBookingDraftMerger(draftStorage, clock);
+        ReflectionTestUtils.setField(draftMerger, "defaultVenueCode", "AERIS");
+        TableBookingScenario created = new TableBookingScenario(
+                fsmStorage,
+                draftStorage,
+                tableReservationService,
+                mediaCatalog,
+                draftMerger,
+                new TableBookingStepRegistry(),
+                new BookingPhraseService(),
+                clock,
+                new VenueOpeningHours()
+        );
+        ReflectionTestUtils.setField(created, "planPdfAssetCode", "AERIS_FLOOR_PLAN");
+        ReflectionTestUtils.setField(created, "managerTelegramId", 876857557L);
+        ReflectionTestUtils.setField(created, "hostessChatId", "-1004291419562");
+        return created;
     }
 
     @Test
@@ -218,9 +223,9 @@ class TableBookingScenarioTest {
     void acceptsPartySizeReplyDuringTableSelectionWithoutRepeatingGuestQuestion() {
         AtomicReference<TableBookingDraftStorage.Draft> storedDraft = new AtomicReference<>(new TableBookingDraftStorage.Draft(
                 "AERIS",
-                Instant.parse("2026-06-06T15:00:00Z"),
-                Instant.parse("2026-06-06T17:00:00Z"),
-                LocalDate.of(2026, 6, 6),
+                Instant.parse("2026-06-27T15:00:00Z"),
+                Instant.parse("2026-06-27T17:00:00Z"),
+                LocalDate.of(2026, 6, 27),
                 LocalTime.of(20, 0),
                 null,
                 "7",
@@ -298,9 +303,9 @@ class TableBookingScenarioTest {
         for (String reply : java.util.List.of("На одного", "соло", "На троих", "3", "трое")) {
             AtomicReference<TableBookingDraftStorage.Draft> storedDraft = new AtomicReference<>(new TableBookingDraftStorage.Draft(
                     "AERIS",
-                    Instant.parse("2026-06-06T15:00:00Z"),
-                    Instant.parse("2026-06-06T17:00:00Z"),
-                    LocalDate.of(2026, 6, 6),
+                    Instant.parse("2026-06-27T15:00:00Z"),
+                    Instant.parse("2026-06-27T17:00:00Z"),
+                    LocalDate.of(2026, 6, 27),
                     LocalTime.of(20, 0),
                     null,
                     "18",
@@ -342,7 +347,7 @@ class TableBookingScenarioTest {
     @Test
     void carriesSeatingPreferenceIntoReservationCommand() {
         IncomingMessage incoming = telegram("винная комната, тихий стол");
-        Instant start = Instant.parse("2026-06-06T15:00:00Z");
+        Instant start = Instant.parse("2026-06-27T15:00:00Z");
         when(draftStorage.find(incoming.chatId())).thenReturn(Optional.of(new TableBookingDraftStorage.Draft(
                 "AERIS",
                 start,
@@ -770,9 +775,9 @@ class TableBookingScenarioTest {
     void usesUnderstandingSlotsInsteadOfRepeatingCurrentQuestion() {
         AtomicReference<TableBookingDraftStorage.Draft> storedDraft = new AtomicReference<>(new TableBookingDraftStorage.Draft(
                 "AERIS",
-                Instant.parse("2026-06-06T15:00:00Z"),
-                Instant.parse("2026-06-06T17:00:00Z"),
-                LocalDate.of(2026, 6, 6),
+                Instant.parse("2026-06-27T15:00:00Z"),
+                Instant.parse("2026-06-27T17:00:00Z"),
+                LocalDate.of(2026, 6, 27),
                 LocalTime.of(20, 0),
                 null,
                 "18",
@@ -815,9 +820,9 @@ class TableBookingScenarioTest {
     void createsReservationAfterGuestDeclinesSeatingPreference() {
         AtomicReference<TableBookingDraftStorage.Draft> storedDraft = new AtomicReference<>(new TableBookingDraftStorage.Draft(
                 "AERIS",
-                Instant.parse("2026-06-06T15:00:00Z"),
-                Instant.parse("2026-06-06T17:00:00Z"),
-                LocalDate.of(2026, 6, 6),
+                Instant.parse("2026-06-27T15:00:00Z"),
+                Instant.parse("2026-06-27T17:00:00Z"),
+                LocalDate.of(2026, 6, 27),
                 LocalTime.of(20, 0),
                 3,
                 "18",
@@ -851,9 +856,9 @@ class TableBookingScenarioTest {
     void storesSeatingPreferenceBeforeCreatingReservation() {
         AtomicReference<TableBookingDraftStorage.Draft> storedDraft = new AtomicReference<>(new TableBookingDraftStorage.Draft(
                 "AERIS",
-                Instant.parse("2026-06-06T15:00:00Z"),
-                Instant.parse("2026-06-06T17:00:00Z"),
-                LocalDate.of(2026, 6, 6),
+                Instant.parse("2026-06-27T15:00:00Z"),
+                Instant.parse("2026-06-27T17:00:00Z"),
+                LocalDate.of(2026, 6, 27),
                 LocalTime.of(20, 0),
                 2,
                 "7",
@@ -919,6 +924,154 @@ class TableBookingScenarioTest {
         assertThat(commandCaptor.getValue().seatingPreference()).isEqualTo("возможно будет четыре");
     }
 
+    /** The clock of these tests is Friday 26.06.2026, 14:32 in Yekaterinburg; on Fridays AERIS is open from 12:00 to 04:00. */
+    private AtomicReference<TableBookingDraftStorage.Draft> stored(TableBookingDraftStorage.Draft draft) {
+        AtomicReference<TableBookingDraftStorage.Draft> stored = new AtomicReference<>(draft);
+        lenient().doAnswer(invocation -> Optional.ofNullable(stored.get())).when(draftStorage).find(eq(1773317437L));
+        lenient().doAnswer(invocation -> {
+            stored.set(invocation.getArgument(1));
+            return null;
+        }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
+        return stored;
+    }
+
+    private AtomicReference<TableBookingDraftStorage.Draft> todayWithoutATime() {
+        return stored(new TableBookingDraftStorage.Draft(
+                "AERIS", null, null, LocalDate.of(2026, 6, 26), null, 2, "5", null, null, true, "Забронировать стол"));
+    }
+
+    @Test
+    void aTimeAlreadyGoneTodayIsNotBooked() {
+        AtomicReference<TableBookingDraftStorage.Draft> stored = todayWithoutATime();
+
+        // It is 14:32, and the guest asks for one o'clock today.
+        OutgoingMessage outgoing = scenario.handle(telegram("13:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "13:00");
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(outgoing.nextState()).isEqualTo(BotState.TABLE_BOOKING_COLLECT_TIME.name());
+        assertThat(outgoing.actions()).contains("TIME_ALREADY_PASSED", "ASK_TIME");
+        assertThat(outgoing.text()).startsWith("Это время уже прошло.").doesNotContain("Не хочу гадать", "закрыт");
+        assertThat(buttons(outgoing)).startsWith("15:00", "16:00").doesNotContain("12:00", "13:00", "14:00");
+        assertThat(stored.get().requestedTime()).isNull();
+        assertThat(stored.get().requestedDate()).isEqualTo(LocalDate.of(2026, 6, 26));
+    }
+
+    @Test
+    void aLateHourSaidForTodayIsTheComingNight() {
+        AtomicReference<TableBookingDraftStorage.Draft> stored = todayWithoutATime();
+
+        // Half past midnight "today", said in the afternoon, is the night after this evening: 27.06 on the calendar.
+        OutgoingMessage outgoing = scenario.handle(telegram("00:30"), BotState.TABLE_BOOKING_COLLECT_TIME, "00:30");
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().requestedStartAt()).isEqualTo(Instant.parse("2026-06-26T19:30:00Z"));
+        assertThat(command.getValue().requestedEndAt()).isEqualTo(Instant.parse("2026-06-26T21:30:00Z"));
+        assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
+        verify(draftStorage).save(eq(1773317437L), org.mockito.ArgumentMatchers.argThat(
+                draft -> LocalDate.of(2026, 6, 27).equals(draft.requestedDate()) && LocalTime.of(0, 30).equals(draft.requestedTime())));
+    }
+
+    @Test
+    void aLateHourJustGoneIsNotMovedToTheNextNight() {
+        // Saturday 27.06, 00:30: Friday's evening is still going on until 04:00. "Сегодня в 00:10" is twenty minutes ago.
+        TableBookingScenario afterMidnight = scenarioAt(new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-26T19:30:00Z"), BookingTimeProvider.VENUE_ZONE)));
+        stored(new TableBookingDraftStorage.Draft("AERIS", null, null, LocalDate.of(2026, 6, 27), null, 2, "5", null, null, true, "Забронировать стол"));
+
+        OutgoingMessage outgoing = afterMidnight.handle(telegram("00:10"), BotState.TABLE_BOOKING_COLLECT_TIME, "00:10");
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(outgoing.text()).startsWith("Это время уже прошло.");
+        assertThat(outgoing.actions()).contains("TIME_ALREADY_PASSED");
+    }
+
+    @Test
+    void anHourOfTheSameNightStillAheadIsBookedAsItIs() {
+        // The same night at 00:30: one o'clock is half an hour ahead and stays on 27.06.
+        TableBookingScenario afterMidnight = scenarioAt(new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-26T19:30:00Z"), BookingTimeProvider.VENUE_ZONE)));
+        stored(new TableBookingDraftStorage.Draft("AERIS", null, null, LocalDate.of(2026, 6, 27), null, 2, "5", null, null, true, "Забронировать стол"));
+
+        afterMidnight.handle(telegram("01:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "01:00");
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().requestedStartAt()).isEqualTo(Instant.parse("2026-06-26T20:00:00Z"));
+    }
+
+    @Test
+    void anEveningHourStillAheadStaysOnItsDay() {
+        todayWithoutATime();
+
+        scenario.handle(telegram("23:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "23:00");
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().requestedStartAt()).isEqualTo(Instant.parse("2026-06-26T18:00:00Z"));
+    }
+
+    @Test
+    void aTimeAlreadyGoneNamedAtOnceIsNotBookedEither() {
+        lenient().when(draftStorage.find(any())).thenReturn(Optional.empty());
+
+        OutgoingMessage outgoing = scenario.handle(telegram("Хочу забронировать столик сегодня на 13:00 на двоих"), BotState.READY_FOR_DIALOG,
+                "Хочу забронировать столик сегодня на 13:00 на двоих");
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(outgoing.text()).startsWith("Это время уже прошло.");
+        assertThat(outgoing.actions()).contains("TIME_ALREADY_PASSED");
+    }
+
+    @Test
+    void aPartyTooLargeForOneTableIsToldTheLimit() {
+        lenient().when(draftStorage.find(any())).thenReturn(Optional.empty());
+        for (String reply : new String[]{"на 25 человек", "100", "нас 30", "45 гостей"}) {
+            OutgoingMessage outgoing = scenario.handle(telegram(reply), BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE, reply.toLowerCase());
+
+            assertThat(outgoing.nextState()).as(reply).isEqualTo(BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE.name());
+            assertThat(outgoing.actions()).as(reply).containsExactly("ASK_PARTY_SIZE");
+            assertThat(outgoing.text()).as(reply).isEqualTo(
+                    "В одну бронь стола могу записать до 20 гостей. Для большей компании напишите «менеджер», команда AERIS подберет вариант.");
+        }
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aReplyThatIsNotACountOfGuestsIsNotAskedInTheSameWordsAgain() {
+        lenient().when(draftStorage.find(any())).thenReturn(Optional.empty());
+        // "21.06" at this step is a date, not twenty-one guests.
+        for (String reply : new String[]{"нас много", "0", "21.06"}) {
+            OutgoingMessage outgoing = scenario.handle(telegram(reply), BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE, reply);
+
+            assertThat(outgoing.nextState()).as(reply).isEqualTo(BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE.name());
+            assertThat(outgoing.text()).as(reply).isEqualTo("Не понял, сколько будет гостей. Напишите число, например 4.");
+        }
+    }
+
+    @Test
+    void aDayAlreadyGoneIsNamedAsSuch() {
+        for (String reply : new String[]{"вчера", "позавчера"}) {
+            stored(new TableBookingDraftStorage.Draft("AERIS", null, null, null, null, 2, "5", null, null, true, "Забронировать стол"));
+
+            OutgoingMessage outgoing = scenario.handle(telegram(reply), BotState.TABLE_BOOKING_COLLECT_DATE, reply);
+
+            assertThat(outgoing.nextState()).as(reply).isEqualTo(BotState.TABLE_BOOKING_COLLECT_DATE.name());
+            assertThat(outgoing.text()).as(reply).isEqualTo("Этот день уже прошел. На какой день держим стол?");
+            assertThat(buttons(outgoing)).as(reply).isNotEmpty();
+        }
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aReplyThatIsNotADayIsAskedAgainWithExamples() {
+        stored(new TableBookingDraftStorage.Draft("AERIS", null, null, null, null, 2, "5", null, null, true, "Забронировать стол"));
+
+        OutgoingMessage outgoing = scenario.handle(telegram("когда-нибудь"), BotState.TABLE_BOOKING_COLLECT_DATE, "когда-нибудь");
+
+        assertThat(outgoing.nextState()).isEqualTo(BotState.TABLE_BOOKING_COLLECT_DATE.name());
+        assertThat(outgoing.text()).isEqualTo("Не смог понять день. Выберите его кнопкой или напишите, например, «завтра», «в пятницу», «30.06».");
+        assertThat(outgoing.text()).doesNotContain("Принял");
+    }
+
     private IncomingMessage telegram(String text) {
         return IncomingMessage.telegram(
                 1773317437L,
@@ -937,7 +1090,7 @@ class TableBookingScenarioTest {
     }
 
     private TableBookingDraftStorage.Draft draft() {
-        Instant start = Instant.parse("2026-06-06T15:00:00Z");
+        Instant start = Instant.parse("2026-06-27T15:00:00Z");
         return new TableBookingDraftStorage.Draft("AERIS", start, start.plusSeconds(7200), 2, "Хочу забронировать столик завтра на 20:00 на двоих");
     }
 
