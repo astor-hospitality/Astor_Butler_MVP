@@ -1,6 +1,21 @@
 astor:
   model:
     provider: ${ASTOR_MODEL_PROVIDER:spring-ai}
+    # provider=openai-compatible: any service with the OpenAI HTTP API (chat/completions, embeddings).
+    # Model names are the service's own, see its GET /models. Without a vision or embedding model
+    # those two calls answer with a fallback instead of calling the service.
+    openai-compatible:
+      base-url: ${OPENAI_COMPATIBLE_BASE_URL:}
+      api-key: ${OPENAI_COMPATIBLE_API_KEY:}
+      model: ${OPENAI_COMPATIBLE_MODEL:}
+      quality-model: ${OPENAI_COMPATIBLE_QUALITY_MODEL:}
+      vision-model: ${OPENAI_COMPATIBLE_VISION_MODEL:}
+      embedding-model: ${OPENAI_COMPATIBLE_EMBEDDING_MODEL:}
+      timeout-ms: ${OPENAI_COMPATIBLE_TIMEOUT_MS:15000}
+      max-tokens: ${OPENAI_COMPATIBLE_MAX_TOKENS:256}
+      # A negative temperature is not sent at all, for models that accept only their default.
+      temperature: ${OPENAI_COMPATIBLE_TEMPERATURE:0.1}
+      json-mode: ${OPENAI_COMPATIBLE_JSON_MODE:true}
   redis:
     fsm-ttl-seconds: ${FSM_REDIS_TTL_SECONDS:259200}
     idempotency-ttl-seconds: ${IDEMPOTENCY_REDIS_TTL_SECONDS:86400}
