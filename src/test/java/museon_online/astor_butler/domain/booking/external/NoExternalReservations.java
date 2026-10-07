@@ -33,4 +33,9 @@ public final class NoExternalReservations implements ExternalReservationProvider
     public boolean cancelReservation(String externalReservationId) {
         return false;
     }
+
+    @Override
+    public ExternalBookingSnapshot fetchReservationState(String externalReservationId) {
+        return ExternalBookingSnapshot.unknown(PROVIDER_ID, externalReservationId, "PROVIDER_NOT_CONFIGURED");
+    }
 }

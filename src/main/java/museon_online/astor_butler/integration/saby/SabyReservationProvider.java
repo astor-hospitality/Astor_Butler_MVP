@@ -6,6 +6,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.external.ExternalAvailabilityResult;
+import museon_online.astor_butler.domain.booking.external.ExternalBookingSnapshot;
+import museon_online.astor_butler.domain.booking.external.ExternalBookingState;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationProvider;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
@@ -229,6 +231,36 @@ public class SabyReservationProvider implements ExternalReservationProvider {
     @Override
     public boolean cancelReservation(String externalReservationId) {
         return cancel(externalReservationId).ok();
+    }
+
+    @Override
+    public ExternalBookingSnapshot fetchReservationState(String externalReservationId) {
+        SabyOrderResult result;
+        try {
+            result = state(externalReservationId);
+        } catch (RuntimeException e) {
+            log.warn("Saby booking state read failed unexpectedly for a booking: {}", e.toString());
+            return ExternalBookingSnapshot.unknown(PROVIDER_ID, externalReservationId, "PROVIDER_ERROR");
+        }
+        if (!result.ok()) {
+            return ExternalBookingSnapshot.unknown(PROVIDER_ID, externalReservationId, result.status());
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("state", result.state());
+        metadata.put("productState", result.productState());
+        metadata.put("payState", result.payState());
+        return new ExternalBookingSnapshot(PROVIDER_ID, externalReservationId, toExternal(result.bookingState()),
+                result.status(), metadata);
+    }
+
+    private static ExternalBookingState toExternal(SabyBookingState state) {
+        return switch (state == null ? SabyBookingState.UNKNOWN : state) {
+            case PENDING -> ExternalBookingState.PENDING;
+            case CONFIRMED -> ExternalBookingState.CONFIRMED;
+            case COMPLETED -> ExternalBookingState.COMPLETED;
+            case CANCELLED -> ExternalBookingState.CANCELLED;
+            case UNKNOWN -> ExternalBookingState.UNKNOWN;
+        };
     }
 
     /** Requests cancellation. Never retried; check {@link #state(String)} afterwards. */
