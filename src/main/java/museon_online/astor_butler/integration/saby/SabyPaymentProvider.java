@@ -3,6 +3,7 @@ package museon_online.astor_butler.integration.saby;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.billing.ExternalPaymentProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.stereotype.Component;
 
@@ -28,6 +29,7 @@ public class SabyPaymentProvider implements ExternalPaymentProvider {
     private final SabyReservationProperties properties;
     private final SabyApiClient client;
 
+    @Autowired
     public SabyPaymentProvider(SabyReservationProperties properties, RestTemplateBuilder restTemplateBuilder) {
         this(properties, new SabyApiClient(properties, restTemplateBuilder));
     }
