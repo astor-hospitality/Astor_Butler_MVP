@@ -124,6 +124,20 @@ class GuestBillPaymentPrompterTest {
         verify(provider, never()).paymentLink(anyString());
     }
 
+    @Test
+    void unconfirmedFirstFiftyBillsDoNotStarveTheNextConfirmedBill() {
+        for (long id = 1; id <= 51; id++) {
+            GuestBill bill = bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH,
+                    "DIRECT", id, "test", OrderEstimate.of(List.of(OrderEstimate.Line.priced("B", "Борщ", 1, 270))), NOW));
+            bills.issued(bill.id(), "SABY", "order-" + id);
+            reservation(id, id == 51 ? TableReservationStatus.CONFIRMED : TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+        }
+        when(provider.paymentLink("order-51")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/51", null)));
+        assertThat(prompter.run().sent()).isZero();
+        assertThat(prompter.run().sent()).isEqualTo(1);
+        verify(provider).paymentLink("order-51");
+    }
+
     private GuestBill issued(long reservationId) {
         GuestBill bill = bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), NOW.plus(Duration.ofHours(2))));

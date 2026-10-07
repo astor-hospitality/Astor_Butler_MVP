@@ -35,6 +35,7 @@ public class GuestBillPaymentPrompter {
     private final GuestBillNotifier notifier;
     private final Clock clock;
     private final Map<Long, Instant> retryAfter = new ConcurrentHashMap<>();
+    private long lastCheckedId;
 
     public record Report(int checked, int sent, int skipped, int failed) {
         static final Report NOTHING = new Report(0, 0, 0, 0);
@@ -68,7 +69,7 @@ public class GuestBillPaymentPrompter {
         }
     }
 
-    public Report run() {
+    public synchronized Report run() {
         if (!properties.isEnabled()) {
             return Report.NOTHING;
         }
@@ -80,7 +81,8 @@ public class GuestBillPaymentPrompter {
         int sent = 0;
         int skipped = 0;
         int failed = 0;
-        List<GuestBill> waiting = bills.awaitingPaymentLink(BATCH);
+        List<GuestBill> waiting = bills.awaitingPaymentLinkAfter(lastCheckedId, BATCH);
+        lastCheckedId = waiting.size() == BATCH ? waiting.getLast().id() : 0L;
         for (GuestBill bill : waiting) {
             if (!provider.get().providerId().equals(bill.externalProvider()) || !confirmed(bill) || retryAfter.getOrDefault(bill.id(), Instant.MIN).isAfter(now)) {
                 skipped++;

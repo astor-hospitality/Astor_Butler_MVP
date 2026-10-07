@@ -63,6 +63,7 @@ class BillingSyncTest {
     @Test
     void aClosedOrderAsksTheGuestHowItWent() {
         GuestBill bill = issued();
+        when(notifier.reviewPrompt(any())).thenReturn(true);
 
         sync.onVenueSnapshot("SABY", "order-1", ExternalBookingState.COMPLETED, Map.of(BillingSync.PAY_STATE_KEY, BillPayState.PAID));
         sync.onVenueSnapshot("SABY", "order-1", ExternalBookingState.COMPLETED, Map.of(BillingSync.PAY_STATE_KEY, BillPayState.PAID));

@@ -37,6 +37,7 @@ class VisitReviewServiceTest {
         properties.setEnabled(true);
         properties.setReviewDelayMinutes(60);
         properties.setReviewLookbackHours(24);
+        org.mockito.Mockito.when(notifier.reviewPrompt(any())).thenReturn(true);
     }
 
     @Test
@@ -121,6 +122,15 @@ class VisitReviewServiceTest {
     void writesNothingForABillWithoutAChat() {
         verifyNoInteractions(notifier);
         assertThat(reviews.prompt(null)).isEmpty();
+    }
+
+    @Test
+    void aFailedTelegramPromptMustBeRetried() {
+        GuestBill due = bill(99L, NOW.minus(Duration.ofHours(2)));
+        org.mockito.Mockito.when(notifier.reviewPrompt(any())).thenReturn(false, true);
+        reviews.promptDueVisits();
+        reviews.promptDueVisits();
+        verify(notifier, times(2)).reviewPrompt(due);
     }
 
     private GuestBill bill(long reservationId, Instant visitEndsAt) {

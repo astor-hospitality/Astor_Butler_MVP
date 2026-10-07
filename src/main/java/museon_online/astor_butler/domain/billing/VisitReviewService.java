@@ -53,7 +53,7 @@ public class VisitReviewService {
     }
 
     /** Asks the guest, unless they were asked for this bill already or the bill is cancelled. */
-    public Optional<VisitReview> prompt(GuestBill bill) {
+    public synchronized Optional<VisitReview> prompt(GuestBill bill) {
         if (bill == null || bill.chatId() == null || bill.status() == GuestBillStatus.CANCELLED) {
             return Optional.empty();
         }
@@ -61,9 +61,11 @@ public class VisitReviewService {
         if (existing.isPresent()) {
             return existing;
         }
+        if (!notifier.reviewPrompt(bill)) {
+            return Optional.empty();
+        }
         VisitReview review = reviews.open(bill.id(), bill.chatId());
         bills.reviewNoted(bill.id(), BillOperationType.REVIEW_PROMPTED, null);
-        notifier.reviewPrompt(bill);
         return Optional.of(review);
     }
 

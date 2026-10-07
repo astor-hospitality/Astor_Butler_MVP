@@ -170,17 +170,23 @@ public class GuestBillRepository {
 
     /** Issued bills whose guest has not been sent the venue's payment link yet, oldest first. */
     public List<GuestBill> findAwaitingPaymentLink(int limit) {
+        return findAwaitingPaymentLinkAfter(0L, limit);
+    }
+
+    public List<GuestBill> findAwaitingPaymentLinkAfter(long afterId, int limit) {
         return jdbcTemplate.query("""
                 SELECT *
                 FROM guest_bills
                 WHERE status = ?
                   AND payment_link_sent_at IS NULL
                   AND external_order_id IS NOT NULL
-                ORDER BY created_at, id
+                  AND id > ?
+                ORDER BY id
                 LIMIT ?
                 """,
                 billMapper(),
                 GuestBillStatus.ISSUED.name(),
+                afterId,
                 limit
         );
     }

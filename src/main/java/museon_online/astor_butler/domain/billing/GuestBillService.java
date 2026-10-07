@@ -146,6 +146,10 @@ public class GuestBillService {
         return bills.findAwaitingPaymentLink(Math.max(1, Math.min(limit, 200)));
     }
 
+    public List<GuestBill> awaitingPaymentLinkAfter(long afterId, int limit) {
+        return bills.findAwaitingPaymentLinkAfter(afterId, Math.max(1, Math.min(limit, 200)));
+    }
+
     /** Bills whose visit ended inside the window and that were not asked about yet. */
     public List<GuestBill> visitsEndedWithoutReview(java.time.Instant from, java.time.Instant to, int limit) {
         return bills.findVisitsEndedWithoutReview(from, to, Math.max(1, Math.min(limit, 200)));
