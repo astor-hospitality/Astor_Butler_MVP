@@ -57,7 +57,21 @@ jobs:
           cache: maven
 
       - name: Run tests
-        run: mvn -B test
+        run: |
+          set -o pipefail
+          mvn -B test 2>&1 | tee /tmp/maven-test.log
+      # The job log and the run summary live where some environments cannot read them; annotations are
+      # served by the API, so a failure says what broke without anyone having to open the web page.
+      - name: Annotate Maven errors
+        if: failure()
+        run: |
+          {
+            grep -E '^\[ERROR\]' /tmp/maven-test.log | head -12 || true
+            grep -rhE 'Tests run:.*(Failures: [1-9]|Errors: [1-9])' target/surefire-reports 2>/dev/null | head -5 || true
+          } | while IFS= read -r line; do
+            printf '::error::%s\n' "$(printf '%s' "$line" | tr -d '\r' | cut -c1-400)"
+          done
+          echo '--- captured errors above; full log is in the job output ---'
 
       - name: Set up Node for staff auth checks
         uses: actions/setup-node@v4
