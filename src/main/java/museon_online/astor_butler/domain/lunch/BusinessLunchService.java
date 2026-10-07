@@ -269,7 +269,8 @@ public class BusinessLunchService {
                 request.guestPhone(),
                 request.comment(),
                 request.source(),
-                request.conciergeRequestId()
+                request.conciergeRequestId(),
+                reservation.sbisExternalId()
         );
     }
 

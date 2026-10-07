@@ -21,6 +21,21 @@ public interface ExternalReservationProvider {
      */
     boolean cancelReservation(String externalReservationId);
 
+    /**
+     * Reads what the venue's system now says about a booking Butler wrote there. Never throws: a failed read is
+     * {@link ExternalBookingState#UNKNOWN}, and the caller changes nothing on it.
+     */
+    ExternalBookingSnapshot fetchReservationState(String externalReservationId);
+
+    /**
+     * Rewrites a booking Butler created in the venue's system with the order's current data (time, party size,
+     * wishes). {@code created()} on the result means the venue's system now has the new data; anything else means
+     * it may still hold the old data and a person has to look.
+     *
+     * @param butlerReference the local order id, kept in the booking as its marker
+     */
+    ExternalReservationResult updateReservation(String externalReservationId, TableReservationCommand command, String butlerReference);
+
     record ExternalAvailabilityRequest(
             String venueCode,
             Instant requestedStartAt,

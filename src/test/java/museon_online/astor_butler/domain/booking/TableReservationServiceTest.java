@@ -328,6 +328,39 @@ class TableReservationServiceTest {
     }
 
     @Test
+    void aChangedOrderThatIsAlreadyInTheRestaurantSystemIsRewrittenThere() {
+        VenueTable table = table(5L, "5", 4, true, true);
+        TableReservationOrder current = withExternalId(order(12L, table, TableReservationStatus.CONFIRMED), "saby-1");
+        TableReservationOrder changed = withExternalId(order(12L, table), "saby-1");
+        Instant newStart = Instant.parse("2026-06-06T17:30:00Z");
+        Instant newEnd = Instant.parse("2026-06-06T19:30:00Z");
+        TableReservationChangeCommand command = new TableReservationChangeCommand(
+                "AERIS", null, null, null, newStart, newEnd, 3, null);
+
+        when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("AVAILABLE", "6"));
+        when(repository.findTables("AERIS")).thenReturn(List.of(table, table(6L, "6", 4, true, true)));
+        when(repository.findOrder(12L)).thenReturn(Optional.of(current));
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table));
+        when(repository.changeReservation(eq(12L), any(TableReservationChangeCommand.class), eq(table))).thenReturn(changed);
+        when(externalProvider.updateReservation(eq("saby-1"), any(), eq("12")))
+                .thenReturn(externalResult(true, "SABY_ORDER_UPDATED", "saby-1"));
+
+        TableReservationOrder result = service.changeByGuest(12L, command);
+
+        var sync = forClass(ExternalReservationResult.class);
+        assertThat(result).isEqualTo(changed);
+        verify(notificationService).notifyHostessApprovalRequest(eq(changed), sync.capture());
+        assertThat(sync.getValue().status()).isEqualTo(TableReservationService.EXTERNAL_CHANGE_SYNCED);
+        assertThat(sync.getValue().created()).isTrue();
+        assertThat(sync.getValue().externalReservationId()).isEqualTo("saby-1");
+        var sent = forClass(TableReservationCommand.class);
+        verify(externalProvider).updateReservation(eq("saby-1"), sent.capture(), eq("12"));
+        assertThat(sent.getValue().guestName()).isEqualTo(changed.guestName());
+        verify(externalProvider, never()).reserve(any(), any());
+        verify(repository, never()).attachExternalId(any(), any());
+    }
+
+    @Test
     void aChangedOrderThatIsAlreadyInTheRestaurantSystemIsLeftForTheHostessToFixThere() {
         VenueTable table = table(5L, "5", 4, true, true);
         TableReservationOrder current = withExternalId(order(12L, table, TableReservationStatus.CONFIRMED), "saby-1");
@@ -343,6 +376,9 @@ class TableReservationServiceTest {
         when(repository.findOrder(12L)).thenReturn(Optional.of(current));
         when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table));
         when(repository.changeReservation(eq(12L), any(TableReservationChangeCommand.class), eq(table))).thenReturn(changed);
+        // Presto did not take the change (timeout): the hostess is asked to look, nothing is created twice.
+        when(externalProvider.updateReservation(eq("saby-1"), any(), eq("12")))
+                .thenReturn(externalResult(false, "PROVIDER_RESULT_UNKNOWN", ""));
 
         TableReservationOrder result = service.changeByGuest(12L, command);
 

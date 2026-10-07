@@ -43,6 +43,15 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+  booking:
+    # HOSTESS: the hostess button in Telegram confirms. VENUE_SYSTEM: a booking that is in Presto is confirmed only
+    # there (read back by the external sync); the hostess can still reject. Orders Presto does not know stay with the hostess.
+    confirmation-source: ${ASTOR_BOOKING_CONFIRMATION_SOURCE:HOSTESS}
+    external-sync:
+      # Reads bookings back from the venue's own system (Saby) and confirms/cancels local orders accordingly.
+      # Runs only while a provider is enabled and configured; 0 is not supported, set a large value to slow it down.
+      fixed-delay-ms: ${ASTOR_EXTERNAL_SYNC_DELAY_MS:60000}
+      initial-delay-ms: ${ASTOR_EXTERNAL_SYNC_INITIAL_DELAY_MS:90000}
   integrations:
     saby:
       enabled: ${ASTOR_SABY_ENABLED:false}
@@ -54,6 +63,7 @@ astor:
       secret-key: ${SABY_SECRET_KEY:}
       point-id: ${SABY_POINT_ID:}
       hall-id: ${SABY_HALL_ID:}
+      price-list-id: ${SABY_PRICE_LIST_ID:}
       venue-code: ${SABY_VENUE_CODE:AERIS}
       zone-id: ${SABY_ZONE_ID:Asia/Yekaterinburg}
       timeout-ms: ${SABY_TIMEOUT_MS:3000}

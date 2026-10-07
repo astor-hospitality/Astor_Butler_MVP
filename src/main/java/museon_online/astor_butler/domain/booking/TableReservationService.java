@@ -25,6 +25,8 @@ public class TableReservationService {
 
     /** The local order changed after it was written to the restaurant's system, which still has the old data. */
     static final String EXTERNAL_CHANGE_NOT_SYNCED = "EXTERNAL_CHANGE_NOT_SYNCED";
+    /** The restaurant's system now holds the changed data of the local order. */
+    static final String EXTERNAL_CHANGE_SYNCED = "EXTERNAL_CHANGE_SYNCED";
     private static final String EXTERNALLY_BUSY = "Table is busy in the restaurant booking system";
 
     private final TableReservationRepository repository;
@@ -138,6 +140,45 @@ public class TableReservationService {
 
     @Transactional
     public TableReservationOrder reject(Long id) {
+        return reject(id, true);
+    }
+
+    /**
+     * The venue accepted the booking in its own system: the local order follows, once. Nothing is written back.
+     * A rejected, cancelled or already confirmed order is returned as it is.
+     */
+    @Transactional
+    public TableReservationOrder confirmFromVenue(Long id) {
+        TableReservationOrder current = requireOrder(id);
+        if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
+            return current;
+        }
+        TableReservationOrder confirmed = repository.confirm(id);
+        notificationService.notifyHostessConfirmed(confirmed);
+        notificationService.notifyGuestConfirmed(confirmed);
+        return confirmed;
+    }
+
+    /**
+     * The venue dropped the booking in its own system: an awaiting order is rejected, a confirmed one is cancelled,
+     * the guest hears about it with alternatives. The venue's system is not asked to cancel what it already cancelled.
+     */
+    @Transactional
+    public TableReservationOrder cancelFromVenue(Long id) {
+        TableReservationOrder current = requireOrder(id);
+        return switch (current.status()) {
+            case AWAITING_MANAGER_CONFIRMATION -> reject(id, false);
+            case CONFIRMED -> {
+                List<VenueTable> alternatives = alternativesForRejected(current);
+                TableReservationOrder cancelled = repository.cancel(id);
+                notificationService.notifyGuestRejected(cancelled, alternatives);
+                yield cancelled;
+            }
+            default -> current;
+        };
+    }
+
+    private TableReservationOrder reject(Long id, boolean cancelInVenueSystem) {
         TableReservationOrder current = requireOrder(id);
         if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
             throw conflict("Only awaiting manager confirmation reservations can be rejected", current.tableCode());
@@ -145,7 +186,9 @@ public class TableReservationService {
 
         List<VenueTable> alternatives = alternativesForRejected(current);
         TableReservationOrder rejected = repository.reject(id);
-        cancelExternally(rejected);
+        if (cancelInVenueSystem) {
+            cancelExternally(rejected);
+        }
         notificationService.notifyGuestRejected(rejected, alternatives);
         return rejected;
     }
@@ -195,9 +238,9 @@ public class TableReservationService {
         }
 
         TableReservationOrder changed = repository.changeReservation(current.id(), resolved, table);
-        // The provider cannot change a booking yet: one that is already there is left for the hostess to fix.
+        // A booking already in the restaurant's system is rewritten there; one that never got there is created now.
         ExternalReservationResult sync = hasExternalId(changed)
-                ? changeNotSynced(changed)
+                ? updateExternally(changed, resolved.venueCode())
                 : reserveExternally(changed, resolved.venueCode());
         changed = rememberExternalId(changed, sync);
         notificationService.notifyHostessApprovalRequest(changed, sync);
@@ -365,7 +408,27 @@ public class TableReservationService {
 
     /** Writes the stored order to the restaurant's system; the order id is the duplicate guard and the marker in its comment. */
     private ExternalReservationResult reserveExternally(TableReservationOrder order, String venueCode) {
-        return externalProvider.reserve(new TableReservationCommand(
+        return externalProvider.reserve(commandOf(order, venueCode), String.valueOf(order.id()));
+    }
+
+    /** Rewrites the booking in the restaurant's system; when that is not certain, the hostess is asked to look. */
+    private ExternalReservationResult updateExternally(TableReservationOrder order, String venueCode) {
+        ExternalReservationResult result;
+        try {
+            result = externalProvider.updateReservation(order.sbisExternalId(), commandOf(order, venueCode), String.valueOf(order.id()));
+        } catch (RuntimeException e) {
+            log.warn("External booking update failed for order {}: {}", order.id(), e.toString());
+            return changeNotSynced(order);
+        }
+        if (result == null || !result.created()) {
+            return changeNotSynced(order);
+        }
+        return new ExternalReservationResult(true, true, externalProvider.providerId(), EXTERNAL_CHANGE_SYNCED,
+                order.sbisExternalId(), "The booking in the restaurant system now has the changed data.", List.of(), result.metadata());
+    }
+
+    private TableReservationCommand commandOf(TableReservationOrder order, String venueCode) {
+        return new TableReservationCommand(
                 order.chatId(),
                 order.telegramUserId(),
                 order.userId(),
@@ -381,7 +444,7 @@ public class TableReservationService {
                 order.guestComment(),
                 order.managerTelegramId(),
                 order.hostessChatId()
-        ), String.valueOf(order.id()));
+        );
     }
 
     /**
