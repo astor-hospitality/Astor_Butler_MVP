@@ -58,6 +58,14 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+  glasses:
+    # The isolated glasses runtime repeats a staff question, Astor's answer and the photo of that request
+    # to Butler, which puts them in the system chat and the shift feed. Off by default; both services need
+    # the same token in their own environment.
+    transcript-relay-enabled: ${ASTOR_GLASSES_TRANSCRIPT_RELAY_ENABLED:false}
+    transcript-relay-url: ${ASTOR_GLASSES_TRANSCRIPT_RELAY_URL:http://aeris-astor-butler-bot:8089/api/internal/glasses/transcript}
+    transcript-relay-photos: ${ASTOR_GLASSES_TRANSCRIPT_RELAY_PHOTOS:true}
+    relay-token: ${ASTOR_GLASSES_RELAY_TOKEN:}
   booking:
     # HOSTESS: the hostess button in Telegram confirms. VENUE_SYSTEM: a booking that is in Presto is confirmed only
     # there (read back by the external sync); the hostess can still reject. Orders Presto does not know stay with the hostess.
