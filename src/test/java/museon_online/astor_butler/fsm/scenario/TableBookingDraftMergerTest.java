@@ -206,4 +206,59 @@ class TableBookingDraftMergerTest {
             assertThat(answer(BotState.TABLE_BOOKING_COLLECT_TIME, text, chosen).requestedTime()).as(text + ", merger alone").isNull();
         }
     }
+
+    /** A whole request in one message, the way the bot hears it: nothing is known before, the understanding service goes first. */
+    private TableBookingDraftStorage.Draft askedAtOnce(String text) {
+        UnderstoodInput understood = understanding.understand(text, BotState.READY_FOR_DIALOG);
+        return merger.merge(withNothingKnown(text), BotState.READY_FOR_DIALOG, understood.routeText(), understood);
+    }
+
+    private TableBookingDraftStorage.Draft answeredAtTheTableStep(String text) {
+        UnderstoodInput understood = understanding.understand(text, BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION);
+        return merger.merge(withNothingKnown(text), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, understood.routeText(), understood);
+    }
+
+    private IncomingMessage withNothingKnown(String text) {
+        lenient().when(draftStorage.find(any())).thenReturn(Optional.empty());
+        return IncomingMessage.telegram(1773317437L, 1773317437L, 356, 284069928, text, null,
+                "Наталья", "Поединенко", "Poedinenko", "ru", false, "284069928");
+    }
+
+    @Test
+    void thePartySizeIsNotTakenForATableNumber() {
+        // The understanding service turns "на двоих" into "на 2 гостей"; that 2 is the party, not table number 2.
+        for (String text : new String[]{"Забронируй стол на двоих завтра в 19:00", "Хочу столик на троих завтра в 20:00",
+                "стол на 4 гостей завтра в 19:00", "нужен стол на 6 человек в пятницу в 20:00"}) {
+            TableBookingDraftStorage.Draft draft = askedAtOnce(text);
+
+            assertThat(draft.tableCode()).as(text).isNull();
+            assertThat(draft.partySize()).as(text).isNotNull();
+        }
+        assertThat(askedAtOnce("Забронируй стол на двоих завтра в 19:00 у окна").tableCode()).isNull();
+        assertThat(askedAtOnce("Забронируй стол на двоих завтра в 19:00 у окна").preferredZone()).isEqualTo("WINDOW");
+    }
+
+    @Test
+    void aTableTheGuestNamesIsStillTaken() {
+        assertThat(askedAtOnce("стол 5 на двоих завтра в 19:00").tableCode()).isEqualTo("5");
+        assertThat(askedAtOnce("столик номер 7 на двоих завтра в 19:00").tableCode()).isEqualTo("7");
+        assertThat(askedAtOnce("4 стол у окна на двоих завтра в 19:00").tableCode()).isEqualTo("4");
+        assertThat(answeredAtTheTableStep("5").tableCode()).isEqualTo("5");
+        assertThat(answeredAtTheTableStep("стол 12").tableCode()).isEqualTo("12");
+        assertThat(answeredAtTheTableStep("4 стол у окна").tableCode()).isEqualTo("4");
+    }
+
+    @Test
+    void theHourIsNotTakenFromThePartySizeOrTheTable() {
+        String[][] cases = {
+                {"Забронируй стол на двоих в понедельник в 9 утра", "09:00"}, {"стол на троих завтра в 2 дня", "14:00"},
+                {"стол на 4 гостей завтра в 11 утра", "11:00"}, {"нужен стол на 6 человек в пятницу в 8 вечера", "20:00"},
+                {"стол 5 на двоих завтра в 19:00", "19:00"}, {"стол на двоих завтра в 19:00", "19:00"}};
+        for (String[] example : cases) {
+            assertThat(askedAtOnce(example[0]).requestedTime()).as(example[0]).isEqualTo(LocalTime.parse(example[1]));
+        }
+        // The same without the understanding service: the merger alone reads the digits.
+        assertThat(answer(BotState.TABLE_BOOKING_INTENT, "стол на 3 гостей завтра в 2 дня", null).requestedTime()).isEqualTo(LocalTime.of(14, 0));
+        assertThat(answer(BotState.TABLE_BOOKING_INTENT, "стол на 2 гостей завтра в 9 утра", null).requestedTime()).isEqualTo(LocalTime.of(9, 0));
+    }
 }

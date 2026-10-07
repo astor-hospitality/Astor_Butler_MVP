@@ -7,6 +7,7 @@ import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
 import museon_online.astor_butler.fsm.scenario.BookingTimeProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -45,6 +46,9 @@ public class BusinessLunchService {
 
     @Value("${telegram.booking.hostess-chat-id:}")
     private String hostessChatId;
+
+    @Autowired(required = false)
+    private List<BusinessLunchOrderListener> listeners = List.of();
 
     public enum WindowIssue {
         NOT_A_LUNCH_DAY,
@@ -173,7 +177,19 @@ public class BusinessLunchService {
                 hostessChatId
         ));
         BusinessLunchOrder order = order(request, set, dishes, reservation, startAt, endAt);
-        return new Placement(reservation, false, order, provider.map(ready -> submit(ready, order)).orElseGet(ExternalLunchOrderProvider.Result::manualEntry));
+        ExternalLunchOrderProvider.Result external = provider.map(ready -> submit(ready, order)).orElseGet(ExternalLunchOrderProvider.Result::manualEntry);
+        notifyListeners(request, order, external);
+        return new Placement(reservation, false, order, external);
+    }
+
+    private void notifyListeners(Request request, BusinessLunchOrder order, ExternalLunchOrderProvider.Result external) {
+        for (BusinessLunchOrderListener listener : listeners) {
+            try {
+                listener.placed(request, order, external);
+            } catch (RuntimeException e) {
+                log.warn("Business lunch listener {} failed: reservation={}, reason={}", listener.getClass().getSimpleName(), order.tableReservationId(), e.toString());
+            }
+        }
     }
 
     private ExternalLunchOrderProvider.Result submit(ExternalLunchOrderProvider provider, BusinessLunchOrder order) {

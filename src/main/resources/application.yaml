@@ -68,6 +68,11 @@ astor:
       zone-id: ${SABY_ZONE_ID:Asia/Yekaterinburg}
       timeout-ms: ${SABY_TIMEOUT_MS:3000}
       max-retries: ${SABY_MAX_RETRIES:1}
+  billing:
+    # Butler never takes the money. On: a bill and its journal are kept for every order Butler places.
+    enabled: ${ASTOR_BILLING_ENABLED:false}
+    # On: every HTTP call to Saby is journalled (method, path, status, duration; no bodies, tokens or guest data).
+    saby-call-log-enabled: ${ASTOR_SABY_CALL_LOG_ENABLED:false}
   startup:
     admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}
