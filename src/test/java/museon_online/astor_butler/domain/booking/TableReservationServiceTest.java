@@ -14,6 +14,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentCaptor.forClass;
 
 class TableReservationServiceTest {
@@ -183,6 +185,48 @@ class TableReservationServiceTest {
     }
 
     @Test
+    void theTableTheHostessJustRefusedIsNotOfferedBackToTheGuest() {
+        VenueTable refused = table(5L, "5", 4, true, true);
+        VenueTable other = table(6L, "6", 4, true, true);
+        VenueTable third = table(7L, "7", 6, true, true);
+        TableReservationOrder awaiting = order(12L, refused, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+        TableReservationOrder rejected = order(12L, refused, TableReservationStatus.REJECTED);
+
+        when(repository.findOrder(12L)).thenReturn(Optional.of(awaiting));
+        when(repository.reject(12L)).thenReturn(rejected);
+        // The refused order's own hold no longer counts, so the repository lists its table as free again.
+        when(repository.findAlternativeTables(eq("AERIS"), any(), any(), anyInt(), isNull(), eq(12L)))
+                .thenReturn(List.of(refused, other, third));
+
+        service.reject(12L);
+
+        var alternatives = forClass(List.class);
+        verify(notificationService).notifyGuestRejected(eq(rejected), alternatives.capture());
+        assertThat(alternatives.getValue()).containsExactly(other, third);
+    }
+
+    @Test
+    void whenOnlyTheRefusedTableIsFreeInTheZoneTheOtherZonesAreOffered() {
+        VenueTable refused = table(5L, "5", 4, true, true);
+        VenueTable third = table(7L, "7", 6, true, true);
+        TableReservationOrder awaiting = withZone(order(12L, refused, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION), "WINDOW");
+        TableReservationOrder rejected = withZone(order(12L, refused, TableReservationStatus.REJECTED), "WINDOW");
+
+        when(repository.findOrder(12L)).thenReturn(Optional.of(awaiting));
+        when(repository.reject(12L)).thenReturn(rejected);
+        when(repository.findAlternativeTables(eq("AERIS"), any(), any(), anyInt(), eq("WINDOW"), eq(12L)))
+                .thenReturn(List.of(refused));
+        when(repository.findAlternativeTables(eq("AERIS"), any(), any(), anyInt(), isNull(), eq(12L)))
+                .thenReturn(List.of(refused, third));
+
+        service.reject(12L);
+
+        var alternatives = forClass(List.class);
+        verify(notificationService).notifyGuestRejected(eq(rejected), alternatives.capture());
+        assertThat(alternatives.getValue()).containsExactly(third);
+    }
+
+    @Test
     void rejectsReservationAndDoesNotNotifyHostess() {
         VenueTable table = table(5L, "5", 4, true, true);
         TableReservationOrder awaiting = order(12L, table, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
@@ -310,6 +354,13 @@ class TableReservationServiceTest {
 
     private TableReservationOrder order(Long id, VenueTable table) {
         return order(id, table, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+    }
+
+    private TableReservationOrder withZone(TableReservationOrder order, String zone) {
+        return new TableReservationOrder(order.id(), order.chatId(), order.telegramUserId(), order.userId(), order.tableId(), order.tableCode(),
+                order.tableDisplayName(), zone, order.seatingPreference(), order.status(), order.source(), order.requestedStartAt(), order.requestedEndAt(),
+                order.partySize(), order.guestName(), order.guestPhone(), order.guestComment(), order.managerTelegramId(), order.managerUserId(),
+                order.hostessChatId(), order.sbisExternalId(), order.createdAt(), order.updatedAt());
     }
 
     private TableReservationOrder order(Long id, VenueTable table, TableReservationStatus status) {
