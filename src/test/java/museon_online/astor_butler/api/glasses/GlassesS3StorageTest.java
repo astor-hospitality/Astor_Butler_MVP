@@ -72,4 +72,34 @@ class GlassesS3StorageTest {
                 .hasMessageNotContaining("credentials").satisfies(e -> assertThat(((GlassesFailure)e).code).isEqualTo("STORAGE_UNAVAILABLE"));
         assertThat(storage.mediaReady()).isFalse();
     }
+
+    @Test void journalAndMaterialReadsAreScopedBoundedAndQuietWhenTheArchiveRefuses() throws Exception {
+        String session = "80d26cf1-5139-4121-a4ca-dfb14aac225c";
+        String request = "ff5a8c58-bb60-43f4-b542-1e26c8b96581";
+        when(client.getObject(any(GetObjectArgs.class))).thenAnswer(i -> {
+            GetObjectArgs args = i.getArgument(0);
+            if (args.object().equals(GlassesS3Storage.journalKey(scope, session)))
+                return new GetObjectResponse(Headers.of(), args.bucket(), "ru-central1", args.object(), new ByteArrayInputStream("{\"sessionId\":\"x\"}".getBytes(StandardCharsets.UTF_8)));
+            if (args.object().endsWith("/" + request + "/input.jpg"))
+                return new GetObjectResponse(Headers.of(), args.bucket(), "ru-central1", args.object(), new ByteArrayInputStream(new byte[]{1, 2, 3}));
+            throw new IllegalStateException("AccessDenied private diagnostic");
+        });
+        assertThat(new String(storage.readJournal(scope, session), StandardCharsets.UTF_8)).contains("sessionId");
+        assertThat(storage.material(scope, request, "input.jpg")).containsExactly(1, 2, 3);
+        assertThat(storage.material(scope, request, "reply.json")).isNull();
+        assertThat(storage.material(scope, "ff5a8c58-bb60-43f4-b542-1e26c8b96582", "input.jpg")).isNull();
+        assertThat(storage.readJournal(scope, "22222222-2222-4222-8222-222222222222")).isNull();
+        assertThat(GlassesS3Storage.journalKey(scope, session)).isEqualTo("materials/" + GlassesS3Storage.scopeKey(scope) + "/sessions/" + session + "/journal.json");
+        assertThat(GlassesS3Storage.disabled().readJournal(scope, session)).isNull();
+    }
+
+    @Test void journalWritesReportFailureInsteadOfThrowing() throws Exception {
+        String session = "80d26cf1-5139-4121-a4ca-dfb14aac225c";
+        assertThat(storage.writeJournal(scope, session, "{}".getBytes(StandardCharsets.UTF_8))).isTrue();
+        verify(client).putObject(argThat(a -> a.object().equals(GlassesS3Storage.journalKey(scope, session))));
+        when(client.putObject(any(PutObjectArgs.class))).thenThrow(new IllegalStateException("private S3 credentials diagnostic"));
+        assertThat(storage.writeJournal(scope, session, "{}".getBytes(StandardCharsets.UTF_8))).isFalse();
+        assertThat(storage.writeJournal(scope, session, new byte[GlassesS3Storage.JOURNAL_LIMIT + 1])).isFalse();
+        assertThat(GlassesS3Storage.disabled().writeJournal(scope, session, new byte[1])).isFalse();
+    }
 }

@@ -226,8 +226,38 @@ class GlassesControllerTest {
                 "stageCode", "PLACE_SETTINGS", "revision", 2);
     }
 
-    @Test void photoContextIsImageOnlyAndCannotAssertIdentityTasksOrCompletion() throws Exception {
-        rejects(json(Map.of("text", "a", "photoContext", photoContext())), 400, "MALFORMED_REQUEST");
+    @Test void stageContextFramesATypedQuestionWithoutAReceiptAndLandsInTheJournal() throws Exception {
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Повторяю: два бизнес-ланча.", "test", "test", Duration.ZERO));
+        var journal = new GlassesSessionJournal(GlassesS3Storage.disabled(), java.time.Clock.systemUTC(), false);
+        var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, journal, mapper);
+        var demo = Map.of("sessionId", "80d26cf1-5139-4121-a4ca-dfb14aac225c", "scenarioCode", "SHIFT",
+                "stageCode", "SHIFT_ASSIST", "revision", 6);
+        var result = c.assist(request(json(Map.of("text", "Гости взяли два ланча", "photoContext", demo))));
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        var body = (GlassesController.AssistResponse) result.getBody();
+        assertThat(body.photoReceipt()).isNull();
+        verify(gateway).generateText(argThat(r -> r.prompt().contains("SHIFT_ASSIST") && r.prompt().contains("Гости взяли два ланча")));
+        var session = journal.session(new GlassesAccess.Scope("test-venue", "test-staff"), "80d26cf1-5139-4121-a4ca-dfb14aac225c");
+        assertThat(session.entries()).hasSize(1);
+        assertThat(session.entries().get(0).kind()).isEqualTo("text");
+        assertThat(session.entries().get(0).text()).isEqualTo("Повторяю: два бизнес-ланча.");
+        assertThat(session.entries().get(0).stageCode()).isEqualTo("SHIFT_ASSIST");
+        assertThat(session.entries().get(0).archived()).isFalse();
+    }
+
+    @Test void aFailedAssistIsJournaledWithItsCodeAndNoAnswer() throws Exception {
+        when(gateway.generateText(any())).thenThrow(new IllegalStateException("secret diagnostic"));
+        var journal = new GlassesSessionJournal(GlassesS3Storage.disabled(), java.time.Clock.systemUTC(), false);
+        var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, journal, mapper);
+        var result = c.assist(request(json(Map.of("text", "вопрос", "photoContext", photoContext()))));
+        assertThat(result.getStatusCode().value()).isEqualTo(503);
+        var entry = journal.session(new GlassesAccess.Scope("test-venue", "test-staff"), "80d26cf1-5139-4121-a4ca-dfb14aac225c").entries().get(0);
+        assertThat(entry.error()).isEqualTo("TEXT_UNAVAILABLE");
+        assertThat(entry.text()).isNull();
+        assertThat(entry.archived()).isNull();
+    }
+
+    @Test void photoContextCannotAssertIdentityTasksOrCompletion() throws Exception {
         for (var entry : Map.<String, Object>of("sessionId", "invalid", "scenarioCode", "LIVE_TASK",
                 "stageCode", "unknown", "revision", 0, "taskId", "invented", "archived", true).entrySet()) {
             var context = new java.util.HashMap<>(photoContext());
