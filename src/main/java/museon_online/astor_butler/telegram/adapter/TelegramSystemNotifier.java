@@ -48,6 +48,57 @@ public class TelegramSystemNotifier {
         }
     }
 
+    /**
+     * What was said through the glasses, in the system chat like any other message: the staff member's
+     * question, Astor's answer, and the photo when there was one. Guest-facing identifiers are not
+     * invented here, and the caller is responsible for what it passes.
+     */
+    public boolean sendGlassesExchange(String staff, String stageCode, String question, String answer,
+                                       byte[] photo, String photoName) {
+        if (!telegramEnabled || !notificationsEnabled || systemChatId == null || systemChatId.isBlank()) {
+            return false;
+        }
+        TelegramBot telegramBot = telegramBotProvider.getIfAvailable();
+        if (telegramBot == null) {
+            return false;
+        }
+        String caption = """
+                <b>Astor Glass</b> · %s%s
+
+                <b>Сотрудник</b>
+                <blockquote>%s</blockquote>
+
+                <b>Астор</b>
+                <blockquote>%s</blockquote>
+                """.formatted(
+                html(blank(staff)),
+                stageCode == null || stageCode.isBlank() ? "" : " · " + html(stageCode),
+                html(blank(question)),
+                html(blank(answer)));
+        try {
+            if (photo != null && photo.length > 0) {
+                // Telegram captions are limited; a long answer goes as its own message after the photo.
+                String short_ = caption.length() > 1000 ? caption.substring(0, 1000) : caption;
+                telegramBot.execute(org.telegram.telegrambots.meta.api.methods.send.SendPhoto.builder()
+                        .chatId(systemChatId)
+                        .photo(new org.telegram.telegrambots.meta.api.objects.InputFile(
+                                new java.io.ByteArrayInputStream(photo), photoName == null ? "astor-glass.jpg" : photoName))
+                        .caption(short_)
+                        .parseMode("HTML")
+                        .build());
+                if (caption.length() > 1000) {
+                    telegramBot.execute(SendMessage.builder().chatId(systemChatId).text(caption).parseMode("HTML").build());
+                }
+            } else {
+                telegramBot.execute(SendMessage.builder().chatId(systemChatId).text(caption).parseMode("HTML").build());
+            }
+            return true;
+        } catch (Exception e) {
+            log.warn("Telegram glasses exchange failed: {}", e.getMessage());
+            return false;
+        }
+    }
+
     private String systemText(IncomingMessage incoming, BotState previousState, OutgoingMessage outgoing, boolean kafkaOutboxQueued) {
         return """
                 <b>Astor Butler / system trace</b>

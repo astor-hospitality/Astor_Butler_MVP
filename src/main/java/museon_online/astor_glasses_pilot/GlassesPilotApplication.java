@@ -40,6 +40,7 @@ public final class GlassesPilotApplication {
     @EnableWebMvc
     @Import({GlassesController.class, GlassesMediaController.class, GlassesSessionEventsController.class, GlassesReportController.class,
             GlassesMessagesController.class, GlassesSpeechController.class, GlassesReportAuth.class, GlassesSpeech.class,
+            GlassesTranscriptRelay.class,
             GlassesSessionJournal.class, GlassesAccess.class, GlassesAssistService.class, GlassesVoice.class, GlassesS3Storage.class, AstorWebRelay.class})
     public static class Config {
         @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
