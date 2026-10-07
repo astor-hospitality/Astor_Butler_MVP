@@ -41,5 +41,8 @@ typedef struct {
 - (void)startedSpeaking:(AstorQuietDeliveryMessage *)message at:(NSDate *)date;
 /** Playback finished or was interrupted; an interrupted message goes back to the front of the queue. */
 - (void)finishedSpeaking:(AstorQuietDeliveryMessage *)message at:(NSDate *)date delivered:(BOOL)delivered;
+/** Messages not yet shown on screen, oldest first: the app is in the staff member's hands. */
+- (NSArray<AstorQuietDeliveryMessage *> *)pendingOnScreenAt:(NSDate *)date;
+- (void)shownOnScreen:(AstorQuietDeliveryMessage *)message at:(NSDate *)date;
 - (void)reset;
 @end

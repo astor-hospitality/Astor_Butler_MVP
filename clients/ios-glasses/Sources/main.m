@@ -10,6 +10,8 @@
 #import "AstorWearGreeting.h"
 #import "AstorDockArchive.h"
 #import "AstorQuietDelivery.h"
+#import "AstorReplyDrafts.h"
+#import <UserNotifications/UserNotifications.h>
 #import "AstorCallPolicy.h"
 #import "AstorGlassesProbe-Swift.h"
 #import <math.h>
@@ -85,7 +87,13 @@
 @property(nonatomic,strong) NSURL *silenceMonitorURL;
 @property(nonatomic,strong) NSDate *messagePollAt;
 @property(nonatomic,strong) AstorQuietDeliveryMessage *speakingMessage;
-@property(nonatomic,assign) BOOL messagePolling, messageChannelMissingLogged;
+@property(nonatomic,assign) BOOL messagePolling, messageChannelMissingLogged, notificationsAllowed;
+@property(nonatomic,strong) AstorReplyDrafts *drafts;
+@property(nonatomic,strong) UILabel *draftLabel;
+@property(nonatomic,strong) UIButton *draftSendButton, *draftDiscardButton;
+@property(nonatomic,strong) AstorQuietDeliveryMessage *answeringMessage;
+@property(nonatomic,strong) NSDate *replyDeadline;
+@property(nonatomic,assign) BOOL replyRecording;
 @property(nonatomic,assign) NSTimeInterval lastBriefCommand;
 - (void)refreshGestures;
 - (void)assignChanges:(NSDictionary *)changes restoring:(BOOL)restoring;
@@ -156,6 +164,10 @@
     [self.messageSwitch addTarget:self action:@selector(messageDeliveryChanged) forControlEvents:UIControlEventValueChanged];
     self.messageLabel=[self label:@"Сообщений нет" size:14];
     [shift addArrangedSubview:[self card:@[[self label:@"СООБЩЕНИЯ СОТРУДНИКУ" size:12],self.messageSwitch,self.messageLabel,[self label:@"Сообщения читаются в очках только в тишине. Если вы говорите, сообщение ждёт и прозвучит через три секунды после разговора. Пока сообщение ждёт, микрофон измеряет только громкость: без распознавания, записи и отправки." size:14]]]];
+    self.draftLabel=[self label:@"Черновиков ответа нет" size:14];
+    self.draftSendButton=[self button:@"Отправить ответ в Telegram" action:@selector(sendDraft)];
+    self.draftDiscardButton=[self button:@"Стереть черновик" action:@selector(discardDraft)];
+    [shift addArrangedSubview:[self card:@[[self label:@"ОТВЕТ ГОЛОСОМ" size:12],self.draftLabel,[self label:@"Пока экран заблокирован, Астор читает сообщение и записывает ваш ответ. Текст ждёт здесь: отправляете вы сами, из своего Telegram." size:14],self.draftSendButton,self.draftDiscardButton]]];
     [self refreshLunch];
     [self refreshPower];
     [shift addArrangedSubview:[self card:@[[self label:@"ЗАДАЧИ ОТ BUTLER" size:12],[self label:@"Ждём подключение портала" size:21],[self label:@"Здесь появятся назначенные вам столы и этапы обслуживания. Сервер задач ещё не подключён." size:15]]]];
@@ -244,6 +256,7 @@
     [super viewDidLoad]; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.lunch=[AstorLunchGuide new];
     self.messages=[AstorQuietDelivery new];
+    self.drafts=[AstorReplyDrafts new];
     [NSUserDefaults.standardUserDefaults registerDefaults:@{@"AstorWearGreetingEnabled":@YES}];
     self.wearGreeting=[AstorWearGreeting new];id last=[NSUserDefaults.standardUserDefaults objectForKey:@"AstorWearGreetingAt"];
     self.dock=[AstorDockArchive shared];__weak typeof(self) dockWeak=self;
@@ -373,7 +386,7 @@
 - (void)messageDeliveryChanged {
     [NSUserDefaults.standardUserDefaults setBool:self.messageSwitch.on forKey:@"AstorQuietMessagesEnabled"];
     if(!self.messageSwitch.on){[self stopSilenceMonitor];[self.messages reset];[self log:@"Сообщения сотруднику выключены. Очередь очищена, микрофон не слушает."];}
-    else [self log:@"Сообщения сотруднику включены: прозвучат в паузе разговора."];
+    else {[self askForNotifications];[self log:@"Сообщения сотруднику включены: с открытым экраном приходят уведомлением, с заблокированным — голосом в очки."];}
     [self refreshMessages];
 }
 /* Measures loudness only, to know whether the staff member is talking. No recognition, no upload:
@@ -401,10 +414,20 @@
     // −38 dBFS separates ordinary room noise from someone speaking a step away; verify on the device.
     return [self.silenceMonitor averagePowerForChannel:0]>-38;
 }
+/* With the app on screen the staff member is looking at the phone, so a message arrives as a notification
+   and a line on screen; Astor does not talk over them. Locked or in the background, the glasses are the
+   only way to reach them, so the message is read aloud in a pause. */
+- (BOOL)screenInHands { return UIApplication.sharedApplication.applicationState==UIApplicationStateActive; }
 - (void)refreshMessages {
     BOOL own=self.recorder!=nil || self.startingVoice || self.busy || self.waitingPhoto || self.speaker.isSpeaking || self.answerAudio.isPlaying || self.cue.isPlaying || self.dock.busy;
+    [self refreshDrafts];
     if(!self.messageSwitch.on){self.messageLabel.text=@"Сообщения выключены";[self stopSilenceMonitor];return;}
     [self pollMessages];
+    if([self screenInHands]){
+        [self stopSilenceMonitor];
+        [self showMessagesOnScreen];
+        return;
+    }
     if(self.messages.waiting && !own && !self.callActive && !self.audioInterruptionActive)[self startSilenceMonitor];else [self stopSilenceMonitor];
     AstorQuietDeliveryState state={0};
     state.speechNearby=[self speechNearby];
@@ -419,7 +442,7 @@
     self.speakingMessage=next;
     [self.messages startedSpeaking:next at:NSDate.date];
     [self log:@"Читаю сообщение сотруднику в паузе разговора."];
-    [self speakAnswer:next.text];
+    [self speakMessage:next.text];
     // The synthesizer reports completion; a message that never started playing returns to the queue.
     AstorQuietDeliveryMessage *spoken=next;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)((2+next.text.length/12.)*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
@@ -429,7 +452,101 @@
         [self.messages finishedSpeaking:spoken at:NSDate.date delivered:delivered];
         self.messageLabel.text=self.messages.status;
         [self log:delivered?@"Сообщение прочитано.":@"Сообщение прервано; прозвучит в следующую паузу."];
+        if(delivered)[self inviteReplyTo:spoken];
     });
+}
+/* The message as a notification and a line on screen: once per message, and never aloud. */
+- (void)showMessagesOnScreen {
+    NSArray<AstorQuietDeliveryMessage *> *waiting=[self.messages pendingOnScreenAt:NSDate.date];
+    self.messageLabel.text=self.messages.status;
+    for(AstorQuietDeliveryMessage *message in waiting){
+        [self.messages shownOnScreen:message at:NSDate.date];
+        [self log:[NSString stringWithFormat:@"Сообщение на экране: %@",message.text]];
+        [self notify:message];
+    }
+}
+- (void)askForNotifications {
+    UNUserNotificationCenter *center=UNUserNotificationCenter.currentNotificationCenter;
+    [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert|UNAuthorizationOptionSound
+                          completionHandler:^(BOOL granted,NSError *error){dispatch_async(dispatch_get_main_queue(),^{
+        self.notificationsAllowed=granted;
+        if(!granted)[self log:@"Уведомления не разрешены: сообщения будут видны только на экране приложения."];
+    });}];
+}
+- (void)notify:(AstorQuietDeliveryMessage *)message {
+    if(!self.notificationsAllowed)return;
+    UNMutableNotificationContent *content=[UNMutableNotificationContent new];
+    content.title=@"Сообщение сотруднику";
+    content.body=message.text;
+    content.sound=UNNotificationSound.defaultSound;
+    UNNotificationRequest *request=[UNNotificationRequest requestWithIdentifier:message.messageId content:content trigger:nil];
+    [UNUserNotificationCenter.currentNotificationCenter addNotificationRequest:request withCompletionHandler:nil];
+}
+/* Astor's own voice when the server has one; otherwise the voice of the phone. */
+- (void)speakMessage:(NSString *)text {
+    NSURL *url=[self speechEndpoint];NSString *token=[self token];
+    if(!url || !token.length){[self speakAnswer:text];return;}
+    NSString *requestId=NSUUID.UUID.UUIDString.lowercaseString;
+    NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];request.HTTPMethod=@"POST";request.timeoutInterval=12;
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+    request.HTTPBody=[NSJSONSerialization dataWithJSONObject:@{@"requestId":requestId,@"text":text} options:0 error:nil];
+    NSURLSessionConfiguration *config=NSURLSessionConfiguration.ephemeralSessionConfiguration;config.URLCache=nil;
+    NSURLSession *session=[NSURLSession sessionWithConfiguration:config delegate:(id<NSURLSessionDelegate>)self delegateQueue:nil];
+    [[session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error){dispatch_async(dispatch_get_main_queue(),^{
+        [session finishTasksAndInvalidate];
+        NSInteger status=((NSHTTPURLResponse *)response).statusCode;
+        NSDictionary *reply=(!error && status==200 && data.length<=3*1024*1024)?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+        NSString *encoded=[reply isKindOfClass:NSDictionary.class]?reply[@"audioBase64"]:nil;
+        if([encoded isKindOfClass:NSString.class] && encoded.length && [reply[@"audioMimeType"] isEqual:@"audio/mpeg"]){
+            NSData *speech=[[NSData alloc]initWithBase64EncodedString:encoded options:0];
+            if(speech.length && speech.length<=2*1024*1024){[self playBackendSpeech:speech];return;}
+        }
+        [self speakAnswer:text];
+    });}] resume];
+}
+- (NSURL *)speechEndpoint {
+    NSURL *assist=[self validEndpoint:NO];
+    if(!assist)return nil;
+    NSURLComponents *components=[NSURLComponents componentsWithURL:assist resolvingAgainstBaseURL:NO];
+    if(![components.path hasSuffix:@"/assist"])return nil;
+    components.path=[[components.path substringToIndex:components.path.length-@"assist".length] stringByAppendingString:@"speech"];
+    return components.URL;
+}
+/* After a message was read aloud, the staff member may answer with their own voice. The recording is
+   bounded and explicit, and the text becomes a draft they send themselves: nothing leaves on its own. */
+- (void)inviteReplyTo:(AstorQuietDeliveryMessage *)message {
+    if([self screenInHands] || self.callActive || self.audioInterruptionActive || self.recorder || self.busy)return;
+    if(!self.device.isConnectedAndReady || ![self hasGlassesOutput])return;
+    self.answeringMessage=message;
+    self.replyDeadline=[NSDate dateWithTimeIntervalSinceNow:25];
+    [self log:@"Предлагаю ответить голосом: двойное нажатие начнёт запись ответа."];
+    [self speakAnswer:@"Чтобы ответить, нажмите дважды и скажите ответ."];
+}
+- (BOOL)replyWanted { return self.answeringMessage!=nil && self.replyDeadline.timeIntervalSinceNow>0; }
+- (void)refreshDrafts {
+    NSUInteger count=[self.drafts countAt:NSDate.date];
+    self.draftLabel.text=[self.drafts statusAt:NSDate.date];
+    self.draftSendButton.hidden=count==0;
+    self.draftDiscardButton.hidden=count==0;
+}
+- (void)sendDraft {
+    AstorReplyDraft *draft=[self.drafts firstAt:NSDate.date];
+    if(!draft){[self log:@"Черновика нет."];return;}
+    NSURL *url=[AstorReplyDrafts telegramShareURLFor:draft];
+    if(!url){[self log:@"Не удалось подготовить текст для Telegram."];return;}
+    [UIApplication.sharedApplication openURL:url options:@{} completionHandler:^(BOOL success){dispatch_async(dispatch_get_main_queue(),^{
+        if(!success){[self log:@"Telegram не открылся. Текст можно скопировать с экрана."];return;}
+        // Telegram is open with the text prefilled; sending is the staff member's own tap, in their own account.
+        [self.drafts markSent:draft.draftId];
+        [self refreshDrafts];
+        [self log:@"Текст передан в Telegram. Отправку подтверждаете вы."];
+    });}];
+}
+- (void)discardDraft {
+    AstorReplyDraft *draft=[self.drafts firstAt:NSDate.date];
+    if(draft && [self.drafts discard:draft.draftId])[self log:@"Черновик стёрт."];
+    [self refreshDrafts];
 }
 /* Pulls messages addressed to this server-bound scope. Informational: nothing is acknowledged and
    nothing is sent back, so the restaurant still sees an unanswered message as unanswered. */
@@ -865,7 +982,47 @@
     [self.recorder stop];self.recorder=nil;[self playCue:NO];NSData *audio=[NSData dataWithContentsOfURL:self.recordingURL];
     if(audio.length && audio.length<2*1024*1024)[self.dock captureAudioFile:self.recordingURL];
     if(self.recordingURL)[NSFileManager.defaultManager removeItemAtURL:self.recordingURL error:nil];self.recordingURL=nil;
+    if(audio.length && audio.length<2*1024*1024 && [self replyWanted]){[self log:@"Ответ записан; расшифровываю для черновика."];[self transcribeReply:audio];return;}
     if(audio.length && audio.length<2*1024*1024){[self log:@"Голосовая запись получена; временный файл удалён."];if([self validEndpoint:NO])[self sendText:@"" image:nil audio:audio];else {[self log:@"Голос записан. Для ответа подключите Astor."];[self speakAnswer:@"Запись получена. Сервер Butler ещё не подключён."];[self endWork];}}else {[self log:@"Запись пуста или слишком велика."];[self endWork];}
+}
+/* The staff member's answer becomes text and stops there: no model call, no sending, no acknowledgement. */
+- (void)transcribeReply:(NSData *)audio {
+    AstorQuietDeliveryMessage *message=self.answeringMessage;
+    self.answeringMessage=nil;self.replyDeadline=nil;
+    NSURL *url=[self transcribeEndpoint];NSString *token=[self token];
+    if(!url || !token.length){[self endWork];[self log:@"Расшифровка недоступна: проверьте адрес и токен."];return;}
+    NSString *requestId=NSUUID.UUID.UUIDString.lowercaseString;
+    NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url];request.HTTPMethod=@"POST";request.timeoutInterval=45;
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
+    request.HTTPBody=[NSJSONSerialization dataWithJSONObject:@{@"requestId":requestId,
+        @"audioBase64":[audio base64EncodedStringWithOptions:0],@"audioMimeType":@"audio/mp4"} options:0 error:nil];
+    NSURLSessionConfiguration *config=NSURLSessionConfiguration.ephemeralSessionConfiguration;config.URLCache=nil;
+    NSURLSession *session=[NSURLSession sessionWithConfiguration:config delegate:(id<NSURLSessionDelegate>)self delegateQueue:nil];
+    self.busy=YES;
+    [[session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error){dispatch_async(dispatch_get_main_queue(),^{
+        [session finishTasksAndInvalidate];self.busy=NO;[self endWork];
+        NSInteger status=((NSHTTPURLResponse *)response).statusCode;
+        if(error || status!=200){[self log:[NSString stringWithFormat:@"Ответ не расшифрован: %@.",error?@"нет связи":[NSString stringWithFormat:@"HTTP %ld",(long)status]]];
+            [self speakAnswer:@"Не удалось разобрать ответ. Попробуйте ещё раз."];return;}
+        NSDictionary *reply=data.length<=256*1024?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+        NSString *text=[reply isKindOfClass:NSDictionary.class]?reply[@"text"]:nil;
+        if(![text isKindOfClass:NSString.class] || !text.length || ![reply[@"requestId"] isEqual:requestId]){
+            [self log:@"Расшифровка не соответствует запросу."];return;}
+        AstorReplyDraft *draft=[AstorReplyDraft answering:message.messageId asked:message.text text:text at:NSDate.date];
+        if(![self.drafts add:draft]){[self log:@"Черновик не сохранён."];return;}
+        [self refreshDrafts];
+        [self log:[NSString stringWithFormat:@"Черновик ответа готов: %@",draft.text]];
+        [self speakAnswer:@"Ответ записан. Отправите его из Telegram, когда посмотрите на телефон."];
+    });}] resume];
+}
+- (NSURL *)transcribeEndpoint {
+    NSURL *assist=[self validEndpoint:NO];
+    if(!assist)return nil;
+    NSURLComponents *components=[NSURLComponents componentsWithURL:assist resolvingAgainstBaseURL:NO];
+    if(![components.path hasSuffix:@"/assist"])return nil;
+    components.path=[[components.path substringToIndex:components.path.length-@"assist".length] stringByAppendingString:@"transcribe"];
+    return components.URL;
 }
 - (void)playCue:(BOOL)start {
     if(![self hasGlassesOutput])return;

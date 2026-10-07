@@ -37,11 +37,41 @@ Greeting listens only to SDK didWearStatusChanged when the model reports support
 
 ## Messages to the staff member
 
-A message addressed to the staff member is spoken in the glasses only while they are not talking. `AstorQuietDelivery` holds the queue and the decision; `main.m` feeds it our own audio and call state and, while something waits, the microphone's loudness. Speech nearby, our own audio, a call or music hold the message back; after all of that stops, delivery waits three quiet seconds, so a message never lands mid-sentence.
+A message addressed to the staff member is handled by where their attention is.
 
-The microphone opens only while a message waits and closes as soon as the queue is empty or the message has been spoken. It measures loudness only: nothing is recognized, recorded, kept or sent. The -38 dBFS speaking threshold is a starting value to check in a noisy room.
+**App on screen.** The message is shown as a line in the app and as a local notification, once per
+message, and never read aloud: the person is looking at the phone, so Astor does not talk over them.
+The microphone stays closed.
 
-Messages come from `GET /api/glasses/messages` beside the assist endpoint, polled no more often than every 20 seconds with the same bearer, at most 20 per answer and 600 characters each. A missing endpoint (404) is logged once and the queue stays empty. A repeated id is never spoken twice; an interrupted message returns to the front of the queue. Playing a message is informational: nothing is acknowledged and nothing is sent back, so an unanswered message stays unanswered for the restaurant.
+**Locked or in the background.** The glasses are the only way to reach them, so the message is read
+aloud — but only in a pause. `AstorQuietDelivery` holds the queue and the decision; `main.m` feeds it
+our own audio and call state and, while something waits, the microphone's loudness. Speech nearby, our
+own audio, a call or music hold the message back; after all of that stops, delivery waits three quiet
+seconds, so a message never lands mid-sentence. An interrupted message returns to the front of the
+queue; a repeated id is never spoken twice; at most 20 wait.
+
+The microphone opens only while a message waits for a pause and closes as soon as the queue is empty
+or the message has been spoken. It measures loudness only: nothing is recognized, recorded, kept or
+sent. The -38 dBFS speaking threshold is a starting value to check in a noisy room.
+
+Astor reads the message in the server's own voice (`POST /api/glasses/speech`, male, MP3) when the
+server has one, and in the phone's voice otherwise.
+
+Messages come from `GET /api/glasses/messages` beside the assist endpoint, polled no more often than
+every 20 seconds with the same bearer, at most 20 per answer and 600 characters each. A missing
+endpoint (404) is logged once and the queue stays empty. Playing or showing a message acknowledges
+nothing and sends nothing back, so an unanswered message stays unanswered for the restaurant.
+
+## Answering with your own voice
+
+After a message has been read aloud, Astor offers an answer: a double tap within 25 seconds starts the
+usual bounded recorder, and that recording goes to `POST /api/glasses/transcribe` — recognition only,
+no model call. The text becomes a draft in `AstorReplyDrafts`, shown in the app with its question.
+
+Nothing is sent from here. "Отправить ответ в Telegram" opens Telegram with the text prefilled
+(`tg://msg?text=…`); the staff member picks the chat and taps send in their own account. A draft is
+replaced if the same message is answered again, expires after twelve hours, and twenty are kept at
+most. A draft nobody sent simply expires, and the restaurant still sees the message as unanswered.
 
 ## Checks
 
@@ -51,5 +81,7 @@ Messages come from `GET /api/glasses/messages` beside the assist endpoint, polle
     /tmp/wear-test
     clang -fobjc-arc -framework Foundation tests/quiet-delivery.m Sources/AstorQuietDelivery.m -o /tmp/quiet-test
     /tmp/quiet-test
+    clang -fobjc-arc -framework Foundation tests/reply-drafts.m Sources/AstorReplyDrafts.m -o /tmp/drafts-test
+    /tmp/drafts-test
 
-Build/sign/install, camera/audio, server media, quiet message delivery in a real room and wear events are separate acceptance results.
+Build/sign/install, camera/audio, server media, quiet message delivery in a real room, the reply draft on a locked phone and wear events are separate acceptance results.

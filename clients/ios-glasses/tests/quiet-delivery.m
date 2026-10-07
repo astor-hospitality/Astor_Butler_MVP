@@ -73,6 +73,17 @@ int main(void) { @autoreleasepool {
     assert(bounded.waiting==0);
     assert([bounded.status isEqual:@"Сообщений нет"]);
 
+    // With the app on screen the message is shown once and leaves the queue: Astor does not talk over the reader.
+    AstorQuietDelivery *onScreen=[AstorQuietDelivery new];
+    AstorQuietDeliveryMessage *shown=[AstorQuietDeliveryMessage withId:one text:@"Стол пять ждёт счёт." at:t0];
+    assert([onScreen enqueue:shown]);
+    assert([onScreen pendingOnScreenAt:t0].count==1);
+    [onScreen shownOnScreen:shown at:t0];
+    assert([onScreen pendingOnScreenAt:t0].count==0);
+    assert(onScreen.waiting==0);
+    assert([onScreen nextAt:at(100) state:state(NO,NO,NO)]==nil);
+    assert(![onScreen enqueue:[AstorQuietDeliveryMessage withId:one text:@"Стол пять ждёт счёт." at:at(100)]]);
+
     printf("quiet-delivery: OK\n");
     return 0;
 } }

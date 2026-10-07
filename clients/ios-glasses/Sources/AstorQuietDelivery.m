@@ -22,6 +22,7 @@
 @implementation AstorQuietDelivery {
     NSMutableArray<AstorQuietDeliveryMessage *> *_queue;
     NSMutableSet<NSString *> *_known;          // every id ever queued, so a repeated poll does not speak twice
+    NSMutableSet<NSString *> *_shown;          // ids already shown on screen, so a notification is not repeated
     AstorQuietDeliveryMessage *_speaking;
     NSDate *_quietSince;                        // when the last speech or our own audio ended
     NSString *_status;
@@ -34,6 +35,7 @@ static const NSUInteger AstorQuietDeliveryKnownLimit = 400;
     if((self=[super init])){
         _queue=[NSMutableArray new];
         _known=[NSMutableSet new];
+        _shown=[NSMutableSet new];
         _status=@"Сообщений нет";
     }
     return self;
@@ -89,8 +91,27 @@ static const NSUInteger AstorQuietDeliveryKnownLimit = 400;
     _status=_queue.count?[NSString stringWithFormat:@"Отложено до паузы в разговоре: %lu",(unsigned long)_queue.count]:@"Сообщений нет";
 }
 
+- (NSArray<AstorQuietDeliveryMessage *> *)pendingOnScreenAt:(NSDate *)date {
+    NSMutableArray *pending=[NSMutableArray new];
+    for(AstorQuietDeliveryMessage *message in [_queue copy])if(![_shown containsObject:message.messageId])[pending addObject:message];
+    if(pending.count)_status=[NSString stringWithFormat:@"На экране: %lu",(unsigned long)_queue.count];
+    else if(_queue.count)_status=[NSString stringWithFormat:@"Показано на экране: %lu",(unsigned long)_queue.count];
+    return pending;
+}
+
+/* Shown on screen counts as delivered: the staff member is looking at the phone, so Astor stays quiet
+   and the message leaves the queue instead of waiting for a pause that no longer matters. */
+- (void)shownOnScreen:(AstorQuietDeliveryMessage *)message at:(NSDate *)date {
+    if(!message)return;
+    [_shown addObject:message.messageId];
+    [_queue removeObject:message];
+    _quietSince=date;
+    _status=_queue.count?[NSString stringWithFormat:@"На экране: %lu",(unsigned long)_queue.count]:@"Сообщений нет";
+}
+
 - (void)reset {
     [_queue removeAllObjects];
+    [_shown removeAllObjects];
     _speaking=nil;
     _quietSince=nil;
     _status=@"Сообщений нет";
