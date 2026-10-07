@@ -83,11 +83,15 @@ class SabyLunchOrderProviderTest {
                         + "{\"id\": 31, \"name\": \"Борщ со сметаной\", \"cost\": 270, \"isParent\": false}]}", MediaType.APPLICATION_JSON));
         fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
                 .andRespond(withSuccess("[{\"id\": 55, \"name\": \"Медовик\", \"cost\": 220}]", MediaType.APPLICATION_JSON));
+        expectBooking(fixture.server(), "[]");
         fixture.server().expect(once(), requestTo(UPDATE_URL))
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(jsonPath("$.product").value("restaurant"))
                 .andExpect(jsonPath("$.datetime").value("2026-10-07 13:00:00"))
                 .andExpect(jsonPath("$.booking.visitors").value(2))
+                .andExpect(jsonPath("$.booking.table").value(42))
+                .andExpect(jsonPath("$.booking.woTable").value(false))
+                .andExpect(jsonPath("$.customer.email").value("guest@example.test"))
                 .andExpect(jsonPath("$.customer.phone").value("79990000000"))
                 .andExpect(jsonPath("$.nomenclatures[0].id").value(31))
                 .andExpect(jsonPath("$.nomenclatures[0].count").value(2))
@@ -132,6 +136,7 @@ class SabyLunchOrderProviderTest {
         fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
                 .andExpect(queryParam("priceListId", "4"))
                 .andRespond(withSuccess("[{\"id\": 31, \"name\": \"борщ со сметаной\"}]", MediaType.APPLICATION_JSON));
+        expectBooking(fixture.server(), "[]");
         fixture.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
 
         ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
@@ -139,6 +144,33 @@ class SabyLunchOrderProviderTest {
         assertThat(result.accepted()).isFalse();
         assertThat(result.status()).isEqualTo("PROVIDER_RESULT_UNKNOWN");
         fixture.server().verify();
+    }
+
+    @Test
+    void existingDishesAreNeitherOverwrittenNorDuplicated() {
+        SabyReservationProperties properties = writable();
+        properties.setPriceListId("4");
+        Fixture fixture = fixture(properties);
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andRespond(withSuccess("[{\"id\":31,\"name\":\"Борщ со сметаной\"}]", MediaType.APPLICATION_JSON));
+        expectBooking(fixture.server(), "[{\"id\":90,\"count\":1}]");
+        var result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.status()).isEqualTo("EXISTING_DISHES_REQUIRE_REVIEW");
+        fixture.server().verify();
+    }
+
+    private static void expectBooking(MockRestServiceServer server, String dishes) {
+        server.expect(once(), requestTo("https://api.saby.test/retail/order/" + BOOKING_ID))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"product":"restaurant","pointId":206,"datetime":"2026-10-07 13:00:00",
+                         "comment":"Hostess note · Astor Butler #77",
+                         "booking":{"visitors":2,"table":42,"woTable":false},
+                         "customer":{"phone":"79990000000","email":"guest@example.test"},
+                         "nomenclatures":%s}
+                        """.formatted(dishes), MediaType.APPLICATION_JSON));
     }
 
     private static BusinessLunchOrder.Item dish(String title, int quantity) {
