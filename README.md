@@ -2,6 +2,39 @@
 
 FSM-first hospitality governance runtime for restaurants, hotels and event venues.
 
+## Release preparation — 6 October 2026
+
+Reviewed baseline: `5a3d3f4`. Business lunch (#33), scoped AERIS deploy (#39)
+and Saby environment wiring (#40) are merged. Saby writes (#38) are excluded.
+Source-code readiness is not production acceptance.
+
+- Lunch creates a hostess request; AERIS menu, prices and hours need venue approval.
+- Saby reading needs live test-point smoke; keep `ASTOR_SABY_ENABLED=false` until verified. No live write or deposit is included.
+- Staff/Keycloak is a separate opt-in rollout, not a configured production service.
+- Glasses clients are pilot groundwork, not store releases or complete device acceptance.
+
+Release gate: exact-commit green CI, verified DB backup/restore, migration and
+rollback compatibility, and recorded deployed revision with smoke results.
+Use the [scoped deploy runbook](docs/operations/AERIS_SCOPED_DEPLOY.md):
+read-only preflight first, then AERIS only. Image rollback does not reverse DB
+migrations. Never restart the whole shared stack for this release.
+See [staff rollout](docs/operations/STAFF_PORTAL_RUNBOOK.md) and
+[Saby contract](docs/integrations/SABY_PRESTO_BOOKING_API.md).
+
+## Team repositories
+
+Each repository releases independently; secrets and guest databases are not shared.
+
+| Repository | Responsibility |
+| --- | --- |
+| [Butler MVP](https://github.com/astor-hospitality/Astor_Butler_MVP) | Venue FSM and operations |
+| [Concierge](https://github.com/astor-hospitality/Astor_Concierge) | Guest-side HTTP handoff |
+| [Butler Legacy](https://github.com/michaelwelly/Astor_Butler_Legacy) | Historical reference |
+| [VEDAL](https://github.com/astor-hospitality/MuseonUrania) | Independent customer portal |
+| [Altai](https://github.com/astor-hospitality/mts-altai-leaders-trip) | Trip site and registration |
+| [Polymnia](https://github.com/astor-hospitality/Museon-Polymnia) | MRI-console research, no clinical deployment |
+| [Smart Solution](https://github.com/astor-hospitality/smart-solution-website) | Website brief and delivery |
+
 Astor Butler is not a Telegram bot. Telegram is the first transport adapter. The
 product core is a controlled runtime where a finite-state machine, domain
 services and auditable storage decide what can happen next.

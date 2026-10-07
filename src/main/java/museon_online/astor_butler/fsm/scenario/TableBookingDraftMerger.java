@@ -15,6 +15,7 @@ import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,6 +26,10 @@ public class TableBookingDraftMerger {
     // Either a whole clock time, or a bare hour that is not a piece of a date or of a clock time that does not exist ("25:00").
     private static final Pattern TIME = Pattern.compile(
             "(?<![:./-])\\b(?:([01]?\\d|2[0-3]):([0-5]\\d)(?!\\d)|([01]?\\d|2[0-3])(?:\\s*(?:час(?:ов|а)?|ч))?\\b(?![:./-]))");
+    /** How sure a number is the hour when the guest put "в" or "к" before it; a word of the time of day or a clock time is surer still. */
+    private static final int SAID_AS_AN_HOUR = 2;
+    private static final Pattern TABLE_NUMBER_AFTER_WORD = Pattern.compile("(?:^|\\s)стол(?:ик)?\\s*(?:№\\s*|номер\\s*)?(1\\d|[1-9])(?:\\s|$)");
+    private static final Pattern TABLE_NUMBER_ALONE = Pattern.compile("^(1\\d|[1-9])$");
     private static final Pattern TABLE_NUMBER_SELECTION = Pattern.compile("^(?:стол(?:ик)?\\s*)?(?:[1-9]|1\\d)$");
     private static final Pattern TABLE_NUMBER_IN_TEXT = Pattern.compile(".*(?:^|\\s)стол(?:ик)?\\s*(?:[1-9]|1\\d)(?:\\s|$).*");
     private static final Pattern TABLE_NUMBER_BEFORE_WORD = Pattern.compile(".*(?:^|\\s)(?:[1-9]|1\\d)\\s*стол(?:ик)?(?:\\s|$).*");
@@ -199,9 +204,6 @@ public class TableBookingDraftMerger {
         if (state == BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE || state == BotState.TABLE_BOOKING_COLLECT_SEATING_PREFERENCE) {
             return true;
         }
-        if (looksLikeTableSelection(normalized)) {
-            return true;
-        }
         return state == BotState.TABLE_BOOKING_COLLECT_DATE && extractedDate.isEmpty();
     }
 
@@ -279,16 +281,28 @@ public class TableBookingDraftMerger {
     }
 
     private Optional<LocalTime> extractTime(String text) {
-        if (looksLikePartySizeAnswer(text) || looksLikeTableSelection(text)) {
+        if (looksLikePartySizeAnswer(text)) {
             return Optional.empty();
         }
+        // In a phrase that names a table or a zone a lone number is the table: "5", "стол 12", "у окна 7".
+        // There only a number said as an hour is the time: "стол 5 в 20", "у окна к 8 вечера", "vip 21:00".
+        int atLeast = looksLikeTableSelection(text) ? SAID_AS_AN_HOUR : 1;
         // "19.30" is how many guests write a time; the TIME pattern deliberately skips digits next to a dot.
         Optional<LocalTime> dotted = GuestDateText.dottedTime(text, timeProvider.today());
         if (dotted.isPresent()) {
             return dotted.map(time -> atTimeOfDay(time, text));
         }
         Matcher matcher = TIME.matcher(text);
-        return matcher.find() ? Optional.of(parseTime(matcher, text)) : Optional.empty();
+        MatchResult hour = null;
+        int surest = 0;
+        while (matcher.find()) {
+            int sure = howSureItIsTheHour(matcher, text);
+            if (sure >= atLeast && sure > surest) {
+                surest = sure;
+                hour = matcher.toMatchResult();
+            }
+        }
+        return hour == null ? Optional.empty() : Optional.of(parseTime(hour, text));
     }
 
     private Optional<Integer> extractPartySize(String text) {
@@ -377,8 +391,14 @@ public class TableBookingDraftMerger {
         if (reverseMatcher.find()) {
             return reverseMatcher.group(1);
         }
-        Matcher matcher = Pattern.compile("(?:^|\\s)(?:стол(?:ик)?\\s*)?(1\\d|[1-9])(?:\\s|$)").matcher(text);
-        return matcher.find() ? matcher.group(1) : null;
+        // A number is a table only when the guest ties it to the word, "стол 5", or answers with it alone.
+        // Any other number in the phrase may be the party size or the hour: "стол на 2 гостей" is not table 2.
+        Matcher named = TABLE_NUMBER_AFTER_WORD.matcher(text);
+        if (named.find()) {
+            return named.group(1);
+        }
+        Matcher alone = TABLE_NUMBER_ALONE.matcher(text);
+        return alone.matches() ? alone.group(1) : null;
     }
 
     private Optional<String> preferredZone(String text) {
@@ -445,7 +465,39 @@ public class TableBookingDraftMerger {
                 || normalized.equals("сам выбери");
     }
 
-    private LocalTime parseTime(Matcher matcher, String text) {
+    /**
+     * A phrase can hold several numbers: "стол 5 на 2 гостей завтра в 9 утра". The hour is the clock time if there is one,
+     * else the number with "утра" or "часов" after it, else the one after "в" or "к", else the first that is left.
+     * A number of guests or of a table is not an hour at all.
+     */
+    private int howSureItIsTheHour(MatchResult number, String text) {
+        if (number.group(1) != null) {
+            return 4;
+        }
+        String after = text.substring(number.end()).stripLeading();
+        String before = text.substring(0, number.start()).stripTrailing();
+        if (startsWithAny(after, "гост", "человек", "персон", "чел", "стол") || before.endsWith("стол") || before.endsWith("столик")) {
+            return 0;
+        }
+        if (startsWithAny(after, "утра", "дня", "вечера", "ночи", "час")) {
+            return 3;
+        }
+        if (before.equals("в") || before.endsWith(" в") || before.equals("к") || before.endsWith(" к")) {
+            return SAID_AS_AN_HOUR;
+        }
+        return 1;
+    }
+
+    private boolean startsWithAny(String text, String... starts) {
+        for (String start : starts) {
+            if (text.startsWith(start)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private LocalTime parseTime(MatchResult matcher, String text) {
         boolean clock = matcher.group(1) != null;
         int hour = Integer.parseInt(clock ? matcher.group(1) : matcher.group(3));
         int minute = clock ? Integer.parseInt(matcher.group(2)) : 0;

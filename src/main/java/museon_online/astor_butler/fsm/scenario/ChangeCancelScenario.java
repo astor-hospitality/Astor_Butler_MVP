@@ -7,6 +7,7 @@ import museon_online.astor_butler.domain.booking.TableReservationChangeCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.booking.VenueOpeningHours;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOffer;
 import museon_online.astor_butler.domain.lunch.BusinessLunchService;
 import museon_online.astor_butler.fsm.core.BotState;
@@ -55,6 +56,7 @@ public class ChangeCancelScenario implements FsmScenario {
     private final GuestInputUnderstandingService understandingService;
     private final BookingTimeProvider timeProvider;
     private final BusinessLunchService lunchService;
+    private final VenueOpeningHours openingHours;
 
     @Value("${telegram.admin.chat-id:}")
     private String adminChatId;
@@ -301,20 +303,31 @@ public class ChangeCancelScenario implements FsmScenario {
         return rows;
     }
 
-    private List<List<String>> timeRows() {
-        return List.of(
-                List.of("12:00", "13:00", "14:00", "15:00"),
-                List.of("16:00", "17:00", "18:00", "19:00"),
-                List.of("20:00", "21:00", "22:00", "23:00"),
-                List.of("↩️ Отменить действие")
-        );
+    /** The whole hours of that day a table can be moved to: the venue is open and the hour is still ahead. */
+    private List<List<String>> timeRows(LocalDate day) {
+        List<String> labels = new java.util.ArrayList<>();
+        for (int hour = 12; hour <= 23; hour++) {
+            if (moveIssue(day, LocalTime.of(hour, 0)).isEmpty()) {
+                labels.add("%02d:00".formatted(hour));
+            }
+        }
+        List<List<String>> rows = new java.util.ArrayList<>();
+        for (int i = 0; i < labels.size(); i += 4) {
+            rows.add(List.copyOf(labels.subList(i, Math.min(i + 4, labels.size()))));
+        }
+        rows.add(List.of("↩️ Отменить действие"));
+        return rows;
     }
 
-    private List<List<String>> dateRows() {
-        java.time.LocalDate today = java.time.LocalDate.now(ZoneId.of("Asia/Yekaterinburg"));
+    /** The next two weeks, without the days when the time of the booking is closed or already gone. */
+    private List<List<String>> dateRows(LocalTime time) {
+        LocalDate today = timeProvider.today();
         List<String> labels = new java.util.ArrayList<>();
         for (int i = 0; i < 14; i++) {
-            java.time.LocalDate date = today.plusDays(i);
+            LocalDate date = today.plusDays(i);
+            if (moveIssue(date, time).isPresent()) {
+                continue;
+            }
             labels.add((i == 0 ? "Сегодня " : i == 1 ? "Завтра " : "") + date.format(DateTimeFormatter.ofPattern("dd.MM")));
         }
         List<List<String>> rows = new java.util.ArrayList<>();
@@ -510,8 +523,9 @@ public class ChangeCancelScenario implements FsmScenario {
 
     private OutgoingMessage startChangeAction(IncomingMessage incoming, Long orderId, String action) {
         changeDraftStorage.save(incoming.chatId(), new ChangeCancelDraftStorage.Draft(orderId, action));
-        if ("CHANGE_TIME".equals(action) || "CHANGE_DATE".equals(action)) {
-            TableReservationOrder order = tableReservationService.getReservation(orderId);
+        // A move needs the reservation itself: a lunch has its own hours, and the buttons follow the day and the time it is on.
+        TableReservationOrder order = movesTheVisit(action) ? tableReservationService.getReservation(orderId) : null;
+        if (order != null) {
             Optional<BusinessLunchOffer> lunch = lunchService.offerOf(order);
             if (lunch.isPresent()) {
                 return askLunchMove(incoming, order, lunch.get(), action, "CHANGE_TIME".equals(action)
@@ -536,19 +550,23 @@ public class ChangeCancelScenario implements FsmScenario {
                     incoming,
                     "Понял, переносим время. Выберите новое время кнопкой или напишите в формате 17:30.",
                     action,
-                    timeRows()
+                    timeRows(dayOf(order))
             );
             case "CHANGE_DATE" -> changeWorkInProgress(
                     incoming,
                     "Понял, переносим дату. Выберите новый день кнопкой или напишите его сообщением.",
                     action,
-                    dateRows()
+                    dateRows(timeOf(order))
             );
             default -> null;
         };
     }
 
     private OutgoingMessage changeWorkInProgress(IncomingMessage incoming, String text, String action, List<List<String>> rows) {
+        return changeWorkInProgress(incoming, text, rows, List.of("CHANGE_CANCEL", action));
+    }
+
+    private OutgoingMessage changeWorkInProgress(IncomingMessage incoming, String text, List<List<String>> rows, List<String> actions) {
         fsmStorage.setState(incoming.chatId(), BotState.TABLE_BOOKING_CHANGE_REQUESTED);
         OutgoingMessage outgoing = OutgoingMessage.of(
                 incoming,
@@ -559,7 +577,7 @@ public class ChangeCancelScenario implements FsmScenario {
                 false,
                 false,
                 AdminAlert.none(),
-                List.of("CHANGE_CANCEL", action)
+                actions
         ).withMetadata(Map.of("scenario", id()));
         return rows == null || rows.isEmpty() ? outgoing : outgoing.withMetadata(Map.of("replyKeyboardRows", rows));
     }
@@ -621,6 +639,15 @@ public class ChangeCancelScenario implements FsmScenario {
             return action.isBlank() ? null : startChangeAction(incoming, pending.tableReservationId(), action);
         }
 
+        // The guest named another action of the same menu instead of answering, for example "перенести время"
+        // when asked for the day: go on with what they named. Cancelling the table has its own path above.
+        if (ownsTextAction(normalized)) {
+            String named = actionFromText(normalized);
+            if (!named.isBlank() && !named.equals(pending.action()) && !"CANCEL_TABLE".equals(named)) {
+                return startChangeAction(incoming, pending.tableReservationId(), named);
+            }
+        }
+
         TableReservationOrder current = tableReservationService.getReservation(pending.tableReservationId());
         TableReservationChangeCommand command = switch (pending.action()) {
             case "CHANGE_PARTY_SIZE" -> changePartySizeCommand(incoming, normalized, current).orElse(null);
@@ -634,7 +661,7 @@ public class ChangeCancelScenario implements FsmScenario {
             return lunch.isPresent()
                     ? askLunchMove(incoming, current, lunch.get(), pending.action(),
                             "Не смог понять ответ. " + ("CHANGE_DATE".equals(pending.action()) ? HOW_TO_PICK_LUNCH_DAY : HOW_TO_PICK_LUNCH_TIME))
-                    : askAgainForPending(incoming, pending.action());
+                    : askAgainForPending(incoming, pending.action(), current);
         }
         if (lunch.isPresent()) {
             // A business lunch stays a business lunch when it is moved: its own days, its own hours, its own length.
@@ -653,6 +680,13 @@ public class ChangeCancelScenario implements FsmScenario {
                     command.partySize(),
                     command.guestComment()
             );
+        } else if (movesTheVisit(pending.action())) {
+            // An ordinary table follows the hours of the venue and the clock, the same as when it is booked.
+            java.time.ZonedDateTime startAt = command.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE);
+            Optional<MoveIssue> issue = moveIssue(startAt.toLocalDate(), startAt.toLocalTime());
+            if (issue.isPresent()) {
+                return askForAnotherMove(incoming, pending.action(), startAt.toLocalDate(), startAt.toLocalTime(), issue.get());
+            }
         }
 
         TableReservationOrder changed = tableReservationService.changeByGuest(current.id(), command);
@@ -681,6 +715,48 @@ public class ChangeCancelScenario implements FsmScenario {
         return "CHANGE_TIME".equals(action) || "CHANGE_DATE".equals(action);
     }
 
+    private enum MoveIssue {
+        ALREADY_PASSED,
+        VENUE_CLOSED
+    }
+
+    /** Why a table cannot be moved to this day and time. A day or a time that is not known yet is not refused. */
+    private Optional<MoveIssue> moveIssue(LocalDate date, LocalTime time) {
+        if (date == null || time == null) {
+            return Optional.empty();
+        }
+        if (!date.atTime(time).atZone(BookingTimeProvider.VENUE_ZONE).toInstant().isAfter(timeProvider.now())) {
+            return Optional.of(MoveIssue.ALREADY_PASSED);
+        }
+        return openingHours.isOpen(date, time) ? Optional.empty() : Optional.of(MoveIssue.VENUE_CLOSED);
+    }
+
+    /** The move was understood but cannot be done. The guest is told why and gets buttons with what can be done. */
+    private OutgoingMessage askForAnotherMove(IncomingMessage incoming, String action, LocalDate date, LocalTime time, MoveIssue issue) {
+        String marker = issue == MoveIssue.ALREADY_PASSED ? "TIME_ALREADY_PASSED" : "TIME_OUTSIDE_OPENING_HOURS";
+        Optional<String> hours = openingHours.describe(date);
+        if ("CHANGE_DATE".equals(action)) {
+            String text = issue == MoveIssue.ALREADY_PASSED
+                    ? "В этот день %s уже прошло. Выберите другой день кнопкой или напишите его сообщением.".formatted(time)
+                    : "В %s в этот день AERIS закрыт%s Выберите другой день или сначала перенесите время брони."
+                            .formatted(time, hours.map(open -> ", ждем гостей " + open + ".").orElse("."));
+            return changeWorkInProgress(incoming, text, dateRows(time), List.of("CHANGE_CANCEL", action, marker));
+        }
+        String text = issue == MoveIssue.ALREADY_PASSED
+                ? "Это время уже прошло. Выберите более позднее кнопкой или напишите в формате 17:30."
+                : "В это время AERIS закрыт.%s Выберите другое время кнопкой или напишите в формате 17:30."
+                        .formatted(hours.map(open -> " В этот день ждем гостей " + open + ".").orElse(""));
+        return changeWorkInProgress(incoming, text, timeRows(date), List.of("CHANGE_CANCEL", action, marker));
+    }
+
+    private LocalDate dayOf(TableReservationOrder order) {
+        return order == null || order.requestedStartAt() == null ? null : order.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE).toLocalDate();
+    }
+
+    private LocalTime timeOf(TableReservationOrder order) {
+        return order == null || order.requestedStartAt() == null ? null : order.requestedStartAt().atZone(BookingTimeProvider.VENUE_ZONE).toLocalTime();
+    }
+
     /** Asks for the new time or day of a business lunch with buttons that fit its hours. */
     private OutgoingMessage askLunchMove(IncomingMessage incoming, TableReservationOrder order, BusinessLunchOffer lunch, String action, String text) {
         if ("CHANGE_DATE".equals(action)) {
@@ -694,7 +770,7 @@ public class ChangeCancelScenario implements FsmScenario {
         return changeWorkInProgress(incoming, text, action, times);
     }
 
-    private OutgoingMessage askAgainForPending(IncomingMessage incoming, String action) {
+    private OutgoingMessage askAgainForPending(IncomingMessage incoming, String action, TableReservationOrder current) {
         return switch (action) {
             case "CHANGE_PARTY_SIZE" -> changeWorkInProgress(
                     incoming,
@@ -712,13 +788,13 @@ public class ChangeCancelScenario implements FsmScenario {
                     incoming,
                     "Не хочу гадать со временем. Выберите кнопку или напишите время в формате 17:30.",
                     action,
-                    timeRows()
+                    timeRows(dayOf(current))
             );
             case "CHANGE_DATE" -> changeWorkInProgress(
                     incoming,
                     "Не смог уверенно понять дату. Выберите день кнопкой или напишите: «завтра», «в пятницу», «30.06».",
                     action,
-                    dateRows()
+                    dateRows(timeOf(current))
             );
             default -> null;
         };
