@@ -1,8 +1,6 @@
 package museon_online.astor_butler.api.glasses;
 
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -10,7 +8,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -22,26 +19,20 @@ import java.util.*;
 @RestController
 public class GlassesReportController {
     private static final int RATE_LIMIT = 30;
-    private final GlassesAccess access;
+    private final GlassesReportAuth auth;
     private final GlassesSessionJournal journal;
     private final GlassesS3Storage storage;
-    private final String password;
-    private long rateWindow;
-    private int requests;
 
-    @Autowired
-    public GlassesReportController(GlassesAccess access, GlassesSessionJournal journal, GlassesS3Storage storage,
-                                   @Value("${astor.glasses.report-password:}") String password) {
-        this.access = access;
+    public GlassesReportController(GlassesReportAuth auth, GlassesSessionJournal journal, GlassesS3Storage storage) {
+        this.auth = auth;
         this.journal = journal;
         this.storage = storage;
-        this.password = password;
     }
 
     @GetMapping("/api/glasses/sessions")
     public ResponseEntity<?> sessions(HttpServletRequest request) {
         try {
-            var scope = authorize(request);
+            var scope = auth.authorize(request);
             return ResponseEntity.ok().header("Cache-Control", "no-store").body(journal.sessions(scope));
         } catch (GlassesFailure failure) {
             return error(failure);
@@ -51,7 +42,7 @@ public class GlassesReportController {
     @GetMapping("/api/glasses/sessions/{sessionId}/report")
     public ResponseEntity<?> report(HttpServletRequest request, @PathVariable String sessionId) {
         try {
-            var scope = authorize(request);
+            var scope = auth.authorize(request);
             var session = journal.session(scope, uuid(sessionId));
             if (session == null) throw new GlassesFailure(404, "SESSION_NOT_FOUND", "No journal for this session");
             return ResponseEntity.ok().header("Cache-Control", "no-store")
@@ -66,7 +57,7 @@ public class GlassesReportController {
     @GetMapping("/api/glasses/sessions/{sessionId}/photo/{requestId}")
     public ResponseEntity<?> photo(HttpServletRequest request, @PathVariable String sessionId, @PathVariable String requestId) {
         try {
-            var scope = authorize(request);
+            var scope = auth.authorize(request);
             var session = journal.session(scope, uuid(sessionId));
             String id = uuid(requestId);
             boolean known = session != null && session.entries().stream()
@@ -77,36 +68,6 @@ public class GlassesReportController {
         } catch (GlassesFailure failure) {
             return error(failure);
         }
-    }
-
-    private GlassesAccess.Scope authorize(HttpServletRequest request) {
-        if (password.isBlank() || password.length() < 12) {
-            throw new GlassesFailure(503, "REPORT_UNAVAILABLE", "Report password is not configured");
-        }
-        checkRate();
-        String header = request.getHeader("Authorization");
-        if (header == null || !header.startsWith("Basic ") || header.length() > 1024) throw unauthorized();
-        String credentials;
-        try {
-            credentials = new String(Base64.getDecoder().decode(header.substring(6)), StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException e) {
-            throw unauthorized();
-        }
-        int colon = credentials.indexOf(':');
-        if (colon < 0) throw unauthorized();
-        byte[] expected = ("astor:" + password).getBytes(StandardCharsets.UTF_8);
-        if (!MessageDigest.isEqual(expected, credentials.getBytes(StandardCharsets.UTF_8))) throw unauthorized();
-        return access.configuredScope();
-    }
-
-    private synchronized void checkRate() {
-        long window = System.currentTimeMillis() / 60000;
-        if (window != rateWindow) { rateWindow = window; requests = 0; }
-        if (++requests > RATE_LIMIT) throw new GlassesFailure(429, "RATE_LIMITED", "Report request limit reached");
-    }
-
-    private GlassesFailure unauthorized() {
-        return new GlassesFailure(401, "UNAUTHORIZED", "Report password required");
     }
 
     private String uuid(String value) {
@@ -120,7 +81,7 @@ public class GlassesReportController {
 
     private ResponseEntity<?> error(GlassesFailure failure) {
         var response = ResponseEntity.status(failure.status).header("Cache-Control", "no-store").contentType(MediaType.APPLICATION_JSON);
-        if (failure.status == 401) response.header("WWW-Authenticate", "Basic realm=\"Astor Glass report\", charset=\"UTF-8\"");
+        if (failure.status == 401) response.header("WWW-Authenticate", GlassesReportAuth.challenge());
         if (failure.status == 429) response.header("Retry-After", "60");
         return response.body(new GlassesController.ErrorResponse(null, Map.of("code", failure.code, "message", failure.getMessage())));
     }

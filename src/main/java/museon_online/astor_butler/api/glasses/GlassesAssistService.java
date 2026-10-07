@@ -18,7 +18,10 @@ public class GlassesAssistService implements AutoCloseable {
     private final ModelGateway gateway;
     private final GlassesVoice voice;
     private final GlassesS3Storage storage;
+    private final GlassesSpeech speech;
     private final GlassesReplyCache replies = new GlassesReplyCache();
+    // Speech is a separate provider: one call at a time, and never a reason for an assist to fail.
+    private final java.util.concurrent.Semaphore speechSlot = new java.util.concurrent.Semaphore(1);
     private final boolean textEnabled;
     private final long timeoutMs;
     // No queue: a stuck provider cannot create an unbounded backlog, even after client timeout.
@@ -34,18 +37,27 @@ public class GlassesAssistService implements AutoCloseable {
     private int requests;
 
     @Autowired
-    public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage,
+    public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, GlassesSpeech speech,
                                 @Value("${astor.glasses.text-enabled:false}") boolean textEnabled,
                                 @Value("${astor.glasses.timeout-ms:10000}") long timeoutMs) {
         this.gateway = gateway;
         this.voice = voice;
         this.storage = storage;
+        this.speech = speech;
         this.textEnabled = textEnabled;
         this.timeoutMs = Math.max(1, Math.min(timeoutMs, 45000));
     }
 
     public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, boolean enabled, long timeoutMs) {
-        this(gateway, voice, GlassesS3Storage.disabled(), enabled, timeoutMs);
+        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, boolean enabled, long timeoutMs) {
+        this(gateway, voice, storage, GlassesSpeech.disabled(), enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesSpeech speech, boolean enabled, long timeoutMs) {
+        this(gateway, voice, GlassesS3Storage.disabled(), speech, enabled, timeoutMs);
     }
 
     public GlassesAssistService(ModelGateway gateway, boolean enabled, long timeoutMs) {
@@ -54,14 +66,14 @@ public class GlassesAssistService implements AutoCloseable {
 
     public record Capabilities(boolean text, boolean voice, boolean vision, boolean storage, boolean documents, int maxAudioSeconds,
                                int maxAudioBytes, int maxImageBytes, int maxImageDimension, int maxTextChars,
-                               int maxBodyBytes, GlassesS3Storage.ArchiveCapabilities mediaArchive) { }
+                               int maxBodyBytes, GlassesS3Storage.ArchiveCapabilities mediaArchive, boolean speech) { }
 
     Capabilities capabilities() {
         // A switch is permission to attempt text, not proof that a provider is ready.
         boolean textReady = textEnabled && Instant.now().isBefore(textReadyUntil);
         return new Capabilities(textReady, textReady && voice.ready(), Instant.now().isBefore(visionReadyUntil),
                 storage.mediaReady(), storage.documentsReady(),
-                30, 2097152, 2097152, 1280, 4000, 5242880, storage.archiveCapabilities());
+                30, 2097152, 2097152, 1280, 4000, 5242880, storage.archiveCapabilities(), speech.configured());
     }
 
     synchronized void checkRate() {
@@ -110,6 +122,25 @@ public class GlassesAssistService implements AutoCloseable {
     }
 
     boolean archivesEnabled() { return storage.enabled(); }
+
+    boolean speechConfigured() { return speech.configured(); }
+    String voiceName() { return speech.voiceName(); }
+
+    /** Astor's own voice for one line, or null when server speech is off or the provider fails. */
+    byte[] speak(String line) {
+        if (!speech.configured()) return null;
+        if (!speechSlot.tryAcquire()) throw new GlassesFailure(429, "BUSY", "Voice is busy");
+        try {
+            return speech.synthesize(line);
+        } finally {
+            speechSlot.release();
+        }
+    }
+
+    /** One bounded recording turned into text. No model call, no answer, nothing sent anywhere. */
+    String transcribe(GlassesAccess.Scope scope, String requestId, byte[] audio) {
+        return execute(() -> voice.transcribe(audio), false);
+    }
 
     private String assist(GlassesAccess.Scope scope, String id, String kind, String text, byte[] media) {
         return assist(scope, id, kind, text, media, null);
