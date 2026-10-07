@@ -65,8 +65,12 @@ class GlassesSessionJournalTest {
         var changed = List.of(new GlassesSessionJournal.ClientEvent("2026-10-07T06:00:02Z", "CALL_ENDED", null, "x"));
         assertThatThrownBy(() -> journal.recordEvents(scope, "11111111-1111-4111-8111-111111111111", SESSION, "BUSINESS_LUNCH_TWO", changed))
                 .isInstanceOf(GlassesFailure.class).satisfies(e -> assertThat(((GlassesFailure) e).code).isEqualTo("REQUEST_ID_CONFLICT"));
-        assertThatThrownBy(() -> journal.recordEvents(scope, "22222222-2222-4222-8222-222222222222", SESSION, "BUSINESS_LUNCH_TWO", changed))
+        // The same session cannot be claimed by a second scenario, even under a fresh batch id.
+        assertThatThrownBy(() -> journal.recordEvents(scope, "22222222-2222-4222-8222-222222222222", SESSION, "SHIFT", changed))
                 .isInstanceOf(GlassesFailure.class).satisfies(e -> assertThat(((GlassesFailure) e).code).isEqualTo("SESSION_CONFLICT"));
+        // A new batch id with the session's own scenario is simply accepted.
+        assertThat(journal.recordEvents(scope, "33333333-3333-4333-8333-333333333333", SESSION, "BUSINESS_LUNCH_TWO", changed)).isEqualTo(1);
+        assertThat(journal.session(scope, SESSION).entries()).hasSize(2);
     }
 
     @Test void sessionsExpireAfterADayAndTheOldestIsEvictedPastTheCap() {
