@@ -2,7 +2,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createWorld, STATE, PRODUCT_STATE } from "../lib/world.mjs";
 import { createStubServer } from "../lib/server.mjs";
-import { redact } from "../lib/proxy.mjs";
+import { redact, tryJson } from "../lib/proxy.mjs";
 import { loadDishes } from "../server.mjs";
 
 let server;
@@ -226,4 +226,18 @@ test("payment: the admin can mark an order paid, and a public URL replaces the r
   } finally {
     await new Promise((resolve) => demo.close(resolve));
   }
+});
+test("recording masks credential aliases, case variants and numeric personal fields", () => {
+  const record = redact({ AccessToken: "credential", "X-SBISAccessToken": "credential", APIKey: "credential",
+    customer: { Phone: 79990000000, Email: "private@example.test" } });
+  assert.equal(record.AccessToken, "<secret>");
+  assert.equal(record["X-SBISAccessToken"], "<secret>");
+  assert.equal(record.APIKey, "<secret>");
+  assert.equal(record.customer.Phone, "<personal>");
+  assert.ok(!JSON.stringify(record).includes("private@example.test"));
+});
+
+test("recording never saves raw error pages or scalar response bodies", () => {
+  assert.deepEqual(tryJson(Buffer.from("<html>password=secret guest@example.test</html>")), { "<body>": "<non-json omitted>" });
+  assert.deepEqual(tryJson(Buffer.from('"raw-secret"')), { "<body>": "<omitted>" });
 });

@@ -59,8 +59,9 @@ export function redact(value) {
   if (value && typeof value === "object") {
     const out = {};
     for (const [key, inner] of Object.entries(value)) {
-      if (SECRET_KEYS.has(key)) out[key] = "<secret>";
-      else if (PERSONAL_KEYS.has(key) && typeof inner === "string") out[key] = `<${key}:${inner.length}>`;
+      const normalized = key.toLowerCase().replace(/[-_]/g, "");
+      if (SECRET_KEYS.has(key.toLowerCase()) || /token|secret|password|authorization|cookie|apikey|sessionkey/.test(normalized)) out[key] = "<secret>";
+      else if (PERSONAL_KEYS.has(key.toLowerCase())) out[key] = typeof inner === "string" ? `<${key.toLowerCase()}:${inner.length}>` : "<personal>";
       else out[key] = redact(inner);
     }
     return out;
@@ -70,12 +71,16 @@ export function redact(value) {
 
 function redactQuery(params) {
   const out = {};
-  for (const [key, inner] of params) out[key] = SECRET_KEYS.has(key) ? "<secret>" : PERSONAL_KEYS.has(key) ? `<${key}:${inner.length}>` : inner;
+  for (const [key, inner] of params) Object.assign(out, redact({ [key]: inner }));
   return out;
 }
 
-function tryJson(buffer) {
+export function tryJson(buffer) {
   const text = buffer.toString("utf8");
   if (!text.trim()) return null;
-  try { return JSON.parse(text); } catch { return { "<text>": text.slice(0, 2000) }; }
+  // Error pages and plaintext can contain credentials or guest details. Never persist them.
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" ? parsed : { "<body>": "<omitted>" };
+  } catch { return { "<body>": "<non-json omitted>" }; }
 }
