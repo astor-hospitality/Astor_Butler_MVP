@@ -1,0 +1,42 @@
+# Stand-in Saby Presto next to the AERIS bot, for stand tests and the demo when the real Saby keys are not in hand.
+# Never part of the production profile: add it explicitly, and remove it before pointing the bot at the real Saby.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.saby-stub.yml --profile telegram up -d saby-stub aeris-astor-butler-bot
+#
+# Staff actions in "Presto":  curl -X POST http://localhost:8090/__admin/confirm/<externalId>
+#                             curl -X POST http://localhost:8090/__admin/seat/<externalId> -H 'content-type: application/json' -d '{"table":3035}'
+#                             curl http://localhost:8090/__admin/orders
+services:
+  saby-stub:
+    image: node:22-alpine
+    restart: unless-stopped
+    working_dir: /app
+    command: ["node", "scripts/saby_stub/server.mjs"]
+    environment:
+      SABY_STUB_PORT: "8090"
+      SABY_STUB_POINT_ID: "206"
+      SABY_STUB_HALL_ID: "271"
+      SABY_STUB_PRICE_LIST_ID: "4"
+      # >0 makes bookings confirm themselves after N seconds, as if the staff accepted them; 0 = confirm by /__admin only.
+      SABY_STUB_AUTO_CONFIRM_SECONDS: ${SABY_STUB_AUTO_CONFIRM_SECONDS:-0}
+    volumes:
+      - ./scripts/saby_stub:/app/scripts/saby_stub:ro
+      - ./src/main/resources/business-lunch:/app/src/main/resources/business-lunch:ro
+      - ./src/main/resources/menu/aeris/site:/app/src/main/resources/menu/aeris/site:ro
+    ports:
+      - "127.0.0.1:8090:8090"
+
+  aeris-astor-butler-bot:
+    environment:
+      ASTOR_SABY_ENABLED: "true"
+      SABY_WRITE_ENABLED: "true"
+      SABY_API_BASE_URL: http://saby-stub:8090
+      SABY_AUTH_URL: http://saby-stub:8090/oauth/service/
+      SABY_APP_CLIENT_ID: stub
+      SABY_APP_SECRET: stub
+      SABY_SECRET_KEY: stub
+      SABY_POINT_ID: "206"
+      SABY_HALL_ID: "271"
+      SABY_PRICE_LIST_ID: "4"
+    depends_on:
+      - saby-stub
