@@ -1,5 +1,8 @@
 package museon_online.astor_butler.integration.saby;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
@@ -114,12 +117,24 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
                     "Presto has no dish named: " + String.join(", ", unknownDishes) + ". Staff enter the order by hand.");
         }
 
-        String localStart = SABY_DATE_TIME.format(order.startAt().atZone(ZoneId.of(properties.getZoneId())));
-        Map<String, Object> body = SabyOrderPayload.withNomenclatures(
-                SabyOrderPayload.create(commandOf(order), String.valueOf(order.tableReservationId()), properties, localStart),
-                nomenclatures);
         try {
-            client.put(SabyReservationProvider.ORDER_PATH + bookingId + "/update", body);
+            JsonNode existing = client.get(SabyReservationProvider.ORDER_PATH + bookingId, Map.of());
+            if (!(existing instanceof ObjectNode snapshot)
+                    || !snapshot.path("booking").isObject()
+                    || !snapshot.path("customer").isObject()
+                    || !"restaurant".equals(snapshot.path("product").asText())
+                    || !snapshot.path("pointId").asText().equals(properties.getPointId().trim())) {
+                return new Result(false, providerId(), SabyReservationProvider.RESULT_UNKNOWN, "",
+                        "Cannot safely read the complete booking; staff must check the lunch order in Presto.");
+            }
+            JsonNode existingDishes = snapshot.get("nomenclatures");
+            if (existingDishes != null && (!existingDishes.isArray() || !existingDishes.isEmpty())) {
+                return new Result(false, providerId(), "EXISTING_DISHES_REQUIRE_REVIEW", "",
+                        "Presto already has dishes or an unknown dish format; staff must reconcile the lunch without overwriting or duplicating items.");
+            }
+            ObjectNode update = snapshot.deepCopy();
+            update.set("nomenclatures", new ObjectMapper().valueToTree(nomenclatures));
+            client.put(SabyReservationProvider.ORDER_PATH + bookingId + "/update", update);
         } catch (SabyApiException exception) {
             log.warn("Saby lunch order update failed: {} (HTTP {})", exception.kind(), exception.httpStatus());
             return new Result(false, providerId(), failureStatus(exception), "", exception.getMessage());

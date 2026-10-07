@@ -161,6 +161,22 @@ class ExternalBookingSyncTest {
         verify(repository, never()).findActiveOrdersWithExternalId(anyInt());
     }
 
+    @Test
+    void aFullUnchangedBatchDoesNotStarveLaterBookingsAndTheSweepRestarts() {
+        var first = java.util.stream.LongStream.rangeClosed(1, ExternalBookingSync.BATCH)
+                .mapToObj(id -> order(id, TableReservationStatus.CONFIRMED, "ext-" + id)).toList();
+        when(repository.findActiveOrdersWithExternalId(ExternalBookingSync.BATCH)).thenReturn(first);
+        when(repository.findActiveOrdersWithExternalIdAfter(200L, ExternalBookingSync.BATCH))
+                .thenReturn(List.of(order(201L, TableReservationStatus.CONFIRMED, "ext-201")));
+        when(externalProvider.fetchReservationState(any())).thenReturn(
+                snapshot("any", ExternalBookingState.COMPLETED, "SABY_STATE_200"));
+        assertThat(sync.run().checked()).isEqualTo(200);
+        assertThat(sync.run().checked()).isEqualTo(1);
+        verify(externalProvider).fetchReservationState("ext-201");
+        assertThat(sync.run().checked()).isEqualTo(200);
+        verify(repository, org.mockito.Mockito.times(2)).findActiveOrdersWithExternalId(200);
+    }
+
     private static ExternalBookingSnapshot snapshot(String externalId, ExternalBookingState state, String status) {
         return new ExternalBookingSnapshot("SABY", externalId, state, status, Map.of());
     }
