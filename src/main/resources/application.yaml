@@ -58,6 +58,15 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+  shift:
+    briefing:
+      # Twice a day into the analytics chat: the plan in the first minutes of the shift, the look back once it is over.
+      # Off by default; turning it on is a separate step from deploying it.
+      enabled: ${ASTOR_SHIFT_BRIEFING_ENABLED:false}
+      venue-code: ${ASTOR_SHIFT_BRIEFING_VENUE_CODE:AERIS}
+      timezone: ${ASTOR_SHIFT_BRIEFING_TIMEZONE:Asia/Yekaterinburg}
+      morning-cron: ${ASTOR_SHIFT_BRIEFING_MORNING_CRON:0 5 10 * * *}
+      evening-cron: ${ASTOR_SHIFT_BRIEFING_EVENING_CRON:0 30 23 * * *}
   glasses:
     # The isolated glasses runtime repeats a staff question, Astor's answer and the photo of that request
     # to Butler, which puts them in the system chat and the shift feed. Off by default; both services need

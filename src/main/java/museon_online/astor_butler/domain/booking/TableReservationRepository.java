@@ -322,6 +322,26 @@ public class TableReservationRepository {
     }
 
     /** Orders still alive locally that were also written to the venue's own system, oldest change first. */
+    /** Every order whose visit starts inside the window, for the shift briefing. Newest status wins; no guest phone is needed by the caller. */
+    public List<TableReservationOrder> findOrdersStartingBetween(String venueCode, Instant from, Instant to, int limit) {
+        return jdbcTemplate.query("""
+                SELECT tro.*, vt.table_code, vt.display_name AS table_display_name
+                FROM table_reservation_orders tro
+                LEFT JOIN venue_tables vt ON vt.id = tro.table_id
+                WHERE tro.requested_start_at >= ?
+                  AND tro.requested_start_at < ?
+                  AND (vt.venue_code = ? OR vt.venue_code IS NULL)
+                ORDER BY tro.requested_start_at
+                LIMIT ?
+                """,
+                orderMapper(),
+                timestamp(from),
+                timestamp(to),
+                venueCode,
+                limit
+        );
+    }
+
     public List<TableReservationOrder> findActiveOrdersWithExternalId(int limit) {
         return findActiveOrdersWithExternalIdAfter(0L, limit);
     }
