@@ -264,17 +264,23 @@ public class TableReservationService {
         if (order == null || order.requestedStartAt() == null || order.requestedEndAt() == null || order.partySize() == null) {
             return List.of();
         }
+        // The refused order's own hold is left out of the search, so its table comes back as free: the hostess just
+        // said no to that very table, so it is never one of the alternatives.
         String sameZone = order.preferredZone();
         List<VenueTable> zoneAlternatives = repository.findAlternativeTables(
-                "AERIS",
-                order.requestedStartAt(),
-                order.requestedEndAt(),
-                order.partySize(),
-                sameZone,
-                order.id()
-        );
+                        "AERIS",
+                        order.requestedStartAt(),
+                        order.requestedEndAt(),
+                        order.partySize(),
+                        sameZone,
+                        order.id()
+                )
+                .stream()
+                .filter(table -> !isRefusedTable(order, table))
+                .limit(3)
+                .toList();
         if (!zoneAlternatives.isEmpty()) {
-            return zoneAlternatives.stream().limit(3).toList();
+            return zoneAlternatives;
         }
         return repository.findAlternativeTables(
                         "AERIS",
@@ -285,8 +291,14 @@ public class TableReservationService {
                         order.id()
                 )
                 .stream()
+                .filter(table -> !isRefusedTable(order, table))
                 .limit(3)
                 .toList();
+    }
+
+    private static boolean isRefusedTable(TableReservationOrder order, VenueTable table) {
+        return (order.tableId() != null && order.tableId().equals(table.id()))
+                || (order.tableCode() != null && order.tableCode().equalsIgnoreCase(table.tableCode()));
     }
 
     private VenueTable resolveTable(TableReservationCommand command, ExternalTableOccupancy external) {
