@@ -4,16 +4,22 @@
 static void check(BOOL condition,NSString *message){if(!condition){NSLog(@"FAIL: %@",message);exit(1);}}
 int main(void){@autoreleasepool{
     AstorLunchGuide *guide=[AstorLunchGuide new];
-    check(!guide.active && ![guide advance] && !guide.photoContext,@"No implicit training start or photo context");
+    check(!guide.active && ![guide advance] && !guide.photoContext,@"No implicit start or photo context");
     [guide start];NSDictionary *first=guide.photoContext;
-    check([guide acceptsPhotoContext:first] && [guide.brief hasPrefix:@"Учебный"],@"Training must be explicit in each spoken brief");
-    check(!first[@"taskId"] && !first[@"tableId"] && !first[@"stageId"],@"Training must never invent portal identifiers");
+    check([guide acceptsPhotoContext:first] && [guide.brief containsString:@"Шаг 1 из"],@"Each spoken brief names which step of how many it is");
+    check([first[@"prompt"] containsString:@"Не утверждай"],@"The photo prompt forbids claiming an assignment is done");
+    check(!first[@"taskId"] && !first[@"tableId"] && !first[@"stageId"],@"A step must never invent portal identifiers");
     [guide advance];
     check(![guide acceptsPhotoContext:first] && [guide acceptsPhotoContext:guide.photoContext],@"A delayed capture cannot belong to a new step");
     NSDictionary *second=guide.photoContext;[guide stop];[guide start];
     check(![guide acceptsPhotoContext:second] && ![guide acceptsPhotoContext:first],@"Restart invalidates even a capture of the same step index");
     for(NSUInteger i=0;i<AstorLunchGuide.steps.count;i++){
-        check(guide.active && guide.stepIndex==i && [guide.brief hasPrefix:@"Учебный"] && [guide.photoContext[@"prompt"] length]<4000,@"Each step stays within the informational request contract");
+        // The brief is a checklist step, never a claim that a portal assigned it or confirmed it.
+        check(guide.active && guide.stepIndex==i && [guide.photoContext[@"prompt"] length]<4000,@"Each step stays within the informational request contract");
+        check([guide.brief containsString:[NSString stringWithFormat:@"Шаг %lu из %lu",(unsigned long)i+1,(unsigned long)AstorLunchGuide.steps.count]],@"Every spoken brief says which step it is");
+        check([guide.compactBrief containsString:[NSString stringWithFormat:@"Шаг %lu",(unsigned long)i+1]],@"The short brief in the glasses also names the step");
+        for(NSString *claim in @[@"поручение выполнено",@"задача принята",@"подтверждено"])
+            check(![guide.brief.lowercaseString containsString:claim],@"A brief must not claim an assignment or a confirmation");
         if(guide.photoRequired){
             NSDictionary *context=guide.photoContext;NSString *request=NSUUID.UUID.UUIDString;
             check(!guide.canAdvance && ![guide advance],@"Required photos prevent manual advance until a server receipt");
@@ -27,8 +33,9 @@ int main(void){@autoreleasepool{
         [guide advance];
     }
     check(guide.photoCount==2,@"Two required photo checkpoints are collected separately");
-    check(guide.finished && !guide.active && !guide.photoContext && ![guide advance],@"Finishing a training plan does not leave a live task or capture context");
-    [guide stop];check(!guide.finished && !guide.active,@"Stop clears local training state");
+    check(guide.finished && !guide.active && !guide.photoContext && ![guide advance],@"Finishing the steps does not leave a live task or capture context");
+    check([guide.brief containsString:@"портал"],@"When the steps are done the brief says real assignments wait for the portal");
+    [guide stop];check(!guide.finished && !guide.active,@"Stop clears local step state");
     NSString *id1=NSUUID.UUID.UUIDString,*id2=NSUUID.UUID.UUIDString;
     check(AstorAssistReplyMatches(@{@"requestId":id1.lowercaseString,@"text":@"Ответ"},id1),@"UUID comparison accepts server canonical casing");
     check(!AstorAssistReplyMatches(@{@"requestId":id2,@"text":@"Чужой ответ"},id1),@"An unrelated response cannot replace the current answer");
