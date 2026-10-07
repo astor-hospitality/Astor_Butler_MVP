@@ -19,8 +19,8 @@ import java.util.List;
  */
 @Component
 public class GlassesTranscriptFeed {
-    static final int LIMIT = 200;
-    static final Duration TTL = Duration.ofHours(24);
+    public static final int LIMIT = 200;
+    public static final Duration TTL = Duration.ofHours(24);
 
     public record Entry(String requestId, String at, String kind, String staff, String venue,
                         String sessionId, String stageCode, String question, String answer, boolean photo) { }
