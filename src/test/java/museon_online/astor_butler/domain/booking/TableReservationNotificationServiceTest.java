@@ -37,6 +37,13 @@ class TableReservationNotificationServiceTest {
     }
 
     @Test
+    void hostessCardSaysTheChangeIsAlreadyInSaby() {
+        assertThat(service.externalSyncLine(order(), result(true, TableReservationService.EXTERNAL_CHANGE_SYNCED, "saby-1")))
+                .contains("изменение уже в Presto")
+                .doesNotContain("без стола");
+    }
+
+    @Test
     void hostessCardWarnsAgainstADuplicateWhenSabyDidNotAnswer() {
         assertThat(service.externalSyncLine(order(), result(false, "PROVIDER_RESULT_UNKNOWN", "")))
                 .contains("Astor Butler #44", "только если её там нет");
