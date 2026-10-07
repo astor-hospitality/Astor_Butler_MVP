@@ -24,6 +24,8 @@ class GlassesSpeechTest {
         return response;
     }
 
+    /* Each response is built before the stubbing starts: a nested when() inside an unfinished one is
+       what Mockito calls UnfinishedStubbing. */
     /** Mockito cannot infer the body type of send(), so the matcher names it. */
     private org.mockito.stubbing.OngoingStubbing<HttpResponse<byte[]>> whenSent() throws Exception {
         return when(client.send(any(HttpRequest.class), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any()));
@@ -42,7 +44,8 @@ class GlassesSpeechTest {
 
     @Test void asksForOneMalePremiumVoiceWithTheKeyInTheHeader() throws Exception {
         byte[] mp3 = {(byte) 0xFF, (byte) 0xFB, 1, 2};
-        whenSent().thenReturn(response(200, mp3));
+        HttpResponse<byte[]> ok = response(200, mp3);
+        whenSent().thenReturn(ok);
         var speech = new GlassesSpeech(client, true, "filipp");
 
         assertThat(speech.synthesize("  Стол пять ждёт счёт.  ")).isEqualTo(mp3);
@@ -70,15 +73,18 @@ class GlassesSpeechTest {
     }
 
     @Test void aProviderFailureLeavesTheTextToThePhoneWithoutLeakingAnything() throws Exception {
-        whenSent().thenReturn(response(401, new byte[]{1}));
+        HttpResponse<byte[]> rejected = response(401, new byte[]{1});
+        HttpResponse<byte[]> empty = response(200, new byte[0]);
+        HttpResponse<byte[]> huge = response(200, new byte[GlassesSpeech.AUDIO_LIMIT + 1]);
+        whenSent().thenReturn(rejected);
         var speech = new GlassesSpeech(client, true, "filipp");
         assertThat(speech.synthesize("Строка")).isNull();
         assertThat(speech.ready()).isFalse();
 
-        whenSent().thenReturn(response(200, new byte[0]));
+        whenSent().thenReturn(empty);
         assertThat(speech.synthesize("Строка")).isNull();
 
-        whenSent().thenReturn(response(200, new byte[GlassesSpeech.AUDIO_LIMIT + 1]));
+        whenSent().thenReturn(huge);
         assertThat(speech.synthesize("Строка")).isNull();
 
         whenSent().thenThrow(new java.io.IOException("private tts key diagnostic"));
