@@ -62,41 +62,45 @@ public class TelegramSystemNotifier {
         if (telegramBot == null) {
             return false;
         }
-        String caption = """
-                <b>Astor Glass</b> · %s%s
-
-                <b>Сотрудник</b>
-                <blockquote>%s</blockquote>
-
-                <b>Астор</b>
-                <blockquote>%s</blockquote>
-                """.formatted(
-                html(blank(staff)),
-                stageCode == null || stageCode.isBlank() ? "" : " · " + html(stageCode),
-                html(blank(question)),
-                html(blank(answer)));
+        String header = "Astor Glass · " + bounded(blank(staff), 120)
+                + (stageCode == null || stageCode.isBlank() ? "" : " · " + bounded(stageCode, 120));
+        // Plain text avoids splitting HTML tags/entities at Telegram's length boundary.
+        String caption = header + "\n\nСотрудник\n" + blank(question) + "\n\nАстор\n" + blank(answer);
         try {
             if (photo != null && photo.length > 0) {
                 // Telegram captions are limited; a long answer goes as its own message after the photo.
-                String short_ = caption.length() > 1000 ? caption.substring(0, 1000) : caption;
+                String short_ = caption.length() > 1000 ? header : caption;
                 telegramBot.execute(org.telegram.telegrambots.meta.api.methods.send.SendPhoto.builder()
                         .chatId(systemChatId)
                         .photo(new org.telegram.telegrambots.meta.api.objects.InputFile(
                                 new java.io.ByteArrayInputStream(photo), photoName == null ? "astor-glass.jpg" : photoName))
                         .caption(short_)
-                        .parseMode("HTML")
                         .build());
                 if (caption.length() > 1000) {
-                    telegramBot.execute(SendMessage.builder().chatId(systemChatId).text(caption).parseMode("HTML").build());
+                    sendGlassesText(telegramBot, caption);
                 }
             } else {
-                telegramBot.execute(SendMessage.builder().chatId(systemChatId).text(caption).parseMode("HTML").build());
+                sendGlassesText(telegramBot, caption);
             }
             return true;
         } catch (Exception e) {
-            log.warn("Telegram glasses exchange failed: {}", e.getMessage());
+            log.warn("Telegram glasses exchange failed: {}", e.getClass().getSimpleName());
             return false;
         }
+    }
+
+    private void sendGlassesText(TelegramBot bot, String text) throws Exception {
+        while (!text.isEmpty()) {
+            String chunk = bounded(text, 4096);
+            bot.execute(SendMessage.builder().chatId(systemChatId).text(chunk).build());
+            text = text.substring(chunk.length());
+        }
+    }
+
+    private static String bounded(String text, int maximum) {
+        int end = Math.min(text.length(), maximum);
+        if (end < text.length() && end > 0 && Character.isHighSurrogate(text.charAt(end - 1))) end--;
+        return text.substring(0, end);
     }
 
     private String systemText(IncomingMessage incoming, BotState previousState, OutgoingMessage outgoing, boolean kafkaOutboxQueued) {

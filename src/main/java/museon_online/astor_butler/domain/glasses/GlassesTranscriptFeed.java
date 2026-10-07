@@ -39,6 +39,15 @@ public class GlassesTranscriptFeed {
         return entries.stream().limit(Math.max(1, Math.min(limit, LIMIT))).toList();
     }
 
+    /** Filter before limiting: callers may never receive another venue's exchanges. */
+    public synchronized List<Entry> recent(String venue, String staff, int limit) {
+        expire();
+        if (venue == null || venue.isBlank()) return List.of();
+        return entries.stream().filter(entry -> venue.equals(entry.venue()))
+                .filter(entry -> staff == null || staff.equals(entry.staff()))
+                .limit(Math.max(1, Math.min(limit, LIMIT))).toList();
+    }
+
     private void expire() {
         Instant cutoff = Instant.now().minus(TTL);
         entries.removeIf(entry -> {

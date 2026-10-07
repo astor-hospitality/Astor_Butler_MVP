@@ -1,8 +1,14 @@
 package museon_online.astor_butler.api.glasses;
 
 import museon_online.astor_butler.domain.glasses.GlassesTranscriptFeed;
+import museon_online.astor_butler.api.glasses.tasks.StaffScope;
+import museon_online.astor_butler.api.glasses.tasks.StaffScopes;
+import museon_online.astor_butler.api.glasses.tasks.StaffTaskFailure;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,23 +30,36 @@ import java.util.Map;
 @RestController
 public class GlassesFeedController {
     private final GlassesTranscriptFeed feed;
+    private final StaffScopes scopes = new StaffScopes("astor-api");
 
     public GlassesFeedController(GlassesTranscriptFeed feed) {
         this.feed = feed;
     }
 
     @GetMapping("/api/staff/glasses-feed")
-    public ResponseEntity<?> json() {
+    public ResponseEntity<?> json(@AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok().header("Cache-Control", "no-store").contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("entries", feed.recent(GlassesTranscriptFeed.LIMIT)));
+                .body(Map.of("entries", scoped(jwt)));
     }
 
     @GetMapping("/api/staff/glasses-feed/page")
-    public ResponseEntity<?> page() {
+    public ResponseEntity<?> page(@AuthenticationPrincipal Jwt jwt) {
         return ResponseEntity.ok().header("Cache-Control", "no-store")
                 .header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
                 .contentType(new MediaType("text", "html", StandardCharsets.UTF_8))
-                .body(render(feed.recent(GlassesTranscriptFeed.LIMIT)));
+                .body(render(scoped(jwt)));
+    }
+
+    private List<GlassesTranscriptFeed.Entry> scoped(Jwt jwt) {
+        StaffScope scope = scopes.from(jwt == null ? null : jwt.getClaims());
+        return feed.recent(scope.tenant(), scope.role() == StaffScope.Role.WAITER ? scope.staffId() : null,
+                GlassesTranscriptFeed.LIMIT);
+    }
+
+    @ExceptionHandler(StaffTaskFailure.class)
+    public ResponseEntity<?> failure(StaffTaskFailure failure) {
+        return ResponseEntity.status(failure.status).header("Cache-Control", "no-store")
+                .body(Map.of("error", Map.of("code", failure.code)));
     }
 
     static String render(List<GlassesTranscriptFeed.Entry> entries) {
