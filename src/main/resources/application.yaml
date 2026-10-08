@@ -16,6 +16,9 @@ astor:
       # A negative temperature is not sent at all, for models that accept only their default.
       temperature: ${OPENAI_COMPATIBLE_TEMPERATURE:0.1}
       json-mode: ${OPENAI_COMPATIBLE_JSON_MODE:true}
+      # Persona for free-text replies (what the Yandex AI Studio agent carried), read once at startup.
+      # JSON understanding calls are sent without it. Empty: no system message.
+      system-prompt-file: ${OPENAI_COMPATIBLE_SYSTEM_PROMPT_FILE:}
     # provider=cloudru: Cloud.ru Evolution Foundation Models (Sber), the OpenAI HTTP API with a bearer key
     # from the Cloud.ru console. Same shape and limits as openai-compatible, own variables so both can be
     # configured at once and switched by ASTOR_MODEL_PROVIDER. Model names are the catalogue's own (GET /models),

@@ -208,6 +208,69 @@ class OpenAiCompatibleModelGatewayTest {
             double temperature,
             boolean jsonMode
     ) {
+        return fixture(baseUrl, apiKey, model, qualityModel, visionModel, embeddingModel, temperature, jsonMode, "");
+    }
+
+    @Test
+    void thePersonaFileBecomesTheSystemMessageOfFreeTextButNotOfJsonUnderstanding() throws Exception {
+        java.nio.file.Path persona = java.nio.file.Files.createTempFile("astor-persona", ".md");
+        java.nio.file.Files.writeString(persona, "  Ты — Astor, дворецкий AERIS. Спокойно, без давления.\n\n");
+        try {
+            Fixture fixture = fixture(BASE_URL, API_KEY, "fast-model", "", "", "", 0.1, true, persona.toString());
+            assertThat(fixture.gateway().hasSystemPrompt()).isTrue();
+            fixture.server().expect(once(), requestTo(COMPLETIONS))
+                    .andExpect(jsonPath("$.messages.length()").value(2))
+                    .andExpect(jsonPath("$.messages[0].role").value("system"))
+                    .andExpect(jsonPath("$.messages[0].content").value("Ты — Astor, дворецкий AERIS. Спокойно, без давления."))
+                    .andExpect(jsonPath("$.messages[1].role").value("user"))
+                    .andExpect(jsonPath("$.messages[1].content").value("Добрый вечер"))
+                    .andRespond(withSuccess(ANSWER, MediaType.APPLICATION_JSON));
+            fixture.server().expect(once(), requestTo(COMPLETIONS))
+                    .andExpect(jsonPath("$.messages.length()").value(1))
+                    .andExpect(jsonPath("$.messages[0].role").value("user"))
+                    .andExpect(jsonPath("$.response_format.type").value("json_object"))
+                    .andRespond(withSuccess(ANSWER, MediaType.APPLICATION_JSON));
+
+            fixture.gateway().generateText(new ModelTextRequest(
+                    "Добрый вечер", "GREETING", "READY_FOR_DIALOG", "reply", ModelProfile.FRONTLINE, Map.of()));
+            fixture.gateway().generateText(new ModelTextRequest(
+                    "Верни JSON", "LLM_UNDERSTANDING", "READY_FOR_DIALOG", "intent-slots-json", ModelProfile.FRONTLINE, Map.of()));
+            fixture.server().verify();
+        } finally {
+            java.nio.file.Files.deleteIfExists(persona);
+        }
+    }
+
+    @Test
+    void aMissingOrEmptyPersonaFileIsNotAStartupFailure() throws Exception {
+        Fixture missing = fixture(BASE_URL, API_KEY, "fast-model", "", "", "", 0.1, true, "/nonexistent/astor-persona.md");
+        assertThat(missing.gateway().hasSystemPrompt()).isFalse();
+        java.nio.file.Path empty = java.nio.file.Files.createTempFile("astor-persona-empty", ".md");
+        try {
+            java.nio.file.Files.writeString(empty, "   \n");
+            assertThat(fixture(BASE_URL, API_KEY, "fast-model", "", "", "", 0.1, true, empty.toString()).gateway().hasSystemPrompt()).isFalse();
+        } finally {
+            java.nio.file.Files.deleteIfExists(empty);
+        }
+        missing.server().expect(once(), requestTo(COMPLETIONS))
+                .andExpect(jsonPath("$.messages.length()").value(1))
+                .andRespond(withSuccess(ANSWER, MediaType.APPLICATION_JSON));
+        missing.gateway().generateText(new ModelTextRequest(
+                "Добрый вечер", "GREETING", "READY_FOR_DIALOG", "reply", ModelProfile.FRONTLINE, Map.of()));
+        missing.server().verify();
+    }
+
+    private static Fixture fixture(
+            String baseUrl,
+            String apiKey,
+            String model,
+            String qualityModel,
+            String visionModel,
+            String embeddingModel,
+            double temperature,
+            boolean jsonMode,
+            String systemPromptFile
+    ) {
         AtomicReference<MockRestServiceServer> serverRef = new AtomicReference<>();
         OpenAiCompatibleModelGateway gateway = new OpenAiCompatibleModelGateway(
                 new RestTemplateBuilder(restTemplate ->
@@ -221,7 +284,8 @@ class OpenAiCompatibleModelGatewayTest {
                 8000,
                 128,
                 temperature,
-                jsonMode
+                jsonMode,
+                systemPromptFile
         );
         return new Fixture(gateway, serverRef.get());
     }
