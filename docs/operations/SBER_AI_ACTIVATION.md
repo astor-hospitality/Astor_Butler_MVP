@@ -182,7 +182,7 @@ GIGACHAT_EMBEDDING_MODEL=Embeddings          # по умолчанию; Embeddin
 | --- | --- | --- |
 | Очки, `GlassesSpeech` (`/api/glasses/speech`, поле `audioBase64` в `assist`) | `ASTOR_GLASSES_TTS_PROVIDER=yandex` (по умолчанию) или `salute` в `runtime.env` glasses-контейнера | `audioMimeType` теперь берётся из адаптера: `audio/mpeg` (SpeechKit) или `audio/wav` / `audio/ogg` (SaluteSpeech по `SALUTE_TTS_FORMAT`); `audioVoiceGender` — по голосу. Лимит аудио поднят до 4 MiB (600 символов WAV 24 kHz ≈ 2 MiB). |
 | Веб-чат CLIO, `POST /api/chat/speak` (бэкенд, `ChatSpeechController`) | `ASTOR_TTS_PROVIDER=salute` (по умолчанию) или `yandex`; `ASTOR_TTS_WEB_ENABLED=true` включает эндпоинт | JSON той же формы, что ждёт виджет: `audioUrl` (data-URL), плюс `audioBase64`, `audioMimeType`, `voice`, `status` (`READY`/`UNAVAILABLE`/`FAILED`). 503 без аудио, если голос выключен или провайдер упал; 429 при превышении `ASTOR_TTS_WEB_CONCURRENCY`/`ASTOR_TTS_WEB_RATE_PER_MINUTE`. Фронтенд указывает на него `NEXT_PUBLIC_CLIO_TTS_ENDPOINT=https://api.c3ag.ru/api/chat/speak` (CORS для `/api/**` уже настроен через `ASTOR_WEB_ALLOWED_ORIGINS`); локальная заглушка `frontend/app/api/chat/speak` не изменилась. |
-| Telegram | — | Голосовых ответов бота сейчас нет; когда появятся — тот же бин `TextToSpeech` с `SALUTE_TTS_FORMAT=opus` (Ogg Opus, который принимает `sendVoice`). |
+| Telegram-бот, `TelegramVoiceReplyService` | `ASTOR_TELEGRAM_VOICE_REPLIES=off` (по умолчанию) / `on` / `auto`, плюс `SALUTE_TTS_FORMAT=opus` | Голосовое через `sendVoice` (Ogg Opus) и короткая текстовая сводка с кнопками-ссылками и «Подробнее»; гость переключает hands-free командой `/voice on|off`. Описание, таймаут, fallback и стоимость — `TELEGRAM_VOICE_REPLIES.md`. |
 
 ### Где взять ключ
 
@@ -203,7 +203,7 @@ ASTOR_TTS_WEB_ENABLED=true                    # иначе /api/chat/speak от�
 SALUTE_AUTH_KEY=<Authorization key проекта SaluteSpeech>
 SALUTE_SCOPE=SALUTE_SPEECH_PERS               # или SALUTE_SPEECH_B2B / SALUTE_SPEECH_CORP
 SALUTE_TTS_VOICE=Nec_24000
-SALUTE_TTS_FORMAT=wav16                       # opus для Telegram voice
+SALUTE_TTS_FORMAT=wav16                       # opus для Telegram voice (обязателен при ASTOR_TELEGRAM_VOICE_REPLIES=on|auto)
 SALUTE_CA_CERT_PATH=/app/certs/russian_trusted_root_ca.pem   # по умолчанию = GIGACHAT_CA_CERT_PATH
 # SALUTE_OAUTH_URL=https://ngw.devices.sberbank.ru:9443/api/v2/oauth
 # SALUTE_TTS_URL=https://smartspeech.sber.ru/rest/v1/text:synthesize
