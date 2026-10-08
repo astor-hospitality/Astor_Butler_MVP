@@ -146,6 +146,22 @@ astor:
   startup:
     admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}
+  telegram:
+    # Voice replies in the Telegram bot: the answer as a voice note (server TTS, SALUTE_TTS_FORMAT=opus) plus a
+    # 2–4 line text summary with link buttons and "Подробнее". off (default) changes nothing; on = every reply in a
+    # private chat; auto = only after a voice message or in a chat switched with /voice on.
+    # docs/operations/TELEGRAM_VOICE_REPLIES.md
+    voice-replies:
+      mode: ${ASTOR_TELEGRAM_VOICE_REPLIES:off}
+      timeout-ms: ${ASTOR_TELEGRAM_VOICE_TIMEOUT_MS:8000}
+      summary-max-chars: ${ASTOR_TELEGRAM_VOICE_SUMMARY_MAX_CHARS:400}
+      summary-via-model: ${ASTOR_TELEGRAM_VOICE_SUMMARY_VIA_MODEL:true}
+      speech-chunk-chars: ${ASTOR_TELEGRAM_VOICE_SPEECH_CHUNK_CHARS:900}
+      speech-max-chars: ${ASTOR_TELEGRAM_VOICE_SPEECH_MAX_CHARS:4000}
+      max-voice-bytes: ${ASTOR_TELEGRAM_VOICE_MAX_BYTES:1048576}
+      max-links: ${ASTOR_TELEGRAM_VOICE_MAX_LINKS:3}
+      max-photos: ${ASTOR_TELEGRAM_VOICE_MAX_PHOTOS:3}
+      details-ttl-days: ${ASTOR_TELEGRAM_VOICE_DETAILS_TTL_DAYS:7}
   # Server voice (text-to-speech): paid cloud voices only, no local model. ASTOR_TTS_PROVIDER=salute (Sber
   # SaluteSpeech, production) or yandex (SpeechKit, rollback). The web chat endpoint POST /api/chat/speak
   # is off until ASTOR_TTS_WEB_ENABLED=true because every call is billed. docs/operations/SBER_AI_ACTIVATION.md
