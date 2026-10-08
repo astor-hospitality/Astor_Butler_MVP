@@ -56,7 +56,8 @@ public class IntentExampleBootstrap implements ApplicationRunner {
                     }
                 }
             }
-            log.info("Intent examples bootstrapped: examples={}, embeddings={}, corpus={}", examples.size(), embeddings, corpusLocation);
+            log.info("Intent examples bootstrapped: examples={}, embeddings={}, model={}, corpus={}",
+                    examples.size(), embeddings, provider == null ? "none" : provider.model(), corpusLocation);
         } catch (RuntimeException e) {
             log.warn("Intent examples bootstrap skipped: corpus={} reason={}", corpusLocation, e.toString());
         }

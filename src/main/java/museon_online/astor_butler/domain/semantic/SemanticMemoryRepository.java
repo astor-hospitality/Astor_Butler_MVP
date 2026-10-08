@@ -93,9 +93,13 @@ public class SemanticMemoryRepository {
         );
     }
 
-    public List<SemanticSearchResult> searchNearest(String venueCode, List<String> sourceCodes,
+    /**
+     * Nearest chunks among rows written by {@code embeddingModel} with the same dimension: vectors of another model
+     * or size are never compared, so a provider switch is safe before the re-index has finished.
+     */
+    public List<SemanticSearchResult> searchNearest(String venueCode, List<String> sourceCodes, String embeddingModel,
                                                     List<Double> embedding, int limit) {
-        if (embedding == null || embedding.isEmpty()) {
+        if (embedding == null || embedding.isEmpty() || embeddingModel == null || embeddingModel.isBlank()) {
             return List.of();
         }
         if (sourceCodes == null || sourceCodes.isEmpty()) {
@@ -108,6 +112,7 @@ public class SemanticMemoryRepository {
                             WHERE ss.venue_code = ?
                               AND ss.active = TRUE
                               AND se.embedding_dimension = ?
+                              AND se.embedding_model = ?
                             ORDER BY se.embedding <=> ?::vector
                             LIMIT ?
                             """,
@@ -115,6 +120,7 @@ public class SemanticMemoryRepository {
                     vectorLiteral(embedding),
                     normalizeVenue(venueCode),
                     embedding.size(),
+                    embeddingModel,
                     vectorLiteral(embedding),
                     Math.max(1, limit)
             );
@@ -129,6 +135,7 @@ public class SemanticMemoryRepository {
                         WHERE ss.venue_code = ?
                           AND ss.active = TRUE
                           AND se.embedding_dimension = ?
+                          AND se.embedding_model = ?
                           AND ss.source_code IN (%s)
                         ORDER BY se.embedding <=> ?::vector
                         LIMIT ?
@@ -137,6 +144,7 @@ public class SemanticMemoryRepository {
         args.add(vectorLiteral(embedding));
         args.add(normalizeVenue(venueCode));
         args.add(embedding.size());
+        args.add(embeddingModel);
         args.addAll(sourceCodes);
         args.add(vectorLiteral(embedding));
         args.add(Math.max(1, limit));
