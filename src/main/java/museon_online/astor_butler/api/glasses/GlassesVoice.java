@@ -65,6 +65,11 @@ public class GlassesVoice {
     private GlassesVoice(boolean enabled, String provider, String python, String script, String modelDir, String workDir,
                          long timeoutMs, CloudRuWhisperSpeechToText cloud) {
         SpeechToTextProvider selected = SpeechToTextProvider.parse(provider, "ASTOR_GLASSES_STT_PROVIDER");
+        if (selected != SpeechToTextProvider.LOCAL && selected != SpeechToTextProvider.CLOUDRU) {
+            // SpeechKit sync recognition takes Ogg Opus or raw LPCM, the phone records MP4/AAC: no silent fallback.
+            throw new IllegalStateException("ASTOR_GLASSES_STT_PROVIDER must be local or cloudru: " + selected.key()
+                    + " does not accept the MP4/AAC recordings of the glasses");
+        }
         this.enabled = enabled;
         this.python = python;
         this.script = script;

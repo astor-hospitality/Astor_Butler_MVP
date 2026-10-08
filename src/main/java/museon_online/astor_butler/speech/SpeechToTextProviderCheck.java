@@ -4,8 +4,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Fails startup with a message naming {@code ASTOR_STT_PROVIDER} when the value is neither {@code local}
- * nor {@code cloudru}; otherwise the conditional adapters would silently leave no {@link SpeechToTextService}.
+ * Fails startup with a message naming {@code ASTOR_STT_PROVIDER} when the value is not {@code local},
+ * {@code cloudru} or {@code yandex}; otherwise the conditional adapters would silently leave no
+ * {@link SpeechToTextService}.
  */
 @Component
 public class SpeechToTextProviderCheck {

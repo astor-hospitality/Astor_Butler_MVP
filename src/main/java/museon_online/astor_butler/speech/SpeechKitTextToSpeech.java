@@ -8,12 +8,14 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
- * Yandex SpeechKit TTS v1, exactly the request the glasses runtime has sent since the pilot: one
- * form-encoded POST with the API key in the header, MP3 back. Kept as the rollback provider
- * ({@code *_TTS_PROVIDER=yandex}); the behaviour is unchanged on purpose.
+ * Yandex SpeechKit TTS v1, the request the glasses runtime has sent since the pilot: one form-encoded POST
+ * with the API key in the header, audio back. Selected with {@code *_TTS_PROVIDER=yandex}. The format is
+ * {@code mp3} unless set ({@code YANDEX_TTS_FORMAT} in the bot): {@code oggopus} is what Telegram plays as a
+ * voice note. The glasses keep MP3, so their request is unchanged.
  */
 public final class SpeechKitTextToSpeech implements TextToSpeech {
 
@@ -22,6 +24,9 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
     public static final String DEFAULT_VOICE = "filipp";
     public static final String DEFAULT_ROLE = "";
     public static final double DEFAULT_SPEED = 0.95;
+    public static final String DEFAULT_FORMAT = "mp3";
+    /** SpeechKit v1 output formats this adapter offers, with the MIME type of what comes back. */
+    private static final Map<String, String> MIME_BY_FORMAT = Map.of("mp3", "audio/mpeg", "oggopus", "audio/ogg");
     static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(8);
     /** Yandex premium voices that read in a male register; everything else is reported as female. */
@@ -39,8 +44,11 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
      * @param voice    SpeechKit voice name
      * @param role     emotional role supported by that voice
      * @param speed    0.5..2.0
+     * @param format   {@code mp3} (default) or {@code oggopus} ({@code opus}/{@code ogg} accepted); anything else
+     *                 fails here, at startup, rather than at the first spoken line
      */
-    public record Settings(String endpoint, String apiKey, String folder, String voice, String role, double speed) {
+    public record Settings(String endpoint, String apiKey, String folder, String voice, String role, double speed,
+                           String format) {
         public Settings {
             endpoint = blankToDefault(endpoint, DEFAULT_ENDPOINT);
             apiKey = nullToEmpty(apiKey).trim();
@@ -48,6 +56,12 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
             voice = blankToDefault(voice, DEFAULT_VOICE);
             role = blankToDefault(role, DEFAULT_ROLE);
             speed = Math.max(0.1, Math.min(3.0, speed));
+            format = normalizeFormat(format);
+        }
+
+        /** MP3, as the glasses have always asked for. */
+        public Settings(String endpoint, String apiKey, String folder, String voice, String role, double speed) {
+            this(endpoint, apiKey, folder, voice, role, speed, DEFAULT_FORMAT);
         }
     }
 
@@ -58,6 +72,7 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
     private final String voice;
     private final String role;
     private final double speed;
+    private final String format;
 
     public SpeechKitTextToSpeech(Settings settings) {
         this(HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).followRedirects(HttpClient.Redirect.NEVER).build(),
@@ -72,6 +87,7 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
         this.voice = settings.voice();
         this.role = settings.role();
         this.speed = settings.speed();
+        this.format = settings.format();
     }
 
     @Override
@@ -91,7 +107,7 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
 
     @Override
     public String mimeType() {
-        return "audio/mpeg";
+        return MIME_BY_FORMAT.get(format);
     }
 
     @Override
@@ -106,7 +122,7 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
             throw new TextToSpeechException("SpeechKit TTS is not configured: API key, folder and voice are required");
         }
         String form = "text=" + encode(text) + "&lang=ru-RU&voice=" + encode(voice)
-                + "&speed=" + speed + "&format=mp3";
+                + "&speed=" + speed + "&format=" + format;
         if (!role.isBlank()) form += "&emotion=" + encode(role);
         HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(REQUEST_TIMEOUT)
                 .header("Authorization", "Api-Key " + apiKey)
@@ -129,6 +145,15 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
             throw new TextToSpeechException("SpeechKit TTS returned no audio", 200);
         }
         return audio;
+    }
+
+    static String normalizeFormat(String format) {
+        String name = format == null || format.isBlank() ? DEFAULT_FORMAT : format.trim().toLowerCase(Locale.ROOT);
+        if (name.equals("opus") || name.equals("ogg")) name = "oggopus";
+        if (!MIME_BY_FORMAT.containsKey(name)) {
+            throw new IllegalStateException("YANDEX_TTS_FORMAT must be mp3 or oggopus, got '" + format + "'");
+        }
+        return name;
     }
 
     private static String encode(String value) {

@@ -10,7 +10,7 @@ class SpeechToTextProviderSelectionTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withUserConfiguration(SpeechToTextProviderCheck.class, ExternalCommandSpeechToTextService.class,
-                    CloudRuWhisperSpeechToTextService.class);
+                    CloudRuWhisperSpeechToTextService.class, YandexSpeechKitSpeechToTextService.class);
 
     @Test
     void cloudRuIsTheDefaultAdapter() {
@@ -30,6 +30,16 @@ class SpeechToTextProviderSelectionTest {
             assertThat(context.getBean(SpeechToTextService.class)).isInstanceOf(ExternalCommandSpeechToTextService.class);
             assertThat(context.getBean(SpeechToTextProviderCheck.class).provider()).isEqualTo(SpeechToTextProvider.LOCAL);
         });
+    }
+
+    @Test
+    void yandexSelectsSpeechKitWithTheVoiceKey() {
+        runner.withPropertyValues("astor.speech-to-text.provider=yandex", "astor.speech-to-text.yandex.api-key=unit-key")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SpeechToTextService.class);
+                    assertThat(context.getBean(SpeechToTextService.class)).isInstanceOf(YandexSpeechKitSpeechToTextService.class);
+                    assertThat(context.getBean(SpeechToTextProviderCheck.class).provider()).isEqualTo(SpeechToTextProvider.YANDEX);
+                });
     }
 
     @Test
