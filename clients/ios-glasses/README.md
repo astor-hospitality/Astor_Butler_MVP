@@ -80,6 +80,15 @@ to synthesize, and a conversation, a call or the phone coming into the staff mem
 time sends the message back to the queue instead of into the middle of a sentence. A message counts as
 read only if it actually reached the output.
 
+## Before a show
+
+A recording that has just started is not ended by the next event: the SDK reports a tap more than once
+(an Initiate followed by its own Terminate, and a media command behind it), so for 1.2 seconds after the
+recorder starts an event-driven stop is ignored. A cancel, a call or the 30-second limit are not events
+and are never held back. The greeting names whoever is set under "Кого приветствовать" on the glasses
+tab; a failed request is explained in one sentence — no network, a wrong or expired token, a busy or
+unavailable server — rather than as an HTTP code. The device checklist is `docs/PHYSICAL_TEST_CHECKLIST.md`.
+
 ## Checks
 
     clang -fobjc-arc -framework Foundation tests/lunch-guide.m Sources/AstorLunchGuide.m -o /tmp/lunch-test
@@ -90,5 +99,7 @@ read only if it actually reached the output.
     /tmp/quiet-test
     clang -fobjc-arc -framework Foundation tests/reply-drafts.m Sources/AstorReplyDrafts.m -o /tmp/drafts-test
     /tmp/drafts-test
+    clang -fobjc-arc -framework Foundation tests/recording-guard.m -o /tmp/guard-test
+    /tmp/guard-test
 
 Build/sign/install, camera/audio, server media, quiet message delivery in a real room, the reply draft on a locked phone and wear events are separate acceptance results.
