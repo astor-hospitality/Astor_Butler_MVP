@@ -16,6 +16,39 @@ astor:
       # A negative temperature is not sent at all, for models that accept only their default.
       temperature: ${OPENAI_COMPATIBLE_TEMPERATURE:0.1}
       json-mode: ${OPENAI_COMPATIBLE_JSON_MODE:true}
+    # provider=cloudru: Cloud.ru Evolution Foundation Models (Sber), the OpenAI HTTP API with a bearer key
+    # from the Cloud.ru console. Same shape and limits as openai-compatible, own variables so both can be
+    # configured at once and switched by ASTOR_MODEL_PROVIDER. Model names are the catalogue's own (GET /models),
+    # e.g. GigaChat/GigaChat-2-Max, Qwen/Qwen3-235B-A22B-Instruct-2507, openai/gpt-oss-120b.
+    cloudru:
+      base-url: ${CLOUDRU_BASE_URL:https://foundation-models.api.cloud.ru/v1}
+      api-key: ${CLOUDRU_API_KEY:}
+      model: ${CLOUDRU_MODEL:}
+      quality-model: ${CLOUDRU_QUALITY_MODEL:}
+      vision-model: ${CLOUDRU_VISION_MODEL:}
+      embedding-model: ${CLOUDRU_EMBEDDING_MODEL:}
+      timeout-ms: ${CLOUDRU_TIMEOUT_MS:15000}
+      max-tokens: ${CLOUDRU_MAX_TOKENS:256}
+      temperature: ${CLOUDRU_TEMPERATURE:0.1}
+      json-mode: ${CLOUDRU_JSON_MODE:true}
+    # provider=gigachat: Sber GigaChat API called directly. GIGACHAT_AUTH_KEY is the Base64 authorization key
+    # from the GigaChat cabinet; the scope must match the contract (GIGACHAT_API_PERS, _B2B or _CORP).
+    # Sber endpoints are signed by the Russian Trusted Root CA: GIGACHAT_CA_CERT_PATH points at its PEM file
+    # (root plus sub CA), which is added to the JVM trust store. TLS verification is never disabled.
+    # Images are uploaded to /files and attached by id (GigaChat-Pro/Max models); GigaChat has no JSON mode.
+    gigachat:
+      oauth-url: ${GIGACHAT_OAUTH_URL:https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      base-url: ${GIGACHAT_API_URL:https://gigachat.devices.sberbank.ru/api/v1}
+      auth-key: ${GIGACHAT_AUTH_KEY:}
+      scope: ${GIGACHAT_SCOPE:GIGACHAT_API_PERS}
+      model: ${GIGACHAT_MODEL:GigaChat}
+      quality-model: ${GIGACHAT_QUALITY_MODEL:}
+      vision-model: ${GIGACHAT_VISION_MODEL:}
+      embedding-model: ${GIGACHAT_EMBEDDING_MODEL:Embeddings}
+      ca-cert-path: ${GIGACHAT_CA_CERT_PATH:}
+      timeout-ms: ${GIGACHAT_TIMEOUT_MS:15000}
+      max-tokens: ${GIGACHAT_MAX_TOKENS:256}
+      temperature: ${GIGACHAT_TEMPERATURE:0.1}
   redis:
     fsm-ttl-seconds: ${FSM_REDIS_TTL_SECONDS:259200}
     idempotency-ttl-seconds: ${IDEMPOTENCY_REDIS_TTL_SECONDS:86400}

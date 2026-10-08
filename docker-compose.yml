@@ -123,6 +123,30 @@ services:
       LLM_OLLAMA_QUALITY_MODEL: ${LLM_OLLAMA_QUALITY_MODEL:-qwen2.5:3b}
       LLM_OLLAMA_VISION_MODEL: ${LLM_OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       ASTOR_MODEL_PROVIDER: ${ASTOR_MODEL_PROVIDER:-spring-ai}
+      # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
+      # docs/operations/SBER_AI_ACTIVATION.md
+      CLOUDRU_BASE_URL: ${CLOUDRU_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      CLOUDRU_API_KEY: ${CLOUDRU_API_KEY:-}
+      CLOUDRU_MODEL: ${CLOUDRU_MODEL:-}
+      CLOUDRU_QUALITY_MODEL: ${CLOUDRU_QUALITY_MODEL:-}
+      CLOUDRU_VISION_MODEL: ${CLOUDRU_VISION_MODEL:-}
+      CLOUDRU_EMBEDDING_MODEL: ${CLOUDRU_EMBEDDING_MODEL:-}
+      CLOUDRU_TIMEOUT_MS: ${CLOUDRU_TIMEOUT_MS:-15000}
+      CLOUDRU_MAX_TOKENS: ${CLOUDRU_MAX_TOKENS:-256}
+      CLOUDRU_TEMPERATURE: ${CLOUDRU_TEMPERATURE:-0.1}
+      CLOUDRU_JSON_MODE: ${CLOUDRU_JSON_MODE:-true}
+      GIGACHAT_OAUTH_URL: ${GIGACHAT_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      GIGACHAT_API_URL: ${GIGACHAT_API_URL:-https://gigachat.devices.sberbank.ru/api/v1}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat}
+      GIGACHAT_QUALITY_MODEL: ${GIGACHAT_QUALITY_MODEL:-}
+      GIGACHAT_VISION_MODEL: ${GIGACHAT_VISION_MODEL:-}
+      GIGACHAT_EMBEDDING_MODEL: ${GIGACHAT_EMBEDDING_MODEL:-Embeddings}
+      GIGACHAT_CA_CERT_PATH: ${GIGACHAT_CA_CERT_PATH:-}
+      GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
+      GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
+      GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
       YANDEX_AGENT_ID: ${YANDEX_AGENT_ID:-fvt18kmmnas336paia3g}
@@ -163,6 +187,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - huggingface-cache:/root/.cache/huggingface
+      # GigaChat direct API: mount the Russian Trusted Root CA bundle and set GIGACHAT_CA_CERT_PATH to it.
+      # - ./certs/russian_trusted_root_ca.pem:/app/certs/russian_trusted_root_ca.pem:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -256,6 +282,30 @@ services:
       LLM_OLLAMA_QUALITY_MODEL: ${LLM_OLLAMA_QUALITY_MODEL:-qwen2.5:3b}
       LLM_OLLAMA_VISION_MODEL: ${LLM_OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       ASTOR_MODEL_PROVIDER: ${ASTOR_MODEL_PROVIDER:-spring-ai}
+      # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
+      # docs/operations/SBER_AI_ACTIVATION.md
+      CLOUDRU_BASE_URL: ${CLOUDRU_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      CLOUDRU_API_KEY: ${CLOUDRU_API_KEY:-}
+      CLOUDRU_MODEL: ${CLOUDRU_MODEL:-}
+      CLOUDRU_QUALITY_MODEL: ${CLOUDRU_QUALITY_MODEL:-}
+      CLOUDRU_VISION_MODEL: ${CLOUDRU_VISION_MODEL:-}
+      CLOUDRU_EMBEDDING_MODEL: ${CLOUDRU_EMBEDDING_MODEL:-}
+      CLOUDRU_TIMEOUT_MS: ${CLOUDRU_TIMEOUT_MS:-15000}
+      CLOUDRU_MAX_TOKENS: ${CLOUDRU_MAX_TOKENS:-256}
+      CLOUDRU_TEMPERATURE: ${CLOUDRU_TEMPERATURE:-0.1}
+      CLOUDRU_JSON_MODE: ${CLOUDRU_JSON_MODE:-true}
+      GIGACHAT_OAUTH_URL: ${GIGACHAT_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      GIGACHAT_API_URL: ${GIGACHAT_API_URL:-https://gigachat.devices.sberbank.ru/api/v1}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat}
+      GIGACHAT_QUALITY_MODEL: ${GIGACHAT_QUALITY_MODEL:-}
+      GIGACHAT_VISION_MODEL: ${GIGACHAT_VISION_MODEL:-}
+      GIGACHAT_EMBEDDING_MODEL: ${GIGACHAT_EMBEDDING_MODEL:-Embeddings}
+      GIGACHAT_CA_CERT_PATH: ${GIGACHAT_CA_CERT_PATH:-}
+      GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
+      GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
+      GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
       YANDEX_AGENT_ID: ${YANDEX_AGENT_ID:-fvt18kmmnas336paia3g}
@@ -296,6 +346,8 @@ services:
       - "8089:8089"
     volumes:
       - huggingface-cache:/root/.cache/huggingface
+      # GigaChat direct API: mount the Russian Trusted Root CA bundle and set GIGACHAT_CA_CERT_PATH to it.
+      # - ./certs/russian_trusted_root_ca.pem:/app/certs/russian_trusted_root_ca.pem:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -381,6 +433,30 @@ services:
       ASTOR_UNDERSTANDING_LLM_ENABLED: ${SMART_SOLUTION_UNDERSTANDING_LLM_ENABLED:-false}
       ASTOR_SCENARIO_REPLY_LLM_ENABLED: ${SMART_SOLUTION_SCENARIO_REPLY_LLM_ENABLED:-false}
       ASTOR_MODEL_PROVIDER: ${SMART_SOLUTION_MODEL_PROVIDER:-yandex}
+      # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
+      # docs/operations/SBER_AI_ACTIVATION.md
+      CLOUDRU_BASE_URL: ${CLOUDRU_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      CLOUDRU_API_KEY: ${CLOUDRU_API_KEY:-}
+      CLOUDRU_MODEL: ${CLOUDRU_MODEL:-}
+      CLOUDRU_QUALITY_MODEL: ${CLOUDRU_QUALITY_MODEL:-}
+      CLOUDRU_VISION_MODEL: ${CLOUDRU_VISION_MODEL:-}
+      CLOUDRU_EMBEDDING_MODEL: ${CLOUDRU_EMBEDDING_MODEL:-}
+      CLOUDRU_TIMEOUT_MS: ${CLOUDRU_TIMEOUT_MS:-15000}
+      CLOUDRU_MAX_TOKENS: ${CLOUDRU_MAX_TOKENS:-256}
+      CLOUDRU_TEMPERATURE: ${CLOUDRU_TEMPERATURE:-0.1}
+      CLOUDRU_JSON_MODE: ${CLOUDRU_JSON_MODE:-true}
+      GIGACHAT_OAUTH_URL: ${GIGACHAT_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      GIGACHAT_API_URL: ${GIGACHAT_API_URL:-https://gigachat.devices.sberbank.ru/api/v1}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat}
+      GIGACHAT_QUALITY_MODEL: ${GIGACHAT_QUALITY_MODEL:-}
+      GIGACHAT_VISION_MODEL: ${GIGACHAT_VISION_MODEL:-}
+      GIGACHAT_EMBEDDING_MODEL: ${GIGACHAT_EMBEDDING_MODEL:-Embeddings}
+      GIGACHAT_CA_CERT_PATH: ${GIGACHAT_CA_CERT_PATH:-}
+      GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
+      GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
+      GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
       YANDEX_AGENT_ID: ${SMART_SOLUTION_YANDEX_AGENT_ID:-${YANDEX_AGENT_ID:-fvt18kmmnas336paia3g}}
