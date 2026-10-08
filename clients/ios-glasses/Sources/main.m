@@ -11,6 +11,7 @@
 #import "AstorDockArchive.h"
 #import "AstorQuietDelivery.h"
 #import "AstorReplyDrafts.h"
+#import "AstorRecordingGuard.h"
 #import <UserNotifications/UserNotifications.h>
 #import "AstorCallPolicy.h"
 #import "AstorGlassesProbe-Swift.h"
@@ -94,6 +95,8 @@
 @property(nonatomic,strong) AstorQuietDeliveryMessage *answeringMessage;
 @property(nonatomic,strong) NSDate *replyDeadline;
 @property(nonatomic,assign) BOOL replyRecording, messageHandedToOutput;
+@property(nonatomic,strong) NSDate *recordingStartedAt;
+@property(nonatomic,strong) UITextField *staffName;
 @property(nonatomic,assign) NSTimeInterval lastBriefCommand;
 - (void)refreshGestures;
 - (void)assignChanges:(NSDictionary *)changes restoring:(BOOL)restoring;
@@ -194,6 +197,9 @@
     [device addArrangedSubview:[self button:@"Вернуть прежние назначения" action:@selector(restoreGestures)]];
     self.gestureRows=[UIStackView new];self.gestureRows.axis=UILayoutConstraintAxisVertical;self.gestureRows.spacing=8;[device addArrangedSubview:self.gestureRows];
     [device addArrangedSubview:[self button:@"События помощника SDK · вкл./выкл." action:@selector(toggleGlassesVoice)]];
+    self.staffName=[self field:@"Имя для приветствия (например, Яна)"];self.staffName.text=[NSUserDefaults.standardUserDefaults stringForKey:@"AstorStaffName"];
+    [self.staffName addTarget:self action:@selector(staffNameChanged) forControlEvents:UIControlEventEditingDidEnd];
+    [device addArrangedSubview:[self card:@[[self label:@"Кого приветствовать" size:20],self.staffName,[self label:@"Астор назовёт это имя, когда очки надели. Пусто — поздоровается без имени." size:14]]]];
     self.endpoint=[self field:@"HTTPS-адрес Astor"];self.endpoint.keyboardType=UIKeyboardTypeURL;self.endpoint.autocapitalizationType=UITextAutocapitalizationTypeNone;self.endpoint.autocorrectionType=UITextAutocorrectionTypeNo;self.endpoint.text=[NSUserDefaults.standardUserDefaults stringForKey:@"backendURL"];
     [device addArrangedSubview:[self card:@[[self label:@"Подключение к Astor" size:20],self.endpoint,[self button:@"Сохранить адрес" action:@selector(saveEndpoint)],[self button:@"Токен сотрудника" action:@selector(credentials)],[self label:@"Адрес и доступ выдаёт команда backend. Личные ключи ИИ сюда не нужны." size:14]]]];
     [activity addArrangedSubview:[self label:@"Активность" size:30]];[activity addArrangedSubview:[self label:@"Здесь пока журнал проверки устройства. История заданий и подтверждений появится с API портала." size:15]];
@@ -601,6 +607,7 @@
         NSInteger status=((NSHTTPURLResponse *)response).statusCode;
         if(error || status!=200){
             if(status==404 && !self.messageChannelMissingLogged){self.messageChannelMissingLogged=YES;[self log:@"Канал сообщений на сервере не включён; очередь остаётся пустой."];}
+            else if(status==401 || status==403){self.messageLabel.text=[self explainFailure:nil status:status doing:@"сообщения"];}
             return;
         }
         NSDictionary *reply=data.length<=256*1024?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
@@ -627,6 +634,17 @@
     if(-self.pendingSiriStart.timeIntervalSinceNow<2 || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || self.callActive || self.audioInterruptionActive || !self.device.isConnectedAndReady || ![self hasGlassesOutput])return;
     self.pendingSiriStart=nil;[self cancelAgent];self.tabs.selectedSegmentIndex=0;[self changeTab];[self lunchBrief];
 }
+- (void)staffNameChanged {
+    NSString *name=[self.staffName.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if(name.length>40)name=[name substringToIndex:40];
+    [NSUserDefaults.standardUserDefaults setObject:name forKey:@"AstorStaffName"];
+    [self.view endEditing:YES];[self log:name.length?[NSString stringWithFormat:@"Приветствие будет по имени: %@.",name]:@"Приветствие без имени."];
+}
+- (NSString *)greeting {
+    NSString *name=[[NSUserDefaults.standardUserDefaults stringForKey:@"AstorStaffName"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    return name.length?[NSString stringWithFormat:@"%@, привет! Я Астор. Готов помочь на смене. Двойное касание — вопрос, касание назад — повтор шага.",name]
+                      :@"Привет! Я Астор. Готов помочь на смене. Двойное касание — вопрос, касание назад — повтор шага.";
+}
 - (void)wearGreetingChanged {
     [NSUserDefaults.standardUserDefaults setBool:self.wearGreetingSwitch.on forKey:@"AstorWearGreetingEnabled"];
     if(!self.wearGreetingSwitch.on)[self.wearGreeting observeStatus:-1 at:NSDate.date];
@@ -650,7 +668,7 @@
     BOOL allowed=self.wearGreetingSwitch.on && [self hasGlassesOutput] && ![self lunchIsBusy] && !self.speaker.isSpeaking && !self.answerAudio.isPlaying && !self.cue.isPlaying;
     if([self.wearGreeting consumeAt:NSDate.date allowed:allowed]){
         [NSUserDefaults.standardUserDefaults setObject:self.wearGreeting.lastGreeting forKey:@"AstorWearGreetingAt"];
-        [self log:@"Приветствие по событию надевания."];[self speakAnswer:@"Привет! Я Астор. Готов помочь на смене."];
+        [self log:@"Приветствие по событию надевания."];[self speakAnswer:[self greeting]];
     }
 }
 - (void)device:(id<AIBudsDeviceConvertible>)device didWearStatusChanged:(enum AIBudsWearStatus)status {
@@ -905,8 +923,9 @@
         [session finishTasksAndInvalidate];if(generation!=self.requestGeneration)return;
         self.busy=NO;self.request=nil;[self endWork];self.http=nil;[self refreshLunch];
         if(context && ![self.lunch acceptsPhotoContext:context]){[self log:@"Ответ прежнего шага не принят."];return;}
-        if(error){[self log:error.code==NSURLErrorCancelled?@"Запрос отменён.":context?@"Ошибка соединения. Можно повторить отправку этого фото без новой съёмки.":@"Ошибка соединения с Astor."];return;}
-        NSInteger status=((NSHTTPURLResponse *)response).statusCode;if(status!=200){[self log:[NSString stringWithFormat:@"Astor: HTTP %ld. Фото шага не подтверждено. При временной ошибке нажмите повтор отправки.",(long)status]];return;}
+        if(error){NSString *why=[self explainFailure:error status:0 doing:@"запрос"];[self log:context?[why stringByAppendingString:@" Это фото можно отправить повторно без новой съёмки."]:why];return;}
+        NSInteger status=((NSHTTPURLResponse *)response).statusCode;
+        if(status!=200){NSString *why=[self explainFailure:nil status:status doing:@"запрос"];[self log:context?[why stringByAppendingString:@" Фото шага не подтверждено; при временной ошибке нажмите повтор отправки."]:why];return;}
         NSDictionary *reply=data.length<=3*1024*1024?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;NSString *answer=[reply isKindOfClass:NSDictionary.class]?reply[@"text"]:nil;
         if(!AstorAssistReplyMatches(reply,requestId)){[self log:@"Ответ не соответствует запросу или согласованному контракту."];return;}
         if(context){if(![self.lunch acceptPhotoReceipt:reply[@"photoReceipt"] context:context requestId:requestId]){[self log:@"Нет подтверждения сохранения фото для этого шага. Переход остаётся закрыт."];return;}[self clearPendingPhoto];[self refreshLunch];[self log:[NSString stringWithFormat:@"Фото текущего шага сохранено сервером. Всего шагов с фото: %lu.",(unsigned long)self.lunch.photoCount]];}
@@ -918,6 +937,26 @@
         }
         [self speakAnswer:answer];
     });}];[self.request resume];
+}
+/* One sentence for a failed request, in the staff member's words: what is wrong and what to do.
+   Never the raw error, never a token. */
+- (NSString *)explainFailure:(NSError *)error status:(NSInteger)status doing:(NSString *)doing {
+    if(error){
+        if(error.code==NSURLErrorCancelled)return @"Запрос отменён.";
+        if(error.code==NSURLErrorNotConnectedToInternet || error.code==NSURLErrorNetworkConnectionLost || error.code==NSURLErrorDataNotAllowed)
+            return @"Нет сети: проверьте Wi‑Fi или сотовые данные на iPhone. Очки работают, Астор ответит, когда связь вернётся.";
+        if(error.code==NSURLErrorTimedOut)return @"Сервер Astor не ответил вовремя. Попробуйте ещё раз через минуту.";
+        if(error.code==NSURLErrorCannotFindHost || error.code==NSURLErrorCannotConnectToHost || error.code==NSURLErrorSecureConnectionFailed)
+            return @"Сервер Astor недоступен. Проверьте адрес во вкладке «Очки» или сообщите администратору.";
+        return [NSString stringWithFormat:@"Ошибка соединения с Astor (%@).",doing];
+    }
+    switch(status){
+        case 401: return @"Доступ к Astor не принят: токен сотрудника неверный. Обратитесь к администратору за новым.";
+        case 403: return @"Доступ к Astor истёк. Обратитесь к администратору: нужен новый токен сотрудника.";
+        case 429: return @"Астор занят предыдущим запросом. Подождите пару секунд и повторите.";
+        case 503: return @"Помощник на сервере временно недоступен. Повторите чуть позже.";
+        default:  return [NSString stringWithFormat:@"Astor ответил ошибкой HTTP %ld (%@).",(long)status,doing];
+    }
 }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *))completionHandler {completionHandler(nil);}
 - (void)playBackendSpeech:(NSData *)data {
@@ -968,10 +1007,15 @@
         if(device!=self.device)return;
         [self log:[NSString stringWithFormat:@"Голосовое событие SDK: %ld.",(long)event]];
         if(!self.glassesVoiceEnabled)return;
-        if(event==AIBudsAIChatSessionEventTerminate){if(self.recorder)[self finishVoice];return;}
+        if(event==AIBudsAIChatSessionEventTerminate){
+            if(self.recorder && AstorRecordingStopIsTooEarly(self.recordingStartedAt,NSDate.date)){[self log:@"SDK закрыл сессию сразу после старта; запись продолжается."];return;}
+            if(self.recorder)[self finishVoice];
+            return;
+        }
         if(event==AIBudsAIChatSessionEventInterruptByStateConflict){[self cancelAgent];return;}
         if(event==AIBudsAIChatSessionEventInitiateWithSCO){
             if(!self.pocketMode && UIApplication.sharedApplication.applicationState!=UIApplicationStateActive){[self log:@"Фоновый голосовой режим требует отдельного теста; запись не начата."];return;}
+            if(self.recorder && AstorRecordingStartIsRepeated(self.recordingStartedAt,NSDate.date)){[self log:@"Повторный старт от SDK пропущен."];return;}
             if(!self.recorder)[self voice];
         } else if(event==AIBudsAIChatSessionEventInitiateWithOpus){
             [self log:@"Очки запросили Opus-канал; для этого пилота проверен HFP. Opus-сессия не запускается."];
@@ -988,7 +1032,11 @@
     if(self.callActive || self.audioInterruptionActive){[self log:@"Во время звонка или другого аудио запись Астор не запускается."];return;}
     if(self.startingVoice)return;
     if(self.music){[self.music stop];self.music=nil;[self restoreAssistantMedia];}
-    if(self.recorder){[self finishVoice];return;}if(self.busy || self.waitingPhoto || self.startingVoice)return;[self.answerAudio stop];self.answerAudio=nil;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
+    if(self.recorder){
+        if(AstorRecordingStopIsTooEarly(self.recordingStartedAt,NSDate.date)){[self log:@"Запись только началась; повторное событие пропущено."];return;}
+        [self finishVoice];return;
+    }
+    if(self.busy || self.waitingPhoto || self.startingVoice)return;[self.answerAudio stop];self.answerAudio=nil;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
     NSUInteger generation=self.photoGeneration;
     if(UIApplication.sharedApplication.applicationState!=UIApplicationStateActive && AVAudioSession.sharedInstance.recordPermission!=AVAudioSessionRecordPermissionGranted){[self log:@"Сначала разрешите микрофон с открытым приложением."];return;}
     self.startingVoice=YES;[AVAudioSession.sharedInstance requestRecordPermission:^(BOOL granted){dispatch_async(dispatch_get_main_queue(),^{
@@ -1003,12 +1051,15 @@
         self.startingVoice=YES;[self playCue:YES];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,180*NSEC_PER_MSEC),dispatch_get_main_queue(),^{
             if(generation!=self.photoGeneration)return;self.startingVoice=NO;
-            if(![self.recorder recordForDuration:30]){[self log:@"Ошибка записи."];[self cancelAgent];return;}[self log:@"Слушаю. Скажите команду; двойное нажатие завершит запись."];[self refresh];
+            if(![self.recorder recordForDuration:30]){[self log:@"Ошибка записи."];[self cancelAgent];return;}
+            self.recordingStartedAt=NSDate.date;
+            [self log:@"Слушаю. Скажите команду; двойное нажатие завершит запись."];[self refresh];
             AVAudioRecorder *recording=self.recorder;dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC),dispatch_get_main_queue(),^{if(self.recorder==recording)[self finishVoice];});
         });
     });}];
 }
 - (void)finishVoice {
+    self.recordingStartedAt=nil;
     [self.recorder stop];self.recorder=nil;[self playCue:NO];NSData *audio=[NSData dataWithContentsOfURL:self.recordingURL];
     if(audio.length && audio.length<2*1024*1024)[self.dock captureAudioFile:self.recordingURL];
     if(self.recordingURL)[NSFileManager.defaultManager removeItemAtURL:self.recordingURL error:nil];self.recordingURL=nil;
@@ -1033,7 +1084,7 @@
     [[session dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *error){dispatch_async(dispatch_get_main_queue(),^{
         [session finishTasksAndInvalidate];self.busy=NO;[self endWork];
         NSInteger status=((NSHTTPURLResponse *)response).statusCode;
-        if(error || status!=200){[self log:[NSString stringWithFormat:@"Ответ не расшифрован: %@.",error?@"нет связи":[NSString stringWithFormat:@"HTTP %ld",(long)status]]];
+        if(error || status!=200){[self log:[@"Ответ не расшифрован. " stringByAppendingString:[self explainFailure:error status:status doing:@"расшифровка"]]];
             [self speakAnswer:@"Не удалось разобрать ответ. Попробуйте ещё раз."];return;}
         NSDictionary *reply=data.length<=256*1024?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
         NSString *text=[reply isKindOfClass:NSDictionary.class]?reply[@"text"]:nil;
@@ -1131,7 +1182,7 @@
     self.audioInterruptionActive=[notification.userInfo[AVAudioSessionInterruptionTypeKey] integerValue]==AVAudioSessionInterruptionTypeBegan;
     if(self.audioInterruptionActive){[self cancelAgent];[self log:@"Запись и звук остановлены: звонок или другое аудио."];}[self refreshLunch];
 });}
-- (void)device:(id<AIBudsDeviceConvertible>)device didDisconnectWithError:(NSError *)error {dispatch_async(dispatch_get_main_queue(),^{if(device==self.device){[self cancelAgent];self.glassesCallActive=NO;[self updateCallState];[self.freshPowerComponents removeAllObjects];[self refreshPower];self.gestureMapping=nil;[self refreshGestures];[self log:@"Очки отключились. Положение в кейсе SDK не сообщает; на экране оставлен последний полученный заряд."];}});}
+- (void)device:(id<AIBudsDeviceConvertible>)device didDisconnectWithError:(NSError *)error {dispatch_async(dispatch_get_main_queue(),^{if(device==self.device){[self cancelAgent];self.glassesCallActive=NO;[self updateCallState];[self.freshPowerComponents removeAllObjects];[self refreshPower];self.gestureMapping=nil;[self refreshGestures];[self log:@"Очки отключились: проверьте, что они включены и Bluetooth на iPhone активен. Вопросы и подсказки возобновятся после подключения; на экране оставлен последний полученный заряд."];}});}
 - (void)routeChanged {
     dispatch_async(dispatch_get_main_queue(),^{
         if(![self hasGlassesOutput]){[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];[self.cue stop];[self.answerAudio stop];}
@@ -1144,6 +1195,7 @@
     if(self.speakingMessage){AstorQuietDeliveryMessage *interrupted=self.speakingMessage;self.speakingMessage=nil;[self.messages finishedSpeaking:interrupted at:NSDate.date delivered:NO];}
     [self stopSilenceMonitor];
     if(!self.pocketMode)self.sessionToken=nil;
+    self.recordingStartedAt=nil;
     [self clearPendingPhoto];self.preview.image=nil;self.waitingPhoto=NO;self.photoContext=nil;self.startingVoice=NO;self.requestGeneration++;self.busy=NO;if(self.music){[self.music stop];self.music=nil;[self restoreAssistantMedia];}[self.answerAudio stop];self.answerAudio=nil;[self.cue stop];self.photoGeneration++;[self endWork];[self.recorder stop];self.recorder=nil;if(self.recordingURL)[NSFileManager.defaultManager removeItemAtURL:self.recordingURL error:nil];self.recordingURL=nil;[self.request cancel];self.request=nil;[self.http invalidateAndCancel];self.http=nil;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];[self stop];
 }
 
