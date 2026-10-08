@@ -26,6 +26,9 @@ if [ ! -f "$env_file" ]; then
   exit 2
 fi
 set -a; . "$env_file"; set +a
+# The provider comes from Cloud.ru's mirror, declared next to this script; the user's ~/.terraformrc stays untouched.
+export TF_CLI_CONFIG_FILE="$PWD/cli.tfrc"
+export PATH="$HOME/bin:$PATH"
 : "${TF_VAR_cloudru_key_id:?empty in $env_file}" "${TF_VAR_cloudru_secret:?empty in $env_file}"
 [ -f terraform.tfvars ] || cp terraform.tfvars.example terraform.tfvars
 
