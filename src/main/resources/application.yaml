@@ -148,6 +148,15 @@ astor:
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}
   speech-to-text:
     enabled: ${ASTOR_STT_ENABLED:false}
+    # provider=cloudru (default): Cloud.ru Foundation Models openai/whisper-large-v3 over POST /v1/audio/transcriptions,
+    # same CLOUDRU_BASE_URL/CLOUDRU_API_KEY as the model gateway; nothing runs on the VM.
+    # provider=local: the faster-whisper subprocess below (image built with STT_LOCAL_WHISPER=true), kept for rollback.
+    provider: ${ASTOR_STT_PROVIDER:cloudru}
+    language: ${ASTOR_STT_LANGUAGE:ru}
+    cloudru:
+      base-url: ${CLOUDRU_BASE_URL:https://foundation-models.api.cloud.ru/v1}
+      api-key: ${CLOUDRU_API_KEY:}
+      model: ${ASTOR_STT_CLOUDRU_MODEL:openai/whisper-large-v3}
     command: ${ASTOR_STT_COMMAND:}
     work-dir: ${ASTOR_STT_WORK_DIR:/private/tmp/astor-butler-stt}
     timeout-seconds: ${ASTOR_STT_TIMEOUT_SECONDS:30}
