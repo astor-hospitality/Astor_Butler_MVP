@@ -5,9 +5,11 @@ on:
   push:
     branches:
       - main
-      - "codex/**"
-      - "feature/**"
-      - "task/**"
+
+# PR branches are validated by pull_request, avoiding a second identical push run.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -16,6 +18,7 @@ jobs:
   backend:
     name: Backend tests and image build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       staff-postgres:
         image: postgres:16-alpine
@@ -95,6 +98,7 @@ jobs:
   concierge-ratings:
     name: Concierge ratings tool
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -116,6 +120,7 @@ jobs:
   android-glasses:
     name: Android glasses client rules
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
