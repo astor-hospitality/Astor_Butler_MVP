@@ -1,6 +1,7 @@
 package museon_online.astor_butler.model;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.restclient.RestTemplateBuilder;
@@ -45,6 +46,9 @@ import java.util.UUID;
  * <p>Images go through GigaChat's file store: the photo is uploaded once and attached to the chat
  * message by id, as the API has no inline data URLs. GigaChat has no {@code response_format}; prompts
  * that expect JSON rely on their own instructions.
+ *
+ * <p>Outside Spring (the isolated glasses runtime) the explicit constructor builds the same client; it can
+ * bound photo answers separately from text answers.
  */
 @Slf4j
 @Service
@@ -67,10 +71,12 @@ public class GigaChatModelGateway implements ModelGateway {
     private final String visionModel;
     private final String embeddingModel;
     private final int maxTokens;
+    private final int visionMaxTokens;
     private final double temperature;
     private final Object tokenLock = new Object();
     private volatile AccessToken token;
 
+    @Autowired
     public GigaChatModelGateway(
             RestTemplateBuilder restTemplateBuilder,
             @Value("${astor.model.gigachat.oauth-url:" + DEFAULT_OAUTH_URL + "}") String oauthUrl,
@@ -86,6 +92,20 @@ public class GigaChatModelGateway implements ModelGateway {
             @Value("${astor.model.gigachat.max-tokens:256}") int maxTokens,
             @Value("${astor.model.gigachat.temperature:0.1}") double temperature
     ) {
+        this(restTemplateBuilder, oauthUrl, baseUrl, authKey, scope, frontlineModel, qualityModel, visionModel, embeddingModel,
+                caCertPath, timeoutMs, maxTokens, maxTokens, temperature);
+    }
+
+    /**
+     * Explicit settings for a runtime without Spring Boot configuration. Blank optional models switch the
+     * capability off as in the Spring constructor; a negative {@code temperature} is not sent.
+     *
+     * @param visionMaxTokens {@code max_tokens} of photo answers; text answers use {@code maxTokens}
+     */
+    public GigaChatModelGateway(RestTemplateBuilder restTemplateBuilder, String oauthUrl, String baseUrl, String authKey,
+                                String scope, String frontlineModel, String qualityModel, String visionModel,
+                                String embeddingModel, String caCertPath, int timeoutMs, int maxTokens, int visionMaxTokens,
+                                double temperature) {
         Duration timeout = Duration.ofMillis(Math.max(1, timeoutMs));
         // The JDK client carries both timeouts itself; the builder's own timeout settings do not apply to it.
         this.restTemplate = restTemplateBuilder
@@ -100,6 +120,7 @@ public class GigaChatModelGateway implements ModelGateway {
         this.visionModel = blankToNull(visionModel);
         this.embeddingModel = blankToNull(embeddingModel);
         this.maxTokens = Math.max(1, maxTokens);
+        this.visionMaxTokens = Math.max(1, visionMaxTokens);
         this.temperature = temperature;
 
         if (this.authKey == null) {
@@ -115,7 +136,7 @@ public class GigaChatModelGateway implements ModelGateway {
     @Override
     public ModelTextResponse generateText(ModelTextRequest request) {
         String model = textModel(request.profile());
-        Map<String, Object> body = completionBody(model, Map.of("role", "user", "content", nullToEmpty(request.prompt())));
+        Map<String, Object> body = completionBody(model, Map.of("role", "user", "content", nullToEmpty(request.prompt())), maxTokens);
         long startedAt = System.nanoTime();
 
         Map<?, ?> response = postJson("/chat/completions", body);
@@ -174,7 +195,7 @@ public class GigaChatModelGateway implements ModelGateway {
         message.put("content", nullToEmpty(request.prompt()));
         message.put("attachments", List.of(fileId));
 
-        Map<?, ?> response = postJson("/chat/completions", completionBody(visionModel, message));
+        Map<?, ?> response = postJson("/chat/completions", completionBody(visionModel, message, visionMaxTokens));
 
         Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
         String text = readText(response);
@@ -219,11 +240,11 @@ public class GigaChatModelGateway implements ModelGateway {
         return profile == ModelProfile.QUALITY && qualityModel != null ? qualityModel : frontlineModel;
     }
 
-    private Map<String, Object> completionBody(String model, Map<String, Object> message) {
+    private Map<String, Object> completionBody(String model, Map<String, Object> message, int tokens) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
         body.put("messages", List.of(message));
-        body.put("max_tokens", maxTokens);
+        body.put("max_tokens", tokens);
         if (temperature >= 0) {
             body.put("temperature", Math.min(2.0, temperature));
         }

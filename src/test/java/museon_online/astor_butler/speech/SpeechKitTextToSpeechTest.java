@@ -96,4 +96,21 @@ class SpeechKitTextToSpeechTest {
                 .isInstanceOf(TextToSpeechException.class)
                 .satisfies(e -> assertThat(((TextToSpeechException) e).status()).isEqualTo(401));
     }
+
+    @Test
+    void oggOpusIsRequestedForTelegramVoiceAndUnknownFormatsFailAtConstruction() {
+        SpeechKitTextToSpeech tts = new SpeechKitTextToSpeech(HttpClient.newHttpClient(), new SpeechKitTextToSpeech.Settings(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/speech/v1/tts:synthesize", "unit-key", "unit-folder",
+                "filipp", null, 0.95, "oggopus"));
+
+        tts.synthesize("Ваш стол готов.");
+
+        assertThat(bodies.getFirst()).contains("format=oggopus").doesNotContain("format=mp3").contains("voice=filipp");
+        assertThat(tts.mimeType()).isEqualTo("audio/ogg");
+        assertThat(new SpeechKitTextToSpeech.Settings(null, "k", "f", "filipp", null, 1.0, " OPUS ").format()).isEqualTo("oggopus");
+        assertThat(new SpeechKitTextToSpeech.Settings(null, "k", "f", "filipp", null, 1.0, "").format()).isEqualTo("mp3");
+        assertThat(new SpeechKitTextToSpeech.Settings(null, "k", "f", "filipp", null, 1.0).format()).isEqualTo("mp3");
+        assertThatThrownBy(() -> new SpeechKitTextToSpeech.Settings(null, "k", "f", "filipp", null, 1.0, "wav"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("YANDEX_TTS_FORMAT");
+    }
 }

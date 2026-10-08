@@ -1,10 +1,13 @@
 # Cloud.ru host: compose v5 rejects the inline tmpfs options of compose.yaml, and the service must join the shared `edge` network.
 # No whisper models on this host: the image is docker/glasses/Dockerfile.cloud and STT goes to Cloud.ru
 # (ASTOR_GLASSES_STT_PROVIDER=cloudru in runtime.env), so the /models bind of compose.yaml is dropped.
+# The Russian Trusted Root CA bundle on the VM is mounted for the direct Sber APIs (ASTOR_GLASSES_AI_PROVIDER=gigachat,
+# ASTOR_GLASSES_TTS_PROVIDER=salute): GIGACHAT_CA_CERT_PATH / SALUTE_CA_CERT_PATH=/certs/russian_trusted_root_ca.pem.
 services:
   glasses:
     tmpfs: !override ["/tmp"]
-    volumes: !override []
+    volumes: !override
+      - /opt/astor-glasses/certs/russian_trusted_root_ca.pem:/certs/russian_trusted_root_ca.pem:ro
     networks: [astor, edge]
 networks:
   edge:
