@@ -5,6 +5,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
+import java.net.InetSocketAddress;
+import java.net.ProxySelector;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -43,9 +45,18 @@ public class PublicTelegramHtmlSource implements VenueContentSource {
             Pattern.CASE_INSENSITIVE
     );
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
+    // Built on first use: t.me is reachable from the VM only through the same egress
+    // proxy the bot uses (telegram.bot.proxy.*), so the client must see those settings.
+    private volatile HttpClient httpClient;
+
+    @Value("${telegram.bot.proxy.type:NO_PROXY}")
+    private String proxyType = "NO_PROXY";
+
+    @Value("${telegram.bot.proxy.host:}")
+    private String proxyHost = "";
+
+    @Value("${telegram.bot.proxy.port:0}")
+    private int proxyPort;
 
     @Value("${astor.content.telegram.public-channel.enabled:false}")
     private boolean enabled;
@@ -78,7 +89,7 @@ public class PublicTelegramHtmlSource implements VenueContentSource {
                     .timeout(Duration.ofSeconds(timeoutSeconds))
                     .header("User-Agent", "AstorButler/1.0 (+local content ingest)")
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response = client().send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 log.warn("AERIS channel public ingest failed: status={}", response.statusCode());
                 return List.of();
@@ -88,6 +99,29 @@ public class PublicTelegramHtmlSource implements VenueContentSource {
             log.warn("AERIS channel public ingest failed: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    HttpClient client() {
+        HttpClient current = httpClient;
+        if (current == null) {
+            HttpClient.Builder builder = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5));
+            proxyAddress().ifPresent(address -> builder.proxy(ProxySelector.of(address)));
+            current = builder.build();
+            httpClient = current;
+        }
+        return current;
+    }
+
+    /**
+     * Only an HTTP proxy can be honoured: java.net.http has no SOCKS support, so a SOCKS
+     * setting leaves the ingest on a direct connection (and it logs why it failed).
+     */
+    java.util.Optional<InetSocketAddress> proxyAddress() {
+        String type = proxyType == null ? "" : proxyType.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!"HTTP".equals(type) || proxyHost == null || proxyHost.isBlank() || proxyPort <= 0) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(InetSocketAddress.createUnresolved(proxyHost.trim(), proxyPort));
     }
 
     List<NormalizedVenueContentPost> parse(String html) {

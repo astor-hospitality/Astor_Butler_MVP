@@ -9,6 +9,7 @@ locals {
     "vedal-backups"   = "vedal-med.ru — nightly DB dumps"
     "astor-media"     = "Astor backend — media (replaces RustFS on the VM)"
     "astor-documents" = "Astor backend — documents"
+    "astor-backups"   = "Astor backend — nightly Postgres + Mongo dumps"
   }
 }
 
