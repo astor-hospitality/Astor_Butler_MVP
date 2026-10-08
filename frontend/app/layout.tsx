@@ -23,6 +23,14 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: SITE_TITLE,
   description: SITE_DESCRIPTION,
+  // The portfolio is served straight off Yandex.Disk, and its download host
+  // answers 403 to any request that names another site in Referer. From a
+  // visitor's browser that is every archive clip and every poster: they play
+  // on localhost, which Yandex lets through, and on no real domain.
+  // "same-origin" keeps the referrer for our own pages and API and sends none
+  // to other hosts. Embeds are not affected: they set their own policy on the
+  // <iframe> (see ProductPage).
+  referrer: "same-origin",
   keywords: [
     "видеопродакшн",
     "видеосъёмка",

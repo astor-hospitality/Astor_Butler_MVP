@@ -12,6 +12,11 @@ import { NextResponse } from "next/server";
  *
  * Two answer shapes, because images and media disagree:
  *   ?kind=poster   → 302. <img> follows a cross-origin redirect happily.
+ *                    The redirect carries Referrer-Policy: no-referrer, because
+ *                    the download host answers 403 to a request that names
+ *                    another site in Referer. A browser applies the policy of a
+ *                    redirect to the request it causes, so this one header
+ *                    covers <img>, a CSS background and <video poster> alike.
  *   ?resolve=1     → {"url": …}. A <video> element does NOT survive that
  *                    redirect — measured: the same 5 MB clip that plays in
  *                    4.5 s from the direct link hangs at readyState 0 behind a
@@ -75,7 +80,7 @@ export async function GET(request: Request) {
   const answer = (url: string) =>
     wantsJson
       ? NextResponse.json({ url }, { headers: { "cache-control": "no-store" } })
-      : NextResponse.redirect(url, 302);
+      : NextResponse.redirect(url, { status: 302, headers: { "referrer-policy": "no-referrer" } });
 
   const hit = cache.get(key);
   if (hit && hit.expires > Date.now()) return answer(hit.url);
