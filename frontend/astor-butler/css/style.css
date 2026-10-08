@@ -1066,6 +1066,8 @@ body.light-theme .hero::before {
 .footer-logo { font-family: var(--font-display); letter-spacing: 0; font-size: 1rem; margin-bottom: 0.6em; }
 .footer-key { color: var(--gold); padding: 0 0.2em; }
 .footer p { color: var(--paper-dim); font-size: 0.82rem; }
+.footer-link { color: var(--paper-dim); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--paper) 25%, transparent); transition: color 0.25s, border-color 0.25s; }
+.footer-link:hover { color: var(--gold-soft); border-color: var(--gold-soft); }
 
 /* ============================================================
    CHAT WIDGET
