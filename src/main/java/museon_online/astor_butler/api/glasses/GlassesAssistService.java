@@ -22,16 +22,24 @@ public class GlassesAssistService implements AutoCloseable {
     private final GlassesTranscriptRelay relay;
     private final GlassesReplyCache replies = new GlassesReplyCache();
     // Speech is a separate provider: one call at a time, and never a reason for an assist to fail.
-    private final java.util.concurrent.Semaphore speechSlot = new java.util.concurrent.Semaphore(1);
+    private final Semaphore speechSlot = new Semaphore(1);
     private final boolean textEnabled;
     private final long timeoutMs;
-    // No queue: a stuck provider cannot create an unbounded backlog, even after client timeout.
-    private final ThreadPoolExecutor executor = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
-            new SynchronousQueue<>(), r -> {
-                Thread t = new Thread(r, "glasses-assist");
-                t.setDaemon(true);
-                return t;
-            });
+    /* One request at a time, and the slot is the truth about it.
+       The slot used to be the executor's own rejection on a SynchronousQueue: a second request was BUSY
+       whenever the single worker was not yet waiting for work. That is also true for a few microseconds
+       after a finished request — the caller's Future completes before the worker returns to the queue —
+       so an immediate retry after an answer could be refused for no reason. Now a request is admitted
+       by taking the slot, and the slot is returned by the task itself, in its own last step: by the time
+       the caller has the answer the next request can already be admitted, while a provider call that is
+       still running (after a timeout, say) keeps the slot exactly as before. The queue never holds more
+       than the one admitted task, so a stuck provider still cannot grow a backlog. */
+    private final Semaphore slot = new Semaphore(1);
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "glasses-assist");
+        t.setDaemon(true);
+        return t;
+    });
     private volatile Instant textReadyUntil = Instant.MIN;
     private volatile Instant visionReadyUntil = Instant.MIN;
     private long rateWindow;
@@ -227,10 +235,21 @@ public class GlassesAssistService implements AutoCloseable {
     }
 
     private String execute(Callable<String> call, boolean image, AtomicBoolean cancelled) {
+        if (!slot.tryAcquire()) throw new GlassesFailure(429, "BUSY", "Assistant is busy");
         Future<String> future;
         try {
-            future = executor.submit(call);
+            future = executor.submit(() -> {
+                try {
+                    return call.call();
+                } finally {
+                    // Released by the task, not the caller: a cancelled call that is still talking to the
+                    // provider keeps the slot until it really ends, and a finished one frees it before
+                    // the caller even wakes up.
+                    slot.release();
+                }
+            });
         } catch (RejectedExecutionException e) {
+            slot.release();
             throw new GlassesFailure(429, "BUSY", "Assistant is busy");
         }
         try {
