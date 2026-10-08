@@ -140,6 +140,8 @@ public class GlassesAssistService implements AutoCloseable {
 
     boolean speechConfigured() { return speech.configured(); }
     String voiceName() { return speech.voiceName(); }
+    String voiceGender() { return speech.voiceGender(); }
+    String audioMimeType() { return speech.mimeType(); }
 
     /** Astor's own voice for one line, or null when server speech is off or the provider fails. */
     byte[] speak(String line) {

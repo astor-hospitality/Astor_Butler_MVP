@@ -12,10 +12,11 @@
 | Embeddings для RAG и intent-examples (`generateEmbedding`, pgvector) | `domain/semantic` | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER`: `none`, `ollama`, `spring-ai`, `model-gateway` (через провайдер выше: Yandex `text-search-doc/latest`) | `model-gateway` + `CLOUDRU_EMBEDDING_MODEL` или `GIGACHAT_EMBEDDING_MODEL` | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=model-gateway` |
 | Vision (`analyzeImage`: фото стола, glasses) | `ModelGateway`, `api/glasses` | Ollama `qwen2.5vl`, `openai-compatible` vision-модель, Yandex AI Studio (`YandexGlassesGateway`) | `CLOUDRU_VISION_MODEL`; GigaChat через `/files` + `attachments`; glasses-pilot: `ASTOR_GLASSES_MODEL_PROVIDER=cloudru` | см. ниже |
 | STT голосовых сообщений (Telegram) и записей очков | `speech` (`SpeechToTextService`), `api/glasses` (`GlassesVoice`) | `cloudru`: Cloud.ru `openai/whisper-large-v3` (по умолчанию); `local`: `faster-whisper` subprocess (rollback) | уже Сбер/Cloud.ru, см. «STT через whisper-large-v3» | `ASTOR_STT_PROVIDER`, `ASTOR_GLASSES_STT_PROVIDER` |
-| TTS для очков (`GlassesSpeech`) | `api/glasses` | Yandex SpeechKit TTS | SaluteSpeech TTS, не реализовано, см. TODO | — |
-| STT/TTS веб-чата CLIO (`frontend/app/api/chat/*`) | frontend | заглушки `yandex-speechkit` (test-double, провайдер не подключён) | SaluteSpeech, не реализовано, см. TODO | — |
+| TTS для очков (`GlassesSpeech` → порт `TextToSpeech`) | `api/glasses`, `speech/` | Yandex SpeechKit TTS (`yandex`, по умолчанию в glasses-runtime) | SaluteSpeech TTS (`salute`), см. «TTS через SaluteSpeech» | `ASTOR_GLASSES_TTS_PROVIDER` |
+| TTS веб-чата CLIO (`POST /api/chat/speak` в бэкенде; `frontend/app/api/chat/speak` остаётся test-double) | `api/speech`, `speech/` | SpeechKit (`yandex`, rollback) | SaluteSpeech (`salute`, по умолчанию) | `ASTOR_TTS_PROVIDER`, `ASTOR_TTS_WEB_ENABLED` |
+| STT веб-чата CLIO (`frontend/app/api/chat/transcribe`) | frontend | заглушка `yandex-speechkit` (test-double) | SaluteSpeech, не реализовано | — |
 
-Исходники провайдеров: `src/main/java/museon_online/astor_butler/model/CloudRuModelGateway.java`, `GigaChatModelGateway.java`, `GigaChatTrust.java`; STT — `src/main/java/museon_online/astor_butler/speech/CloudRuWhisperSpeechToText.java` (общий HTTP-адаптер), `CloudRuWhisperSpeechToTextService.java` (бот), `ExternalCommandSpeechToTextService.java` (локальный rollback), `api/glasses/GlassesVoice.java` (очки).
+Исходники провайдеров: `src/main/java/museon_online/astor_butler/model/CloudRuModelGateway.java`, `GigaChatModelGateway.java`, `GigaChatTrust.java`; речь — `src/main/java/museon_online/astor_butler/speech/` (`TextToSpeech`, `SaluteSpeechTextToSpeech`, `SpeechKitTextToSpeech`, `TextToSpeechProviders`).
 
 ## Вариант 1: Cloud.ru Evolution Foundation Models (`cloudru`)
 
@@ -158,9 +159,83 @@ GIGACHAT_EMBEDDING_MODEL=Embeddings          # по умолчанию; Embeddin
 4. Смоук как в `AERIS_YANDEX_RAG_AND_LOGGING_SMOKE.md`: голосовое/текстовое бронирование, ответ на свободный вопрос.
 5. Откат: вернуть `ASTOR_MODEL_PROVIDER` к прежнему значению (`yandex` в prod, `spring-ai` локально) и перезапустить. Переменные `CLOUDRU_*`/`GIGACHAT_*` можно оставить — без выбранного провайдера они не читаются.
 
-## Речь: TODO для SaluteSpeech
+## TTS через SaluteSpeech
 
 Голосовые сообщения гостей и записи очков распознаются Cloud.ru whisper-large-v3 (см. выше; локальный `faster-whisper` остался только для отката), веб-чат CLIO держит заглушки Yandex SpeechKit, очки используют Yandex SpeechKit TTS (`GlassesSpeech`). Перевод на SaluteSpeech (Сбер) не реализован: нужен отдельный адаптер с тем же OAuth-потоком через `ngw.devices.sberbank.ru` (scope `SALUTE_SPEECH_PERS`/`_B2B`/`_CORP`), эндпоинты `smartspeech.sber.ru/rest/v1/speech:recognize` и `.../text:synthesize`, тот же сертификат НУЦ. Объём работы (только TTS и веб-чат, STT уже на Cloud.ru): `GlassesSpeech` (endpoint + заголовок `Authorization: Bearer` вместо `Api-Key`, формат `application/x-www-form-urlencoded` → `audio/x-pcm`/`audio/ogg`), `frontend/app/api/chat/{transcribe,speak}` (сейчас test-double), `OPENAI`/Yandex там нет.
+
+Голос Астора (очки) и Clio (веб-чат) синтезируется в облаке Сбера: SaluteSpeech, REST-синтез. Локальных моделей нет и не планируется. Прежний провайдер — Yandex SpeechKit — остаётся в коде как `yandex` для отката той же переменной.
+
+Распознавание голосовых (STT) описано выше: whisper-large-v3 в Cloud.ru, локальных моделей на ВМ нет.
+
+### Как это устроено
+
+Порт `TextToSpeech` (`speech/TextToSpeech.java`) и два адаптера:
+
+- `SaluteSpeechTextToSpeech` — OAuth-токен с того же шлюза, что у GigaChat (`POST https://ngw.devices.sberbank.ru:9443/api/v2/oauth`, `Authorization: Basic <SALUTE_AUTH_KEY>`, `RqUID`, `scope=SALUTE_SPEECH_*`), токен живёт 30 минут, кэшируется и обновляется за 60 секунд до истечения и один раз при `401` от синтеза. Синтез — `POST https://smartspeech.sber.ru/rest/v1/text:synthesize?format=<формат>&voice=<голос>`, тело — текст (`Content-Type: application/text`) или SSML (`application/ssml`, если строка начинается с `<speak`), `Authorization: Bearer <токен>`, ответ — байты аудио. Лимит тела — 4 000 символов (наши вызовы ограничены 600).
+- `SpeechKitTextToSpeech` — ровно тот запрос, который очки отправляли с пилота (form-encoded, `Api-Key`, MP3). Поведение не менялось.
+
+Сертификаты: оба хоста Сбера подписаны НУЦ Минцифры; тот же PEM-бандл, что для GigaChat (см. «Вариант 2»), подключается через `SALUTE_CA_CERT_PATH` (если не задан — берётся `GIGACHAT_CA_CERT_PATH`). Проверка TLS не отключается: нечитаемый путь роняет старт бина, а не включает «доверять всем».
+
+Кто использует порт:
+
+| Потребитель | Переключатель | Как отдаёт аудио |
+| --- | --- | --- |
+| Очки, `GlassesSpeech` (`/api/glasses/speech`, поле `audioBase64` в `assist`) | `ASTOR_GLASSES_TTS_PROVIDER=yandex` (по умолчанию) или `salute` в `runtime.env` glasses-контейнера | `audioMimeType` теперь берётся из адаптера: `audio/mpeg` (SpeechKit) или `audio/wav` / `audio/ogg` (SaluteSpeech по `SALUTE_TTS_FORMAT`); `audioVoiceGender` — по голосу. Лимит аудио поднят до 4 MiB (600 символов WAV 24 kHz ≈ 2 MiB). |
+| Веб-чат CLIO, `POST /api/chat/speak` (бэкенд, `ChatSpeechController`) | `ASTOR_TTS_PROVIDER=salute` (по умолчанию) или `yandex`; `ASTOR_TTS_WEB_ENABLED=true` включает эндпоинт | JSON той же формы, что ждёт виджет: `audioUrl` (data-URL), плюс `audioBase64`, `audioMimeType`, `voice`, `status` (`READY`/`UNAVAILABLE`/`FAILED`). 503 без аудио, если голос выключен или провайдер упал; 429 при превышении `ASTOR_TTS_WEB_CONCURRENCY`/`ASTOR_TTS_WEB_RATE_PER_MINUTE`. Фронтенд указывает на него `NEXT_PUBLIC_CLIO_TTS_ENDPOINT=https://api.c3ag.ru/api/chat/speak` (CORS для `/api/**` уже настроен через `ASTOR_WEB_ALLOWED_ORIGINS`); локальная заглушка `frontend/app/api/chat/speak` не изменилась. |
+| Telegram | — | Голосовых ответов бота сейчас нет; когда появятся — тот же бин `TextToSpeech` с `SALUTE_TTS_FORMAT=opus` (Ogg Opus, который принимает `sendVoice`). |
+
+### Где взять ключ
+
+1. developers.sber.ru → Личный кабинет → проект → добавить сервис **SaluteSpeech** → «Получить Authorization key». Это Base64 от `client_id:client_secret` — и есть `SALUTE_AUTH_KEY`. Ключ для GigaChat не подходит: у SaluteSpeech свой проект и свой ключ.
+2. Scope должен совпадать с договором, иначе OAuth отвечает `401`: `SALUTE_SPEECH_PERS` — физлицо (freemium + оплата по факту), `SALUTE_SPEECH_B2B` — юрлицо, предоплата, `SALUTE_SPEECH_CORP` — юрлицо, постоплата. (`SBER_SPEECH` в документации помечен устаревшим.)
+3. Тарифы: синтез тарифицируется по символам, у физлиц есть бесплатная квота, у юрлиц — пакеты; актуальные цифры — в разделе «Тарифы» документации SaluteSpeech на момент включения (в репозитории цены не фиксируем). Параллельных потоков: до 5 у физлиц, до 10 у юрлиц — отсюда `ASTOR_TTS_WEB_CONCURRENCY=2` и один поток в очках.
+4. Сертификат НУЦ Минцифры — тот же файл `certs/russian_trusted_root_ca.pem`, что для GigaChat.
+
+Голоса (24 kHz / 8 kHz): `Nec_24000` Наталья (по умолчанию, женский — Clio), `Bys_24000` Борис, `May_24000` Марфа, `Tur_24000` Тарас, `Ost_24000` Александра, `Pon_24000` Сергей, `Kin_24000` Kira (английский). Для очков, где голос Астора мужской, ставить `SALUTE_TTS_VOICE=Bys_24000` (или `Tur_24000`, `Pon_24000`) в `runtime.env` glasses-контейнера. Форматы: `wav16` (веб и iOS — играет везде), `opus` (Ogg Opus — Telegram voice, Android), `pcm16`, `alaw`.
+
+### Переменные
+
+Бэкенд (`.env.production`, passthrough в `docker-compose.yml` / `docker-compose.prod.yml` уже есть для трёх ботов):
+
+```
+ASTOR_TTS_PROVIDER=salute                     # yandex — откат
+ASTOR_TTS_WEB_ENABLED=true                    # иначе /api/chat/speak отвечает 503
+SALUTE_AUTH_KEY=<Authorization key проекта SaluteSpeech>
+SALUTE_SCOPE=SALUTE_SPEECH_PERS               # или SALUTE_SPEECH_B2B / SALUTE_SPEECH_CORP
+SALUTE_TTS_VOICE=Nec_24000
+SALUTE_TTS_FORMAT=wav16                       # opus для Telegram voice
+SALUTE_CA_CERT_PATH=/app/certs/russian_trusted_root_ca.pem   # по умолчанию = GIGACHAT_CA_CERT_PATH
+# SALUTE_OAUTH_URL=https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+# SALUTE_TTS_URL=https://smartspeech.sber.ru/rest/v1/text:synthesize
+# SALUTE_TTS_TIMEOUT_MS=10000
+# ASTOR_TTS_WEB_CONCURRENCY=2
+# ASTOR_TTS_WEB_RATE_PER_MINUTE=60
+# Откат на SpeechKit:
+# YANDEX_SPEECHKIT_API_KEY=   YANDEX_SPEECHKIT_FOLDER_ID=   YANDEX_SPEECHKIT_TTS_VOICE=alena
+```
+
+Очки (`/opt/astor-glasses/private/runtime.env`, root 0600; в `docker/glasses/compose.yaml` раскомментировать том с PEM):
+
+```
+ASTOR_GLASSES_TTS_ENABLED=true
+ASTOR_GLASSES_TTS_PROVIDER=salute             # yandex — прежние ASTOR_GLASSES_TTS_API_KEY/FOLDER/VOICE
+SALUTE_AUTH_KEY=<тот же или отдельный ключ SaluteSpeech>
+SALUTE_SCOPE=SALUTE_SPEECH_PERS
+SALUTE_TTS_VOICE=Bys_24000
+SALUTE_TTS_FORMAT=wav16
+SALUTE_CA_CERT_PATH=/certs/russian_trusted_root_ca.pem
+```
+
+Фронтенд (build arg образа `c3ag-frontend`): `C3_FRONTEND_CLIO_TTS_ENABLED=true`, `C3_FRONTEND_CLIO_TTS_ENDPOINT=https://api.c3ag.ru/api/chat/speak`.
+
+### Включение, проверка, откат
+
+1. Положить ключ и сертификат на сервер, выставить переменные выше, перезапустить бота (`docker compose up -d aeris-astor-butler-bot`) и/или glasses-контейнер.
+2. В логе старта: `TTS provider=salute voice=... format=audio/wav`; предупреждение `TTS provider salute is selected but not configured` означает пустой `SALUTE_AUTH_KEY`, `SALUTE_CA_CERT_PATH ...` — проблему с PEM.
+3. Смоук: `curl -s -X POST https://api.c3ag.ru/api/chat/speak -H 'Content-Type: application/json' -d '{"text":"Здравствуйте, это Clio."}' | jq -r .status` → `READY`; для очков — `POST /api/glasses/speech` с мобильным bearer, в ответе `audioMimeType: audio/wav`. Ошибка `401` от OAuth в логе — ключ или scope; `401` от синтеза один раз — норма (токен обновится), подряд — ключ отозван.
+4. Откат: `ASTOR_TTS_PROVIDER=yandex` (и `ASTOR_GLASSES_TTS_PROVIDER=yandex`) плюс прежние переменные SpeechKit, перезапуск. `SALUTE_*` можно оставить — без выбранного провайдера они не читаются. Неизвестное имя провайдера роняет старт, а не молча выбирает другой голос.
+
+Что не проверялось на живом ключе (допущения до первого смоука): имена query-параметров `format`/`voice` и значения `Content-Type: application/text` / `application/ssml` взяты из справочника REST API (страница параметров рендерится динамически, в тексте документации не читается); `opus` считаем Ogg Opus; `expires_at` в ответе OAuth считаем миллисекундами epoch (13-значный пример в документации), при отсутствии поля токен живёт 25 минут.
 
 ## Astor Concierge
 
@@ -168,8 +243,8 @@ GIGACHAT_EMBEDDING_MODEL=Embeddings          # по умолчанию; Embeddin
 
 ## Что остаётся вручную
 
-- Купить/выпустить ключи: Cloud.ru API key или GigaChat Authorization key с нужным scope; пополнить баланс.
+- Купить/выпустить ключи: Cloud.ru API key или GigaChat Authorization key с нужным scope; для речи — Authorization key проекта SaluteSpeech; пополнить баланс.
 - Скачать и проверить сертификаты НУЦ Минцифры, положить в `certs/`.
 - Сверить имена моделей с `GET /models` (Cloud.ru) и с кабинетом GigaChat.
 - Решить, переиндексировать ли embeddings (см. выше) или оставить `none`.
-- Живой смоук на тестовом ключе до прода: JSON-ответы understanding, vision на фото стола, лимиты RPS.
+- Живой смоук на тестовом ключе до прода: JSON-ответы understanding, vision на фото стола, лимиты RPS; для SaluteSpeech — одна фраза через `/api/chat/speak` и `/api/glasses/speech`.

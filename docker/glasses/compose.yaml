@@ -18,6 +18,9 @@ services:
     tmpfs: [/tmp:rw,noexec,nosuid,size=256m]
     volumes:
       - ${ASTOR_GLASS_MODEL_DIR:-/opt/astor-glasses/models}:/models:ro
+      # Server voice through Sber SaluteSpeech (ASTOR_GLASSES_TTS_PROVIDER=salute in runtime.env): the Russian
+      # Trusted Root CA bundle the TLS check needs, SALUTE_CA_CERT_PATH=/certs/russian_trusted_root_ca.pem.
+      # - ${ASTOR_GLASS_CA_BUNDLE:-/opt/astor-glasses/private/russian_trusted_root_ca.pem}:/certs/russian_trusted_root_ca.pem:ro
     networks: [astor]
   frontend:
     image: astor-presentation:${ASTOR_GLASS_VERSION:-v1}

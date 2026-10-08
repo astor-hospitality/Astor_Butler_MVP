@@ -17,13 +17,18 @@
 
 ## 2. Голос Астора
 
-`POST /api/glasses/speech` с мобильным bearer, `{"requestId":"<UUID>","text":"…"}` до 600 символов → `{"requestId","audioBase64","audioMimeType":"audio/mpeg","audioVoiceGender":"male","voice":"<имя голоса>"}`. Тот же голос приходит и в ответах `assist`: поля `audioBase64`/`audioMimeType`/`audioVoiceGender` добавляются к ответу, когда синтез включён.
+`POST /api/glasses/speech` с мобильным bearer, `{"requestId":"<UUID>","text":"…"}` до 600 символов → `{"requestId","audioBase64","audioMimeType":"audio/mpeg"|"audio/wav"|"audio/ogg","audioVoiceGender":"male"|"female","voice":"<имя голоса>"}`. Тот же голос приходит и в ответах `assist`: поля `audioBase64`/`audioMimeType`/`audioVoiceGender` добавляются к ответу, когда синтез включён. Клиент играет аудио по `audioMimeType`, а не по предположению про MP3.
 
-Синтез — Yandex SpeechKit, один мужской премиальный голос, выбранный на сервере. Настройки: `ASTOR_GLASSES_TTS_ENABLED`, `ASTOR_GLASSES_TTS_API_KEY`, `ASTOR_GLASSES_TTS_FOLDER`, `ASTOR_GLASSES_TTS_VOICE` (по умолчанию `filipp`), `ASTOR_GLASSES_TTS_ROLE` (`neutral`), `ASTOR_GLASSES_TTS_SPEED` (`0.95`). Ключ — только в серверном env, отдельный сервис-аккаунт с ролью синтеза; к ключу языковых моделей он не относится.
+Синтез — один премиальный голос, выбранный на сервере; провайдер — `ASTOR_GLASSES_TTS_PROVIDER`:
 
-Границы: один вызов синтеза за раз (параллельный — 429 `BUSY`), таймаут 8 секунд, аудио до 2 MiB, текст не логируется. Выключенный или сбойный синтез — не ошибка ответа: `assist` отвечает как раньше, а телефон читает текст своим голосом. Отдельный `/speech` при этом даёт 503 `SPEECH_UNAVAILABLE`.
+- `salute` (Sber SaluteSpeech, production): `SALUTE_AUTH_KEY`, `SALUTE_SCOPE`, `SALUTE_TTS_VOICE` (для мужского голоса Астора — `Bys_24000`), `SALUTE_TTS_FORMAT` (`wav16`), `SALUTE_CA_CERT_PATH` — см. `SBER_AI_ACTIVATION.md`, раздел «TTS через SaluteSpeech».
+- `yandex` (Yandex SpeechKit, по умолчанию и для отката): `ASTOR_GLASSES_TTS_API_KEY`, `ASTOR_GLASSES_TTS_FOLDER`, `ASTOR_GLASSES_TTS_VOICE` (по умолчанию `filipp`), `ASTOR_GLASSES_TTS_ROLE` (`neutral`), `ASTOR_GLASSES_TTS_SPEED` (`0.95`).
 
-До выдачи ключа SpeechKit всё работает на голосе iPhone — это ожидаемое состояние, а не поломка.
+Общий выключатель — `ASTOR_GLASSES_TTS_ENABLED`. Ключ — только в серверном env, отдельный проект/сервис-аккаунт с правом синтеза; к ключу языковых моделей он не относится.
+
+Границы: один вызов синтеза за раз (параллельный — 429 `BUSY`), таймаут 8–10 секунд, аудио до 4 MiB, текст не логируется. Выключенный или сбойный синтез — не ошибка ответа: `assist` отвечает как раньше, а телефон читает текст своим голосом. Отдельный `/speech` при этом даёт 503 `SPEECH_UNAVAILABLE`.
+
+До выдачи ключа синтеза всё работает на голосе iPhone — это ожидаемое состояние, а не поломка.
 
 ## 3. Ответ сотрудника голосом
 
@@ -34,7 +39,7 @@
 ## 4. Что нужно на сервере
 
 1. `ASTOR_GLASSES_REPORT_PASSWORD` (≥ 12 символов) — тот же пароль, что у отчёта смены: им ресторан ставит сообщения в очередь.
-2. Ключ SpeechKit и каталог в `ASTOR_GLASSES_TTS_*`, `ASTOR_GLASSES_TTS_ENABLED=true`.
+2. `ASTOR_GLASSES_TTS_ENABLED=true` и ключ провайдера: `ASTOR_GLASSES_TTS_PROVIDER=salute` + `SALUTE_*` (и том с PEM НУЦ Минцифры в `docker/glasses/compose.yaml`), либо `yandex` + `ASTOR_GLASSES_TTS_*`.
 3. Распознавание уже включается `ASTOR_GLASSES_VOICE_ENABLED` и локальной моделью Whisper, как для голосового вопроса.
 
 Всё — в root-owned 0600 env, не в git и не в чатах.

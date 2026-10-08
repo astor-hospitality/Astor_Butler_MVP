@@ -19,20 +19,20 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * TLS trust for Sber endpoints. GigaChat and the OAuth gateway present certificates issued by the
+ * TLS trust for Sber endpoints. GigaChat, SaluteSpeech and the OAuth gateway present certificates issued by the
  * Russian Trusted Root CA (Минцифры), which the JVM's default trust store does not contain.
  *
  * <p>The PEM file (root and, if the operator bundles it, the sub CA) is added to the default trust
  * anchors: a server certificate is accepted when either the JVM store or the PEM file vouches for it.
  * Verification is never disabled, and the host name check stays with the JDK HTTP client.
  */
-final class GigaChatTrust {
+public final class GigaChatTrust {
 
     private GigaChatTrust() {
     }
 
     /** The JVM default trust, plus every certificate found in {@code pemPath}. */
-    static SSLContext sslContext(Path pemPath) throws GeneralSecurityException, IOException {
+    public static SSLContext sslContext(Path pemPath) throws GeneralSecurityException, IOException {
         List<X509Certificate> extra = readCertificates(pemPath);
         if (extra.isEmpty()) {
             throw new CertificateException("No X.509 certificates found in " + pemPath);
@@ -57,7 +57,7 @@ final class GigaChatTrust {
         return context;
     }
 
-    static List<X509Certificate> readCertificates(Path pemPath) throws GeneralSecurityException, IOException {
+    public static List<X509Certificate> readCertificates(Path pemPath) throws GeneralSecurityException, IOException {
         CertificateFactory factory = CertificateFactory.getInstance("X.509");
         try (InputStream in = Files.newInputStream(pemPath)) {
             Collection<? extends java.security.cert.Certificate> parsed = factory.generateCertificates(in);
