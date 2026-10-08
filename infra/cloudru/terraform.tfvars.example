@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (git-ignored). No secrets here either: keys go through TF_VAR_* env.
+project_id               = "0ff2c1f2-8800-4113-94ba-eb5c27d868df" # Astor-Sber500-Contest
+object_storage_tenant_id = ""                                     # console → Object Storage → API parameters
+name                     = "astor-aeris"
+zone_name                = ""                                     # from `terraform output candidate_zones`
+flavor_name              = ""                                     # 4 vCPU / 16 GB, from candidate_flavors
+image_id                 = ""                                     # Ubuntu 24.04, from candidate_images
+disk_type_name           = ""                                     # from candidate_disk_types
+disk_size_gb             = 100
+ssh_public_key           = "ssh-ed25519 AAAA... operator@laptop"
+admin_cidr               = "203.0.113.10/32"                      # the operator's address, never 0.0.0.0/0
+glasses_bucket           = "astor-glasses-aeris"

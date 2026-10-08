@@ -13,6 +13,9 @@ Use this folder for:
 Key files:
 
 - `PRODUCTION_DEPLOYMENT_PLAN.md`
+- `CLOUDRU_DEPLOY_RUNBOOK.md` (current production path: shared Cloud.ru VM, GHCR images)
+- `SBER_AI_ACTIVATION.md` - switching models to Sber (Cloud.ru Foundation Models, GigaChat API), keys, certificates, rollback.
+- `TELEGRAM_VOICE_REPLIES.md` - Telegram bot answers with a voice note plus a short text summary: flag `ASTOR_TELEGRAM_VOICE_REPLIES`, `/voice on|off`, timeout and fallback, costs.
 - `AERIS_SYSTEM_ANALYSIS_TESTS.md`
 - `LOAD_TESTING.md`
 - `TEAM_DELIVERY_WORKFLOW.md`

@@ -1,6 +1,7 @@
 package museon_online.astor_butler.model;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.restclient.RestTemplateBuilder;
@@ -34,7 +35,10 @@ import java.util.Map;
 public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     static final String PROVIDER = "openai-compatible";
+    static final String ENV_PREFIX = "OPENAI_COMPATIBLE";
 
+    private final String provider;
+    private final String envPrefix;
     private final RestTemplate restTemplate;
     private final String baseUrl;
     private final String apiKey;
@@ -46,6 +50,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     private final double temperature;
     private final boolean jsonMode;
 
+    @Autowired
     public OpenAiCompatibleModelGateway(
             RestTemplateBuilder restTemplateBuilder,
             @Value("${astor.model.openai-compatible.base-url:}") String baseUrl,
@@ -59,6 +64,31 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             @Value("${astor.model.openai-compatible.temperature:0.1}") double temperature,
             @Value("${astor.model.openai-compatible.json-mode:true}") boolean jsonMode
     ) {
+        this(PROVIDER, ENV_PREFIX, restTemplateBuilder, baseUrl, apiKey, frontlineModel, qualityModel, visionModel,
+                embeddingModel, timeoutMs, maxTokens, temperature, jsonMode);
+    }
+
+    /**
+     * Shared by every provider that speaks the OpenAI HTTP API under its own name and settings,
+     * for example {@link CloudRuModelGateway}. {@code envPrefix} names the variables in error messages.
+     */
+    protected OpenAiCompatibleModelGateway(
+            String provider,
+            String envPrefix,
+            RestTemplateBuilder restTemplateBuilder,
+            String baseUrl,
+            String apiKey,
+            String frontlineModel,
+            String qualityModel,
+            String visionModel,
+            String embeddingModel,
+            int timeoutMs,
+            int maxTokens,
+            double temperature,
+            boolean jsonMode
+    ) {
+        this.provider = provider;
+        this.envPrefix = envPrefix;
         Duration timeout = Duration.ofMillis(Math.max(1, timeoutMs));
         this.restTemplate = restTemplateBuilder
                 .connectTimeout(timeout)
@@ -76,17 +106,17 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
         List<String> missing = new ArrayList<>();
         if (this.baseUrl == null) {
-            missing.add("OPENAI_COMPATIBLE_BASE_URL");
+            missing.add(envPrefix + "_BASE_URL");
         }
         if (this.apiKey == null) {
-            missing.add("OPENAI_COMPATIBLE_API_KEY");
+            missing.add(envPrefix + "_API_KEY");
         }
         if (this.frontlineModel == null) {
-            missing.add("OPENAI_COMPATIBLE_MODEL");
+            missing.add(envPrefix + "_MODEL");
         }
         if (!missing.isEmpty()) {
             log.error("Model provider {} is selected but not configured, every model call will fail: missing {}",
-                    PROVIDER, missing);
+                    provider, missing);
         }
     }
 
@@ -104,7 +134,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
         log.debug(
                 "ModelGateway text generation provider={} profile={} model={} scenario={} state={} purpose={} latencyMs={}",
-                PROVIDER,
+                provider,
                 request.profile(),
                 model,
                 request.scenario(),
@@ -114,7 +144,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         );
         return new ModelTextResponse(
                 readText(response),
-                PROVIDER,
+                provider,
                 model,
                 ModelCapability.TEXT_GENERATION,
                 latency,
@@ -128,12 +158,12 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         if (embeddingModel == null) {
             return new ModelEmbeddingResponse(
                     List.of(),
-                    PROVIDER,
+                    provider,
                     "",
                     ModelCapability.EMBEDDING,
                     Duration.ZERO,
                     true,
-                    Map.of("reason", "No embedding model is configured: set OPENAI_COMPATIBLE_EMBEDDING_MODEL")
+                    Map.of("reason", "No embedding model is configured: set " + envPrefix + "_EMBEDDING_MODEL")
             );
         }
         Map<String, Object> body = new LinkedHashMap<>();
@@ -147,7 +177,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         List<Double> embedding = readEmbedding(response);
         return new ModelEmbeddingResponse(
                 embedding,
-                PROVIDER,
+                provider,
                 embeddingModel,
                 ModelCapability.EMBEDDING,
                 latency,
@@ -161,12 +191,12 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         if (visionModel == null) {
             return new ModelVisionResponse(
                     "",
-                    PROVIDER,
+                    provider,
                     "",
                     ModelCapability.IMAGE_UNDERSTANDING,
                     Duration.ZERO,
                     true,
-                    Map.of("reason", "No vision model is configured: set OPENAI_COMPATIBLE_VISION_MODEL")
+                    Map.of("reason", "No vision model is configured: set " + envPrefix + "_VISION_MODEL")
             );
         }
         String mimeType = blankToNull(request.mimeType()) == null ? "image/jpeg" : request.mimeType().trim();
@@ -184,7 +214,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         String text = readText(response);
         return new ModelVisionResponse(
                 text,
-                PROVIDER,
+                provider,
                 visionModel,
                 ModelCapability.IMAGE_UNDERSTANDING,
                 latency,
@@ -195,7 +225,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     private String textModel(ModelProfile profile) {
         if (frontlineModel == null) {
-            throw new IllegalStateException("OpenAI-compatible model is not configured: set OPENAI_COMPATIBLE_MODEL");
+            throw new IllegalStateException(provider + " model is not configured: set " + envPrefix + "_MODEL");
         }
         return profile == ModelProfile.QUALITY && qualityModel != null ? qualityModel : frontlineModel;
     }
@@ -215,10 +245,10 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     private Map<?, ?> post(String path, Map<String, Object> body) {
         if (baseUrl == null) {
-            throw new IllegalStateException("OpenAI-compatible base URL is not configured: set OPENAI_COMPATIBLE_BASE_URL");
+            throw new IllegalStateException(provider + " base URL is not configured: set " + envPrefix + "_BASE_URL");
         }
         if (apiKey == null) {
-            throw new IllegalStateException("OpenAI-compatible API key is not configured: set OPENAI_COMPATIBLE_API_KEY");
+            throw new IllegalStateException(provider + " API key is not configured: set " + envPrefix + "_API_KEY");
         }
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);

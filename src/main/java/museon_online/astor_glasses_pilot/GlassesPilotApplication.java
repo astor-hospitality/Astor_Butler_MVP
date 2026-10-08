@@ -44,27 +44,22 @@ public final class GlassesPilotApplication {
             GlassesSessionJournal.class, GlassesAccess.class, GlassesAssistService.class, GlassesVoice.class, GlassesS3Storage.class, AstorWebRelay.class})
     public static class Config {
         @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
-        /**
-         * ASTOR_GLASSES_AI_PROVIDER picks the completions provider explicitly: {@code yandex} (the pilot so far)
-         * or {@code cloudru} (Cloud.ru Foundation Models, OpenAI-compatible). Model names belong to the provider,
-         * so each one has its own defaults; the key is read under the provider's own variable so a Yandex key
-         * can never be sent to Cloud.ru by a half-changed environment.
-         */
+        /** ASTOR_GLASSES_MODEL_PROVIDER=yandex (default) or cloudru; model names then belong to that catalogue. */
         @Bean ModelGateway gateway(Environment env) {
-            var provider = GlassesCompletionsGateway.Provider.parse(env.getProperty("ASTOR_GLASSES_AI_PROVIDER", "yandex"));
-            return switch (provider) {
-                case YANDEX -> GlassesCompletionsGateway.yandex(
-                        env.getProperty("ASTOR_GLASSES_YANDEX_ENDPOINT", GlassesCompletionsGateway.YANDEX_ENDPOINT),
-                        env.getProperty("ASTOR_GLASSES_YANDEX_API_KEY", ""),
-                        env.getProperty("ASTOR_GLASSES_YANDEX_FOLDER", ""),
-                        env.getProperty("ASTOR_GLASSES_TEXT_MODEL", "yandexgpt-5.1"),
-                        env.getProperty("ASTOR_GLASSES_VISION_MODEL", "qwen3.6-35b-a3b"));
-                case OPENAI_COMPATIBLE -> GlassesCompletionsGateway.openAiCompatible(
-                        env.getProperty("ASTOR_GLASSES_CLOUDRU_ENDPOINT", GlassesCompletionsGateway.CLOUDRU_ENDPOINT),
+            String provider = env.getProperty("ASTOR_GLASSES_AI_PROVIDER",
+                    env.getProperty("ASTOR_GLASSES_MODEL_PROVIDER", "yandex")).trim().toLowerCase(java.util.Locale.ROOT);
+            if (provider.equals("cloudru")) {
+                return YandexGlassesGateway.cloudRu(env.getProperty("ASTOR_GLASSES_CLOUDRU_ENDPOINT", ""),
                         env.getProperty("ASTOR_GLASSES_CLOUDRU_API_KEY", ""),
-                        env.getProperty("ASTOR_GLASSES_TEXT_MODEL", "ai-sage/GigaChat3-10B-A1.8B"),
-                        env.getProperty("ASTOR_GLASSES_VISION_MODEL", "Qwen/Qwen3.6-35B-A3B"));
-            };
+                        env.getProperty("ASTOR_GLASSES_TEXT_MODEL", "GigaChat/GigaChat-2-Max"),
+                        env.getProperty("ASTOR_GLASSES_VISION_MODEL", "Qwen/Qwen2.5-VL-72B-Instruct"));
+            }
+            if (!provider.equals("yandex")) throw new IllegalStateException("ASTOR_GLASSES_MODEL_PROVIDER must be yandex or cloudru");
+            return new YandexGlassesGateway("https://ai.api.cloud.yandex.net/v1/chat/completions",
+                    env.getProperty("ASTOR_GLASSES_YANDEX_API_KEY", ""),
+                    env.getProperty("ASTOR_GLASSES_YANDEX_FOLDER", ""),
+                    env.getProperty("ASTOR_GLASSES_TEXT_MODEL", "yandexgpt-5.1"),
+                    env.getProperty("ASTOR_GLASSES_VISION_MODEL", "qwen3.6-35b-a3b"));
         }
     }
 }
