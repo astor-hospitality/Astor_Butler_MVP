@@ -1,0 +1,12 @@
+# Cloud.ru host: compose v5 rejects the inline tmpfs options of compose.yaml, and the service must join the shared `edge` network.
+# No whisper models on this host: the image is docker/glasses/Dockerfile.cloud and STT goes to Cloud.ru
+# (ASTOR_GLASSES_STT_PROVIDER=cloudru in runtime.env), so the /models bind of compose.yaml is dropped.
+services:
+  glasses:
+    tmpfs: !override ["/tmp"]
+    volumes: !override []
+    networks: [astor, edge]
+networks:
+  edge:
+    external: true
+    name: edge

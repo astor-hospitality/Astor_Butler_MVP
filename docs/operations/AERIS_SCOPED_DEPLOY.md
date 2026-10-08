@@ -1,3 +1,7 @@
+> Deprecated 2026-10-08: production moves to the Cloud.ru VM, see
+> `CLOUDRU_DEPLOY_RUNBOOK.md`. The `Deploy to Yandex VM` workflow keeps its file but its
+> triggers are disabled; the guards below still describe `scripts/deploy/aeris-scoped.sh`.
+
 # Scoped AERIS deployment
 
 Deploy to Yandex VM defaults to `preflight`: validates the existing VM Compose

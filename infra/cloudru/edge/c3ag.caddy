@@ -1,0 +1,42 @@
+www.c3ag.ru {
+	redir https://c3ag.ru{uri} permanent
+}
+c3ag.ru, c3ag.176-123-165-162.nip.io {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	request_body {
+		max_size 20MB
+	}
+	@glasses path /api/glasses /api/glasses/*
+	handle @glasses {
+		reverse_proxy astor_glasses_api:8091 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+	@backend path /api/* /auth/* /actuator/health /gateway/health
+	handle @backend {
+		reverse_proxy astor-api-gateway:8080 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+	handle {
+		reverse_proxy c3ag-frontend:3000 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+}
+# api.c3ag.ru is added once its A record exists (Caddy would otherwise retry ACME for it endlessly)
+api.c3ag.176-123-165-162.nip.io {
+	reverse_proxy astor-api-gateway:8080
+}

@@ -1,17 +1,24 @@
-name: Deploy to Yandex VM
+# DEPRECATED 2026-10-08: production moves to the Cloud.ru Evolution VM.
+# Use .github/workflows/deploy-cloudru-vm.yml (docs/operations/CLOUDRU_DEPLOY_RUNBOOK.md).
+# Triggers are disabled: `workflow_dispatch` is replaced by an inert `workflow_call` that
+# nothing invokes, so this file cannot start a run. It is kept, not deleted, so the Yandex
+# path (scripts/deploy/aeris-scoped.sh, YANDEX_VM_* secrets) can be revived by restoring
+# the original `on: workflow_dispatch:` block until the old VM is decommissioned.
+name: Deploy to Yandex VM (deprecated)
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       mode:
         description: "Read-only preflight or AERIS-only deployment"
-        type: choice
-        options: [preflight, deploy]
+        type: string
         default: preflight
       backup_path:
         description: "Deploy: absolute path of operator-verified fresh DB backup on VM"
+        type: string
         required: false
       confirm:
         description: "Deploy: DEPLOY_AERIS after agreeing maintenance/rollback window"
+        type: string
         required: false
 permissions:
   contents: read

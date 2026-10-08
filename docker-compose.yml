@@ -61,6 +61,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # true = bake the local faster-whisper stack into the image (rollback only; ~1.5 GB).
+        STT_LOCAL_WHISPER: ${STT_LOCAL_WHISPER:-false}
     image: astor-butler-mvp:local
     container_name: c3flex_astor_butler_bot
     dns:
@@ -123,6 +126,44 @@ services:
       LLM_OLLAMA_QUALITY_MODEL: ${LLM_OLLAMA_QUALITY_MODEL:-qwen2.5:3b}
       LLM_OLLAMA_VISION_MODEL: ${LLM_OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       ASTOR_MODEL_PROVIDER: ${ASTOR_MODEL_PROVIDER:-spring-ai}
+      # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
+      # docs/operations/SBER_AI_ACTIVATION.md
+      CLOUDRU_BASE_URL: ${CLOUDRU_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      CLOUDRU_API_KEY: ${CLOUDRU_API_KEY:-}
+      CLOUDRU_MODEL: ${CLOUDRU_MODEL:-}
+      CLOUDRU_QUALITY_MODEL: ${CLOUDRU_QUALITY_MODEL:-}
+      CLOUDRU_VISION_MODEL: ${CLOUDRU_VISION_MODEL:-}
+      CLOUDRU_EMBEDDING_MODEL: ${CLOUDRU_EMBEDDING_MODEL:-}
+      CLOUDRU_TIMEOUT_MS: ${CLOUDRU_TIMEOUT_MS:-15000}
+      CLOUDRU_MAX_TOKENS: ${CLOUDRU_MAX_TOKENS:-256}
+      CLOUDRU_TEMPERATURE: ${CLOUDRU_TEMPERATURE:-0.1}
+      CLOUDRU_JSON_MODE: ${CLOUDRU_JSON_MODE:-true}
+      GIGACHAT_OAUTH_URL: ${GIGACHAT_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      GIGACHAT_API_URL: ${GIGACHAT_API_URL:-https://gigachat.devices.sberbank.ru/api/v1}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat}
+      GIGACHAT_QUALITY_MODEL: ${GIGACHAT_QUALITY_MODEL:-}
+      GIGACHAT_VISION_MODEL: ${GIGACHAT_VISION_MODEL:-}
+      GIGACHAT_EMBEDDING_MODEL: ${GIGACHAT_EMBEDDING_MODEL:-Embeddings}
+      GIGACHAT_CA_CERT_PATH: ${GIGACHAT_CA_CERT_PATH:-}
+      GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
+      GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
+      GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
+      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit rollback).
+      # docs/operations/SBER_AI_ACTIVATION.md, section "TTS через SaluteSpeech".
+      ASTOR_TTS_PROVIDER: ${ASTOR_TTS_PROVIDER:-salute}
+      ASTOR_TTS_WEB_ENABLED: ${ASTOR_TTS_WEB_ENABLED:-false}
+      SALUTE_AUTH_KEY: ${SALUTE_AUTH_KEY:-}
+      SALUTE_SCOPE: ${SALUTE_SCOPE:-SALUTE_SPEECH_PERS}
+      SALUTE_TTS_VOICE: ${SALUTE_TTS_VOICE:-Nec_24000}
+      SALUTE_TTS_FORMAT: ${SALUTE_TTS_FORMAT:-wav16}
+      SALUTE_CA_CERT_PATH: ${SALUTE_CA_CERT_PATH:-${GIGACHAT_CA_CERT_PATH:-}}
+      SALUTE_OAUTH_URL: ${SALUTE_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      SALUTE_TTS_URL: ${SALUTE_TTS_URL:-https://smartspeech.sber.ru/rest/v1/text:synthesize}
+      YANDEX_SPEECHKIT_API_KEY: ${YANDEX_SPEECHKIT_API_KEY:-}
+      YANDEX_SPEECHKIT_FOLDER_ID: ${YANDEX_SPEECHKIT_FOLDER_ID:-}
+      YANDEX_SPEECHKIT_TTS_VOICE: ${YANDEX_SPEECHKIT_TTS_VOICE:-alena}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
       YANDEX_AGENT_ID: ${YANDEX_AGENT_ID:-fvt18kmmnas336paia3g}
@@ -141,6 +182,10 @@ services:
       LLM_READ_TIMEOUT_MS: ${LLM_READ_TIMEOUT_MS:-45000}
       LLM_OLLAMA_KEEP_ALIVE: ${LLM_OLLAMA_KEEP_ALIVE:-30m}
       ASTOR_STT_ENABLED: ${C3FLEX_STT_ENABLED:-false}
+      # cloudru (default): Cloud.ru whisper-large-v3 with CLOUDRU_API_KEY above; local: faster-whisper subprocess
+      # (needs the image built with STT_LOCAL_WHISPER=true).
+      ASTOR_STT_PROVIDER: ${ASTOR_STT_PROVIDER:-cloudru}
+      ASTOR_STT_CLOUDRU_MODEL: ${ASTOR_STT_CLOUDRU_MODEL:-openai/whisper-large-v3}
       ASTOR_STT_COMMAND: ${ASTOR_STT_COMMAND:-python3 /app/stt_faster_whisper.py {file}}
       ASTOR_STT_TIMEOUT_SECONDS: ${ASTOR_STT_TIMEOUT_SECONDS:-90}
       ASTOR_STT_RETRY_TTL_SECONDS: ${ASTOR_STT_RETRY_TTL_SECONDS:-1800}
@@ -163,6 +208,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       - huggingface-cache:/root/.cache/huggingface
+      # GigaChat direct API: mount the Russian Trusted Root CA bundle and set GIGACHAT_CA_CERT_PATH to it.
+      # - ./certs/russian_trusted_root_ca.pem:/app/certs/russian_trusted_root_ca.pem:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -190,6 +237,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # true = bake the local faster-whisper stack into the image (rollback only; ~1.5 GB).
+        STT_LOCAL_WHISPER: ${STT_LOCAL_WHISPER:-false}
     image: astor-butler-mvp:local
     container_name: aeris_astor_butler_bot
     dns:
@@ -256,6 +306,44 @@ services:
       LLM_OLLAMA_QUALITY_MODEL: ${LLM_OLLAMA_QUALITY_MODEL:-qwen2.5:3b}
       LLM_OLLAMA_VISION_MODEL: ${LLM_OLLAMA_VISION_MODEL:-qwen2.5vl:3b}
       ASTOR_MODEL_PROVIDER: ${ASTOR_MODEL_PROVIDER:-spring-ai}
+      # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
+      # docs/operations/SBER_AI_ACTIVATION.md
+      CLOUDRU_BASE_URL: ${CLOUDRU_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      CLOUDRU_API_KEY: ${CLOUDRU_API_KEY:-}
+      CLOUDRU_MODEL: ${CLOUDRU_MODEL:-}
+      CLOUDRU_QUALITY_MODEL: ${CLOUDRU_QUALITY_MODEL:-}
+      CLOUDRU_VISION_MODEL: ${CLOUDRU_VISION_MODEL:-}
+      CLOUDRU_EMBEDDING_MODEL: ${CLOUDRU_EMBEDDING_MODEL:-}
+      CLOUDRU_TIMEOUT_MS: ${CLOUDRU_TIMEOUT_MS:-15000}
+      CLOUDRU_MAX_TOKENS: ${CLOUDRU_MAX_TOKENS:-256}
+      CLOUDRU_TEMPERATURE: ${CLOUDRU_TEMPERATURE:-0.1}
+      CLOUDRU_JSON_MODE: ${CLOUDRU_JSON_MODE:-true}
+      GIGACHAT_OAUTH_URL: ${GIGACHAT_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      GIGACHAT_API_URL: ${GIGACHAT_API_URL:-https://gigachat.devices.sberbank.ru/api/v1}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat}
+      GIGACHAT_QUALITY_MODEL: ${GIGACHAT_QUALITY_MODEL:-}
+      GIGACHAT_VISION_MODEL: ${GIGACHAT_VISION_MODEL:-}
+      GIGACHAT_EMBEDDING_MODEL: ${GIGACHAT_EMBEDDING_MODEL:-Embeddings}
+      GIGACHAT_CA_CERT_PATH: ${GIGACHAT_CA_CERT_PATH:-}
+      GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
+      GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
+      GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
+      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit rollback).
+      # docs/operations/SBER_AI_ACTIVATION.md, section "TTS через SaluteSpeech".
+      ASTOR_TTS_PROVIDER: ${ASTOR_TTS_PROVIDER:-salute}
+      ASTOR_TTS_WEB_ENABLED: ${ASTOR_TTS_WEB_ENABLED:-false}
+      SALUTE_AUTH_KEY: ${SALUTE_AUTH_KEY:-}
+      SALUTE_SCOPE: ${SALUTE_SCOPE:-SALUTE_SPEECH_PERS}
+      SALUTE_TTS_VOICE: ${SALUTE_TTS_VOICE:-Nec_24000}
+      SALUTE_TTS_FORMAT: ${SALUTE_TTS_FORMAT:-wav16}
+      SALUTE_CA_CERT_PATH: ${SALUTE_CA_CERT_PATH:-${GIGACHAT_CA_CERT_PATH:-}}
+      SALUTE_OAUTH_URL: ${SALUTE_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      SALUTE_TTS_URL: ${SALUTE_TTS_URL:-https://smartspeech.sber.ru/rest/v1/text:synthesize}
+      YANDEX_SPEECHKIT_API_KEY: ${YANDEX_SPEECHKIT_API_KEY:-}
+      YANDEX_SPEECHKIT_FOLDER_ID: ${YANDEX_SPEECHKIT_FOLDER_ID:-}
+      YANDEX_SPEECHKIT_TTS_VOICE: ${YANDEX_SPEECHKIT_TTS_VOICE:-alena}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
       YANDEX_AGENT_ID: ${YANDEX_AGENT_ID:-fvt18kmmnas336paia3g}
@@ -273,6 +361,10 @@ services:
       LLM_READ_TIMEOUT_MS: "45000"
       LLM_OLLAMA_KEEP_ALIVE: ${LLM_OLLAMA_KEEP_ALIVE:-30m}
       ASTOR_STT_ENABLED: ${AERIS_STT_ENABLED:-true}
+      # cloudru (default): Cloud.ru whisper-large-v3 with CLOUDRU_API_KEY above; local: faster-whisper subprocess
+      # (needs the image built with STT_LOCAL_WHISPER=true).
+      ASTOR_STT_PROVIDER: ${ASTOR_STT_PROVIDER:-cloudru}
+      ASTOR_STT_CLOUDRU_MODEL: ${ASTOR_STT_CLOUDRU_MODEL:-openai/whisper-large-v3}
       ASTOR_STT_COMMAND: ${ASTOR_STT_COMMAND:-python3 /app/stt_faster_whisper.py {file}}
       ASTOR_STT_TIMEOUT_SECONDS: ${ASTOR_STT_TIMEOUT_SECONDS:-90}
       ASTOR_STT_RETRY_TTL_SECONDS: ${ASTOR_STT_RETRY_TTL_SECONDS:-1800}
@@ -296,6 +388,8 @@ services:
       - "8089:8089"
     volumes:
       - huggingface-cache:/root/.cache/huggingface
+      # GigaChat direct API: mount the Russian Trusted Root CA bundle and set GIGACHAT_CA_CERT_PATH to it.
+      # - ./certs/russian_trusted_root_ca.pem:/app/certs/russian_trusted_root_ca.pem:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -323,6 +417,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # true = bake the local faster-whisper stack into the image (rollback only; ~1.5 GB).
+        STT_LOCAL_WHISPER: ${STT_LOCAL_WHISPER:-false}
     image: astor-butler-mvp:local
     container_name: smart_solution_bot
     dns:
@@ -381,6 +478,44 @@ services:
       ASTOR_UNDERSTANDING_LLM_ENABLED: ${SMART_SOLUTION_UNDERSTANDING_LLM_ENABLED:-false}
       ASTOR_SCENARIO_REPLY_LLM_ENABLED: ${SMART_SOLUTION_SCENARIO_REPLY_LLM_ENABLED:-false}
       ASTOR_MODEL_PROVIDER: ${SMART_SOLUTION_MODEL_PROVIDER:-yandex}
+      # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
+      # docs/operations/SBER_AI_ACTIVATION.md
+      CLOUDRU_BASE_URL: ${CLOUDRU_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      CLOUDRU_API_KEY: ${CLOUDRU_API_KEY:-}
+      CLOUDRU_MODEL: ${CLOUDRU_MODEL:-}
+      CLOUDRU_QUALITY_MODEL: ${CLOUDRU_QUALITY_MODEL:-}
+      CLOUDRU_VISION_MODEL: ${CLOUDRU_VISION_MODEL:-}
+      CLOUDRU_EMBEDDING_MODEL: ${CLOUDRU_EMBEDDING_MODEL:-}
+      CLOUDRU_TIMEOUT_MS: ${CLOUDRU_TIMEOUT_MS:-15000}
+      CLOUDRU_MAX_TOKENS: ${CLOUDRU_MAX_TOKENS:-256}
+      CLOUDRU_TEMPERATURE: ${CLOUDRU_TEMPERATURE:-0.1}
+      CLOUDRU_JSON_MODE: ${CLOUDRU_JSON_MODE:-true}
+      GIGACHAT_OAUTH_URL: ${GIGACHAT_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      GIGACHAT_API_URL: ${GIGACHAT_API_URL:-https://gigachat.devices.sberbank.ru/api/v1}
+      GIGACHAT_AUTH_KEY: ${GIGACHAT_AUTH_KEY:-}
+      GIGACHAT_SCOPE: ${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}
+      GIGACHAT_MODEL: ${GIGACHAT_MODEL:-GigaChat}
+      GIGACHAT_QUALITY_MODEL: ${GIGACHAT_QUALITY_MODEL:-}
+      GIGACHAT_VISION_MODEL: ${GIGACHAT_VISION_MODEL:-}
+      GIGACHAT_EMBEDDING_MODEL: ${GIGACHAT_EMBEDDING_MODEL:-Embeddings}
+      GIGACHAT_CA_CERT_PATH: ${GIGACHAT_CA_CERT_PATH:-}
+      GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
+      GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
+      GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
+      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit rollback).
+      # docs/operations/SBER_AI_ACTIVATION.md, section "TTS через SaluteSpeech".
+      ASTOR_TTS_PROVIDER: ${ASTOR_TTS_PROVIDER:-salute}
+      ASTOR_TTS_WEB_ENABLED: ${ASTOR_TTS_WEB_ENABLED:-false}
+      SALUTE_AUTH_KEY: ${SALUTE_AUTH_KEY:-}
+      SALUTE_SCOPE: ${SALUTE_SCOPE:-SALUTE_SPEECH_PERS}
+      SALUTE_TTS_VOICE: ${SALUTE_TTS_VOICE:-Nec_24000}
+      SALUTE_TTS_FORMAT: ${SALUTE_TTS_FORMAT:-wav16}
+      SALUTE_CA_CERT_PATH: ${SALUTE_CA_CERT_PATH:-${GIGACHAT_CA_CERT_PATH:-}}
+      SALUTE_OAUTH_URL: ${SALUTE_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      SALUTE_TTS_URL: ${SALUTE_TTS_URL:-https://smartspeech.sber.ru/rest/v1/text:synthesize}
+      YANDEX_SPEECHKIT_API_KEY: ${YANDEX_SPEECHKIT_API_KEY:-}
+      YANDEX_SPEECHKIT_FOLDER_ID: ${YANDEX_SPEECHKIT_FOLDER_ID:-}
+      YANDEX_SPEECHKIT_TTS_VOICE: ${YANDEX_SPEECHKIT_TTS_VOICE:-alena}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
       YANDEX_AGENT_ID: ${SMART_SOLUTION_YANDEX_AGENT_ID:-${YANDEX_AGENT_ID:-fvt18kmmnas336paia3g}}
@@ -401,6 +536,9 @@ services:
       LLM_CONNECT_TIMEOUT_MS: "5000"
       LLM_READ_TIMEOUT_MS: "45000"
       ASTOR_STT_ENABLED: ${SMART_SOLUTION_STT_ENABLED:-false}
+      ASTOR_STT_PROVIDER: ${ASTOR_STT_PROVIDER:-cloudru}
+      ASTOR_STT_CLOUDRU_MODEL: ${ASTOR_STT_CLOUDRU_MODEL:-openai/whisper-large-v3}
+      ASTOR_STT_LANGUAGE: ${ASTOR_STT_LANGUAGE:-ru}
       ASTOR_TIMELINE_SCYLLA_ENABLED: ${SMART_SOLUTION_TIMELINE_SCYLLA_ENABLED:-false}
       ASTOR_GRAPH_NEO4J_ENABLED: ${SMART_SOLUTION_GRAPH_NEO4J_ENABLED:-false}
       JWT_SECRET: ${JWT_SECRET:-local-container-dev-only}

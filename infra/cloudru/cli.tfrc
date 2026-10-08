@@ -1,0 +1,12 @@
+# Terraform CLI configuration for this directory only (run.sh exports TF_CLI_CONFIG_FILE).
+# The cloudru/cloud provider is not on registry.terraform.io; Cloud.ru serves it from its own mirror.
+# Source: https://cloud.ru/docs/terraform-evolution/ug/topics/quickstart
+provider_installation {
+  network_mirror {
+    url     = "https://evo-tf-provider-generic.ar.cloud.ru/"
+    include = ["cloudru/*"]
+  }
+  direct {
+    exclude = ["cloudru/*"]
+  }
+}

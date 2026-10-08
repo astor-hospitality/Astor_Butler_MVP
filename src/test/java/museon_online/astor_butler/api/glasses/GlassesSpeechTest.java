@@ -62,6 +62,51 @@ class GlassesSpeechTest {
         assertThat(form).doesNotContain("  "); // the line is trimmed before it leaves
     }
 
+    @Test void speaksThroughSaluteSpeechWhenTheRuntimeSelectsIt() {
+        byte[] wav = {'R', 'I', 'F', 'F', 1};
+        var salute = mock(museon_online.astor_butler.speech.TextToSpeech.class);
+        when(salute.provider()).thenReturn("salute");
+        when(salute.configured()).thenReturn(true);
+        when(salute.voice()).thenReturn("Bys_24000");
+        when(salute.voiceGender()).thenReturn("male");
+        when(salute.mimeType()).thenReturn("audio/wav");
+        when(salute.synthesize("Стол пять ждёт счёт.")).thenReturn(wav);
+        var speech = new GlassesSpeech(true, salute);
+
+        assertThat(speech.configured()).isTrue();
+        assertThat(speech.provider()).isEqualTo("salute");
+        assertThat(speech.voiceName()).isEqualTo("Bys_24000");
+        assertThat(speech.voiceGender()).isEqualTo("male");
+        assertThat(speech.mimeType()).isEqualTo("audio/wav");
+        assertThat(speech.synthesize(" Стол пять ждёт счёт. ")).isEqualTo(wav);
+        assertThat(speech.ready()).isTrue();
+
+        when(salute.synthesize(any())).thenThrow(new museon_online.astor_butler.speech.TextToSpeechException("SaluteSpeech synthesis answered 500", 500));
+        assertThat(speech.synthesize("Строка")).isNull();
+        assertThat(speech.ready()).isFalse();
+    }
+
+    @Test void theRuntimeVariableSelectsTheProviderAndYandexStaysTheDefault() {
+        var yandex = new GlassesSpeech(true, "yandex", "", "unit-key", "unit-folder", "filipp", "", 0.95,
+                "", "", "", "", "", "", "", 10000);
+        assertThat(yandex.provider()).isEqualTo("yandex");
+        assertThat(yandex.configured()).isTrue();
+        assertThat(yandex.mimeType()).isEqualTo("audio/mpeg");
+
+        var salute = new GlassesSpeech(true, "salute", "", "", "", "", "", 0.95,
+                "c2FsdXRlLWtleQ==", "", "", "opus", "", "", "", 10000);
+        assertThat(salute.provider()).isEqualTo("salute");
+        assertThat(salute.configured()).isTrue();
+        assertThat(salute.voiceName()).isEqualTo("Nec_24000");
+        assertThat(salute.mimeType()).isEqualTo("audio/ogg");
+
+        // SpeechKit settings alone do not configure the Sber voice, and vice versa.
+        assertThat(new GlassesSpeech(true, "salute", "", "unit-key", "unit-folder", "filipp", "", 0.95,
+                "", "", "", "", "", "", "", 10000).configured()).isFalse();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new GlassesSpeech(true, "speechkit", "", "", "", "", "", 0.95,
+                "", "", "", "", "", "", "", 10000)).isInstanceOf(IllegalStateException.class);
+    }
+
     @Test void saysNothingWhenItIsOffOrTheLineDoesNotFit() throws Exception {
         assertThat(new GlassesSpeech(client, false, "filipp").synthesize("Строка")).isNull();
         assertThat(GlassesSpeech.disabled().configured()).isFalse();
