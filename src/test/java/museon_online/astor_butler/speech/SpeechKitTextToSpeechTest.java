@@ -113,4 +113,13 @@ class SpeechKitTextToSpeechTest {
         assertThatThrownBy(() -> new SpeechKitTextToSpeech.Settings(null, "k", "f", "filipp", null, 1.0, "wav"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("YANDEX_TTS_FORMAT");
     }
+
+    @Test
+    void neutralOnAVoiceWithoutEmotionsIsThePlainVoice() {
+        var tts = new SpeechKitTextToSpeech(HttpClient.newHttpClient(), new SpeechKitTextToSpeech.Settings(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/speech/v1/tts:synthesize", "unit-key", "", "filipp", "neutral", 0.95));
+        assertThat(tts.configured()).isTrue();
+        tts.synthesize("Добрый вечер");
+        assertThat(bodies.getLast()).contains("voice=filipp").doesNotContain("emotion=");
+    }
 }

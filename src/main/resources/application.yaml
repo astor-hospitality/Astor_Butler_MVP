@@ -193,7 +193,8 @@ astor:
       api-key: ${YANDEX_SPEECHKIT_API_KEY:${YANDEX_API_KEY:}}
       folder-id: ${YANDEX_SPEECHKIT_FOLDER_ID:${YANDEX_FOLDER_ID:}}
       voice: ${YANDEX_SPEECHKIT_TTS_VOICE:ermil}
-      role: ${YANDEX_SPEECHKIT_TTS_ROLE:neutral}
+      # empty = the voice as is; set only for voices with emotions (ermil/zahar: neutral|good).
+      role: ${YANDEX_SPEECHKIT_TTS_ROLE:}
       speed: ${YANDEX_SPEECHKIT_TTS_SPEED:0.95}
       # mp3 (web, plays everywhere) or oggopus (Telegram voice; required with ASTOR_TELEGRAM_VOICE_REPLIES=on|auto).
       format: ${YANDEX_TTS_FORMAT:mp3}
