@@ -1,0 +1,242 @@
+name: Deploy to Cloud.ru VM
+# Images are built here and pushed to GHCR; the VM only pulls. Runbook:
+# docs/operations/CLOUDRU_DEPLOY_RUNBOOK.md. Scope `frontend` is the successor of the
+# "Egor restricted frontend deploy": it recreates only c3ag-frontend, needs no backup and
+# is approved through the `production-frontend` environment. `backend`/`full` recreate
+# AERIS + api-gateway and go through `production` (owner approval, fresh DB backup, CI green).
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "What to deploy"
+        type: choice
+        options: [frontend, backend, full]
+        default: frontend
+      mode:
+        description: "Read-only preflight or real deployment"
+        type: choice
+        options: [preflight, deploy]
+        default: preflight
+      backup_path:
+        description: "backend/full deploy: absolute path of an operator-verified fresh DB backup on the VM"
+        required: false
+      confirm:
+        description: "backend/full deploy: DEPLOY_BACKEND after agreeing a maintenance/rollback window"
+        required: false
+      public_smoke:
+        description: "Curl https://c3ag.ru and https://api.c3ag.ru after deploy (off until DNS points at the VM)"
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  packages: write
+  actions: read
+concurrency:
+  group: astor-cloudru-vm
+  cancel-in-progress: false
+env:
+  DEPLOY_PATH: ${{ vars.CLOUDRU_DEPLOY_PATH || '/opt/astor-butler' }}
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      image_ns: ${{ steps.names.outputs.image_ns }}
+      build_frontend: ${{ steps.names.outputs.build_frontend }}
+      build_backend: ${{ steps.names.outputs.build_backend }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source, inputs and CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODE: ${{ inputs.mode }}
+          SCOPE: ${{ inputs.scope }}
+          CONFIRM: ${{ inputs.confirm }}
+          BACKUP_PATH: ${{ inputs.backup_path }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test -z "$(git ls-files '.env' '.env.*' 'target/**' '.codex*')"
+          bash -n scripts/deploy/cloudru-deploy.sh
+          bash scripts/deploy/test-cloudru-deploy.sh
+          [[ -z "$BACKUP_PATH" || "$BACKUP_PATH" =~ ^/[a-zA-Z0-9_./-]+$ ]]
+          if [ "$MODE" = deploy ] && [ "$SCOPE" != frontend ]; then
+            test "$CONFIRM" = DEPLOY_BACKEND
+            test -n "$BACKUP_PATH"
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&status=success" \
+              --jq '.workflow_runs | length' | awk '$1 > 0 {ok=1} END {exit !ok}'
+          fi
+      - name: Resolve image names
+        id: names
+        env:
+          MODE: ${{ inputs.mode }}
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          set -euo pipefail
+          # GHCR requires a lowercase path; the repository is Astor_Butler_MVP.
+          {
+            echo "image_ns=ghcr.io/${GITHUB_REPOSITORY,,}"
+            echo "build_frontend=$([ "$MODE" = deploy ] && [ "$SCOPE" != backend ] && echo true || echo false)"
+            echo "build_backend=$([ "$MODE" = deploy ] && [ "$SCOPE" != frontend ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+  build-frontend:
+    needs: validate
+    if: needs.validate.outputs.build_frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push c3ag-frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ needs.validate.outputs.image_ns }}/c3ag-frontend:sha-${{ github.sha }}
+            ${{ needs.validate.outputs.image_ns }}/c3ag-frontend:main
+          # NEXT_PUBLIC_* values are baked into the bundle at build time; all are public.
+          build-args: |
+            NEXT_PUBLIC_SITE_URL=${{ vars.C3AG_PUBLIC_URL || 'https://c3ag.ru' }}
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.C3AG_API_BASE_URL || 'https://api.c3ag.ru' }}
+            NEXT_PUBLIC_WEB_CHAT_ENDPOINT=${{ vars.C3AG_WEB_CHAT_ENDPOINT || 'https://api.c3ag.ru/api/messages' }}
+            NEXT_PUBLIC_MEDIA_BASE_URL=${{ vars.C3AG_MEDIA_BASE_URL || 'https://storage.yandexcloud.net/c3ag-media' }}
+            NEXT_PUBLIC_BRAND_LOGO_URL=${{ vars.C3AG_BRAND_LOGO_URL || 'https://storage.yandexcloud.net/c3ag-media/brand/c3ag-logo.svg' }}
+          cache-from: type=gha,scope=c3ag-frontend
+          cache-to: type=gha,scope=c3ag-frontend,mode=max
+
+  build-backend:
+    needs: validate
+    if: needs.validate.outputs.build_backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push astor-butler
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ needs.validate.outputs.image_ns }}/astor-butler:sha-${{ github.sha }}
+            ${{ needs.validate.outputs.image_ns }}/astor-butler:main
+          cache-from: type=gha,scope=astor-butler
+          cache-to: type=gha,scope=astor-butler,mode=max
+
+  deploy:
+    needs: [validate, build-frontend, build-backend]
+    # Builds are skipped for preflight and for the other scope; only a failed build blocks.
+    if: >-
+      !cancelled() && needs.validate.result == 'success'
+      && needs.build-frontend.result != 'failure' && needs.build-backend.result != 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.scope == 'frontend' && 'production-frontend' || 'production' }}
+    env:
+      MODE: ${{ inputs.mode }}
+      SCOPE: ${{ inputs.scope }}
+      IMAGE_NS: ${{ needs.validate.outputs.image_ns }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare SSH
+        env:
+          SSH_KEY: ${{ secrets.CLOUDRU_SSH_KEY }}
+          SSH_HOST: ${{ secrets.CLOUDRU_SSH_HOST }}
+          SSH_PORT: ${{ secrets.CLOUDRU_SSH_PORT }}
+          SSH_KNOWN_HOSTS: ${{ secrets.CLOUDRU_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_KEY" && test -n "$SSH_HOST"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/cloudru_vm_key
+          chmod 600 ~/.ssh/cloudru_vm_key
+          if [ -n "$SSH_KNOWN_HOSTS" ]; then
+            printf '%s\n' "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+          else
+            echo '::warning::CLOUDRU_SSH_KNOWN_HOSTS is not set; trusting the host key from ssh-keyscan.'
+            ssh-keyscan -p "${SSH_PORT:-22}" "$SSH_HOST" >> ~/.ssh/known_hosts
+          fi
+      - name: Preflight
+        env:
+          SSH_HOST: ${{ secrets.CLOUDRU_SSH_HOST }}
+          SSH_PORT: ${{ secrets.CLOUDRU_SSH_PORT }}
+          SSH_USER: ${{ secrets.CLOUDRU_SSH_USER }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_./-]+$ && "$DEPLOY_PATH" != / ]]
+          ssh -i ~/.ssh/cloudru_vm_key -p "${SSH_PORT:-22}" -o BatchMode=yes "$SSH_USER@$SSH_HOST" \
+            bash -s -- "$DEPLOY_PATH" preflight "$GITHUB_SHA" "$SCOPE" < scripts/deploy/cloudru-deploy.sh
+      - name: Upload release and deploy
+        if: inputs.mode == 'deploy'
+        env:
+          SSH_HOST: ${{ secrets.CLOUDRU_SSH_HOST }}
+          SSH_PORT: ${{ secrets.CLOUDRU_SSH_PORT }}
+          SSH_USER: ${{ secrets.CLOUDRU_SSH_USER }}
+          BACKUP_PATH: ${{ inputs.backup_path }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ssh_opts=(-i ~/.ssh/cloudru_vm_key -p "${SSH_PORT:-22}" -o BatchMode=yes)
+          remote="$SSH_USER@$SSH_HOST"
+          release="$DEPLOY_PATH/releases/$GITHUB_SHA"
+          {
+            [ "$SCOPE" != backend ] && echo "C3AG_FRONTEND_IMAGE=$IMAGE_NS/c3ag-frontend:sha-$GITHUB_SHA"
+            [ "$SCOPE" != frontend ] && echo "ASTOR_BUTLER_IMAGE=$IMAGE_NS/astor-butler:sha-$GITHUB_SHA"
+            true
+          } > images.env
+          # Only Compose/gateway/deploy files travel to the VM: sources stay in git, images in GHCR.
+          rsync -az --relative -e "ssh ${ssh_opts[*]}" \
+            docker-compose.yml docker-compose.prod.yml docker-compose.cloudru.yml images.env \
+            docker/nginx/ scripts/deploy/cloudru-deploy.sh "$remote:$release/"
+          # Short-lived job token, piped over stdin; revoked by `docker logout` below.
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_opts[@]}" "$remote" \
+            sh -c 'if docker info >/dev/null 2>&1; then d=docker; else d="sudo -n docker"; fi; $d login ghcr.io -u "$1" --password-stdin' _ "$GITHUB_ACTOR"
+          # Arguments are regex-validated (no spaces/quotes), so the remote shell re-parsing them is safe.
+          ssh "${ssh_opts[@]}" "$remote" \
+            bash -s -- "$DEPLOY_PATH" deploy "$GITHUB_SHA" "$SCOPE" "$BACKUP_PATH" < scripts/deploy/cloudru-deploy.sh
+      - name: Revoke registry login on the VM
+        if: always() && inputs.mode == 'deploy'
+        env:
+          SSH_HOST: ${{ secrets.CLOUDRU_SSH_HOST }}
+          SSH_PORT: ${{ secrets.CLOUDRU_SSH_PORT }}
+          SSH_USER: ${{ secrets.CLOUDRU_SSH_USER }}
+        run: |
+          ssh -i ~/.ssh/cloudru_vm_key -p "${SSH_PORT:-22}" -o BatchMode=yes "$SSH_USER@$SSH_HOST" \
+            "if docker info >/dev/null 2>&1; then docker logout ghcr.io; else sudo -n docker logout ghcr.io; fi" || true
+      - name: Public smoke
+        if: inputs.mode == 'deploy' && inputs.public_smoke
+        env:
+          SITE_URL: ${{ vars.C3AG_PUBLIC_URL || 'https://c3ag.ru' }}
+          API_URL: ${{ vars.C3AG_API_BASE_URL || 'https://api.c3ag.ru' }}
+        run: |
+          set -euo pipefail
+          if [ "$SCOPE" != backend ]; then
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$SITE_URL/")
+            echo "GET $SITE_URL/ -> $code"; test "$code" = 200
+          fi
+          if [ "$SCOPE" != frontend ]; then
+            body=$(curl -sS --max-time 15 "$API_URL/actuator/health")
+            echo "GET $API_URL/actuator/health -> $body"; grep -q '"UP"' <<< "$body"
+          fi
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Cloud.ru deploy: mode=$MODE scope=$SCOPE"
+            echo "- revision: \`$GITHUB_SHA\`"
+            echo "- images: \`$IMAGE_NS/c3ag-frontend:sha-$GITHUB_SHA\`, \`$IMAGE_NS/astor-butler:sha-$GITHUB_SHA\`"
+            echo "- rollback: on the VM \`bash $DEPLOY_PATH/current/scripts/deploy/cloudru-deploy.sh $DEPLOY_PATH rollback $GITHUB_SHA $SCOPE\`"
+            echo "  (swaps \`current\`/\`previous\` releases and re-pulls the previous images; DB migrations are not reverted)."
+          } >> "$GITHUB_STEP_SUMMARY"
