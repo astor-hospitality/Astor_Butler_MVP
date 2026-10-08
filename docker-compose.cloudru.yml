@@ -11,6 +11,9 @@
 # Images come from GHCR (built by deploy-cloudru-vm.yml), nothing is built on the VM.
 # Speech-to-text is Cloud.ru whisper-large-v3 (ASTOR_STT_PROVIDER=cloudru in docker-compose.prod.yml; CLOUDRU_API_KEY
 # from .env.production); the GHCR image carries no Python/faster-whisper.
+# The three bots mount the Russian Trusted Root CA bundle that already lives on the VM
+# (/opt/astor-butler/certs/russian_trusted_root_ca.pem) for the direct GigaChat API and SaluteSpeech;
+# point GIGACHAT_CA_CERT_PATH / SALUTE_CA_CERT_PATH at /app/certs/russian_trusted_root_ca.pem to use it.
 # See docs/operations/CLOUDRU_DEPLOY_RUNBOOK.md and infra/cloudru/edge/c3ag.caddy.
 
 name: astor-butler
@@ -66,6 +69,8 @@ services:
     environment:
       LOG_LEVEL: ${AERIS_LOG_LEVEL:-INFO}
       ASTOR_WEB_ALLOWED_ORIGINS: ${ASTOR_WEB_ALLOWED_ORIGINS:-https://c3ag.ru,https://www.c3ag.ru}
+    volumes:
+      - /opt/astor-butler/certs/russian_trusted_root_ca.pem:/app/certs/russian_trusted_root_ca.pem:ro
     # Scylla and Neo4j are disabled in production (docker-compose.prod.yml) and are not
     # worth 2 GB on a shared 16 GB host; drop the hard dependency on their health.
     depends_on: !override
@@ -83,6 +88,8 @@ services:
   c3flex-astor-butler-bot:
     image: ${ASTOR_BUTLER_IMAGE:-ghcr.io/astor-hospitality/astor_butler_mvp/astor-butler:main}
     logging: *default-logging
+    volumes:
+      - /opt/astor-butler/certs/russian_trusted_root_ca.pem:/app/certs/russian_trusted_root_ca.pem:ro
     depends_on: !override
       postgres:
         condition: service_healthy
@@ -99,6 +106,8 @@ services:
     image: ${ASTOR_BUTLER_IMAGE:-ghcr.io/astor-hospitality/astor_butler_mvp/astor-butler:main}
     ports: !reset []
     logging: *default-logging
+    volumes:
+      - /opt/astor-butler/certs/russian_trusted_root_ca.pem:/app/certs/russian_trusted_root_ca.pem:ro
 
   postgres:
     ports: !reset []

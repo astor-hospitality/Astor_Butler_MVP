@@ -52,7 +52,7 @@ services:
       GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
       GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
       GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
-      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit rollback).
+      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit, YANDEX_SPEECHKIT_*).
       # docs/operations/SBER_AI_ACTIVATION.md, section "TTS через SaluteSpeech".
       ASTOR_TTS_PROVIDER: ${ASTOR_TTS_PROVIDER:-salute}
       ASTOR_TTS_WEB_ENABLED: ${ASTOR_TTS_WEB_ENABLED:-false}
@@ -60,7 +60,8 @@ services:
       SALUTE_SCOPE: ${SALUTE_SCOPE:-SALUTE_SPEECH_PERS}
       SALUTE_TTS_VOICE: ${SALUTE_TTS_VOICE:-Nec_24000}
       SALUTE_TTS_FORMAT: ${SALUTE_TTS_FORMAT:-wav16}
-      # Telegram voice replies (docs/operations/TELEGRAM_VOICE_REPLIES.md): off | on | auto; needs SALUTE_TTS_FORMAT=opus.
+      # Telegram voice replies (docs/operations/TELEGRAM_VOICE_REPLIES.md): off | on | auto; needs SALUTE_TTS_FORMAT=opus
+      # (salute) or YANDEX_TTS_FORMAT=oggopus (yandex).
       ASTOR_TELEGRAM_VOICE_REPLIES: ${ASTOR_TELEGRAM_VOICE_REPLIES:-off}
       ASTOR_TELEGRAM_VOICE_TIMEOUT_MS: ${ASTOR_TELEGRAM_VOICE_TIMEOUT_MS:-8000}
       ASTOR_TELEGRAM_VOICE_SUMMARY_VIA_MODEL: ${ASTOR_TELEGRAM_VOICE_SUMMARY_VIA_MODEL:-true}
@@ -70,6 +71,8 @@ services:
       YANDEX_SPEECHKIT_API_KEY: ${YANDEX_SPEECHKIT_API_KEY:-}
       YANDEX_SPEECHKIT_FOLDER_ID: ${YANDEX_SPEECHKIT_FOLDER_ID:-}
       YANDEX_SPEECHKIT_TTS_VOICE: ${YANDEX_SPEECHKIT_TTS_VOICE:-alena}
+      # mp3, or oggopus for Telegram voice replies with ASTOR_TTS_PROVIDER=yandex.
+      YANDEX_TTS_FORMAT: ${YANDEX_TTS_FORMAT:-mp3}
       OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}
       OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
       OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}
@@ -90,7 +93,8 @@ services:
       ASTOR_GRAPH_NEO4J_ENABLED: ${ASTOR_GRAPH_NEO4J_ENABLED:-false}
       ASTOR_TIMELINE_SCYLLA_ENABLED: ${ASTOR_TIMELINE_SCYLLA_ENABLED:-false}
       ASTOR_STT_ENABLED: ${ASTOR_STT_ENABLED:-true}
-      # Production STT: Cloud.ru whisper-large-v3 (no local ML on the VM). Rollback: ASTOR_STT_PROVIDER=local with an
+      # Production STT: Cloud.ru whisper-large-v3 (no local ML on the VM). While Cloud.ru FM is unavailable:
+      # ASTOR_STT_PROVIDER=yandex (SpeechKit, YANDEX_SPEECHKIT_API_KEY). Rollback: ASTOR_STT_PROVIDER=local with an
       # image built with STT_LOCAL_WHISPER=true. See docs/operations/SBER_AI_ACTIVATION.md.
       ASTOR_STT_PROVIDER: ${ASTOR_STT_PROVIDER:-cloudru}
       ASTOR_STT_CLOUDRU_MODEL: ${ASTOR_STT_CLOUDRU_MODEL:-openai/whisper-large-v3}
@@ -155,7 +159,7 @@ services:
       GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
       GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
       GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
-      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit rollback).
+      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit, YANDEX_SPEECHKIT_*).
       # docs/operations/SBER_AI_ACTIVATION.md, section "TTS через SaluteSpeech".
       ASTOR_TTS_PROVIDER: ${ASTOR_TTS_PROVIDER:-salute}
       ASTOR_TTS_WEB_ENABLED: ${ASTOR_TTS_WEB_ENABLED:-false}
@@ -163,7 +167,8 @@ services:
       SALUTE_SCOPE: ${SALUTE_SCOPE:-SALUTE_SPEECH_PERS}
       SALUTE_TTS_VOICE: ${SALUTE_TTS_VOICE:-Nec_24000}
       SALUTE_TTS_FORMAT: ${SALUTE_TTS_FORMAT:-wav16}
-      # Telegram voice replies (docs/operations/TELEGRAM_VOICE_REPLIES.md): off | on | auto; needs SALUTE_TTS_FORMAT=opus.
+      # Telegram voice replies (docs/operations/TELEGRAM_VOICE_REPLIES.md): off | on | auto; needs SALUTE_TTS_FORMAT=opus
+      # (salute) or YANDEX_TTS_FORMAT=oggopus (yandex).
       ASTOR_TELEGRAM_VOICE_REPLIES: ${ASTOR_TELEGRAM_VOICE_REPLIES:-off}
       ASTOR_TELEGRAM_VOICE_TIMEOUT_MS: ${ASTOR_TELEGRAM_VOICE_TIMEOUT_MS:-8000}
       ASTOR_TELEGRAM_VOICE_SUMMARY_VIA_MODEL: ${ASTOR_TELEGRAM_VOICE_SUMMARY_VIA_MODEL:-true}
@@ -173,6 +178,8 @@ services:
       YANDEX_SPEECHKIT_API_KEY: ${YANDEX_SPEECHKIT_API_KEY:-}
       YANDEX_SPEECHKIT_FOLDER_ID: ${YANDEX_SPEECHKIT_FOLDER_ID:-}
       YANDEX_SPEECHKIT_TTS_VOICE: ${YANDEX_SPEECHKIT_TTS_VOICE:-alena}
+      # mp3, or oggopus for Telegram voice replies with ASTOR_TTS_PROVIDER=yandex.
+      YANDEX_TTS_FORMAT: ${YANDEX_TTS_FORMAT:-mp3}
       OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-}
       OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
       OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-}
@@ -229,7 +236,7 @@ services:
       GIGACHAT_TIMEOUT_MS: ${GIGACHAT_TIMEOUT_MS:-15000}
       GIGACHAT_MAX_TOKENS: ${GIGACHAT_MAX_TOKENS:-256}
       GIGACHAT_TEMPERATURE: ${GIGACHAT_TEMPERATURE:-0.1}
-      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit rollback).
+      # Server voice: ASTOR_TTS_PROVIDER=salute (Sber SaluteSpeech) or yandex (SpeechKit, YANDEX_SPEECHKIT_*).
       # docs/operations/SBER_AI_ACTIVATION.md, section "TTS через SaluteSpeech".
       ASTOR_TTS_PROVIDER: ${ASTOR_TTS_PROVIDER:-salute}
       ASTOR_TTS_WEB_ENABLED: ${ASTOR_TTS_WEB_ENABLED:-false}
@@ -237,7 +244,8 @@ services:
       SALUTE_SCOPE: ${SALUTE_SCOPE:-SALUTE_SPEECH_PERS}
       SALUTE_TTS_VOICE: ${SALUTE_TTS_VOICE:-Nec_24000}
       SALUTE_TTS_FORMAT: ${SALUTE_TTS_FORMAT:-wav16}
-      # Telegram voice replies (docs/operations/TELEGRAM_VOICE_REPLIES.md): off | on | auto; needs SALUTE_TTS_FORMAT=opus.
+      # Telegram voice replies (docs/operations/TELEGRAM_VOICE_REPLIES.md): off | on | auto; needs SALUTE_TTS_FORMAT=opus
+      # (salute) or YANDEX_TTS_FORMAT=oggopus (yandex).
       ASTOR_TELEGRAM_VOICE_REPLIES: ${ASTOR_TELEGRAM_VOICE_REPLIES:-off}
       ASTOR_TELEGRAM_VOICE_TIMEOUT_MS: ${ASTOR_TELEGRAM_VOICE_TIMEOUT_MS:-8000}
       ASTOR_TELEGRAM_VOICE_SUMMARY_VIA_MODEL: ${ASTOR_TELEGRAM_VOICE_SUMMARY_VIA_MODEL:-true}
@@ -247,6 +255,8 @@ services:
       YANDEX_SPEECHKIT_API_KEY: ${YANDEX_SPEECHKIT_API_KEY:-}
       YANDEX_SPEECHKIT_FOLDER_ID: ${YANDEX_SPEECHKIT_FOLDER_ID:-}
       YANDEX_SPEECHKIT_TTS_VOICE: ${YANDEX_SPEECHKIT_TTS_VOICE:-alena}
+      # mp3, or oggopus for Telegram voice replies with ASTOR_TTS_PROVIDER=yandex.
+      YANDEX_TTS_FORMAT: ${YANDEX_TTS_FORMAT:-mp3}
       ASTOR_REDIS_KEY_PREFIX: ${SMART_SOLUTION_REDIS_KEY_PREFIX:-smart-solution}
       ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER: ${SMART_SOLUTION_SEMANTIC_EMBEDDINGS_PROVIDER:-none}
       ASTOR_GRAPH_NEO4J_ENABLED: ${SMART_SOLUTION_GRAPH_NEO4J_ENABLED:-false}
