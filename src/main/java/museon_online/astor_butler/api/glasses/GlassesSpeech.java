@@ -71,11 +71,11 @@ public class GlassesSpeech {
     }
 
     GlassesSpeech(HttpClient client, boolean enabled, String voice) {
-        this(client, enabled, "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", "unit-key", voice, "", 0.95);
+        this(client, enabled, "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", "unit-key-not-a-real-credential", voice, "", 0.95);
     }
 
     GlassesSpeech(HttpClient client, boolean enabled, String voice, String emotion) {
-        this(client, enabled, "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", "unit-key", voice, emotion, 0.95);
+        this(client, enabled, "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize", "unit-key-not-a-real-credential", voice, emotion, 0.95);
     }
 
     private GlassesSpeech(HttpClient client, boolean enabled, String endpoint, String apiKey, String voice,

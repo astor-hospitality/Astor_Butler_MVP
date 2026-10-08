@@ -61,7 +61,7 @@ class GlassesSpeechTest {
         HttpRequest request = sent();
         assertThat(request.method()).isEqualTo("POST");
         assertThat(request.uri().toString()).isEqualTo("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize");
-        assertThat(request.headers().firstValue("Authorization")).hasValue("Api-Key unit-key");
+        assertThat(request.headers().firstValue("Authorization")).hasValue("Api-Key unit-key-not-a-real-credential");
         assertThat(request.headers().firstValue("Content-Type")).hasValue("application/x-www-form-urlencoded");
         String form = sentForm(request);
         assertThat(form).startsWith("text=").contains("&lang=ru-RU").contains("&voice=filipp").contains("&speed=0.95").contains("&format=mp3");
