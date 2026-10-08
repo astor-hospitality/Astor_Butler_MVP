@@ -12,6 +12,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -27,6 +30,12 @@ import java.util.Map;
  * service ({@code GET /models} lists them), so none is assumed: text needs
  * {@code OPENAI_COMPATIBLE_MODEL}; images and embeddings answer with a fallback until their own
  * model is set. Model names that callers pass for another provider are ignored.
+ *
+ * <p>The guest-facing persona that the Yandex AI Studio agent used to carry lives here in a file:
+ * {@code OPENAI_COMPATIBLE_SYSTEM_PROMPT_FILE}. Its text is read once at startup and sent as the
+ * {@code system} message of every free-text generation. Structured understanding (JSON intent and
+ * slot calls) is sent exactly as the caller built it, without the persona, the same split the
+ * agent runtime kept so the FSM sees the same answers whichever provider is behind it.
  */
 @Slf4j
 @Service
@@ -45,6 +54,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     private final int maxTokens;
     private final double temperature;
     private final boolean jsonMode;
+    private final String systemPrompt;   // null when no persona file is configured or readable
 
     public OpenAiCompatibleModelGateway(
             RestTemplateBuilder restTemplateBuilder,
@@ -57,7 +67,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             @Value("${astor.model.openai-compatible.timeout-ms:15000}") int timeoutMs,
             @Value("${astor.model.openai-compatible.max-tokens:256}") int maxTokens,
             @Value("${astor.model.openai-compatible.temperature:0.1}") double temperature,
-            @Value("${astor.model.openai-compatible.json-mode:true}") boolean jsonMode
+            @Value("${astor.model.openai-compatible.json-mode:true}") boolean jsonMode,
+            @Value("${astor.model.openai-compatible.system-prompt-file:}") String systemPromptFile
     ) {
         Duration timeout = Duration.ofMillis(Math.max(1, timeoutMs));
         this.restTemplate = restTemplateBuilder
@@ -73,6 +84,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         this.maxTokens = Math.max(1, maxTokens);
         this.temperature = temperature;
         this.jsonMode = jsonMode;
+        this.systemPrompt = readSystemPrompt(blankToNull(systemPromptFile));
 
         List<String> missing = new ArrayList<>();
         if (this.baseUrl == null) {
@@ -90,11 +102,37 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         }
     }
 
+    /** The persona text, or null. A configured file that cannot be read is said once and never retried. */
+    static String readSystemPrompt(String file) {
+        if (file == null) {
+            return null;
+        }
+        try {
+            String text = Files.readString(Path.of(file), StandardCharsets.UTF_8).strip();
+            if (text.isEmpty()) {
+                log.error("System prompt file {} is empty; free-text generation runs without a persona", file);
+                return null;
+            }
+            return text;
+        } catch (Exception e) {
+            // The path is operator configuration, not a secret; the reason is a file-system one.
+            log.error("System prompt file {} cannot be read ({}); free-text generation runs without a persona",
+                    file, e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    boolean hasSystemPrompt() {
+        return systemPrompt != null;
+    }
+
     @Override
     public ModelTextResponse generateText(ModelTextRequest request) {
         String model = textModel(request.profile());
-        Map<String, Object> body = completionBody(model, request.prompt() == null ? "" : request.prompt());
-        if (jsonMode && expectsJson(request)) {
+        boolean json = expectsJson(request);
+        Map<String, Object> body = completionBody(model, request.prompt() == null ? "" : request.prompt(),
+                json ? null : systemPrompt);
+        if (jsonMode && json) {
             body.put("response_format", Map.of("type", "json_object"));
         }
         long startedAt = System.nanoTime();
@@ -175,7 +213,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                 Map.of("type", "image_url", "image_url",
                         Map.of("url", "data:" + mimeType + ";base64," + (request.imageBase64() == null ? "" : request.imageBase64())))
         );
-        Map<String, Object> body = completionBody(visionModel, content);
+        Map<String, Object> body = completionBody(visionModel, content, null);
         long startedAt = System.nanoTime();
 
         Map<?, ?> response = post("/chat/completions", body);
@@ -200,10 +238,15 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         return profile == ModelProfile.QUALITY && qualityModel != null ? qualityModel : frontlineModel;
     }
 
-    private Map<String, Object> completionBody(String model, Object userContent) {
+    private Map<String, Object> completionBody(String model, Object userContent, String system) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
-        body.put("messages", List.of(Map.of("role", "user", "content", userContent)));
+        List<Map<String, Object>> messages = new ArrayList<>(2);
+        if (system != null) {
+            messages.add(Map.of("role", "system", "content", system));
+        }
+        messages.add(Map.of("role", "user", "content", userContent));
+        body.put("messages", messages);
         body.put("max_tokens", maxTokens);
         // Some models accept only their default temperature; a negative setting leaves it out.
         if (temperature >= 0) {
