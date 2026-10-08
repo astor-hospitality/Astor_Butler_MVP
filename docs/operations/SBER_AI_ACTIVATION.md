@@ -9,9 +9,9 @@
 | Функция | Где | Провайдер сейчас | Вариант Сбера | Переключатель |
 | --- | --- | --- | --- | --- |
 | Понимание гостя, черновики ответов, Q&A для ops-группы (`ModelGateway.generateText`) | `fsm/understanding`, `fsm/reply`, `service/message` | `ASTOR_MODEL_PROVIDER`: `spring-ai` (Ollama, по умолчанию), `ollama-raw`, `yandex`, `yandex-agent`, `openai-compatible` | `cloudru` (Cloud.ru Foundation Models, OpenAI API) или `gigachat` (GigaChat API напрямую) | `ASTOR_MODEL_PROVIDER` |
-| Embeddings для RAG и intent-examples (`generateEmbedding`, pgvector) | `domain/semantic` | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER`: `none`, `ollama`, `spring-ai`, `model-gateway` (через провайдер выше: Yandex `text-search-doc/latest`) | `model-gateway` + `CLOUDRU_EMBEDDING_MODEL` или `GIGACHAT_EMBEDDING_MODEL` | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=model-gateway` |
 | Vision (`analyzeImage`: фото стола, glasses) | `ModelGateway`, `api/glasses` | Ollama `qwen2.5vl`, `openai-compatible` vision-модель, Yandex AI Studio (`YandexGlassesGateway`) | `CLOUDRU_VISION_MODEL`; GigaChat через `/files` + `attachments`; glasses-pilot: `ASTOR_GLASSES_AI_PROVIDER=cloudru` или `gigachat` | см. ниже |
 | STT голосовых сообщений (Telegram) и записей очков | `speech` (`SpeechToTextService`), `api/glasses` (`GlassesVoice`) | `cloudru`: Cloud.ru `openai/whisper-large-v3` (по умолчанию); `yandex`: SpeechKit v1 (только бот, Ogg Opus); `local`: `faster-whisper` subprocess (rollback) | уже Сбер/Cloud.ru, см. «STT через whisper-large-v3»; SaluteSpeech STT закрыт для новых подключений | `ASTOR_STT_PROVIDER`, `ASTOR_GLASSES_STT_PROVIDER` |
+| Embeddings для RAG и intent-examples (`generateEmbedding`, pgvector) | `domain/semantic` | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER`: `none`, `ollama`, `spring-ai`, `model-gateway` (через провайдер выше), `yandex` (Yandex AI Studio напрямую, не зависит от `ASTOR_MODEL_PROVIDER`) | GigaChat `Embeddings` платные (402 на бесплатном пакете) → прод: `yandex`, см. «Эмбеддинги: Yandex text-search» | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER` |
 | TTS для очков (`GlassesSpeech` → порт `TextToSpeech`) | `api/glasses`, `speech/` | Yandex SpeechKit TTS (`yandex`, по умолчанию в glasses-runtime) | SaluteSpeech TTS (`salute`), см. «TTS через SaluteSpeech» | `ASTOR_GLASSES_TTS_PROVIDER` |
 | TTS веб-чата CLIO (`POST /api/chat/speak` в бэкенде; `frontend/app/api/chat/speak` остаётся test-double) | `api/speech`, `speech/` | SpeechKit (`yandex`, rollback) | SaluteSpeech (`salute`, по умолчанию) | `ASTOR_TTS_PROVIDER`, `ASTOR_TTS_WEB_ENABLED` |
 | STT веб-чата CLIO (`frontend/app/api/chat/transcribe`) | frontend | заглушка `yandex-speechkit` (test-double) | SaluteSpeech, не реализовано | — |
@@ -213,12 +213,54 @@ STT очков: телефон пишет MP4/AAC, а синхронный Speec
 
 ## Embeddings и переиндексация
 
-`semantic_embeddings.embedding` — `vector(1536)` (миграция `2026-06-11-semantic-memory-pgvector.sql`), `ASTOR_SEMANTIC_EMBEDDING_DIMENSION=1536`. Yandex `text-search-doc` даёт 256, GigaChat `Embeddings` — 1024, Cloud.ru-модели — свои размерности. Смена модели embeddings требует:
+Колонки `semantic_embeddings.embedding` и `intent_example_embeddings.embedding` — `vector` без фиксированной размерности: исходный `vector(1536)` из `2026-06-11-semantic-memory-pgvector.sql` снят changeset-ом `2026-06-29-semantic-rag-runtime`. Каждая строка хранит `embedding_model` и `embedding_dimension`, поиск сравнивает только строки текущей модели и размерности. Поэтому смена модели embeddings (Yandex `text-search-*` — 256, GigaChat `Embeddings` — 1024, Cloud.ru — свои) не требует миграции, только:
 
-1. выставить `ASTOR_SEMANTIC_EMBEDDING_DIMENSION` и `ASTOR_SEMANTIC_EMBEDDING_MODEL`/`_QUERY_EMBEDDING_MODEL` под новую модель (для `cloudru`/`gigachat` имя берётся из `CLOUDRU_EMBEDDING_MODEL`/`GIGACHAT_EMBEDDING_MODEL`, значение `ASTOR_SEMANTIC_EMBEDDING_MODEL` остаётся меткой в БД);
-2. переиндексировать корпус (`ASTOR_SEMANTIC_CHUNKS_INGEST_ON_STARTUP=true`, `ASTOR_INTENT_EXAMPLES_INGEST_ON_STARTUP=true`) — старые векторы другой размерности нельзя сравнивать с новыми; при смене размерности колонки нужна отдельная миграция `vector(N)`.
+1. выставить `ASTOR_SEMANTIC_EMBEDDING_DIMENSION` под модель и `ASTOR_SEMANTIC_EMBEDDING_MODEL`/`_QUERY_EMBEDDING_MODEL` (для `model-gateway` + `cloudru`/`gigachat` имя берётся из `CLOUDRU_EMBEDDING_MODEL`/`GIGACHAT_EMBEDDING_MODEL`, `ASTOR_SEMANTIC_EMBEDDING_MODEL` остаётся меткой в БД);
+2. один раз перезапустить с переиндексацией (`AERIS_SEMANTIC_CHUNKS_INGEST_ON_STARTUP=true` — по умолчанию уже `true`, `AERIS_INTENT_EXAMPLES_INGEST_ON_STARTUP=true`): bootstrap-ы перезаписывают векторы по ключу строки новой моделью. Старые векторы другой модели/размерности поиск не видит; `SemanticEmbeddingStoreCheck` пишет в лог их число и флаг, который их перезапишет.
 
-Пока это не сделано, безопасный вариант — `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=none` (поиск по примерам интентов и RAG отключаются, FSM работает на правилах).
+Если колонку когда-то вручную закрепили как `vector(N)` с другим N, бот не стартует с сообщением `... is vector(N) but ASTOR_SEMANTIC_EMBEDDING_DIMENSION=...` и готовым SQL — разовая правка (векторы всё равно пересчитываются при старте):
+
+```sql
+DELETE FROM semantic_embeddings;        ALTER TABLE semantic_embeddings        ALTER COLUMN embedding TYPE vector;
+DELETE FROM intent_example_embeddings;  ALTER TABLE intent_example_embeddings  ALTER COLUMN embedding TYPE vector;
+```
+
+Пока embeddings не настроены, безопасный вариант — `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=none` (поиск по примерам интентов и RAG отключаются, FSM работает на правилах, RAG — на текстовом поиске).
+
+## Эмбеддинги: Yandex text-search (GigaChat Embeddings платные)
+
+GigaChat `/embeddings` на бесплатном пакете владельца отвечает `402`, поэтому чат остаётся на `ASTOR_MODEL_PROVIDER=gigachat`, а векторы считает Yandex AI Studio через отдельный адаптер `YandexTextEmbeddingProvider` (`ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=yandex`), который от `ASTOR_MODEL_PROVIDER` не зависит:
+
+- `POST https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding`, `Authorization: Api-Key <ключ>`, тело `{"modelUri":"emb://<folder>/text-search-doc/latest","text":"..."}`, ответ `{"embedding":[256 чисел]}` (проверено вживую);
+- документы (RAG-чанки, intent-examples, их поиск) — `text-search-doc/latest`, запрос гостя к RAG — `text-search-query/latest`; полный `emb://...` в `ASTOR_SEMANTIC_*EMBEDDING_MODEL` используется как есть;
+- ключ: `ASTOR_EMBEDDINGS_YANDEX_API_KEY`, если пусто — `YANDEX_SPEECHKIT_API_KEY`, затем `YANDEX_API_KEY`; каталог: `ASTOR_EMBEDDINGS_YANDEX_FOLDER_ID`, затем `YANDEX_FOLDER_ID`, затем `YANDEX_SPEECHKIT_FOLDER_ID`. Сервисному аккаунту ключа нужна роль `ai.languageModels.user` в этом каталоге; у ключа с ограниченной областью действия должна быть `yc.ai.foundationModels.execute` (ключ только для SpeechKit не подойдёт);
+- ретраи `429`/`5xx`/сетевых ошибок — `YANDEX_EMBEDDING_MAX_ATTEMPTS` (6) с паузой `YANDEX_EMBEDDING_RETRY_DELAY_MS` (5000, далее x2 до x16 или `Retry-After`); `ASTOR_SEMANTIC_EMBEDDINGS_THROTTLE_MS` (1200 в compose) — минимальный интервал между запросами, простаивающий адаптер не ждёт;
+- ответ другой размерности, чем `ASTOR_SEMANTIC_EMBEDDING_DIMENSION`, отклоняется с подсказкой нужного значения; ни ключ, ни тело ответа в лог не пишутся.
+
+Прод (`/opt/astor-butler/.env.production`, passthrough в `docker-compose.yml`/`docker-compose.prod.yml` для `aeris-*` и `c3flex-*`):
+
+```
+ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=yandex
+ASTOR_SEMANTIC_EMBEDDING_DIMENSION=256
+ASTOR_SEMANTIC_EMBEDDING_MODEL=text-search-doc/latest
+ASTOR_SEMANTIC_QUERY_EMBEDDING_MODEL=text-search-query/latest
+ASTOR_EMBEDDINGS_YANDEX_API_KEY=<API-ключ Yandex Cloud>     # пусто = YANDEX_SPEECHKIT_API_KEY, затем YANDEX_API_KEY
+YANDEX_FOLDER_ID=<id каталога>                              # уже обязателен в docker-compose.prod.yml
+# ASTOR_EMBEDDINGS_YANDEX_FOLDER_ID=<id каталога>           # только если ключ из другого каталога
+AERIS_INTENT_EXAMPLES_INGEST_ON_STARTUP=true                # переиндексация intent-examples (golden corpus) на старте
+AERIS_SEMANTIC_CHUNKS_INGEST_ON_STARTUP=true                # по умолчанию true: RAG-чанки из classpath:semantic
+# ASTOR_SEMANTIC_EMBEDDINGS_THROTTLE_MS=1200                # можно снизить, если в логе нет 429
+```
+
+Переиндексация на старте: оба bootstrap-а (`IntentExampleBootstrap`, `SemanticMemoryBootstrap`) — идемпотентные upsert-ы, при каждом старте с флагами пересчитывают все векторы текущим провайдером (около 60 запросов, при 1200 мс — порядка 80 с после подъёма HTTP; healthcheck бота это выдерживает). Ошибка embeddings выключает их до конца старта, чанки и примеры всё равно пишутся. Флаги можно оставить включёнными. Индекса по векторам нет: десятки строк, последовательный просмотр быстрее.
+
+Проверка после `docker compose ... up -d aeris-astor-butler-bot`:
+
+1. Лог старта: `Semantic embeddings provider=yandex ... dimension=256 apiKey=set folderId=set`, `Semantic embedding store ok` (или предупреждение о строках к переиндексации), `Intent examples bootstrapped: examples=N, embeddings=N, model=text-search-doc/latest`, `Semantic RAG chunks bootstrapped: chunks=N, embeddings=N`.
+2. В БД: `SELECT embedding_model, embedding_dimension, count(*) FROM semantic_embeddings GROUP BY 1, 2;` и то же для `intent_example_embeddings` — одна строка `text-search-doc/latest | 256`.
+3. Смоук: свободный вопрос по меню в боте получает ответ из RAG (`Semantic retrieval skipped` в логе быть не должно).
+
+Откат: `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=none` и перезапуск; векторы в БД можно не трогать. Неизвестное значение провайдера останавливает старт с сообщением, называющим `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER`.
 
 ## Переключение и откат
 
