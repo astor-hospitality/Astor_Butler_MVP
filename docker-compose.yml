@@ -61,6 +61,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # true = bake the local faster-whisper stack into the image (rollback only; ~1.5 GB).
+        STT_LOCAL_WHISPER: ${STT_LOCAL_WHISPER:-false}
     image: astor-butler-mvp:local
     container_name: c3flex_astor_butler_bot
     dns:
@@ -165,6 +168,10 @@ services:
       LLM_READ_TIMEOUT_MS: ${LLM_READ_TIMEOUT_MS:-45000}
       LLM_OLLAMA_KEEP_ALIVE: ${LLM_OLLAMA_KEEP_ALIVE:-30m}
       ASTOR_STT_ENABLED: ${C3FLEX_STT_ENABLED:-false}
+      # cloudru (default): Cloud.ru whisper-large-v3 with CLOUDRU_API_KEY above; local: faster-whisper subprocess
+      # (needs the image built with STT_LOCAL_WHISPER=true).
+      ASTOR_STT_PROVIDER: ${ASTOR_STT_PROVIDER:-cloudru}
+      ASTOR_STT_CLOUDRU_MODEL: ${ASTOR_STT_CLOUDRU_MODEL:-openai/whisper-large-v3}
       ASTOR_STT_COMMAND: ${ASTOR_STT_COMMAND:-python3 /app/stt_faster_whisper.py {file}}
       ASTOR_STT_TIMEOUT_SECONDS: ${ASTOR_STT_TIMEOUT_SECONDS:-90}
       ASTOR_STT_RETRY_TTL_SECONDS: ${ASTOR_STT_RETRY_TTL_SECONDS:-1800}
@@ -216,6 +223,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # true = bake the local faster-whisper stack into the image (rollback only; ~1.5 GB).
+        STT_LOCAL_WHISPER: ${STT_LOCAL_WHISPER:-false}
     image: astor-butler-mvp:local
     container_name: aeris_astor_butler_bot
     dns:
@@ -323,6 +333,10 @@ services:
       LLM_READ_TIMEOUT_MS: "45000"
       LLM_OLLAMA_KEEP_ALIVE: ${LLM_OLLAMA_KEEP_ALIVE:-30m}
       ASTOR_STT_ENABLED: ${AERIS_STT_ENABLED:-true}
+      # cloudru (default): Cloud.ru whisper-large-v3 with CLOUDRU_API_KEY above; local: faster-whisper subprocess
+      # (needs the image built with STT_LOCAL_WHISPER=true).
+      ASTOR_STT_PROVIDER: ${ASTOR_STT_PROVIDER:-cloudru}
+      ASTOR_STT_CLOUDRU_MODEL: ${ASTOR_STT_CLOUDRU_MODEL:-openai/whisper-large-v3}
       ASTOR_STT_COMMAND: ${ASTOR_STT_COMMAND:-python3 /app/stt_faster_whisper.py {file}}
       ASTOR_STT_TIMEOUT_SECONDS: ${ASTOR_STT_TIMEOUT_SECONDS:-90}
       ASTOR_STT_RETRY_TTL_SECONDS: ${ASTOR_STT_RETRY_TTL_SECONDS:-1800}
@@ -375,6 +389,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # true = bake the local faster-whisper stack into the image (rollback only; ~1.5 GB).
+        STT_LOCAL_WHISPER: ${STT_LOCAL_WHISPER:-false}
     image: astor-butler-mvp:local
     container_name: smart_solution_bot
     dns:
@@ -477,6 +494,9 @@ services:
       LLM_CONNECT_TIMEOUT_MS: "5000"
       LLM_READ_TIMEOUT_MS: "45000"
       ASTOR_STT_ENABLED: ${SMART_SOLUTION_STT_ENABLED:-false}
+      ASTOR_STT_PROVIDER: ${ASTOR_STT_PROVIDER:-cloudru}
+      ASTOR_STT_CLOUDRU_MODEL: ${ASTOR_STT_CLOUDRU_MODEL:-openai/whisper-large-v3}
+      ASTOR_STT_LANGUAGE: ${ASTOR_STT_LANGUAGE:-ru}
       ASTOR_TIMELINE_SCYLLA_ENABLED: ${SMART_SOLUTION_TIMELINE_SCYLLA_ENABLED:-false}
       ASTOR_GRAPH_NEO4J_ENABLED: ${SMART_SOLUTION_GRAPH_NEO4J_ENABLED:-false}
       JWT_SECRET: ${JWT_SECRET:-local-container-dev-only}

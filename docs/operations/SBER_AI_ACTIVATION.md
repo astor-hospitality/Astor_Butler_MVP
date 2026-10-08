@@ -11,11 +11,11 @@
 | Понимание гостя, черновики ответов, Q&A для ops-группы (`ModelGateway.generateText`) | `fsm/understanding`, `fsm/reply`, `service/message` | `ASTOR_MODEL_PROVIDER`: `spring-ai` (Ollama, по умолчанию), `ollama-raw`, `yandex`, `yandex-agent`, `openai-compatible` | `cloudru` (Cloud.ru Foundation Models, OpenAI API) или `gigachat` (GigaChat API напрямую) | `ASTOR_MODEL_PROVIDER` |
 | Embeddings для RAG и intent-examples (`generateEmbedding`, pgvector) | `domain/semantic` | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER`: `none`, `ollama`, `spring-ai`, `model-gateway` (через провайдер выше: Yandex `text-search-doc/latest`) | `model-gateway` + `CLOUDRU_EMBEDDING_MODEL` или `GIGACHAT_EMBEDDING_MODEL` | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=model-gateway` |
 | Vision (`analyzeImage`: фото стола, glasses) | `ModelGateway`, `api/glasses` | Ollama `qwen2.5vl`, `openai-compatible` vision-модель, Yandex AI Studio (`YandexGlassesGateway`) | `CLOUDRU_VISION_MODEL`; GigaChat через `/files` + `attachments`; glasses-pilot: `ASTOR_GLASSES_MODEL_PROVIDER=cloudru` | см. ниже |
-| STT голосовых сообщений | `speech-to-text` (`ASTOR_STT_COMMAND`) | локальный `faster-whisper` (без облачного вендора) | не требуется; альтернатива — SaluteSpeech, см. TODO | — |
+| STT голосовых сообщений (Telegram) и записей очков | `speech` (`SpeechToTextService`), `api/glasses` (`GlassesVoice`) | `cloudru`: Cloud.ru `openai/whisper-large-v3` (по умолчанию); `local`: `faster-whisper` subprocess (rollback) | уже Сбер/Cloud.ru, см. «STT через whisper-large-v3» | `ASTOR_STT_PROVIDER`, `ASTOR_GLASSES_STT_PROVIDER` |
 | TTS для очков (`GlassesSpeech`) | `api/glasses` | Yandex SpeechKit TTS | SaluteSpeech TTS, не реализовано, см. TODO | — |
 | STT/TTS веб-чата CLIO (`frontend/app/api/chat/*`) | frontend | заглушки `yandex-speechkit` (test-double, провайдер не подключён) | SaluteSpeech, не реализовано, см. TODO | — |
 
-Исходники провайдеров: `src/main/java/museon_online/astor_butler/model/CloudRuModelGateway.java`, `GigaChatModelGateway.java`, `GigaChatTrust.java`.
+Исходники провайдеров: `src/main/java/museon_online/astor_butler/model/CloudRuModelGateway.java`, `GigaChatModelGateway.java`, `GigaChatTrust.java`; STT — `src/main/java/museon_online/astor_butler/speech/CloudRuWhisperSpeechToText.java` (общий HTTP-адаптер), `CloudRuWhisperSpeechToTextService.java` (бот), `ExternalCommandSpeechToTextService.java` (локальный rollback), `api/glasses/GlassesVoice.java` (очки).
 
 ## Вариант 1: Cloud.ru Evolution Foundation Models (`cloudru`)
 
@@ -51,6 +51,61 @@ ASTOR_GLASSES_CLOUDRU_API_KEY=<ключ>
 ASTOR_GLASSES_TEXT_MODEL=GigaChat/GigaChat-2-Max
 ASTOR_GLASSES_VISION_MODEL=Qwen/Qwen2.5-VL-72B-Instruct   # имя сверить с /models
 ```
+
+## STT через whisper-large-v3 (Cloud.ru)
+
+Правило владельца: на VM нет локального ML, только платные облачные модели. Распознавание речи поэтому идёт в Cloud.ru Evolution Foundation Models: `POST https://foundation-models.api.cloud.ru/v1/audio/transcriptions` (OpenAI-совместимый multipart: `file`, `model=openai/whisper-large-v3`, `language=ru`, `response_format=json` → `{"text": "..."}`; заголовок `Authorization: Bearer <CLOUDRU_API_KEY>`; лимит файла 25 МБ). Ключ тот же, что у текстовых моделей (`CLOUDRU_API_KEY` / `ASTOR_GLASSES_CLOUDRU_API_KEY`), тарифицируется по минутам аудио — смотреть в каталоге Cloud.ru, имя модели сверить с `GET /models`.
+
+Адаптер: `CloudRuWhisperSpeechToText` (JDK `HttpClient`, без Spring, общий для бота и очков). Без ретраев на `4xx`, один повтор на `5xx` и таймаут; ошибка — `CloudRuWhisperException` со статусом и причиной (без аудио, текста и ключа). Локальный `faster-whisper` остаётся выбираемым для отката.
+
+### Бот (Telegram-голосовые, `aeris-*`, `c3flex-*`, `smart-solution-bot`)
+
+`.env.production` (docker-compose passthrough есть в `docker-compose.yml` и `docker-compose.prod.yml`; в prod значение по умолчанию уже `cloudru`):
+
+```
+ASTOR_STT_ENABLED=true
+ASTOR_STT_PROVIDER=cloudru                       # local = faster-whisper subprocess (rollback)
+CLOUDRU_API_KEY=<ключ из консоли Cloud.ru>        # общий с ASTOR_MODEL_PROVIDER=cloudru
+# CLOUDRU_BASE_URL=https://foundation-models.api.cloud.ru/v1
+# ASTOR_STT_CLOUDRU_MODEL=openai/whisper-large-v3
+# ASTOR_STT_LANGUAGE=ru                          # пусто = автоопределение языка
+# ASTOR_STT_TIMEOUT_SECONDS=60                   # весь запрос вместе с загрузкой файла
+```
+
+Образ бота (`Dockerfile` в корне, собирается в GHCR workflow-ом `deploy-cloudru-vm.yml`) по умолчанию **без** Python/ffmpeg/faster-whisper (`ARG STT_LOCAL_WHISPER=false`), поэтому `ASTOR_STT_PROVIDER=local` в нём работать не будет. Telegram отдаёт голосовые как `audio/ogg` (opus) — Whisper принимает ogg/opus, mp3, wav, m4a без перекодирования; `telegram.voice.max-file-size-bytes` (10 МБ) ниже лимита 25 МБ.
+
+Откат на локальный STT: собрать образ `docker build --build-arg STT_LOCAL_WHISPER=true -t <image> .` (или `STT_LOCAL_WHISPER=true docker compose build`), выставить `ASTOR_STT_PROVIDER=local` и прежний `ASTOR_STT_COMMAND`/`ASTOR_STT_MODEL`, перезапустить бота. Неизвестное значение `ASTOR_STT_PROVIDER` валит старт с сообщением, какие значения допустимы.
+
+### Очки (`GlassesPilotApplication`, контейнер `astor_glasses_api`)
+
+`runtime.env` (`docker/glasses/runtime.env.example`):
+
+```
+ASTOR_GLASSES_VOICE_ENABLED=true
+ASTOR_GLASSES_STT_PROVIDER=cloudru               # local = glasses_stt.py (rollback)
+ASTOR_GLASSES_CLOUDRU_API_KEY=<ключ>             # тот же, что для ASTOR_GLASSES_MODEL_PROVIDER=cloudru
+# CLOUDRU_BASE_URL=https://foundation-models.api.cloud.ru/v1
+# ASTOR_GLASSES_STT_CLOUDRU_MODEL=openai/whisper-large-v3
+# ASTOR_GLASSES_STT_LANGUAGE=ru
+# ASTOR_GLASSES_STT_TIMEOUT_MS=20000             # максимум 30000
+```
+
+Какой Dockerfile собирать:
+
+| Образ | Dockerfile | Что внутри | Когда |
+| --- | --- | --- | --- |
+| production | `docker/glasses/Dockerfile.cloud` | только JRE + `app.jar`, `ASTOR_GLASSES_STT_PROVIDER=cloudru` зашит в ENV; staging-каталогу нужен один `app.jar` | всегда, пока STT в Cloud.ru |
+| rollback | `docker/glasses/Dockerfile` | python venv + faster-whisper/ctranslate2/onnxruntime (~1.5 ГБ), `ASTOR_GLASSES_STT_PROVIDER=local`, модели в `/models` | только если облачный STT недоступен |
+
+Compose: `docker compose -f docker/glasses/compose.yaml -f docker/glasses/compose.cloudru.yaml up -d` на Cloud.ru VM (overlay убирает bind `/models`, он не нужен облачному образу). Телефон шлёт `audio/mp4` (AAC mono 16 кГц, до 2 МБ); адаптер отправляет байты как `input.m4a` без временных файлов. Отличия от локального декодера: граница 30 секунд записи больше не проверяется (ограничитель — 2 МБ в контроллере), пустой ответ модели = `NO_SPEECH` (400), отказ сервиса по формату = `MALFORMED_AUDIO` (400), прочее — `VOICE_UNAVAILABLE` (503), текст и диагностика провайдера наружу не уходят.
+
+### Проверка
+
+1. Лог старта бота без `ASTOR_STT_PROVIDER must be local or cloudru`; в payload входящего голосового `transcriptionMetadata.provider=cloudru`.
+2. Смоук: голосовое в Telegram → текст в FSM; `/api/glasses/transcribe` с короткой записью → `text`.
+3. Если ключа нет, STT не роняет сервис: бот отвечает `transcriptionStatus=FAILED` с причиной `CLOUDRU_API_KEY is not set`, очки — `503 VOICE_UNAVAILABLE`.
+
+Риски: задержка сети (загрузка файла + инференс, обычно 2–6 с на голосовое до минуты — ставьте `ASTOR_STT_TIMEOUT_SECONDS` с запасом); лимит 25 МБ (у Telegram 10 МБ, у очков 2 МБ — не достигается); тарификация за минуты; при 5xx Cloud.ru один повтор, затем `FAILED` без локального fallback.
 
 ## Вариант 2: GigaChat API напрямую (`gigachat`)
 
@@ -105,7 +160,7 @@ GIGACHAT_EMBEDDING_MODEL=Embeddings          # по умолчанию; Embeddin
 
 ## Речь: TODO для SaluteSpeech
 
-Голосовые сообщения гостей распознаются локальным `faster-whisper` (без вендора), веб-чат CLIO держит заглушки Yandex SpeechKit, очки используют Yandex SpeechKit TTS (`GlassesSpeech`). Перевод на SaluteSpeech (Сбер) не реализован: нужен отдельный адаптер с тем же OAuth-потоком через `ngw.devices.sberbank.ru` (scope `SALUTE_SPEECH_PERS`/`_B2B`/`_CORP`), эндпоинты `smartspeech.sber.ru/rest/v1/speech:recognize` и `.../text:synthesize`, тот же сертификат НУЦ. Объём работы: `GlassesSpeech` (endpoint + заголовок `Authorization: Bearer` вместо `Api-Key`, формат `application/x-www-form-urlencoded` → `audio/x-pcm`/`audio/ogg`), `frontend/app/api/chat/{transcribe,speak}` (сейчас test-double), `OPENAI`/Yandex там нет.
+Голосовые сообщения гостей и записи очков распознаются Cloud.ru whisper-large-v3 (см. выше; локальный `faster-whisper` остался только для отката), веб-чат CLIO держит заглушки Yandex SpeechKit, очки используют Yandex SpeechKit TTS (`GlassesSpeech`). Перевод на SaluteSpeech (Сбер) не реализован: нужен отдельный адаптер с тем же OAuth-потоком через `ngw.devices.sberbank.ru` (scope `SALUTE_SPEECH_PERS`/`_B2B`/`_CORP`), эндпоинты `smartspeech.sber.ru/rest/v1/speech:recognize` и `.../text:synthesize`, тот же сертификат НУЦ. Объём работы (только TTS и веб-чат, STT уже на Cloud.ru): `GlassesSpeech` (endpoint + заголовок `Authorization: Bearer` вместо `Api-Key`, формат `application/x-www-form-urlencoded` → `audio/x-pcm`/`audio/ogg`), `frontend/app/api/chat/{transcribe,speak}` (сейчас test-double), `OPENAI`/Yandex там нет.
 
 ## Astor Concierge
 

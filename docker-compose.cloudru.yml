@@ -9,6 +9,8 @@
 # two containers the edge proxies (c3ag-frontend:3000, astor-api-gateway:8080) join `edge`;
 # PostgreSQL, Redis, Mongo, Kafka, MinIO stay on the private project network.
 # Images come from GHCR (built by deploy-cloudru-vm.yml), nothing is built on the VM.
+# Speech-to-text is Cloud.ru whisper-large-v3 (ASTOR_STT_PROVIDER=cloudru in docker-compose.prod.yml; CLOUDRU_API_KEY
+# from .env.production); the GHCR image carries no Python/faster-whisper.
 # See docs/operations/CLOUDRU_DEPLOY_RUNBOOK.md and infra/cloudru/edge/c3ag.caddy.
 
 name: astor-butler
