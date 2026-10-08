@@ -11,6 +11,7 @@ import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.MessageGatewayService;
 import museon_online.astor_butler.service.message.OutgoingMessage;
 import museon_online.astor_butler.telegram.exeption.TelegramExceptionHandler;
+import museon_online.astor_butler.telegram.voice.TelegramVoiceReplyService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -61,6 +62,7 @@ public class TelegramRouter {
     private final HostessReservationApprovalService hostessReservationApprovalService;
     private final TelegramMediaSender telegramMediaSender;
     private final VisitReviewService visitReviewService;
+    private final TelegramVoiceReplyService voiceReplyService;
 
     @Value("${telegram.ui.preview-enabled:true}")
     private boolean previewEnabled;
@@ -96,12 +98,20 @@ public class TelegramRouter {
             if (hostessReservationApprovalService.handle(incoming)) {
                 return;
             }
+            String voiceCommandAnswer = voiceReplyService.handleCommand(incoming).orElse(null);
+            if (voiceCommandAnswer != null) {
+                execute(sender, SendMessage.builder().chatId(incoming.chatId().toString()).text(voiceCommandAnswer).build());
+                return;
+            }
 
             OutgoingMessage outgoing = messageGatewayService.handle(incoming);
             ensurePreview(incoming, sender, isStartCommand(incoming));
             telegramMediaSender.sendDocumentIfPresent(outgoing.chatId(), outgoing.metadata(), sender);
             telegramMediaSender.sendVideoIfPresent(outgoing.chatId(), outgoing.metadata(), sender);
-            send(incoming, outgoing, sender);
+            IncomingMessage request = incoming;
+            if (!voiceReplyService.reply(request, outgoing, sender, message -> send(request, message, sender))) {
+                send(incoming, outgoing, sender);
+            }
             sendAdminAlert(outgoing, sender);
 
         } catch (Exception e) {
@@ -117,6 +127,16 @@ public class TelegramRouter {
 
         CallbackQuery callbackQuery = update.getCallbackQuery();
         Long chatId = callbackQuery.getMessage() == null ? null : callbackQuery.getMessage().getChatId();
+
+        TelegramVoiceReplyService.CallbackResult fullReply = voiceReplyService.handleCallback(callbackQuery.getData(), chatId, sender);
+        if (fullReply.handled()) {
+            execute(sender, AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackQuery.getId())
+                    .text(fullReply.answerText())
+                    .showAlert(false)
+                    .build());
+            return true;
+        }
 
         CallbackAnswer safePlayAnswer = handleSafePlayCallback(callbackQuery, chatId, sender);
         if (safePlayAnswer.handled()) {
