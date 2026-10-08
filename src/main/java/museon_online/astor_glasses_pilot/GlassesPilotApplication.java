@@ -44,17 +44,24 @@ public final class GlassesPilotApplication {
             GlassesSessionJournal.class, GlassesAccess.class, GlassesAssistService.class, GlassesVoice.class, GlassesS3Storage.class, AstorWebRelay.class})
     public static class Config {
         @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
-        /** ASTOR_GLASSES_MODEL_PROVIDER=yandex (default) or cloudru; model names then belong to that catalogue. */
+        /**
+         * ASTOR_GLASSES_AI_PROVIDER (legacy name ASTOR_GLASSES_MODEL_PROVIDER) = yandex (default), cloudru or gigachat
+         * (Sber GigaChat API directly, its own key, see {@link GigaChatGlassesGateway}); model names then belong to
+         * that provider's catalogue.
+         */
         @Bean ModelGateway gateway(Environment env) {
             String provider = env.getProperty("ASTOR_GLASSES_AI_PROVIDER",
                     env.getProperty("ASTOR_GLASSES_MODEL_PROVIDER", "yandex")).trim().toLowerCase(java.util.Locale.ROOT);
+            if (provider.equals(GigaChatGlassesGateway.PROVIDER)) {
+                return GigaChatGlassesGateway.fromEnvironment(env::getProperty);
+            }
             if (provider.equals("cloudru")) {
                 return YandexGlassesGateway.cloudRu(env.getProperty("ASTOR_GLASSES_CLOUDRU_ENDPOINT", ""),
                         env.getProperty("ASTOR_GLASSES_CLOUDRU_API_KEY", ""),
                         env.getProperty("ASTOR_GLASSES_TEXT_MODEL", "GigaChat/GigaChat-2-Max"),
                         env.getProperty("ASTOR_GLASSES_VISION_MODEL", "Qwen/Qwen2.5-VL-72B-Instruct"));
             }
-            if (!provider.equals("yandex")) throw new IllegalStateException("ASTOR_GLASSES_MODEL_PROVIDER must be yandex or cloudru");
+            if (!provider.equals("yandex")) throw new IllegalStateException("ASTOR_GLASSES_AI_PROVIDER must be yandex, cloudru or gigachat");
             return new YandexGlassesGateway("https://ai.api.cloud.yandex.net/v1/chat/completions",
                     env.getProperty("ASTOR_GLASSES_YANDEX_API_KEY", ""),
                     env.getProperty("ASTOR_GLASSES_YANDEX_FOLDER", ""),
