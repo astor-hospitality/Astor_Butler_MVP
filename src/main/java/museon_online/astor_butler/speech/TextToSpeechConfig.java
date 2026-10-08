@@ -9,7 +9,8 @@ import java.time.Duration;
 
 /**
  * The application's {@link TextToSpeech}, chosen by {@code ASTOR_TTS_PROVIDER} ({@code astor.tts.provider}):
- * {@code salute} (default, Sber SaluteSpeech) or {@code yandex} (SpeechKit, rollback). The bean always
+ * {@code salute} (default, Sber SaluteSpeech) or {@code yandex} (SpeechKit; {@code YANDEX_TTS_FORMAT=oggopus}
+ * for Telegram voice replies). The bean always
  * exists; an unconfigured provider logs once and answers "unavailable" to callers instead of failing startup,
  * because speech is optional everywhere it is used.
  */
@@ -26,6 +27,7 @@ public class TextToSpeechConfig {
             @Value("${astor.tts.yandex.voice:}") String yandexVoice,
             @Value("${astor.tts.yandex.role:}") String yandexRole,
             @Value("${astor.tts.yandex.speed:0.95}") double yandexSpeed,
+            @Value("${astor.tts.yandex.format:mp3}") String yandexFormat,
             @Value("${astor.tts.salute.auth-key:}") String saluteAuthKey,
             @Value("${astor.tts.salute.scope:}") String saluteScope,
             @Value("${astor.tts.salute.voice:}") String saluteVoice,
@@ -36,7 +38,8 @@ public class TextToSpeechConfig {
             @Value("${astor.tts.salute.timeout-ms:10000}") int saluteTimeoutMs
     ) {
         TextToSpeech speech = TextToSpeechProviders.select(provider,
-                new SpeechKitTextToSpeech.Settings(yandexEndpoint, yandexApiKey, yandexFolder, yandexVoice, yandexRole, yandexSpeed),
+                new SpeechKitTextToSpeech.Settings(yandexEndpoint, yandexApiKey, yandexFolder, yandexVoice, yandexRole, yandexSpeed,
+                        yandexFormat),
                 new SaluteSpeechTextToSpeech.Settings(saluteAuthKey, saluteScope, saluteVoice, saluteFormat, saluteCaCertPath,
                         saluteOauthUrl, saluteTtsUrl, Duration.ofMillis(saluteTimeoutMs)));
         if (!speech.configured()) {

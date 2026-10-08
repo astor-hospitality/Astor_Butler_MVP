@@ -143,5 +143,9 @@ class GlassesVoiceTest {
         assertThat(cloud.provider()).isEqualTo(SpeechToTextProvider.CLOUDRU);
         assertThatThrownBy(() -> new GlassesVoice(true, "salute", "python3", "", "", temp.toString(), 1000, "", "", "", "ru"))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("ASTOR_GLASSES_STT_PROVIDER");
+        // SpeechKit is an STT provider of the bot, but it does not take the phone's MP4/AAC: no silent local fallback.
+        assertThatThrownBy(() -> new GlassesVoice(true, "yandex", "python3", "", "", temp.toString(), 1000, "", "", "", "ru"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("ASTOR_GLASSES_STT_PROVIDER")
+                .hasMessageContaining("MP4/AAC");
     }
 }

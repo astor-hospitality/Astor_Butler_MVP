@@ -94,7 +94,8 @@ public class TelegramVoiceReplyService {
             return false;
         }
         if (!VOICE_MIME_TYPES.contains(textToSpeech.mimeType())) {
-            warnRateLimited("TTS format " + textToSpeech.mimeType() + " is not a Telegram voice format; set SALUTE_TTS_FORMAT=opus", null);
+            warnRateLimited("TTS format " + textToSpeech.mimeType() + " is not a Telegram voice format; set SALUTE_TTS_FORMAT=opus"
+                    + " (salute) or YANDEX_TTS_FORMAT=oggopus (yandex)", null);
             return false;
         }
         List<String> chunks = ReplyText.speechChunks(ReplyText.speech(outgoing.text()),
