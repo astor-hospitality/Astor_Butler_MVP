@@ -25,8 +25,8 @@ class GlassesSpeechTest {
     }
 
     /* Each response is built before the stubbing starts: a nested when() inside an unfinished one is
-       what Mockito calls UnfinishedStubbing. */
-    /** Mockito cannot infer the body type of send(), so the matcher names it. */
+       what Mockito calls UnfinishedStubbing. Mockito cannot infer the body type of send(), so the
+       matcher names it. */
     private org.mockito.stubbing.OngoingStubbing<HttpResponse<byte[]>> whenSent() throws Exception {
         return when(client.send(any(HttpRequest.class), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any()));
     }
@@ -42,7 +42,13 @@ class GlassesSpeechTest {
         return form.get();
     }
 
-    @Test void asksForOneMalePremiumVoiceWithTheKeyInTheHeader() throws Exception {
+    private HttpRequest sent() throws Exception {
+        var captor = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
+        verify(client).send(captor.capture(), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any());
+        return captor.getValue();
+    }
+
+    @Test void speaksAsTheDocumentedV1ContractExpects() throws Exception {
         byte[] mp3 = {(byte) 0xFF, (byte) 0xFB, 1, 2};
         HttpResponse<byte[]> ok = response(200, mp3);
         whenSent().thenReturn(ok);
@@ -52,14 +58,47 @@ class GlassesSpeechTest {
         assertThat(speech.ready()).isTrue();
         assertThat(speech.voiceName()).isEqualTo("filipp");
 
-        var captor = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
-        verify(client).send(captor.capture(), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any());
-        HttpRequest request = captor.getValue();
+        HttpRequest request = sent();
+        assertThat(request.method()).isEqualTo("POST");
         assertThat(request.uri().toString()).isEqualTo("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize");
         assertThat(request.headers().firstValue("Authorization")).hasValue("Api-Key unit-key");
+        assertThat(request.headers().firstValue("Content-Type")).hasValue("application/x-www-form-urlencoded");
         String form = sentForm(request);
-        assertThat(form).contains("voice=filipp").contains("lang=ru-RU").contains("format=mp3").contains("role=neutral").contains("speed=0.95");
-        assertThat(form).doesNotContain("  "); // the line is trimmed before it leaves
+        assertThat(form).startsWith("text=").contains("&lang=ru-RU").contains("&voice=filipp").contains("&speed=0.95").contains("&format=mp3");
+        // A service-account key carries its own folder; sending folderId with it is an error in v1.
+        assertThat(form).doesNotContain("folderId");
+        // v1 knows `emotion`, not `role`, and filipp has no emotions at all.
+        assertThat(form).doesNotContain("role=").doesNotContain("emotion=");
+        assertThat(form).doesNotContain("++"); // trimmed before it leaves: a double space would encode as ++
+    }
+
+    @Test void anEmotionIsSentOnlyForAVoiceThatHasIt() throws Exception {
+        byte[] mp3 = {(byte) 0xFF, (byte) 0xFB};
+        HttpResponse<byte[]> ok = response(200, mp3);
+        whenSent().thenReturn(ok);
+        var ermil = new GlassesSpeech(client, true, "ermil", "good");
+        assertThat(ermil.misconfiguration()).isNull();
+        assertThat(ermil.synthesize("Добрый день.")).isEqualTo(mp3);
+        assertThat(sentForm(sent())).contains("&voice=ermil").contains("&emotion=good");
+
+        // filipp has no emotions: asking for one is a misconfiguration, said once, and speech stays off.
+        var wrong = new GlassesSpeech(client, true, "filipp", "good");
+        assertThat(wrong.configured()).isFalse();
+        assertThat(wrong.misconfiguration()).contains("filipp").contains("good");
+        assertThat(wrong.synthesize("Строка")).isNull();
+    }
+
+    @Test void onlyVoicesServedByApiV1AreAccepted() {
+        for (String voice : GlassesSpeech.MALE_VOICES) {
+            assertThat(new GlassesSpeech(client, true, voice).configured()).as(voice).isTrue();
+        }
+        assertThat(new GlassesSpeech(client, true, "Filipp").configured()).isTrue(); // case does not matter
+        for (String voice : new String[]{"alexander", "kirill", "anton", "", "siri"}) {
+            var speech = new GlassesSpeech(client, true, voice);
+            assertThat(speech.configured()).as(voice).isFalse();
+            assertThat(speech.misconfiguration()).isNotNull();
+        }
+        verifyNoInteractions(client);
     }
 
     @Test void saysNothingWhenItIsOffOrTheLineDoesNotFit() throws Exception {
