@@ -44,3 +44,6 @@ src/main/resources/menu/aeris/site/images/
 src/main/resources/menu/aeris/site/ocr/
 
 scripts/saby_stub/fixtures/
+
+# Mounted CA bundles for Sber endpoints (public certificates, but kept out of the repo)
+/certs/

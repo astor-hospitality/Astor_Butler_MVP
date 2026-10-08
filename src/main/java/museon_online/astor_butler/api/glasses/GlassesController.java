@@ -153,7 +153,7 @@ public class GlassesController {
                 .body(new AssistResponse(requestId, answer, service.capabilities(), photoContext == null ? null
                         : new PhotoReceipt(requestId, photoContext, service.archivesEnabled()),
                         audio == null ? null : Base64.getEncoder().encodeToString(audio),
-                        audio == null ? null : "audio/mpeg", audio == null ? null : "male"));
+                        audio == null ? null : service.audioMimeType(), audio == null ? null : service.voiceGender()));
     }
 
     public record AssistResponse(String requestId, String text, GlassesAssistService.Capabilities capabilities,

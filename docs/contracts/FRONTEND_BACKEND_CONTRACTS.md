@@ -207,7 +207,8 @@ Rules:
 - Microphone API requires a secure context: HTTPS in production or localhost for local QA.
 - Transcribed text enters the existing Web Chat path (`submit -> POST /api/messages`), so backend/FSM remains the source of truth for dialog state, lead persistence and notifications.
 - SpeechKit STT/TTS credentials stay server-side. Frontend never receives API keys, IAM tokens or service account secrets.
-- TTS is optional and uses a supported built-in/authorized Yandex SpeechKit feminine voice selected for Clio; it must not be presented as a cloned real person.
+- TTS is optional and uses a built-in feminine voice selected for Clio on the server (production: Sber SaluteSpeech `Nec_24000`; rollback: Yandex SpeechKit); it must not be presented as a cloned real person.
+- The production TTS endpoint is the backend `POST /api/chat/speak` (`{"text": "..."}` → `{provider, status, voice, audioUrl (data URL), audioBase64, audioMimeType, message, createdAt}`; 503 `UNAVAILABLE` when the server voice is off, 429 when busy). Point `NEXT_PUBLIC_CLIO_TTS_ENDPOINT` at it (`https://api.c3ag.ru/api/chat/speak`); the frontend route of the same name stays a local test double. Server side: `ASTOR_TTS_PROVIDER`, `ASTOR_TTS_WEB_ENABLED`, `SALUTE_*` — see `docs/operations/SBER_AI_ACTIVATION.md`.
 
 ### Request
 

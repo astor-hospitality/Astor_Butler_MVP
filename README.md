@@ -15,9 +15,11 @@ Source-code readiness is not production acceptance.
 
 Release gate: exact-commit green CI, verified DB backup/restore, migration and
 rollback compatibility, and recorded deployed revision with smoke results.
-Use the [scoped deploy runbook](docs/operations/AERIS_SCOPED_DEPLOY.md):
-read-only preflight first, then AERIS only. Image rollback does not reverse DB
-migrations. Never restart the whole shared stack for this release.
+Use the [Cloud.ru deploy runbook](docs/operations/CLOUDRU_DEPLOY_RUNBOOK.md):
+read-only preflight first, frontend and backend as separate scopes. Image
+rollback does not reverse DB migrations. Never restart the whole shared stack
+for this release. The Yandex VM path ([scoped deploy](docs/operations/AERIS_SCOPED_DEPLOY.md))
+is deprecated and its workflow triggers are disabled.
 See [staff rollout](docs/operations/STAFF_PORTAL_RUNBOOK.md) and
 [Saby contract](docs/integrations/SABY_PRESTO_BOOKING_API.md).
 
