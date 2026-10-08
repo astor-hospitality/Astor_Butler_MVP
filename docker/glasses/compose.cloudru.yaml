@@ -1,0 +1,9 @@
+# Cloud.ru host: compose v5 rejects the inline tmpfs options of compose.yaml, and the service must join the shared `edge` network.
+services:
+  glasses:
+    tmpfs: !override ["/tmp"]
+    networks: [astor, edge]
+networks:
+  edge:
+    external: true
+    name: edge

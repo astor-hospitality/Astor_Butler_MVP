@@ -1,50 +1,42 @@
-# Astor / C3AG site block for the SHARED Cloud.ru edge proxy owned by the Vedal portal
-# (repo astor-hospitality/MuseonUrania, /opt/vedal-portal on the VM, Caddy container `proxy`).
-#
-# Where it is included: copy this file next to the Vedal Caddyfile and import it from there,
-# e.g. /opt/vedal-portal/caddy/sites/c3ag.caddy with `import sites/*.caddy` in the main
-# Caddyfile (the Vedal side decides the exact path; keep the upstream names below unchanged).
-# Prerequisites on the Vedal side: `proxy` publishes 80/443 and is attached to the external
-# docker network `edge`; Astor containers join `edge` and publish nothing (docker-compose.cloudru.yml).
-# Upstreams are resolved by container name on `edge`:
-#   c3ag-frontend:3000      Next.js (service c3-agency-frontend)
-#   astor-api-gateway:8080  nginx api-gateway in front of AERIS (aeris-astor-butler-bot:8089)
-# TLS: Caddy issues Let's Encrypt certificates automatically once DNS for c3ag.ru,
-# www.c3ag.ru and api.c3ag.ru points at this VM (HTTP-01 on :80 must stay reachable).
-
 www.c3ag.ru {
 	redir https://c3ag.ru{uri} permanent
 }
-
-c3ag.ru {
+c3ag.ru, c3ag.176-123-165-162.nip.io {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
-		X-Content-Type-Options nosniff
-		Referrer-Policy strict-origin-when-cross-origin
-		-Server
-	}
-	reverse_proxy c3ag-frontend:3000 {
-		health_uri /
-		health_interval 30s
-	}
-}
-
-api.c3ag.ru {
-	encode zstd gzip
-	header {
-		Strict-Transport-Security "max-age=31536000"
-		X-Content-Type-Options nosniff
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
 		-Server
 	}
 	request_body {
 		max_size 20MB
 	}
-	# Swagger/OpenAPI stay private until access control exists (C3AG_DOMAIN_RUNBOOK.md).
-	@docs path /swagger-ui/* /v3/api-docs*
-	respond @docs 404
-	reverse_proxy astor-api-gateway:8080 {
-		health_uri /gateway/health
-		health_interval 30s
+	@glasses path /api/glasses /api/glasses/*
+	handle @glasses {
+		reverse_proxy astor_glasses_api:8091 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
 	}
+	@backend path /api/* /auth/* /actuator/health /gateway/health
+	handle @backend {
+		reverse_proxy astor-api-gateway:8080 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+	handle {
+		reverse_proxy c3ag-frontend:3000 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+}
+# api.c3ag.ru is added once its A record exists (Caddy would otherwise retry ACME for it endlessly)
+api.c3ag.176-123-165-162.nip.io {
+	reverse_proxy astor-api-gateway:8080
 }
