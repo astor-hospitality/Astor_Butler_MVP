@@ -13,6 +13,7 @@ Use this folder for:
 Key files:
 
 - `PRODUCTION_DEPLOYMENT_PLAN.md`
+- `SBER_AI_ACTIVATION.md` - switching models to Sber (Cloud.ru Foundation Models, GigaChat API), keys, certificates, rollback.
 - `AERIS_SYSTEM_ANALYSIS_TESTS.md`
 - `LOAD_TESTING.md`
 - `TEAM_DELIVERY_WORKFLOW.md`
