@@ -85,7 +85,10 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
         this.apiKey = settings.apiKey();
         this.folder = settings.folder();
         this.voice = settings.voice();
-        this.role = settings.role();
+        // "neutral" on a voice without emotions (filipp, madi_ru) is simply that voice: send no emotion,
+        // so the usual default does not mark a plain voice as misconfigured.
+        Set<String> emotions = V1_VOICES.get(settings.voice());
+        this.role = emotions != null && emotions.isEmpty() && "neutral".equals(settings.role()) ? "" : settings.role();
         this.speed = settings.speed();
         this.format = settings.format();
     }
