@@ -25,8 +25,8 @@ class GlassesSpeechTest {
     }
 
     /* Each response is built before the stubbing starts: a nested when() inside an unfinished one is
-       what Mockito calls UnfinishedStubbing. Mockito cannot infer the body type of send(), so the
-       matcher names it. */
+       what Mockito calls UnfinishedStubbing. */
+    /** Mockito cannot infer the body type of send(), so the matcher names it. */
     private org.mockito.stubbing.OngoingStubbing<HttpResponse<byte[]>> whenSent() throws Exception {
         return when(client.send(any(HttpRequest.class), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any()));
     }
@@ -42,13 +42,7 @@ class GlassesSpeechTest {
         return form.get();
     }
 
-    private HttpRequest sent() throws Exception {
-        var captor = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
-        verify(client).send(captor.capture(), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any());
-        return captor.getValue();
-    }
-
-    @Test void speaksAsTheDocumentedV1ContractExpects() throws Exception {
+    @Test void asksForOneMalePremiumVoiceWithTheKeyInTheHeader() throws Exception {
         byte[] mp3 = {(byte) 0xFF, (byte) 0xFB, 1, 2};
         HttpResponse<byte[]> ok = response(200, mp3);
         whenSent().thenReturn(ok);
@@ -58,47 +52,60 @@ class GlassesSpeechTest {
         assertThat(speech.ready()).isTrue();
         assertThat(speech.voiceName()).isEqualTo("filipp");
 
-        HttpRequest request = sent();
-        assertThat(request.method()).isEqualTo("POST");
+        var captor = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
+        verify(client).send(captor.capture(), org.mockito.ArgumentMatchers.<BodyHandler<byte[]>>any());
+        HttpRequest request = captor.getValue();
         assertThat(request.uri().toString()).isEqualTo("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize");
-        assertThat(request.headers().firstValue("Authorization")).hasValue("Api-Key unit-key-not-a-real-credential");
-        assertThat(request.headers().firstValue("Content-Type")).hasValue("application/x-www-form-urlencoded");
+        assertThat(request.headers().firstValue("Authorization")).hasValue("Api-Key unit-key");
         String form = sentForm(request);
-        assertThat(form).startsWith("text=").contains("&lang=ru-RU").contains("&voice=filipp").contains("&speed=0.95").contains("&format=mp3");
-        // A service-account key carries its own folder; sending folderId with it is an error in v1.
-        assertThat(form).doesNotContain("folderId");
-        // v1 knows `emotion`, not `role`, and filipp has no emotions at all.
-        assertThat(form).doesNotContain("role=").doesNotContain("emotion=");
-        assertThat(form).doesNotContain("++"); // trimmed before it leaves: a double space would encode as ++
+        assertThat(form).contains("voice=filipp").contains("lang=ru-RU").contains("format=mp3").contains("speed=0.95")
+                .doesNotContain("role=", "folderId=", "emotion=");
+        assertThat(form).doesNotContain("  "); // the line is trimmed before it leaves
     }
 
-    @Test void anEmotionIsSentOnlyForAVoiceThatHasIt() throws Exception {
-        byte[] mp3 = {(byte) 0xFF, (byte) 0xFB};
-        HttpResponse<byte[]> ok = response(200, mp3);
-        whenSent().thenReturn(ok);
-        var ermil = new GlassesSpeech(client, true, "ermil", "good");
-        assertThat(ermil.misconfiguration()).isNull();
-        assertThat(ermil.synthesize("Добрый день.")).isEqualTo(mp3);
-        assertThat(sentForm(sent())).contains("&voice=ermil").contains("&emotion=good");
+    @Test void speaksThroughSaluteSpeechWhenTheRuntimeSelectsIt() {
+        byte[] wav = {'R', 'I', 'F', 'F', 1};
+        var salute = mock(museon_online.astor_butler.speech.TextToSpeech.class);
+        when(salute.provider()).thenReturn("salute");
+        when(salute.configured()).thenReturn(true);
+        when(salute.voice()).thenReturn("Bys_24000");
+        when(salute.voiceGender()).thenReturn("male");
+        when(salute.mimeType()).thenReturn("audio/wav");
+        when(salute.synthesize("Стол пять ждёт счёт.")).thenReturn(wav);
+        var speech = new GlassesSpeech(true, salute);
 
-        // filipp has no emotions: asking for one is a misconfiguration, said once, and speech stays off.
-        var wrong = new GlassesSpeech(client, true, "filipp", "good");
-        assertThat(wrong.configured()).isFalse();
-        assertThat(wrong.misconfiguration()).contains("filipp").contains("good");
-        assertThat(wrong.synthesize("Строка")).isNull();
+        assertThat(speech.configured()).isTrue();
+        assertThat(speech.provider()).isEqualTo("salute");
+        assertThat(speech.voiceName()).isEqualTo("Bys_24000");
+        assertThat(speech.voiceGender()).isEqualTo("male");
+        assertThat(speech.mimeType()).isEqualTo("audio/wav");
+        assertThat(speech.synthesize(" Стол пять ждёт счёт. ")).isEqualTo(wav);
+        assertThat(speech.ready()).isTrue();
+
+        when(salute.synthesize(any())).thenThrow(new museon_online.astor_butler.speech.TextToSpeechException("SaluteSpeech synthesis answered 500", 500));
+        assertThat(speech.synthesize("Строка")).isNull();
+        assertThat(speech.ready()).isFalse();
     }
 
-    @Test void onlyVoicesServedByApiV1AreAccepted() {
-        for (String voice : GlassesSpeech.MALE_VOICES) {
-            assertThat(new GlassesSpeech(client, true, voice).configured()).as(voice).isTrue();
-        }
-        assertThat(new GlassesSpeech(client, true, "Filipp").configured()).isTrue(); // case does not matter
-        for (String voice : new String[]{"alexander", "kirill", "anton", "", "siri"}) {
-            var speech = new GlassesSpeech(client, true, voice);
-            assertThat(speech.configured()).as(voice).isFalse();
-            assertThat(speech.misconfiguration()).isNotNull();
-        }
-        verifyNoInteractions(client);
+    @Test void theRuntimeVariableSelectsTheProviderAndYandexStaysTheDefault() {
+        var yandex = new GlassesSpeech(true, "yandex", "", "unit-key", "unit-folder", "filipp", "", 0.95,
+                "", "", "", "", "", "", "", 10000);
+        assertThat(yandex.provider()).isEqualTo("yandex");
+        assertThat(yandex.configured()).isTrue();
+        assertThat(yandex.mimeType()).isEqualTo("audio/mpeg");
+
+        var salute = new GlassesSpeech(true, "salute", "", "", "", "", "", 0.95,
+                "c2FsdXRlLWtleQ==", "", "", "opus", "", "", "", 10000);
+        assertThat(salute.provider()).isEqualTo("salute");
+        assertThat(salute.configured()).isTrue();
+        assertThat(salute.voiceName()).isEqualTo("Nec_24000");
+        assertThat(salute.mimeType()).isEqualTo("audio/ogg");
+
+        // SpeechKit settings alone do not configure the Sber voice, and vice versa.
+        assertThat(new GlassesSpeech(true, "salute", "", "unit-key", "unit-folder", "filipp", "", 0.95,
+                "", "", "", "", "", "", "", 10000).configured()).isFalse();
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new GlassesSpeech(true, "speechkit", "", "", "", "", "", 0.95,
+                "", "", "", "", "", "", "", 10000)).isInstanceOf(IllegalStateException.class);
     }
 
     @Test void saysNothingWhenItIsOffOrTheLineDoesNotFit() throws Exception {

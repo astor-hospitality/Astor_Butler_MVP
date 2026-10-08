@@ -1,9 +1,13 @@
 package museon_online.astor_butler.api.glasses;
 
+import museon_online.astor_butler.speech.CloudRuWhisperSpeechToText;
+import museon_online.astor_butler.speech.SpeechToTextProvider;
+import museon_online.astor_butler.speech.WhisperStubServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.*;
+import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -72,5 +76,72 @@ class GlassesVoiceTest {
                 + "printf '%s' '{\"status\":\"transcribed\",\"text\":\"fixture\"}'", 1000);
         assertThat(voice.transcribe(new byte[]{1})).isEqualTo("fixture");
         emptyWork();
+    }
+
+    private GlassesVoice cloud(WhisperStubServer stub, String apiKey) {
+        var client = new CloudRuWhisperSpeechToText(stub.baseUrl(), apiKey, "ASTOR_GLASSES_CLOUDRU_API_KEY",
+                "openai/whisper-large-v3", "ru", Duration.ofSeconds(5));
+        return new GlassesVoice(true, client, temp.resolve("work").toString(), 5000);
+    }
+
+    @Test void cloudProviderSendsTheRecordingAsMp4AndReturnsOnlyTheText() throws Exception {
+        try (var stub = WhisperStubServer.start()) {
+            stub.reply(200, "{\"text\":\" Стол семь просит счёт. \"}");
+            var voice = cloud(stub, "glasses-key-fixture");
+            assertThat(voice.provider()).isEqualTo(SpeechToTextProvider.CLOUDRU);
+            assertThat(voice.transcribe(new byte[]{1, 2, 3})).isEqualTo("Стол семь просит счёт.");
+            assertThat(voice.ready()).isTrue();
+            var seen = stub.only();
+            assertThat(seen.authorization()).isEqualTo("Bearer glasses-key-fixture");
+            assertThat(seen.bodyText()).contains("filename=\"input.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n\u0001\u0002\u0003\r\n")
+                    .contains("name=\"model\"\r\n\r\nopenai/whisper-large-v3\r\n");
+            // No temp file is written for the cloud path.
+            assertThat(Files.exists(temp.resolve("work"))).isFalse();
+        }
+    }
+
+    @Test void cloudEmptyTextIsNoSpeechAndKeepsTheProviderReady() throws Exception {
+        try (var stub = WhisperStubServer.start()) {
+            stub.reply(200, "{\"text\":\"\"}");
+            var voice = cloud(stub, "glasses-key-fixture");
+            assertThatThrownBy(() -> voice.transcribe(new byte[]{1})).satisfies(e -> {
+                assertThat(((GlassesFailure) e).status).isEqualTo(400);
+                assertThat(((GlassesFailure) e).code).isEqualTo("NO_SPEECH");
+            });
+            assertThat(voice.ready()).isTrue();
+        }
+    }
+
+    @Test void cloudRejectedMediaIsMalformedAndServerFailureIsUnavailableWithoutLeak() throws Exception {
+        try (var stub = WhisperStubServer.start()) {
+            stub.reply(400, "{\"error\":\"secret-diagnostic unsupported format\"}")
+                    .reply(500, "secret-diagnostic").reply(500, "secret-diagnostic");
+            var voice = cloud(stub, "glasses-key-fixture");
+            assertThatThrownBy(() -> voice.transcribe(new byte[]{1})).hasMessageNotContaining("secret-diagnostic")
+                    .satisfies(e -> assertThat(((GlassesFailure) e).code).isEqualTo("MALFORMED_AUDIO"));
+            assertThatThrownBy(() -> voice.transcribe(new byte[]{1})).hasMessageNotContaining("secret-diagnostic")
+                    .satisfies(e -> assertThat(((GlassesFailure) e).status).isEqualTo(503));
+            assertThat(voice.ready()).isFalse();
+            assertThat(stub.requests()).hasSize(3);
+        }
+    }
+
+    @Test void cloudWithoutKeyIsUnavailableAndNeverCallsOut() throws Exception {
+        try (var stub = WhisperStubServer.start()) {
+            var voice = cloud(stub, "");
+            assertThatThrownBy(() -> voice.transcribe(new byte[]{1})).satisfies(e -> assertThat(((GlassesFailure) e).status).isEqualTo(503));
+            assertThat(stub.requests()).isEmpty();
+        }
+    }
+
+    @Test void providerIsSelectedByVariableAndUnknownValuesFailFast() {
+        var local = new GlassesVoice(true, "local", "python3", "/app/glasses_stt.py", "/models", temp.toString(), 1000,
+                "", "", "openai/whisper-large-v3", "ru");
+        assertThat(local.provider()).isEqualTo(SpeechToTextProvider.LOCAL);
+        var cloud = new GlassesVoice(true, "cloudru", "python3", "/app/glasses_stt.py", "/models", temp.toString(), 1000,
+                "", "glasses-key-fixture", "openai/whisper-large-v3", "ru");
+        assertThat(cloud.provider()).isEqualTo(SpeechToTextProvider.CLOUDRU);
+        assertThatThrownBy(() -> new GlassesVoice(true, "salute", "python3", "", "", temp.toString(), 1000, "", "", "", "ru"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("ASTOR_GLASSES_STT_PROVIDER");
     }
 }

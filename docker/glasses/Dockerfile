@@ -1,3 +1,5 @@
+# Rollback image: local faster-whisper (python venv, ~1.5 GB, models mounted at /models).
+# Production builds docker/glasses/Dockerfile.cloud instead (Cloud.ru whisper-large-v3, JRE only).
 FROM eclipse-temurin:25-jre
 COPY requirements.txt /tmp/glasses-requirements.txt
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv curl \
@@ -7,7 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
 WORKDIR /app
 COPY app.jar /app/app.jar
 COPY glasses_stt.py /app/glasses_stt.py
-ENV ASTOR_GLASSES_PYTHON=/opt/stt/bin/python \
+ENV ASTOR_GLASSES_STT_PROVIDER=local \
+    ASTOR_GLASSES_PYTHON=/opt/stt/bin/python \
     GLASSES_HTTP_ADDRESS=0.0.0.0 GLASSES_HTTP_PORT=8091 \
     ASTOR_GLASSES_STT_SCRIPT=/app/glasses_stt.py \
     ASTOR_GLASSES_STT_MODEL_DIR=/models \

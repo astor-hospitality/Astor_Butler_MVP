@@ -59,7 +59,8 @@ public class GlassesSpeechController {
             byte[] audio = service.speak(line);
             if (audio == null) throw new GlassesFailure(503, "SPEECH_UNAVAILABLE", "Server voice is off or unavailable");
             return ResponseEntity.ok().header("Cache-Control", "no-store").contentType(MediaType.APPLICATION_JSON)
-                    .body(new Speech(requestId, Base64.getEncoder().encodeToString(audio), "audio/mpeg", "male", service.voiceName()));
+                    .body(new Speech(requestId, Base64.getEncoder().encodeToString(audio), service.audioMimeType(),
+                            service.voiceGender(), service.voiceName()));
         } catch (GlassesFailure failure) {
             return error(requestId, failure);
         } catch (Exception e) {

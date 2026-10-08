@@ -40,7 +40,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Verify scoped deployment guards
-        run: bash scripts/deploy/test-aeris-scoped.sh
+        run: |
+          bash scripts/deploy/test-aeris-scoped.sh
+          bash scripts/deploy/test-cloudru-deploy.sh
 
       - name: Guard tracked secrets and artifacts
         run: |

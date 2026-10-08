@@ -16,6 +16,39 @@ astor:
       # A negative temperature is not sent at all, for models that accept only their default.
       temperature: ${OPENAI_COMPATIBLE_TEMPERATURE:0.1}
       json-mode: ${OPENAI_COMPATIBLE_JSON_MODE:true}
+    # provider=cloudru: Cloud.ru Evolution Foundation Models (Sber), the OpenAI HTTP API with a bearer key
+    # from the Cloud.ru console. Same shape and limits as openai-compatible, own variables so both can be
+    # configured at once and switched by ASTOR_MODEL_PROVIDER. Model names are the catalogue's own (GET /models),
+    # e.g. GigaChat/GigaChat-2-Max, Qwen/Qwen3-235B-A22B-Instruct-2507, openai/gpt-oss-120b.
+    cloudru:
+      base-url: ${CLOUDRU_BASE_URL:https://foundation-models.api.cloud.ru/v1}
+      api-key: ${CLOUDRU_API_KEY:}
+      model: ${CLOUDRU_MODEL:}
+      quality-model: ${CLOUDRU_QUALITY_MODEL:}
+      vision-model: ${CLOUDRU_VISION_MODEL:}
+      embedding-model: ${CLOUDRU_EMBEDDING_MODEL:}
+      timeout-ms: ${CLOUDRU_TIMEOUT_MS:15000}
+      max-tokens: ${CLOUDRU_MAX_TOKENS:256}
+      temperature: ${CLOUDRU_TEMPERATURE:0.1}
+      json-mode: ${CLOUDRU_JSON_MODE:true}
+    # provider=gigachat: Sber GigaChat API called directly. GIGACHAT_AUTH_KEY is the Base64 authorization key
+    # from the GigaChat cabinet; the scope must match the contract (GIGACHAT_API_PERS, _B2B or _CORP).
+    # Sber endpoints are signed by the Russian Trusted Root CA: GIGACHAT_CA_CERT_PATH points at its PEM file
+    # (root plus sub CA), which is added to the JVM trust store. TLS verification is never disabled.
+    # Images are uploaded to /files and attached by id (GigaChat-Pro/Max models); GigaChat has no JSON mode.
+    gigachat:
+      oauth-url: ${GIGACHAT_OAUTH_URL:https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      base-url: ${GIGACHAT_API_URL:https://gigachat.devices.sberbank.ru/api/v1}
+      auth-key: ${GIGACHAT_AUTH_KEY:}
+      scope: ${GIGACHAT_SCOPE:GIGACHAT_API_PERS}
+      model: ${GIGACHAT_MODEL:GigaChat}
+      quality-model: ${GIGACHAT_QUALITY_MODEL:}
+      vision-model: ${GIGACHAT_VISION_MODEL:}
+      embedding-model: ${GIGACHAT_EMBEDDING_MODEL:Embeddings}
+      ca-cert-path: ${GIGACHAT_CA_CERT_PATH:}
+      timeout-ms: ${GIGACHAT_TIMEOUT_MS:15000}
+      max-tokens: ${GIGACHAT_MAX_TOKENS:256}
+      temperature: ${GIGACHAT_TEMPERATURE:0.1}
   redis:
     fsm-ttl-seconds: ${FSM_REDIS_TTL_SECONDS:259200}
     idempotency-ttl-seconds: ${IDEMPOTENCY_REDIS_TTL_SECONDS:86400}
@@ -113,8 +146,63 @@ astor:
   startup:
     admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}
+  telegram:
+    # Voice replies in the Telegram bot: the answer as a voice note (server TTS, SALUTE_TTS_FORMAT=opus) plus a
+    # 2–4 line text summary with link buttons and "Подробнее". off (default) changes nothing; on = every reply in a
+    # private chat; auto = only after a voice message or in a chat switched with /voice on.
+    # docs/operations/TELEGRAM_VOICE_REPLIES.md
+    voice-replies:
+      mode: ${ASTOR_TELEGRAM_VOICE_REPLIES:off}
+      timeout-ms: ${ASTOR_TELEGRAM_VOICE_TIMEOUT_MS:8000}
+      summary-max-chars: ${ASTOR_TELEGRAM_VOICE_SUMMARY_MAX_CHARS:400}
+      summary-via-model: ${ASTOR_TELEGRAM_VOICE_SUMMARY_VIA_MODEL:true}
+      speech-chunk-chars: ${ASTOR_TELEGRAM_VOICE_SPEECH_CHUNK_CHARS:900}
+      speech-max-chars: ${ASTOR_TELEGRAM_VOICE_SPEECH_MAX_CHARS:4000}
+      max-voice-bytes: ${ASTOR_TELEGRAM_VOICE_MAX_BYTES:1048576}
+      max-links: ${ASTOR_TELEGRAM_VOICE_MAX_LINKS:3}
+      max-photos: ${ASTOR_TELEGRAM_VOICE_MAX_PHOTOS:3}
+      details-ttl-days: ${ASTOR_TELEGRAM_VOICE_DETAILS_TTL_DAYS:7}
+  # Server voice (text-to-speech): paid cloud voices only, no local model. ASTOR_TTS_PROVIDER=salute (Sber
+  # SaluteSpeech, production) or yandex (SpeechKit, rollback). The web chat endpoint POST /api/chat/speak
+  # is off until ASTOR_TTS_WEB_ENABLED=true because every call is billed. docs/operations/SBER_AI_ACTIVATION.md
+  tts:
+    provider: ${ASTOR_TTS_PROVIDER:salute}
+    web-enabled: ${ASTOR_TTS_WEB_ENABLED:false}
+    web-concurrency: ${ASTOR_TTS_WEB_CONCURRENCY:2}
+    web-rate-per-minute: ${ASTOR_TTS_WEB_RATE_PER_MINUTE:60}
+    # SaluteSpeech: SALUTE_AUTH_KEY is the Base64 authorization key of the SaluteSpeech project (developers.sber.ru);
+    # the scope must match the contract (SALUTE_SPEECH_PERS, _B2B or _CORP). Voices: Nec_24000 (Наталья), Bys_24000
+    # (Борис), May_24000 (Марфа), Tur_24000 (Тарас), Ost_24000 (Александра), Pon_24000 (Сергей); formats wav16 (web,
+    # plays everywhere), opus (Ogg Opus, Telegram voice), pcm16, alaw. The CA PEM is the same Russian Trusted Root CA
+    # bundle GigaChat uses; GIGACHAT_CA_CERT_PATH is the fallback.
+    salute:
+      auth-key: ${SALUTE_AUTH_KEY:}
+      scope: ${SALUTE_SCOPE:SALUTE_SPEECH_PERS}
+      voice: ${SALUTE_TTS_VOICE:Nec_24000}
+      format: ${SALUTE_TTS_FORMAT:wav16}
+      ca-cert-path: ${SALUTE_CA_CERT_PATH:${GIGACHAT_CA_CERT_PATH:}}
+      oauth-url: ${SALUTE_OAUTH_URL:https://ngw.devices.sberbank.ru:9443/api/v2/oauth}
+      tts-url: ${SALUTE_TTS_URL:https://smartspeech.sber.ru/rest/v1/text:synthesize}
+      timeout-ms: ${SALUTE_TTS_TIMEOUT_MS:10000}
+    # Yandex SpeechKit (rollback): a service-account API key with the synthesis role and the billed folder.
+    yandex:
+      endpoint: ${YANDEX_SPEECHKIT_TTS_ENDPOINT:https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize}
+      api-key: ${YANDEX_SPEECHKIT_API_KEY:${YANDEX_API_KEY:}}
+      folder-id: ${YANDEX_SPEECHKIT_FOLDER_ID:${YANDEX_FOLDER_ID:}}
+      voice: ${YANDEX_SPEECHKIT_TTS_VOICE:ermil}
+      role: ${YANDEX_SPEECHKIT_TTS_ROLE:neutral}
+      speed: ${YANDEX_SPEECHKIT_TTS_SPEED:0.95}
   speech-to-text:
     enabled: ${ASTOR_STT_ENABLED:false}
+    # provider=cloudru (default): Cloud.ru Foundation Models openai/whisper-large-v3 over POST /v1/audio/transcriptions,
+    # same CLOUDRU_BASE_URL/CLOUDRU_API_KEY as the model gateway; nothing runs on the VM.
+    # provider=local: the faster-whisper subprocess below (image built with STT_LOCAL_WHISPER=true), kept for rollback.
+    provider: ${ASTOR_STT_PROVIDER:cloudru}
+    language: ${ASTOR_STT_LANGUAGE:ru}
+    cloudru:
+      base-url: ${CLOUDRU_BASE_URL:https://foundation-models.api.cloud.ru/v1}
+      api-key: ${CLOUDRU_API_KEY:}
+      model: ${ASTOR_STT_CLOUDRU_MODEL:openai/whisper-large-v3}
     command: ${ASTOR_STT_COMMAND:}
     work-dir: ${ASTOR_STT_WORK_DIR:/private/tmp/astor-butler-stt}
     timeout-seconds: ${ASTOR_STT_TIMEOUT_SECONDS:30}

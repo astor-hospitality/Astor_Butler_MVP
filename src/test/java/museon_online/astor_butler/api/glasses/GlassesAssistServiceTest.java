@@ -155,8 +155,75 @@ class GlassesAssistServiceTest {
         } finally { release.countDown(); service.close(); }
     }
 
-    // A completed Future may wake its caller just before the SynchronousQueue worker becomes idle.
-    // BUSY is allowed during that handoff; do not confuse it with the failure under test.
+    @Test void aRequestRightAfterAnAnswerIsAdmittedEveryTime() {
+        // The slot is returned by the task before the caller wakes up, so an immediate retry — a cached
+        // repeat, a changed question, the next photo — is never refused as BUSY. Before, the executor's
+        // own rejection decided, and it could still be busy for a few microseconds after an answer.
+        var gateway = mock(ModelGateway.class);
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Ответ.", "test", "test", Duration.ZERO));
+        String id = UUID.randomUUID().toString();
+        try (var closer = new ServiceCloser(new GlassesAssistService(gateway, true, 1000))) {
+            for (int i = 0; i < 300; i++) {
+                assertThat(closer.service().assist(scope, id, "повтори")).isEqualTo("Ответ.");
+            }
+            String other = UUID.randomUUID().toString();
+            assertThat(closer.service().assist(scope, other, "другой вопрос")).isEqualTo("Ответ.");
+        }
+        verify(gateway, times(2)).generateText(any());
+    }
+
+    @Test void theSlotIsHeldExactlyWhileTheProviderRuns() throws Exception {
+        var gateway = mock(ModelGateway.class);
+        var started = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(gateway.generateText(any())).thenAnswer(invocation -> {
+            started.countDown();
+            assertThat(release.await(2, TimeUnit.SECONDS)).isTrue();
+            return ModelTextResponse.text("Готово.", "test", "test", Duration.ZERO);
+        });
+        try (var closer = new ServiceCloser(new GlassesAssistService(gateway, true, 2000))) {
+            var service = closer.service();
+            var first = new java.util.concurrent.atomic.AtomicReference<String>();
+            Thread caller = new Thread(() -> first.set(service.assist(scope, UUID.randomUUID().toString(), "первый")));
+            caller.start();
+            assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
+            // While the provider is still answering the first question, a second one is refused at once.
+            assertThatThrownBy(() -> service.assist(scope, UUID.randomUUID().toString(), "второй"))
+                    .satisfies(e -> assertThat(((GlassesFailure) e).code).isEqualTo("BUSY"));
+            release.countDown();
+            caller.join(2000);
+            assertThat(first.get()).isEqualTo("Готово.");
+            // The moment the first answer is out, the slot is free — no handoff window, no retry loop.
+            assertThat(service.assist(scope, UUID.randomUUID().toString(), "третий")).isEqualTo("Готово.");
+        }
+    }
+
+    @Test void aTimedOutProviderKeepsTheSlotUntilItReallyEnds() throws Exception {
+        var gateway = mock(ModelGateway.class);
+        var done = new java.util.concurrent.atomic.AtomicBoolean();
+        var ended = new CountDownLatch(1);
+        when(gateway.generateText(any())).thenAnswer(invocation -> {
+            // A provider that ignores cancellation: it ends only when told, like a slow HTTP call would.
+            while (!done.get()) Thread.onSpinWait();
+            ended.countDown();
+            return ModelTextResponse.text("поздно", "test", "test", Duration.ZERO);
+        });
+        try (var closer = new ServiceCloser(new GlassesAssistService(gateway, true, 100))) {
+            var service = closer.service();
+            assertThatThrownBy(() -> service.assist(scope, UUID.randomUUID().toString(), "вопрос"))
+                    .satisfies(e -> assertThat(((GlassesFailure) e).status).isEqualTo(503));
+            // The client timed out, but the provider is still running: the slot is honestly busy.
+            assertThatThrownBy(() -> service.assist(scope, UUID.randomUUID().toString(), "ещё"))
+                    .satisfies(e -> assertThat(((GlassesFailure) e).code).isEqualTo("BUSY"));
+            done.set(true);
+            assertThat(ended.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(whenSlotAvailable(() -> service.assist(scope, UUID.randomUUID().toString(), "после"))).isEqualTo("поздно");
+        }
+    }
+
+    // Kept for the one case where a provider that ignores cancellation releases the slot a moment after
+    // it signals that it ended. Ordinary back-to-back calls no longer need it: see
+    // aRequestRightAfterAnAnswerIsAdmittedEveryTime.
     private static String whenSlotAvailable(Supplier<String> call) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
         while (true) {

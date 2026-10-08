@@ -2,6 +2,7 @@ package museon_online.astor_butler.speech;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -13,7 +14,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Local faster-whisper subprocess ({@code ASTOR_STT_COMMAND}), kept for rollback and selected with
+ * {@code ASTOR_STT_PROVIDER=local}. Needs the image built with {@code STT_LOCAL_WHISPER=true}; the
+ * production default is {@link CloudRuWhisperSpeechToTextService}.
+ */
 @Service
+@ConditionalOnProperty(prefix = "astor.speech-to-text", name = "provider", havingValue = "local")
 @Slf4j
 public class ExternalCommandSpeechToTextService implements SpeechToTextService {
 

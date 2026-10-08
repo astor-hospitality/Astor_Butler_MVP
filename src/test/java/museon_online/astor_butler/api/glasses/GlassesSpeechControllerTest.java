@@ -60,6 +60,8 @@ class GlassesSpeechControllerTest {
         when(speech.configured()).thenReturn(true);
         when(speech.synthesize("Стол пять просит счёт.")).thenReturn(mp3);
         when(speech.voiceName()).thenReturn("filipp");
+        when(speech.voiceGender()).thenReturn("male");
+        when(speech.mimeType()).thenReturn("audio/mpeg");
         try (var service = new GlassesAssistService(gateway, voice, speech, true, 1000)) {
             var result = controller(service).speech(request("/api/glasses/speech",
                     mapper.writeValueAsString(Map.of("requestId", ID, "text", "Стол пять просит счёт.")), TOKEN));

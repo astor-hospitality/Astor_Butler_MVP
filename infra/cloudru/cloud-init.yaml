@@ -1,0 +1,52 @@
+#cloud-config
+# First boot of the Astor stand: Docker, a deploy user, /opt/astor-butler.
+# Nothing application-specific here — the application arrives through the deploy workflow,
+# and every secret arrives by hand into /opt/astor-butler/.env.production (root 0600).
+package_update: true
+package_upgrade: false
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - rsync
+  - ufw
+  - unattended-upgrades
+
+ssh_authorized_keys:
+  - ${ssh_public_key}
+
+users:
+  - default
+  - name: deploy
+    groups: [docker]
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:/usr/bin/docker, /usr/bin/systemctl restart docker"
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {"log-driver": "json-file", "log-opts": {"max-size": "50m", "max-file": "5"}}
+  - path: /etc/sysctl.d/90-astor.conf
+    content: |
+      vm.max_map_count = 262144
+
+runcmd:
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - sh -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list'
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+  - sysctl --system
+  - mkdir -p /opt/astor-butler/releases /opt/astor-butler/backups
+  - chown -R deploy:deploy /opt/astor-butler
+  - chmod 0750 /opt/astor-butler
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable

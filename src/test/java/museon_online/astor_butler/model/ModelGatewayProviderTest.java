@@ -21,7 +21,9 @@ class ModelGatewayProviderTest {
                     OllamaModelGateway.class,
                     YandexModelGateway.class,
                     YandexAiStudioAgentModelGateway.class,
-                    OpenAiCompatibleModelGateway.class
+                    OpenAiCompatibleModelGateway.class,
+                    CloudRuModelGateway.class,
+                    GigaChatModelGateway.class
             )
             .withPropertyValues(
                     "llm.ollama.base-url=http://localhost:11434",
@@ -73,6 +75,33 @@ class ModelGatewayProviderTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(ModelGateway.class);
                     assertThat(context.getBean(ModelGateway.class)).isInstanceOf(OpenAiCompatibleModelGateway.class);
+                });
+    }
+
+    @Test
+    void cloudRuProviderCanBeSelectedExplicitly() {
+        contextRunner
+                .withPropertyValues(
+                        "astor.model.provider=cloudru",
+                        "astor.model.cloudru.api-key=test-key",
+                        "astor.model.cloudru.model=GigaChat/GigaChat-2-Max"
+                )
+                .run(context -> {
+                    assertThat(context).hasSingleBean(ModelGateway.class);
+                    assertThat(context.getBean(ModelGateway.class)).isInstanceOf(CloudRuModelGateway.class);
+                });
+    }
+
+    @Test
+    void gigaChatProviderCanBeSelectedExplicitly() {
+        contextRunner
+                .withPropertyValues(
+                        "astor.model.provider=gigachat",
+                        "astor.model.gigachat.auth-key=test-key"
+                )
+                .run(context -> {
+                    assertThat(context).hasSingleBean(ModelGateway.class);
+                    assertThat(context.getBean(ModelGateway.class)).isInstanceOf(GigaChatModelGateway.class);
                 });
     }
 

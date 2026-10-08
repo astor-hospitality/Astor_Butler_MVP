@@ -17,32 +17,18 @@
 
 ## 2. Голос Астора
 
-`POST /api/glasses/speech` с мобильным bearer, `{"requestId":"<UUID>","text":"…"}` до 600 символов → `{"requestId","audioBase64","audioMimeType":"audio/mpeg","audioVoiceGender":"male","voice":"<имя голоса>"}`. Тот же голос приходит и в ответах `assist`: поля `audioBase64`/`audioMimeType`/`audioVoiceGender` добавляются к ответу, когда синтез включён.
+`POST /api/glasses/speech` с мобильным bearer, `{"requestId":"<UUID>","text":"…"}` до 600 символов → `{"requestId","audioBase64","audioMimeType":"audio/mpeg"|"audio/wav"|"audio/ogg","audioVoiceGender":"male"|"female","voice":"<имя голоса>"}`. Тот же голос приходит и в ответах `assist`: поля `audioBase64`/`audioMimeType`/`audioVoiceGender` добавляются к ответу, когда синтез включён. Клиент играет аудио по `audioMimeType`, а не по предположению про MP3.
 
-Синтез — Yandex SpeechKit, **API v1** (`POST https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize`, форма `application/x-www-form-urlencoded`), ровно как в документации сервиса:
+Синтез — один премиальный голос, выбранный на сервере; провайдер — `ASTOR_GLASSES_TTS_PROVIDER`:
 
-| Что | Как у нас | Почему |
-| --- | --- | --- |
-| авторизация | `Authorization: Api-Key <ключ сервис-аккаунта>` | ключ не истекает сам и не требует обмена на IAM-токен |
-| `folderId` | **не передаётся** | с сервис-аккаунтом сервис берёт каталог, в котором создан аккаунт; `folderId` нужен только пользовательскому IAM-токену |
-| голос | `voice=filipp` по умолчанию | мужской русский, есть в v1. Другие мужские в v1: `ermil`, `zahar`, `madi_ru` |
-| тон | `emotion=…` только если голос его поддерживает | в v1 параметр называется `emotion`, а не `role`; `filipp` и `madi_ru` тона не имеют, `ermil` и `zahar` — `neutral`/`good` |
-| темп | `speed=0.95`, рамки v1 — `0.1`…`3.0` | чуть спокойнее обычной речи |
-| формат | `format=mp3` | приложение играет `audio/mpeg` |
-| пределы | текст ≤ 600 символов (у v1 — 5000, тело ≤ 15 KB), ответ ≤ 2 MiB, таймаут 8 с, один вызов за раз | синтез никогда не держит слот ассистента |
+- `salute` (Sber SaluteSpeech, production): `SALUTE_AUTH_KEY`, `SALUTE_SCOPE`, `SALUTE_TTS_VOICE` (для мужского голоса Астора — `Bys_24000`), `SALUTE_TTS_FORMAT` (`wav16`), `SALUTE_CA_CERT_PATH` — см. `SBER_AI_ACTIVATION.md`, раздел «TTS через SaluteSpeech».
+- `yandex` (Yandex SpeechKit, по умолчанию и для отката): `ASTOR_GLASSES_TTS_API_KEY`, `ASTOR_GLASSES_TTS_FOLDER`, `ASTOR_GLASSES_TTS_VOICE` (по умолчанию `filipp`), `ASTOR_GLASSES_TTS_ROLE` (`neutral`), `ASTOR_GLASSES_TTS_SPEED` (`0.95`).
 
-Настройки: `ASTOR_GLASSES_TTS_ENABLED`, `ASTOR_GLASSES_TTS_API_KEY`, `ASTOR_GLASSES_TTS_VOICE` (`filipp`), `ASTOR_GLASSES_TTS_EMOTION` (пусто), `ASTOR_GLASSES_TTS_SPEED` (`0.95`), `ASTOR_GLASSES_TTS_ENDPOINT` (менять не нужно). Голос не из списка v1 или тон, которого у голоса нет, — синтез остаётся выключенным и один раз пишет причину в лог при старте; это не тихий фолбэк навсегда.
+Общий выключатель — `ASTOR_GLASSES_TTS_ENABLED`. Ключ — только в серверном env, отдельный проект/сервис-аккаунт с правом синтеза; к ключу языковых моделей он не относится.
 
-Границы: один вызов синтеза за раз (параллельный — 429 `BUSY`), текст не логируется. Выключенный, неверно настроенный или сбойный синтез — не ошибка ответа: `assist` отвечает как раньше, а телефон читает текст своим голосом (Милена). Отдельный `/speech` при этом даёт 503 `SPEECH_UNAVAILABLE`.
+Границы: один вызов синтеза за раз (параллельный — 429 `BUSY`), таймаут 8–10 секунд, аудио до 4 MiB, текст не логируется. Выключенный или сбойный синтез — не ошибка ответа: `assist` отвечает как раньше, а телефон читает текст своим голосом. Отдельный `/speech` при этом даёт 503 `SPEECH_UNAVAILABLE`.
 
-**Как включить (Михаил, на ВМ; в этом PR облачных ключей и production-конфигурации нет):**
-
-1. В Yandex Cloud создать отдельный сервис-аккаунт для синтеза (не тот, что для языковых моделей) в том же каталоге, что и остальной Astor, с ролью `ai.speechkit-tts.user` на каталог.
-2. Выпустить для него API-ключ и положить в root-owned 0600 env runtime очков: `ASTOR_GLASSES_TTS_API_KEY=<ключ>`, `ASTOR_GLASSES_TTS_ENABLED=true`. Голос и тон — по желанию: `ASTOR_GLASSES_TTS_VOICE=filipp` без `EMOTION`, либо `ermil`/`zahar` с `EMOTION=good`.
-3. Перезапустить только контейнер `astor_glasses_api`.
-4. Проверка: `GET /api/glasses/capabilities` с мобильным bearer → `speech: true`; затем один `POST /api/glasses/speech` с коротким текстом — в ответе `audioMimeType: audio/mpeg`. Если `speech: false` — в логе контейнера при старте строка `Server speech stays off: …` с причиной.
-
-До выдачи ключа SpeechKit всё работает на голосе iPhone — это ожидаемое состояние, а не поломка.
+До выдачи ключа синтеза всё работает на голосе iPhone — это ожидаемое состояние, а не поломка.
 
 ## 3. Ответ сотрудника голосом
 
@@ -53,7 +39,7 @@
 ## 4. Что нужно на сервере
 
 1. `ASTOR_GLASSES_REPORT_PASSWORD` (≥ 12 символов) — тот же пароль, что у отчёта смены: им ресторан ставит сообщения в очередь.
-2. Ключ SpeechKit в `ASTOR_GLASSES_TTS_API_KEY`, `ASTOR_GLASSES_TTS_ENABLED=true` — порядок в разделе 2.
+2. `ASTOR_GLASSES_TTS_ENABLED=true` и ключ провайдера: `ASTOR_GLASSES_TTS_PROVIDER=salute` + `SALUTE_*` (и том с PEM НУЦ Минцифры в `docker/glasses/compose.yaml`), либо `yandex` + `ASTOR_GLASSES_TTS_*`.
 3. Распознавание уже включается `ASTOR_GLASSES_VOICE_ENABLED` и локальной моделью Whisper, как для голосового вопроса.
 
 Всё — в root-owned 0600 env, не в git и не в чатах.

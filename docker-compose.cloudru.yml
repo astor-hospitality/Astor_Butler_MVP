@@ -1,0 +1,173 @@
+# Cloud.ru Evolution overlay. Always the LAST -f file:
+#
+#   docker compose --env-file /opt/astor-butler/.env.production --env-file images.env \
+#     -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.cloudru.yml \
+#     --profile frontend --profile telegram config
+#
+# The VM is shared with the Vedal portal: its Caddy container `proxy` owns 80/443 and
+# exposes the external docker network `edge`. Astor publishes NO host ports. Only the
+# two containers the edge proxies (c3ag-frontend:3000, astor-api-gateway:8080) join `edge`;
+# PostgreSQL, Redis, Mongo, Kafka, MinIO stay on the private project network.
+# Images come from GHCR (built by deploy-cloudru-vm.yml), nothing is built on the VM.
+# Speech-to-text is Cloud.ru whisper-large-v3 (ASTOR_STT_PROVIDER=cloudru in docker-compose.prod.yml; CLOUDRU_API_KEY
+# from .env.production); the GHCR image carries no Python/faster-whisper.
+# See docs/operations/CLOUDRU_DEPLOY_RUNBOOK.md and infra/cloudru/edge/c3ag.caddy.
+
+name: astor-butler
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  api-gateway:
+    container_name: astor-api-gateway
+    ports: !reset []
+    profiles: ["telegram"]
+    networks: [default, edge]
+    logging: *default-logging
+    mem_limit: ${API_GATEWAY_MEMORY_LIMIT:-128m}
+    environment:
+      ASTOR_BACKEND_UPSTREAM: ${ASTOR_BACKEND_UPSTREAM:-aeris-astor-butler-bot:8089}
+    depends_on:
+      aeris-astor-butler-bot:
+        condition: service_healthy
+
+  c3-agency-frontend:
+    image: ${C3AG_FRONTEND_IMAGE:-ghcr.io/astor-hospitality/astor_butler_mvp/c3ag-frontend:main}
+    container_name: c3ag-frontend
+    ports: !reset []
+    networks: [default, edge]
+    logging: *default-logging
+    mem_limit: ${C3AG_FRONTEND_MEMORY_LIMIT:-512m}
+    cpus: ${C3AG_FRONTEND_CPUS:-1.0}
+    environment:
+      PORT: 3000
+    build:
+      args:
+        NEXT_PUBLIC_SITE_URL: ${C3_FRONTEND_PUBLIC_URL:-https://c3ag.ru}
+        NEXT_PUBLIC_API_BASE_URL: ${C3_FRONTEND_API_BASE_URL:-https://api.c3ag.ru}
+        NEXT_PUBLIC_WEB_CHAT_ENDPOINT: ${C3_FRONTEND_WEB_CHAT_ENDPOINT:-https://api.c3ag.ru/api/messages}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  aeris-astor-butler-bot:
+    image: ${ASTOR_BUTLER_IMAGE:-ghcr.io/astor-hospitality/astor_butler_mvp/astor-butler:main}
+    ports: !reset []
+    logging: *default-logging
+    mem_limit: ${AERIS_MEMORY_LIMIT:-3g}
+    cpus: ${AERIS_CPUS:-2.0}
+    environment:
+      LOG_LEVEL: ${AERIS_LOG_LEVEL:-INFO}
+      ASTOR_WEB_ALLOWED_ORIGINS: ${ASTOR_WEB_ALLOWED_ORIGINS:-https://c3ag.ru,https://www.c3ag.ru}
+    # Scylla and Neo4j are disabled in production (docker-compose.prod.yml) and are not
+    # worth 2 GB on a shared 16 GB host; drop the hard dependency on their health.
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  c3flex-astor-butler-bot:
+    image: ${ASTOR_BUTLER_IMAGE:-ghcr.io/astor-hospitality/astor_butler_mvp/astor-butler:main}
+    logging: *default-logging
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  smart-solution-bot:
+    image: ${ASTOR_BUTLER_IMAGE:-ghcr.io/astor-hospitality/astor_butler_mvp/astor-butler:main}
+    ports: !reset []
+    logging: *default-logging
+
+  postgres:
+    ports: !reset []
+    profiles: ["telegram", "app", "smart-solution"]
+    logging: *default-logging
+
+  redis:
+    ports: !reset []
+    profiles: ["telegram", "app", "smart-solution"]
+    logging: *default-logging
+
+  mongo:
+    ports: !reset []
+    profiles: ["telegram", "app", "smart-solution"]
+    logging: *default-logging
+
+  kafka:
+    ports: !reset []
+    profiles: ["telegram", "app", "smart-solution"]
+    logging: *default-logging
+
+  minio:
+    ports: !reset []
+    profiles: ["telegram", "app", "smart-solution"]
+    logging: *default-logging
+
+  minio-init:
+    profiles: ["telegram", "app", "smart-solution"]
+    logging: *default-logging
+
+  natasha-nlu:
+    ports: !reset []
+    logging: *default-logging
+
+  llm-gateway:
+    ports: !reset []
+
+  # Not part of the Cloud.ru footprint by default. Each keeps a named profile so an
+  # operator can still start it deliberately; nothing here gets a host port.
+  scylla:
+    ports: !reset []
+    profiles: ["graph-timeline"]
+    logging: *default-logging
+
+  neo4j:
+    ports: !reset []
+    profiles: ["graph-timeline"]
+    logging: *default-logging
+
+  redpanda-console:
+    ports: !reset []
+    profiles: ["kafka-tools"]
+    logging: *default-logging
+
+  debezium-connect:
+    ports: !reset []
+    profiles: ["kafka-tools"]
+    logging: *default-logging
+
+  prometheus:
+    ports: !reset []
+    profiles: ["observability"]
+    logging: *default-logging
+
+  grafana:
+    ports: !reset []
+    profiles: ["observability"]
+    logging: *default-logging
+
+networks:
+  edge:
+    external: true
