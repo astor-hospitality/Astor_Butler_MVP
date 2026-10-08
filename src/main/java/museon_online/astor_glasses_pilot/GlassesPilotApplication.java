@@ -46,7 +46,8 @@ public final class GlassesPilotApplication {
         @Bean ObjectMapper objectMapper() { return new ObjectMapper(); }
         /** ASTOR_GLASSES_MODEL_PROVIDER=yandex (default) or cloudru; model names then belong to that catalogue. */
         @Bean ModelGateway gateway(Environment env) {
-            String provider = env.getProperty("ASTOR_GLASSES_MODEL_PROVIDER", "yandex").trim().toLowerCase(java.util.Locale.ROOT);
+            String provider = env.getProperty("ASTOR_GLASSES_AI_PROVIDER",
+                    env.getProperty("ASTOR_GLASSES_MODEL_PROVIDER", "yandex")).trim().toLowerCase(java.util.Locale.ROOT);
             if (provider.equals("cloudru")) {
                 return YandexGlassesGateway.cloudRu(env.getProperty("ASTOR_GLASSES_CLOUDRU_ENDPOINT", ""),
                         env.getProperty("ASTOR_GLASSES_CLOUDRU_API_KEY", ""),
