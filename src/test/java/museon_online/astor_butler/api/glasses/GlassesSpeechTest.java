@@ -58,7 +58,8 @@ class GlassesSpeechTest {
         assertThat(request.uri().toString()).isEqualTo("https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize");
         assertThat(request.headers().firstValue("Authorization")).hasValue("Api-Key unit-key");
         String form = sentForm(request);
-        assertThat(form).contains("voice=filipp").contains("lang=ru-RU").contains("format=mp3").contains("role=neutral").contains("speed=0.95");
+        assertThat(form).contains("voice=filipp").contains("lang=ru-RU").contains("format=mp3").contains("speed=0.95")
+                .doesNotContain("role=", "folderId=", "emotion=");
         assertThat(form).doesNotContain("  "); // the line is trimmed before it leaves
     }
 

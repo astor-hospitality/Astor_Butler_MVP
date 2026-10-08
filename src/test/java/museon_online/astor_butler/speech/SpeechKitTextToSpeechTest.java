@@ -63,7 +63,7 @@ class SpeechKitTextToSpeechTest {
         assertThat(authorizations).containsExactly("Api-Key unit-key");
         assertThat(contentTypes).containsExactly("application/x-www-form-urlencoded");
         assertThat(bodies.getFirst()).contains("voice=filipp").contains("lang=ru-RU").contains("format=mp3")
-                .contains("role=neutral").contains("speed=0.95").contains("folderId=unit-folder")
+                .doesNotContain("role=", "folderId=", "emotion=").contains("speed=0.95")
                 .startsWith("text=%D0%A1%D1%82%D0%BE%D0%BB");
         assertThat(tts.provider()).isEqualTo("yandex");
         assertThat(tts.mimeType()).isEqualTo("audio/mpeg");
@@ -72,9 +72,21 @@ class SpeechKitTextToSpeechTest {
     }
 
     @Test
+    void usesEmotionWithoutFolderAndRejectsUnsupportedVoiceSettings() {
+        var tts = new SpeechKitTextToSpeech(HttpClient.newHttpClient(), new SpeechKitTextToSpeech.Settings(
+                "http://127.0.0.1:" + server.getAddress().getPort() + "/speech/v1/tts:synthesize",
+                "unit-key", "", "ermil", "good", 0.95));
+        assertThat(tts.synthesize("Привет")).isEqualTo(MP3);
+        assertThat(bodies.getFirst()).contains("emotion=good").doesNotContain("role=", "folderId=");
+        assertThat(new SpeechKitTextToSpeech(new SpeechKitTextToSpeech.Settings(
+                null, "unit-key", "", "filipp", "good", 0.95)).configured()).isFalse();
+        assertThat(adapter("unit-key", "", "unknown").configured()).isFalse();
+    }
+
+    @Test
     void isNotConfiguredWithoutKeyOrFolderAndReportsProviderErrorsByStatus() {
         assertThat(adapter("", "unit-folder", "filipp").configured()).isFalse();
-        assertThat(adapter("unit-key", "", "filipp").configured()).isFalse();
+        assertThat(adapter("unit-key", "", "filipp").configured()).isTrue();
         assertThatThrownBy(() -> adapter("", "", "filipp").synthesize("Строка"))
                 .isInstanceOf(TextToSpeechException.class).hasMessageContaining("not configured");
         assertThat(bodies).isEmpty();

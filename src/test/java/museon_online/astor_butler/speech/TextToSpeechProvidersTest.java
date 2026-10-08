@@ -68,12 +68,12 @@ class TextToSpeechProvidersTest {
                 "astor.tts.provider=yandex",
                 "astor.tts.yandex.api-key=yk",
                 "astor.tts.yandex.folder-id=folder",
-                "astor.tts.yandex.voice=alena"
+                "astor.tts.yandex.voice=ermil"
         ).run(context -> {
             TextToSpeech speech = context.getBean(TextToSpeech.class);
             assertThat(speech).isInstanceOf(SpeechKitTextToSpeech.class);
             assertThat(speech.configured()).isTrue();
-            assertThat(speech.voice()).isEqualTo("alena");
+            assertThat(speech.voice()).isEqualTo("ermil");
             assertThat(speech.mimeType()).isEqualTo("audio/mpeg");
         });
     }

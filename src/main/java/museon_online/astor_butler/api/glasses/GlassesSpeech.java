@@ -38,7 +38,7 @@ public class GlassesSpeech {
                          @Value("${astor.glasses.tts-api-key:}") String apiKey,
                          @Value("${astor.glasses.tts-folder:}") String folder,
                          @Value("${astor.glasses.tts-voice:}") String voice,
-                         @Value("${astor.glasses.tts-role:}") String role,
+                         @Value("${astor.glasses.tts-emotion:${astor.glasses.tts-role:}}") String role,
                          @Value("${astor.glasses.tts-speed:0.95}") double speed,
                          @Value("${salute.auth-key:}") String saluteAuthKey,
                          @Value("${salute.scope:}") String saluteScope,

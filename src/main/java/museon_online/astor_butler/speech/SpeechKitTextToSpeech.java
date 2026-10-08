@@ -20,12 +20,17 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
     public static final String PROVIDER = "yandex";
     public static final String DEFAULT_ENDPOINT = "https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize";
     public static final String DEFAULT_VOICE = "filipp";
-    public static final String DEFAULT_ROLE = "neutral";
+    public static final String DEFAULT_ROLE = "";
     public static final double DEFAULT_SPEED = 0.95;
     static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(8);
     /** Yandex premium voices that read in a male register; everything else is reported as female. */
-    private static final Set<String> MALE_VOICES = Set.of("filipp", "ermil", "zahar", "madirus", "kirill", "anton", "lev", "oleg");
+    private static final Set<String> MALE_VOICES = Set.of("filipp", "ermil", "zahar", "madi_ru");
+    private static final java.util.Map<String, Set<String>> V1_VOICES = java.util.Map.of(
+            "filipp", Set.of(), "ermil", Set.of("neutral", "good"),
+            "zahar", Set.of("neutral", "good"), "madi_ru", Set.of(),
+            "jane", Set.of("neutral", "good", "evil"), "omazh", Set.of("neutral", "evil"),
+            "marina", Set.of("neutral", "whisper", "friendly"));
 
     /**
      * @param endpoint SpeechKit synthesize URL
@@ -42,7 +47,7 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
             folder = nullToEmpty(folder).trim();
             voice = blankToDefault(voice, DEFAULT_VOICE);
             role = blankToDefault(role, DEFAULT_ROLE);
-            speed = Math.max(0.5, Math.min(2.0, speed));
+            speed = Math.max(0.1, Math.min(3.0, speed));
         }
     }
 
@@ -91,7 +96,8 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
 
     @Override
     public boolean configured() {
-        return !apiKey.isBlank() && !folder.isBlank() && !voice.isBlank();
+        Set<String> emotions = V1_VOICES.get(voice);
+        return !apiKey.isBlank() && emotions != null && (role.isBlank() || emotions.contains(role));
     }
 
     @Override
@@ -99,8 +105,9 @@ public final class SpeechKitTextToSpeech implements TextToSpeech {
         if (!configured()) {
             throw new TextToSpeechException("SpeechKit TTS is not configured: API key, folder and voice are required");
         }
-        String form = "text=" + encode(text) + "&lang=ru-RU&voice=" + encode(voice) + "&role=" + encode(role)
-                + "&speed=" + speed + "&format=mp3&folderId=" + encode(folder);
+        String form = "text=" + encode(text) + "&lang=ru-RU&voice=" + encode(voice)
+                + "&speed=" + speed + "&format=mp3";
+        if (!role.isBlank()) form += "&emotion=" + encode(role);
         HttpRequest request = HttpRequest.newBuilder(endpoint).timeout(REQUEST_TIMEOUT)
                 .header("Authorization", "Api-Key " + apiKey)
                 .header("Content-Type", "application/x-www-form-urlencoded")

@@ -192,7 +192,7 @@ astor:
       endpoint: ${YANDEX_SPEECHKIT_TTS_ENDPOINT:https://tts.api.cloud.yandex.net/speech/v1/tts:synthesize}
       api-key: ${YANDEX_SPEECHKIT_API_KEY:${YANDEX_API_KEY:}}
       folder-id: ${YANDEX_SPEECHKIT_FOLDER_ID:${YANDEX_FOLDER_ID:}}
-      voice: ${YANDEX_SPEECHKIT_TTS_VOICE:alena}
+      voice: ${YANDEX_SPEECHKIT_TTS_VOICE:ermil}
       role: ${YANDEX_SPEECHKIT_TTS_ROLE:neutral}
       speed: ${YANDEX_SPEECHKIT_TTS_SPEED:0.95}
   speech-to-text:
