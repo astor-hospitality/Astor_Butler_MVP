@@ -38,8 +38,8 @@ public final class GlassesCompletionsGateway implements ModelGateway {
         }
     }
 
-    static final String YANDEX_ENDPOINT = "https://ai.api.cloud.yandex.net/v1/chat/completions";
-    static final String CLOUDRU_ENDPOINT = "https://foundation-models.api.cloud.ru/v1/chat/completions";
+    public static final String YANDEX_ENDPOINT = "https://ai.api.cloud.yandex.net/v1/chat/completions";
+    public static final String CLOUDRU_ENDPOINT = "https://foundation-models.api.cloud.ru/v1/chat/completions";
 
     private final HttpClient client;
     private final ObjectMapper mapper;
