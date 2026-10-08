@@ -174,7 +174,7 @@ public class GuestInputUnderstandingService {
         }
         try {
             List<Double> embedding = embeddingProvider.embed(normalized);
-            return intentExampleRepository.findNearestByEmbedding("AERIS", state, embedding, 3).stream()
+            return intentExampleRepository.findNearestByEmbedding("AERIS", state, embeddingProvider.model(), embedding, 3).stream()
                     .filter(match -> match.score() >= 0.68)
                     .findFirst();
         } catch (RuntimeException e) {

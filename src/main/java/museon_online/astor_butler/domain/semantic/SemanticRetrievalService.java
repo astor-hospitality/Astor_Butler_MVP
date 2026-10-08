@@ -28,7 +28,7 @@ public class SemanticRetrievalService {
             if (embedding.isEmpty()) {
                 return List.of();
             }
-            return repository.searchNearest(venueCode, sourceCodes, embedding, limit).stream()
+            return repository.searchNearest(venueCode, sourceCodes, provider.model(), embedding, limit).stream()
                     .filter(result -> result.score() >= 0.42)
                     .toList();
         } catch (RuntimeException ex) {

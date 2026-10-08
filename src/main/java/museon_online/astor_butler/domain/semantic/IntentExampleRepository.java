@@ -82,8 +82,10 @@ public class IntentExampleRepository {
         ).stream().findFirst();
     }
 
-    public List<IntentExampleMatch> findNearestByEmbedding(String venueCode, String state, List<Double> embedding, int limit) {
-        if (embedding == null || embedding.isEmpty()) {
+    /** Nearest examples among rows written by {@code embeddingModel} with the same dimension. */
+    public List<IntentExampleMatch> findNearestByEmbedding(String venueCode, String state, String embeddingModel,
+                                                           List<Double> embedding, int limit) {
+        if (embedding == null || embedding.isEmpty() || embeddingModel == null || embeddingModel.isBlank()) {
             return List.of();
         }
         return jdbcTemplate.query("""
@@ -95,6 +97,7 @@ public class IntentExampleRepository {
                         WHERE ie.venue_code = ?
                           AND ie.status = 'APPROVED'
                           AND iee.embedding_dimension = ?
+                          AND iee.embedding_model = ?
                           AND (ie.state IS NULL OR ie.state = ? OR ? IS NULL)
                         ORDER BY iee.embedding <=> ?::vector
                         LIMIT ?
@@ -103,6 +106,7 @@ public class IntentExampleRepository {
                 vectorLiteral(embedding),
                 normalizeVenue(venueCode),
                 embedding.size(),
+                embeddingModel,
                 blankToNull(state),
                 blankToNull(state),
                 vectorLiteral(embedding),

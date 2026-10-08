@@ -221,14 +221,28 @@ astor:
   semantic-memory:
     pgvector:
       enabled: ${ASTOR_SEMANTIC_PGVECTOR_ENABLED:true}
+      # Size of the vectors the configured model returns (Yandex text-search: 256). The columns are plain `vector`,
+      # each row keeps its own size and search compares only rows of the current model and size; the yandex adapter
+      # rejects a response of another size, SemanticEmbeddingStoreCheck reports rows that need a re-index.
       embedding-dimension: ${ASTOR_SEMANTIC_EMBEDDING_DIMENSION:1536}
       default-model: ${ASTOR_SEMANTIC_EMBEDDING_MODEL:text-embedding-3-small}
     embeddings:
+      # none | model-gateway (through ASTOR_MODEL_PROVIDER) | yandex (Yandex AI Studio directly) | ollama | spring-ai
       provider: ${ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER:none}
       model: ${ASTOR_SEMANTIC_EMBEDDING_MODEL:text-search-doc/latest}
       query-model: ${ASTOR_SEMANTIC_QUERY_EMBEDDING_MODEL:text-search-query/latest}
       throttle-ms: ${ASTOR_SEMANTIC_EMBEDDINGS_THROTTLE_MS:0}
       ollama-base-url: ${ASTOR_SEMANTIC_OLLAMA_BASE_URL:${LLM_OLLAMA_BASE_URL:http://localhost:11434}}
+      # provider=yandex: POST {base-url}/foundationModels/v1/textEmbedding with Api-Key auth, independent of
+      # ASTOR_MODEL_PROVIDER. Empty key/folder fall back in code to YANDEX_SPEECHKIT_API_KEY, YANDEX_API_KEY and
+      # YANDEX_FOLDER_ID, YANDEX_SPEECHKIT_FOLDER_ID; retries use yandex.ai.embedding-max-attempts/-retry-delay-ms.
+      yandex:
+        base-url: ${ASTOR_EMBEDDINGS_YANDEX_BASE_URL:}
+        api-key: ${ASTOR_EMBEDDINGS_YANDEX_API_KEY:}
+        folder-id: ${ASTOR_EMBEDDINGS_YANDEX_FOLDER_ID:}
+        speechkit-api-key: ${YANDEX_SPEECHKIT_API_KEY:}
+        speechkit-folder-id: ${YANDEX_SPEECHKIT_FOLDER_ID:}
+        timeout-ms: ${ASTOR_EMBEDDINGS_YANDEX_TIMEOUT_MS:8000}
     intent-examples:
       ingest-golden-corpus-on-startup: ${ASTOR_INTENT_EXAMPLES_INGEST_ON_STARTUP:false}
       golden-corpus: ${ASTOR_INTENT_EXAMPLES_GOLDEN_CORPUS:classpath:understanding/guest-input-golden-corpus.jsonl}
