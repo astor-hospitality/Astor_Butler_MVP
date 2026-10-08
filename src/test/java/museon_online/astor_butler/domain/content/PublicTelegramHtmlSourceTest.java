@@ -36,4 +36,29 @@ class PublicTelegramHtmlSourceTest {
                     assertThat(asset.sourceUrl()).isEqualTo("https://cdn.example/photo.jpg");
                 });
     }
+
+    @Test
+    void usesTheBotHttpProxyForTheChannelPage() {
+        PublicTelegramHtmlSource source = new PublicTelegramHtmlSource();
+        ReflectionTestUtils.setField(source, "proxyType", "http");
+        ReflectionTestUtils.setField(source, "proxyHost", "astor-tg-awg");
+        ReflectionTestUtils.setField(source, "proxyPort", 8888);
+
+        assertThat(source.proxyAddress()).hasValueSatisfying(address -> {
+            assertThat(address.getHostString()).isEqualTo("astor-tg-awg");
+            assertThat(address.getPort()).isEqualTo(8888);
+        });
+        assertThat(source.client().proxy()).isPresent();
+    }
+
+    @Test
+    void goesDirectWithoutAnHttpProxy() {
+        PublicTelegramHtmlSource source = new PublicTelegramHtmlSource();
+        ReflectionTestUtils.setField(source, "proxyType", "SOCKS5");
+        ReflectionTestUtils.setField(source, "proxyHost", "10.0.0.1");
+        ReflectionTestUtils.setField(source, "proxyPort", 1080);
+
+        assertThat(source.proxyAddress()).isEmpty();
+        assertThat(source.client().proxy()).isEmpty();
+    }
 }
