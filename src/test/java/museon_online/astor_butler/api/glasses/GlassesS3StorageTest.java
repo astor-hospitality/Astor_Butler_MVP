@@ -102,4 +102,16 @@ class GlassesS3StorageTest {
         assertThat(storage.writeJournal(scope, session, new byte[GlassesS3Storage.JOURNAL_LIMIT + 1])).isFalse();
         assertThat(GlassesS3Storage.disabled().writeJournal(scope, session, new byte[1])).isFalse();
     }
+
+    @Test void theArchiveSignsOnlyForAStorageThePilotKnows() {
+        assertThat(GlassesS3Storage.regionOf("https://storage.yandexcloud.net")).isEqualTo("ru-central1");
+        assertThat(GlassesS3Storage.regionOf(" https://s3.cloud.ru ")).isEqualTo("ru-central-1");
+        assertThat(GlassesS3Storage.regionOf("http://s3.cloud.ru")).isNull();          // plain http never
+        assertThat(GlassesS3Storage.regionOf("https://s3.amazonaws.com")).isNull();
+        assertThat(GlassesS3Storage.regionOf(null)).isNull();
+        assertThatThrownBy(() -> new GlassesS3Storage(true, "https://example.org", "b", "k", "s"))
+                .isInstanceOf(IllegalStateException.class).hasMessage("Private storage is not configured");
+        assertThatThrownBy(() -> new GlassesS3Storage(true, "https://s3.cloud.ru", "b", "", "s"))
+                .isInstanceOf(IllegalStateException.class);
+    }
 }

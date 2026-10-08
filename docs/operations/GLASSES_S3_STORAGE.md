@@ -16,7 +16,7 @@ Scope strings and credentials stay outside Git. Keys follow the length-prefixed 
 
 ## Runtime and maintenance
 
-Set `ASTOR_GLASSES_S3_ENABLED=true`, `ASTOR_GLASSES_S3_ENDPOINT=https://storage.yandexcloud.net`, `ASTOR_GLASSES_S3_BUCKET`, `ASTOR_GLASSES_S3_ACCESS_KEY`, `ASTOR_GLASSES_S3_SECRET_KEY` in the root-owned 0600 runtime env. Default S3 is disabled. Keys are static and require explicit operator rotation/revocation; existing mobile bearer and model API key expiry are separate.
+Set `ASTOR_GLASSES_S3_ENABLED=true`, `ASTOR_GLASSES_S3_ENDPOINT=https://storage.yandexcloud.net` (or `https://s3.cloud.ru` for Cloud.ru Evolution Object Storage, access key `<tenant_id>:<key_id>`), `ASTOR_GLASSES_S3_BUCKET`, `ASTOR_GLASSES_S3_ACCESS_KEY`, `ASTOR_GLASSES_S3_SECRET_KEY` in the root-owned 0600 runtime env. Default S3 is disabled. Keys are static and require explicit operator rotation/revocation; existing mobile bearer and model API key expiry are separate.
 
 Document reads cache 60 seconds; successful archives mark storage ready 300 seconds. `documents` and `storage` capability booleans report these observed successes. S3 failure returns sanitized 503, with no raw exception, key, bucket URL or media in HTTP/log output. STT helper's isolated environment does not inherit S3/cloud credentials.
 

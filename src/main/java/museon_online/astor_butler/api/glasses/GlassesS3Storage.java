@@ -37,13 +37,27 @@ public class GlassesS3Storage {
                             @Value("${astor.glasses.s3-secret-key:}") String secretKey) {
         this.bucket = bucket;
         if (!enabled) { this.client = null; return; }
-        if (!endpoint.equals("https://storage.yandexcloud.net") || bucket.isBlank()
+        String region = regionOf(endpoint);
+        if (region == null || bucket.isBlank()
                 || accessKey.isBlank() || secretKey.isBlank()) throw new IllegalStateException("Private storage is not configured");
-        this.client = MinioClient.builder().endpoint(endpoint).region("ru-central1")
+        this.client = MinioClient.builder().endpoint(endpoint).region(region)
                 .credentials(accessKey, secretKey)
                 .httpClient(new OkHttpClient.Builder().connectTimeout(Duration.ofSeconds(3))
                         .readTimeout(Duration.ofSeconds(8)).callTimeout(Duration.ofSeconds(8))
                         .retryOnConnectionFailure(false).followRedirects(false).followSslRedirects(false).build()).build();
+    }
+
+    /**
+     * The private archive lives only at a storage the pilot has reviewed: Yandex Object Storage, or Cloud.ru
+     * Evolution Object Storage (SigV4 with the {@code <tenant_id>:<key_id>} access key). Each has one signing
+     * region, so the endpoint decides it; an unknown endpoint is a misconfiguration, never a guess.
+     */
+    static String regionOf(String endpoint) {
+        return switch (endpoint == null ? "" : endpoint.strip()) {
+            case "https://storage.yandexcloud.net" -> "ru-central1";
+            case "https://s3.cloud.ru" -> "ru-central-1";
+            default -> null;
+        };
     }
 
     GlassesS3Storage(MinioClient client, String bucket) { this.client = client; this.bucket = bucket; }
