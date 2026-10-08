@@ -1,0 +1,6 @@
+[Unit]
+Description=Astor nightly backup (Postgres + Mongo -> s3://astor-backups)
+After=docker.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/astor-backup.sh
