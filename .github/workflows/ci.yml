@@ -44,6 +44,11 @@ jobs:
           bash scripts/deploy/test-aeris-scoped.sh
           bash scripts/deploy/test-cloudru-deploy.sh
 
+      - name: Verify Cloud.ru backup failure and permission guards
+        run: |
+          bash -n infra/cloudru/host/astor-backup.sh
+          python3 -m unittest discover -s infra/cloudru/host/tests -v
+
       - name: Guard tracked secrets and artifacts
         run: |
           set -euo pipefail

@@ -51,6 +51,11 @@ Systemd-юнит `astor-telegram-wg-proxy.service` (обычный WireGuard в 
 - Postgres: `pg_dump -Fc`, проверка `pg_restore --list` (дамп без секций с данными — ошибка);
 - Mongo: `mongodump --archive --gzip`;
 - копия на ВМ в `/var/backups/astor/daily` (7 дней) и в Cloud.ru Object Storage `s3://astor-backups/db/`.
+- Каталог бэкапов — `0700`, новые дампы — `0600` (`umask 077`).
+- Если хотя бы одна загрузка в S3 не прошла, служба завершается с ошибкой и не удаляет старые локальные копии.
+  Проверить `systemctl status astor-backup.service` и повторить запуск после восстановления S3;
+  при длительном отказе контролировать свободное место на ВМ.
+- Локальная проверка без Docker, БД и S3: `python3 -m unittest discover -s infra/cloudru/host/tests -v`.
 
 Ключ S3 — `/home/ubuntu/.s3-cloudru.env` (0600), формат ключа Cloud.ru: `AWS_ACCESS_KEY_ID=<tenant_id>:<key_id>`.
 
