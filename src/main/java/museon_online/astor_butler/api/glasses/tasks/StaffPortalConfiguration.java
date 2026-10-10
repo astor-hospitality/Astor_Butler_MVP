@@ -7,23 +7,18 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.core.*;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.transaction.PlatformTransactionManager;
 import java.net.URI;
 import java.util.Map;
 
+/** The JWT portal: decoder and routes. The task service itself lives in {@link StaffTasksConfiguration}. */
 @Configuration
 public class StaffPortalConfiguration {
-    @Bean @ConditionalOnProperty(name="astor.staff.enabled", havingValue="true")
-    StaffPortalService staffPortalService(JdbcTemplate jdbc, PlatformTransactionManager manager) {
-        return new StaffPortalService(jdbc, manager);
-    }
     @Bean("staffJwtDecoder") @ConditionalOnProperty(name="astor.staff.enabled", havingValue="true")
     JwtDecoder staffJwtDecoder(@Value("${astor.staff.issuer-uri}") String issuer,
                                @Value("${astor.staff.jwk-set-uri}") String keys) {
