@@ -1,9 +1,11 @@
 # Astor - презентационный сайт (статический контейнер astor-site, compose в infra/astor-site).
-# Пока только техническое имя: собственного домена у Astor нет. Когда появится A-запись
-# (astor.c3ag.ru или купленный домен), добавить его через запятую в строку адреса ниже
-# и сделать validate + reload - сертификат Caddy выпустит сам. Не добавлять имя раньше,
-# чем появится A-запись: иначе Caddy будет бесконечно повторять ACME для него.
-astor.176-123-165-162.nip.io {
+# Домены куплены 10.10.2026 на reg.ru: astor-ai.ru (основной) и astor-hospitality.ru (редирект).
+# Имя попадает в этот файл только после того, как его A-запись отвечает (dig +short A astor-ai.ru),
+# иначе Caddy будет бесконечно повторять ACME для него. Техническое имя nip.io остаётся запасным.
+www.astor-ai.ru, astor-hospitality.ru, www.astor-hospitality.ru {
+	redir https://astor-ai.ru{uri} permanent
+}
+astor-ai.ru, astor.176-123-165-162.nip.io {
 	encode zstd gzip
 	header {
 		Strict-Transport-Security "max-age=31536000"
