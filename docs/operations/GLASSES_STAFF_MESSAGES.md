@@ -40,7 +40,7 @@
 
 1. `ASTOR_GLASSES_REPORT_PASSWORD` (≥ 12 символов) — тот же пароль, что у отчёта смены: им ресторан ставит сообщения в очередь.
 2. `ASTOR_GLASSES_TTS_ENABLED=true` и ключ провайдера: `ASTOR_GLASSES_TTS_PROVIDER=salute` + `SALUTE_*` (и том с PEM НУЦ Минцифры в `docker/glasses/compose.yaml`), либо `yandex` + `ASTOR_GLASSES_TTS_*`.
-3. Распознавание уже включается `ASTOR_GLASSES_VOICE_ENABLED` и локальной моделью Whisper, как для голосового вопроса.
+3. Распознавание уже включается `ASTOR_GLASSES_VOICE_ENABLED` и выбранным STT-провайдером (`ASTOR_GLASSES_STT_PROVIDER`, см. `GLASSES_ASSIST_PILOT.md`), как для голосового вопроса.
 
 Всё — в root-owned 0600 env, не в git и не в чатах.
 

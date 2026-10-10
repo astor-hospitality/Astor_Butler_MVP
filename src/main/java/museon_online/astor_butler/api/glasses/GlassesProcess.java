@@ -10,7 +10,21 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Bounded draining, timeout and process-tree cleanup. Never logs command/output/errors. */
 final class GlassesProcess {
+    /** Exit status and standard output of a process that ended within the timeout. */
+    record Result(int exitCode, String stdout) { }
+
+    /** Runs the command; anything but a clean exit within the timeout is "Process unavailable". */
     static String run(List<String> command, Duration timeout) throws Exception {
+        Result result = execute(command, timeout);
+        if (result.exitCode() != 0) throw new IllegalStateException("Process unavailable");
+        return result.stdout();
+    }
+
+    /**
+     * Like {@link #run}, but a non-zero exit comes back in the result instead of being thrown, so a caller can
+     * tell "the tool rejected this input" from "the tool did not run". Timeout and output overflow still throw.
+     */
+    static Result execute(List<String> command, Duration timeout) throws Exception {
         ProcessBuilder builder = new ProcessBuilder(command);
         // Do not pass unrelated cloud/Telegram/database credentials to the local decoder.
         Map<String, String> original = new HashMap<>(builder.environment());
@@ -34,10 +48,10 @@ final class GlassesProcess {
             } while (!process.waitFor(20, TimeUnit.MILLISECONDS));
             out.join(1000);
             err.join(1000);
-            if (out.isAlive() || err.isAlive() || overflow.get() || process.exitValue() != 0) {
+            if (out.isAlive() || err.isAlive() || overflow.get()) {
                 throw new IllegalStateException("Process unavailable");
             }
-            return stdout.toString(StandardCharsets.UTF_8);
+            return new Result(process.exitValue(), stdout.toString(StandardCharsets.UTF_8));
         } finally {
             process.descendants().forEach(children::add);
             children.forEach(ProcessHandle::destroyForcibly);

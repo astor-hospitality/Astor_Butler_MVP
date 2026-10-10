@@ -1,6 +1,7 @@
 # Build images first from the reviewed release staging directory. No secrets in this file.
-# Production image: docker/glasses/Dockerfile.cloud (STT on Cloud.ru, no Python); the /models mount is then
-# unused and may stay empty. Rollback image: docker/glasses/Dockerfile (local faster-whisper, needs /models).
+# Production image: docker/glasses/Dockerfile.cloud (STT in the cloud: yandex = SpeechKit after an ffmpeg transcode
+# inside the image, cloudru = whisper-large-v3; no Python); the /models mount is then unused and may stay empty.
+# Rollback image: docker/glasses/Dockerfile (local faster-whisper, needs /models).
 # STT/model variables live in the env_file, see runtime.env.example.
 services:
   glasses:

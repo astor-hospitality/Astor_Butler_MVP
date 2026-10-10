@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- |
 | Понимание гостя, черновики ответов, Q&A для ops-группы (`ModelGateway.generateText`) | `fsm/understanding`, `fsm/reply`, `service/message` | `ASTOR_MODEL_PROVIDER`: `spring-ai` (Ollama, по умолчанию), `ollama-raw`, `yandex`, `yandex-agent`, `openai-compatible` | `cloudru` (Cloud.ru Foundation Models, OpenAI API) или `gigachat` (GigaChat API напрямую) | `ASTOR_MODEL_PROVIDER` |
 | Vision (`analyzeImage`: фото стола, glasses) | `ModelGateway`, `api/glasses` | Ollama `qwen2.5vl`, `openai-compatible` vision-модель, Yandex AI Studio (`YandexGlassesGateway`) | `CLOUDRU_VISION_MODEL`; GigaChat через `/files` + `attachments`; glasses-pilot: `ASTOR_GLASSES_AI_PROVIDER=cloudru` или `gigachat` | см. ниже |
-| STT голосовых сообщений (Telegram) и записей очков | `speech` (`SpeechToTextService`), `api/glasses` (`GlassesVoice`) | `cloudru`: Cloud.ru `openai/whisper-large-v3` (по умолчанию); `yandex`: SpeechKit v1 (только бот, Ogg Opus); `local`: `faster-whisper` subprocess (rollback) | уже Сбер/Cloud.ru, см. «STT через whisper-large-v3»; SaluteSpeech STT закрыт для новых подключений | `ASTOR_STT_PROVIDER`, `ASTOR_GLASSES_STT_PROVIDER` |
+| STT голосовых сообщений (Telegram) и записей очков | `speech` (`SpeechToTextService`), `api/glasses` (`GlassesVoice`) | `cloudru`: Cloud.ru `openai/whisper-large-v3` (по умолчанию); `yandex`: SpeechKit v1 (бот — Ogg Opus как есть; очки — ffmpeg в образе перекодирует MP4/AAC в Ogg Opus); `local`: `faster-whisper` subprocess (rollback) | уже Сбер/Cloud.ru, см. «STT через whisper-large-v3»; SaluteSpeech STT закрыт для новых подключений | `ASTOR_STT_PROVIDER`, `ASTOR_GLASSES_STT_PROVIDER` |
 | Embeddings для RAG и intent-examples (`generateEmbedding`, pgvector) | `domain/semantic` | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER`: `none`, `ollama`, `spring-ai`, `model-gateway` (через провайдер выше), `yandex` (Yandex AI Studio напрямую, не зависит от `ASTOR_MODEL_PROVIDER`) | GigaChat `Embeddings` платные (402 на бесплатном пакете) → прод: `yandex`, см. «Эмбеддинги: Yandex text-search» | `ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER` |
 | TTS для очков (`GlassesSpeech` → порт `TextToSpeech`) | `api/glasses`, `speech/` | Yandex SpeechKit TTS (`yandex`, по умолчанию в glasses-runtime) | SaluteSpeech TTS (`salute`), см. «TTS через SaluteSpeech» | `ASTOR_GLASSES_TTS_PROVIDER` |
 | TTS веб-чата CLIO (`POST /api/chat/speak` в бэкенде; `frontend/app/api/chat/speak` остаётся test-double) | `api/speech`, `speech/` | SpeechKit (`yandex`, rollback) | SaluteSpeech (`salute`, по умолчанию) | `ASTOR_TTS_PROVIDER`, `ASTOR_TTS_WEB_ENABLED` |
@@ -95,7 +95,7 @@ ASTOR_GLASSES_CLOUDRU_API_KEY=<ключ>             # тот же, что дл�
 
 | Образ | Dockerfile | Что внутри | Когда |
 | --- | --- | --- | --- |
-| production | `docker/glasses/Dockerfile.cloud` | только JRE + `app.jar`, `ASTOR_GLASSES_STT_PROVIDER=cloudru` зашит в ENV; staging-каталогу нужен один `app.jar` | всегда, пока STT в Cloud.ru |
+| production | `docker/glasses/Dockerfile.cloud` | JRE + `ffmpeg` + `app.jar`; провайдер — `ASTOR_GLASSES_STT_PROVIDER` из `runtime.env` (`yandex` — SpeechKit после перекодирования ffmpeg, `cloudru` — whisper; в ENV образа только значение по умолчанию `cloudru`); staging-каталогу нужен один `app.jar` | всегда, пока STT в облаке |
 | rollback | `docker/glasses/Dockerfile` | python venv + faster-whisper/ctranslate2/onnxruntime (~1.5 ГБ), `ASTOR_GLASSES_STT_PROVIDER=local`, модели в `/models` | только если облачный STT недоступен |
 
 Compose: `docker compose -f docker/glasses/compose.yaml -f docker/glasses/compose.cloudru.yaml up -d` на Cloud.ru VM (overlay убирает bind `/models`, он не нужен облачному образу). Телефон шлёт `audio/mp4` (AAC mono 16 кГц, до 2 МБ); адаптер отправляет байты как `input.m4a` без временных файлов. Отличия от локального декодера: граница 30 секунд записи больше не проверяется (ограничитель — 2 МБ в контроллере), пустой ответ модели = `NO_SPEECH` (400), отказ сервиса по формату = `MALFORMED_AUDIO` (400), прочее — `VOICE_UNAVAILABLE` (503), текст и диагностика провайдера наружу не уходят.
@@ -194,22 +194,26 @@ ASTOR_GLASSES_TTS_PROVIDER=yandex
 ASTOR_GLASSES_TTS_API_KEY=<Api-Key SpeechKit>
 ASTOR_GLASSES_TTS_VOICE=filipp                                 # очки остаются на MP3
 
-ASTOR_GLASSES_STT_PROVIDER=cloudru                             # см. ниже
+ASTOR_GLASSES_STT_PROVIDER=yandex                              # SpeechKit v1; MP4/AAC → Ogg Opus через ffmpeg в образе
+YANDEX_SPEECHKIT_API_KEY=<Api-Key SpeechKit>                   # или отдельный ASTOR_GLASSES_STT_API_KEY
+# ASTOR_GLASSES_STT_LANGUAGE=ru                                # уходит как lang=ru-RU
+# ASTOR_GLASSES_FFMPEG=ffmpeg                                  # бинарник в образе Dockerfile.cloud
 ```
 
 Провайдер очков `gigachat` (`GigaChatGlassesGateway`) переиспользует `GigaChatModelGateway` бота: OAuth через NGW с кэшем токена, `GigaChatTrust` для НУЦ, фото — загрузка в `/files` и `attachments`. Поверх — контракт очков, как у `GlassesCompletionsGateway`: ответ только при `finish_reason=stop` и непустом тексте (`length` и `blacklist` = «Provider unavailable»), `max_tokens` 256 для текста и 1024 для фото, `temperature` 0.1, никакой диагностики провайдера наружу. Выбор — та же настройка `ASTOR_GLASSES_AI_PROVIDER` (`yandex` | `cloudru` | `gigachat`), неизвестное значение роняет старт. Ключ свой (`ASTOR_GLASSES_GIGACHAT_AUTH_KEY`), ключи Cloud.ru/Yandex из того же файла GigaChat не получает. `docker/glasses/compose.cloudru.yaml` монтирует `/opt/astor-glasses/certs/russian_trusted_root_ca.pem` в `/certs/...:ro`.
 
-STT очков: телефон пишет MP4/AAC, а синхронный SpeechKit v1 принимает только Ogg Opus и LPCM без заголовка, SaluteSpeech — тоже без MP4/AAC. Перекодирование на VM не делаем, поэтому `ASTOR_GLASSES_STT_PROVIDER=yandex` намеренно запрещён (старт падает с объяснением), очки остаются на `cloudru` (whisper) — пока Cloud.ru FM отвечает `402`, голосовой ввод очков недоступен (`503 VOICE_UNAVAILABLE`), текст и фото работают. Выход — либо биллинг Cloud.ru, либо запись в iOS-клиенте в Ogg Opus / PCM WAV и приём этого формата в `GlassesController` (отдельная задача).
+STT очков (с 2026-10-10): телефон пишет MP4/AAC, а синхронный SpeechKit v1 принимает только Ogg Opus и LPCM без заголовка, поэтому при `ASTOR_GLASSES_STT_PROVIDER=yandex` `GlassesVoice` перекодирует запись `ffmpeg`-ом внутри контейнера (`-map 0:a:0 -t 30 -ac 1 -ar 16000 -c:a libopus -b:a 32k -application voip -f ogg`, приватный временный каталог, удаляется после запроса, ничего не логируется) и отдаёт Opus тому же адаптеру `YandexSpeechKitSpeechToText`, что и у бота. Ключ — `ASTOR_GLASSES_STT_API_KEY`, при пустом `YANDEX_SPEECHKIT_API_KEY`. Образ `docker/glasses/Dockerfile.cloud` ставит `ffmpeg` (Ubuntu-сборка с libopus), пользователь остаётся `10001`. Ответы телефону как у `cloudru`: пустой `result` — `400 NO_SPEECH`, отказ ffmpeg или `400/415/422` SpeechKit — `400 MALFORMED_AUDIO`, больше 1 МБ Opus — `413 AUDIO_TOO_LONG`, прочее — `503 VOICE_UNAVAILABLE`. Включение: `ASTOR_GLASSES_STT_PROVIDER=yandex` в `runtime.env`, пересборка образа из `Dockerfile.cloud`, `docker compose ... up -d --force-recreate glasses` — пошагово в `GLASSES_ASSIST_PILOT.md`, раздел «STT очков через Yandex SpeechKit». Локального ML на VM по-прежнему нет: ffmpeg только перекодирует.
 
 ### Что не проверено живым вызовом (допущения)
 
 - `GigaChatGlassesGateway` и vision `GigaChat-2-Max` через `/files` на ключе `GIGACHAT_API_PERS` — только stub-тесты; чат GigaChat с VM проверен, загрузка фото — нет.
 - SpeechKit STT из кода: `Content-Type: application/octet-stream`, отсутствие `folderId` при ключе сервисного аккаунта, текст ошибки `400` при голосовом длиннее 30 секунд — по документации v1 и stub-тестам; живой round-trip делался вне этого кода.
+- SpeechKit STT на Opus, полученном из записи очков через ffmpeg: команда ffmpeg проверена локально на синтетическом AAC (валидный → Ogg Opus mono ≤ 30 с, обрезанный/пустой → ненулевой exit), сам round-trip очки → SpeechKit — только stub-тесты; установка `ffmpeg` в `eclipse-temurin:25-jre` (Ubuntu) с libopus — по пакетной базе, образ до слияния не собирался.
 - SpeechKit TTS `format=oggopus` в форме `tts:synthesize` вместе с `voice`/`emotion`/`speed` (без `folderId`, как после #78) — живой запрос 200 был, но не через этот адаптер.
 
 ### Откат
 
-Вернуть `ASTOR_MODEL_PROVIDER=cloudru`, `ASTOR_STT_PROVIDER=cloudru`, `ASTOR_TTS_PROVIDER=salute`, `ASTOR_GLASSES_AI_PROVIDER=cloudru` — после активации биллинга Cloud.ru. Переменные `GIGACHAT_*`/`YANDEX_*` можно оставить: без выбранного провайдера они не читаются (кроме TTS-настроек SpeechKit, которые читаются, но не используются).
+Вернуть `ASTOR_MODEL_PROVIDER=cloudru`, `ASTOR_STT_PROVIDER=cloudru`, `ASTOR_TTS_PROVIDER=salute`, `ASTOR_GLASSES_AI_PROVIDER=cloudru`, `ASTOR_GLASSES_STT_PROVIDER=cloudru` — после активации биллинга Cloud.ru (образ с ffmpeg остаётся, ffmpeg при `cloudru` не вызывается). Переменные `GIGACHAT_*`/`YANDEX_*` можно оставить: без выбранного провайдера они не читаются (кроме TTS-настроек SpeechKit, которые читаются, но не используются).
 
 ## Embeddings и переиндексация
 
