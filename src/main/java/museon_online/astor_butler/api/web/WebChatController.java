@@ -60,7 +60,13 @@ public class WebChatController {
     public ResponseEntity<WebChatResponse> process(HttpServletRequest request) throws IOException {
         // Checked by hand rather than through "consumes": the global handler would turn the framework's 415 into a 500.
         String contentType = request.getContentType();
-        if (contentType == null || !MediaType.parseMediaType(contentType).isCompatibleWith(MediaType.APPLICATION_JSON)) {
+        boolean json;
+        try {
+            json = contentType != null && MediaType.parseMediaType(contentType).isCompatibleWith(MediaType.APPLICATION_JSON);
+        } catch (org.springframework.http.InvalidMediaTypeException e) {
+            json = false;
+        }
+        if (!json) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, ErrorCode.BAD_REQUEST, "Web message must be application/json");
         }
         byte[] input = request.getInputStream().readNBytes(MAX_BODY_BYTES + 1);

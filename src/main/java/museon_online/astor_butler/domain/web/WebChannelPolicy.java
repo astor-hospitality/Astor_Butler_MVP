@@ -3,7 +3,11 @@ package museon_online.astor_butler.domain.web;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -80,8 +84,29 @@ public class WebChannelPolicy {
 
         String phone = firstPhone(contactPhone, safePayload.get("contactPhone"));
         safePayload.remove("contactPhone");
+        // Server-side only: never let the browser pick the key its budgets are counted under.
+        safePayload.remove(WebModelBudget.CLIENT_KEY);
 
         return new WebInbound(sessionId, generated, safeExternalUserId, safeText, phone, Map.copyOf(safePayload));
+    }
+
+    /** Adds the hashed client address the per-IP budgets are keyed by; the raw address is not stored. */
+    public Map<String, Object> withClientKey(Map<String, Object> payload, String clientIp) {
+        Map<String, Object> keyed = new LinkedHashMap<>(payload == null ? Map.of() : payload);
+        keyed.put(WebModelBudget.CLIENT_KEY, clientKey(clientIp));
+        return Map.copyOf(keyed);
+    }
+
+    public static String clientKey(String clientIp) {
+        if (clientIp == null || clientIp.isBlank()) {
+            return "ip:unknown";
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(clientIp.trim().getBytes(StandardCharsets.UTF_8));
+            return "ip:" + HexFormat.of().formatHex(digest).substring(0, 24);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     public String sessionId(Object raw) {

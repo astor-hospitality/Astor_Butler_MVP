@@ -51,7 +51,14 @@
   const SESSION_KEY = "astor.chat.session." + config.product;
 
   function newSessionId() {
-    return "web-" + Math.random().toString(36).slice(2) + "-" + Date.now().toString(36);
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return "web-" + window.crypto.randomUUID().replace(/-/g, "");
+    }
+    // Older browsers: still unguessable enough for an anonymous session, never for auth.
+    const bytes = new Uint8Array(16);
+    if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    return "web-" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   function loadSessionId() {

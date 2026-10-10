@@ -175,8 +175,11 @@ class MessageControllerTest {
         assertThat(response.sessionId()).isEqualTo("web-abc-def");
         assertThat(response.nextState()).isEqualTo("READY_FOR_DIALOG");
         assertThat(response.quickReplies()).extracting(WebQuickReply::text).containsExactly("Бронь стола", "Меню кухни");
+        assertThat(incoming.payload()).containsKey("webClientKey");
+        assertThat(String.valueOf(incoming.payload().get("webClientKey"))).startsWith("ip:");
         verify(webSessionMessageService).recordOutbound(eq(session), eq("web-correlation-2"), any(OutgoingMessage.class));
-        verify(webLeadNotificationService).project(eq(session), any(IncomingMessage.class), any(OutgoingMessage.class));
+        verify(webLeadNotificationService).projectGuestFlow(eq(session), any(IncomingMessage.class), any(OutgoingMessage.class));
+        verify(webLeadNotificationService, never()).project(any(), any(), any());
     }
 
     @Test

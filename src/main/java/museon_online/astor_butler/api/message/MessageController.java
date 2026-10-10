@@ -83,7 +83,7 @@ public class MessageController {
         if (messageChannel == MessageChannel.WEB) {
             // The browser is anonymous: identity comes from payload.sessionId only, never from chatId/externalUserId.
             WebChannelPolicy.WebInbound inbound = webChannelPolicy.sanitize(externalUserId, text, contactPhone, payload);
-            payload = inbound.payload();
+            payload = webChannelPolicy.withClientKey(inbound.payload(), clientIp(httpRequest));
             chatId = null;
             externalUserId = inbound.externalUserId();
             text = inbound.text();
@@ -168,7 +168,7 @@ public class MessageController {
         OutgoingMessage outgoing = messageGatewayService.handle(incoming);
         if (webSession != null) {
             webSessionMessageService.recordOutbound(webSession, correlationId, outgoing);
-            webLeadNotificationService.project(webSession, incoming, outgoing);
+            webLeadNotificationService.projectGuestFlow(webSession, incoming, outgoing);
             return ResponseEntity.ok(MessageResponse.from(outgoing, webSession.sessionId(), webQuickReplyResolver.resolve(outgoing)));
         }
         return ResponseEntity.ok(MessageResponse.from(outgoing));

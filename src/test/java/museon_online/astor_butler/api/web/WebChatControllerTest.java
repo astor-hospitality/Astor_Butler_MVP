@@ -139,6 +139,8 @@ class WebChatControllerTest {
                 .andExpect(status().isBadRequest());
         mvc.perform(post(WebChatController.PATH).contentType("text/plain").content("hello"))
                 .andExpect(status().isUnsupportedMediaType());
+        mvc.perform(post(WebChatController.PATH).header("Content-Type", "not a media type").content("{}"))
+                .andExpect(status().isUnsupportedMediaType());
         verify(gatewayService, never()).handle(any());
         verify(webSessionMessageService, never()).resolve(any(), any(), any());
     }

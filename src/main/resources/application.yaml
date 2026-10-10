@@ -359,12 +359,24 @@ astor:
     main-menu: ${ASTOR_WEB_MAIN_MENU:Бронь стола,Меню кухни,Бар,Коктейли,Винная карта,Афиша,Видео-тур,Сабраж,Концепция AERIS,Связаться с командой,Изменить / отменить,Оставить отзыв,Главное меню}
     notifications:
       admin-chat-enabled: ${ASTOR_WEB_ADMIN_CHAT_NOTIFICATIONS_ENABLED:true}
+      # Telegram analytics cards are sent from one background thread; when the queue is full the card is dropped.
+      queue-capacity: ${ASTOR_WEB_NOTIFICATIONS_QUEUE_CAPACITY:200}
     rate-limit:
       enabled: ${ASTOR_WEB_RATE_LIMIT_ENABLED:true}
       max-per-minute: ${ASTOR_WEB_RATE_LIMIT_MAX_PER_MINUTE:12}
       burst-window-seconds: ${ASTOR_WEB_RATE_LIMIT_BURST_WINDOW_SECONDS:10}
       max-burst: ${ASTOR_WEB_RATE_LIMIT_MAX_BURST:4}
       max-per-minute-per-ip: ${ASTOR_WEB_RATE_LIMIT_MAX_PER_MINUTE_PER_IP:60}
+      max-new-sessions-per-minute-per-ip: ${ASTOR_WEB_NEW_SESSIONS_PER_MINUTE_PER_IP:5}
+    model:
+      # Cost guard for anonymous web guests on the paid model path (Telegram is not affected).
+      text-max-chars: ${ASTOR_WEB_MODEL_TEXT_MAX_CHARS:600}
+      calls-per-day-per-ip: ${ASTOR_WEB_MODEL_CALLS_PER_DAY_PER_IP:200}
+    retention:
+      enabled: ${ASTOR_WEB_SESSION_RETENTION_ENABLED:true}
+      days: ${ASTOR_WEB_SESSION_RETENTION_DAYS:30}
+      fixed-delay-ms: ${ASTOR_WEB_SESSION_RETENTION_FIXED_DELAY_MS:3600000}
+      initial-delay-ms: ${ASTOR_WEB_SESSION_RETENTION_INITIAL_DELAY_MS:300000}
 
 spring:
   application:
@@ -488,6 +500,9 @@ yandex:
 
 server:
   port: ${SERVER_PORT:8088}
+  # Behind Caddy -> api-gateway (nginx sends X-Forwarded-Proto/For, Host): rebuild scheme/host from the headers so
+  # a same-origin browser POST (Origin: https://c3ag.ru) is not mistaken for a cross-origin request and refused by CORS.
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:framework}
 
 management:
   endpoints:

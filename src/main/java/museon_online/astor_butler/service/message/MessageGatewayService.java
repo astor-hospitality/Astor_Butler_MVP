@@ -54,6 +54,10 @@ public class MessageGatewayService {
     @Value("${astor.message.log-conversations-enabled:true}")
     private boolean logConversationsEnabled;
 
+    /** Web-only cost guard for the model path; optional so Telegram-only wiring and tests stay unchanged. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.web.WebModelBudget webModelBudget;
+
     public OutgoingMessage handle(IncomingMessage incoming) {
         if (incoming == null || incoming.chatId() == null) {
             throw new IllegalArgumentException("Incoming message must contain chatId for current MVP flow");
@@ -206,6 +210,22 @@ public class MessageGatewayService {
     }
 
     private OutgoingMessage aiAssistedReply(IncomingMessage incoming, BotState currentState, String text) {
+        if (webModelBudget != null) {
+            museon_online.astor_butler.domain.web.WebModelBudget.Decision budget = webModelBudget.check(incoming, text);
+            if (!budget.allowed()) {
+                return finish(incoming, currentState, OutgoingMessage.of(
+                        incoming,
+                        budget.replyText(),
+                        currentState.name(),
+                        false,
+                        false,
+                        false,
+                        false,
+                        AdminAlert.none(),
+                        List.of("WEB_MODEL_GUARD", "WEB_MODEL_" + budget.reason().toUpperCase())
+                ));
+            }
+        }
         String prompt = """
                 Ты AI-адаптер Astor Butler. Telegram является только UI, бизнес-логика живет в FSM.
                 Ответь пользователю коротко и вежливо, строго по FSM-контракту ниже.
