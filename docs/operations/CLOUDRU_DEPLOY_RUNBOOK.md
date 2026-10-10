@@ -66,7 +66,7 @@ ghcr.io/astor-hospitality/astor_butler_mvp/astor-butler:sha-<sha>  | :main
 - `ASTOR_BACKEND_UPSTREAM=aeris-astor-butler-bot:8089`; gateway теперь доверяет `X-Forwarded-For`/`X-Forwarded-Proto` только из приватных docker-диапазонов (`docker/nginx/nginx.conf.template`), иначе rate-limit nginx считал бы всех посетителей одним IP Caddy;
 - образы и ресурсы из `images.env` релиза, секреты из `/opt/astor-butler/.env.production`.
 
-Со стороны Vedal нужно подключить `infra/cloudru/edge/c3ag.caddy` в общий Caddyfile (например, `/opt/vedal-portal/caddy/sites/c3ag.caddy` + `import sites/*.caddy`) и перезагрузить `proxy`. Содержимое сниппета:
+Со стороны Vedal нужно подключить `infra/cloudru/edge/c3ag.caddy` в общий Caddyfile (например, `/opt/vedal-portal/caddy/sites/c3ag.caddy` + `import sites/*.caddy`) и перезагрузить `proxy`. Актуальная версия сниппета — в репозитории: с 2026-10-10 она проксирует на gateway только публичный allow-list, остальное `/api/*` и `/actuator/*` отвечает 404 (`PUBLIC_API_GUARD.md`). Ниже — исходный вариант для истории:
 
 ```caddy
 www.c3ag.ru {

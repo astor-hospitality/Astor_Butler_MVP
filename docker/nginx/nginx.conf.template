@@ -84,12 +84,69 @@ http {
             proxy_pass http://astor_backend;
         }
 
+        # Public Butler API: the same allow-list as the edge (infra/cloudru/edge/c3ag.caddy,
+        # docs/operations/PUBLIC_API_GUARD.md). Everything else under /api/ and /actuator/ is internal
+        # and is forwarded only when the caller carries X-Astor-Internal-Token (the bot checks its value);
+        # anonymous callers get 404, so the gateway is not a second public door when it is published directly.
+        location = /api/messages {
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
+        location /api/astor/ {
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
+        location /api/chat/ {
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
+        location /api/glasses/ {
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
+        location /api/staff/ {
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
+        location /api/admin/staff {
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
+        location /api/auth/ {
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
+        location = /actuator/health {
+            limit_req zone=api_limit burst=20 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
+        # Prometheus 2.x (docker/prometheus/prometheus.yml) scrapes through this gateway and cannot add headers;
+        # the edge never forwards /actuator/*, so this stays reachable from the docker network only.
+        location = /actuator/prometheus {
+            limit_req zone=api_limit burst=20 nodelay;
+            proxy_pass http://astor_backend;
+        }
+
         location /actuator/ {
+            if ($http_x_astor_internal_token = "") {
+                return 404;
+            }
             limit_req zone=api_limit burst=20 nodelay;
             proxy_pass http://astor_backend;
         }
 
         location /api/ {
+            if ($http_x_astor_internal_token = "") {
+                return 404;
+            }
             limit_req zone=api_limit burst=30 nodelay;
             proxy_pass http://astor_backend;
         }

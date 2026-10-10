@@ -27,6 +27,10 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # Shared secret for the non-public API (/api/bookings, /api/fsm, /api/admin, /api/internal, /api/concierge,
+      # /actuator; /api/messages for channels other than WEB). Blank = those paths answer 401 (fail closed).
+      # The same value goes into the Concierge .env (header X-Astor-Internal-Token). docs/operations/PUBLIC_API_GUARD.md
+      ASTOR_INTERNAL_API_TOKEN: ${ASTOR_INTERNAL_API_TOKEN:-}
       ASTOR_MODEL_PROVIDER: ${ASTOR_MODEL_PROVIDER:-yandex}
       # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
       # docs/operations/SBER_AI_ACTIVATION.md
@@ -138,6 +142,10 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # Shared secret for the non-public API (/api/bookings, /api/fsm, /api/admin, /api/internal, /api/concierge,
+      # /actuator; /api/messages for channels other than WEB). Blank = those paths answer 401 (fail closed).
+      # The same value goes into the Concierge .env (header X-Astor-Internal-Token). docs/operations/PUBLIC_API_GUARD.md
+      ASTOR_INTERNAL_API_TOKEN: ${ASTOR_INTERNAL_API_TOKEN:-}
       ASTOR_MODEL_PROVIDER: ${ASTOR_MODEL_PROVIDER:-yandex}
       # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
       # docs/operations/SBER_AI_ACTIVATION.md
@@ -219,6 +227,10 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      # Shared secret for the non-public API (/api/bookings, /api/fsm, /api/admin, /api/internal, /api/concierge,
+      # /actuator; /api/messages for channels other than WEB). Blank = those paths answer 401 (fail closed).
+      # The same value goes into the Concierge .env (header X-Astor-Internal-Token). docs/operations/PUBLIC_API_GUARD.md
+      ASTOR_INTERNAL_API_TOKEN: ${ASTOR_INTERNAL_API_TOKEN:-}
       ASTOR_MODEL_PROVIDER: ${SMART_SOLUTION_MODEL_PROVIDER:-yandex}
       # Sber: ASTOR_MODEL_PROVIDER=cloudru (Cloud.ru Foundation Models) or gigachat (GigaChat API direct).
       # docs/operations/SBER_AI_ACTIVATION.md

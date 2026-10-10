@@ -90,6 +90,10 @@ services:
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:-astor-media}
       S3_BUCKET_DOCUMENTS: ${S3_BUCKET_DOCUMENTS:-astor-documents}
       ASTOR_INSTANCE_ROLE: c3flex_astor_butler_bot
+      # Shared secret for the non-public API (/api/bookings, /api/fsm, /api/admin, /api/internal, /api/concierge,
+      # /actuator; /api/messages for channels other than WEB). Blank = those paths answer 401 (fail closed).
+      # The same value goes into the Concierge .env (header X-Astor-Internal-Token). docs/operations/PUBLIC_API_GUARD.md
+      ASTOR_INTERNAL_API_TOKEN: ${ASTOR_INTERNAL_API_TOKEN:-}
       TELEGRAM_BOT_ENABLED: ${C3FLEX_ASTOR_BUTLER_BOT_ENABLED:-${C3FLEX_TELEGRAM_BOT_ENABLED:-false}}
       TELEGRAM_BOT_USERNAME: ${C3FLEX_ASTOR_BUTLER_BOT_USERNAME:-${C3FLEX_TELEGRAM_BOT_USERNAME:-${TELEGRAM_BOT_USERNAME:-astor_c3fex_bot}}}
       TELEGRAM_BOT_TOKEN: ${C3FLEX_ASTOR_BUTLER_BOT_TOKEN:-${C3FLEX_TELEGRAM_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN:-}}}
@@ -278,6 +282,10 @@ services:
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:-astor-media}
       S3_BUCKET_DOCUMENTS: ${S3_BUCKET_DOCUMENTS:-astor-documents}
       ASTOR_INSTANCE_ROLE: aeris_astor_butler_bot
+      # Shared secret for the non-public API (/api/bookings, /api/fsm, /api/admin, /api/internal, /api/concierge,
+      # /actuator; /api/messages for channels other than WEB). Blank = those paths answer 401 (fail closed).
+      # The same value goes into the Concierge .env (header X-Astor-Internal-Token). docs/operations/PUBLIC_API_GUARD.md
+      ASTOR_INTERNAL_API_TOKEN: ${ASTOR_INTERNAL_API_TOKEN:-}
       TELEGRAM_BOT_ENABLED: ${AERIS_ASTOR_BUTLER_BOT_ENABLED:-${AERIS_TELEGRAM_BOT_ENABLED:-${TELEGRAM_BOT_ENABLED_DEV:-true}}}
       TELEGRAM_BOT_USERNAME: ${AERIS_ASTOR_BUTLER_BOT_USERNAME:-${AERIS_TELEGRAM_BOT_USERNAME:-${TELEGRAM_BOT_USERNAME_DEV:-astor_butler_bot}}}
       TELEGRAM_BOT_TOKEN: ${AERIS_ASTOR_BUTLER_BOT_TOKEN:-${AERIS_TELEGRAM_BOT_TOKEN:-${TELEGRAM_BOT_TOKEN_DEV:-}}}
@@ -483,6 +491,10 @@ services:
       S3_BUCKET_MEDIA: ${S3_BUCKET_MEDIA:-astor-media}
       S3_BUCKET_DOCUMENTS: ${S3_BUCKET_DOCUMENTS:-astor-documents}
       ASTOR_INSTANCE_ROLE: smart_solution_bot
+      # Shared secret for the non-public API (/api/bookings, /api/fsm, /api/admin, /api/internal, /api/concierge,
+      # /actuator; /api/messages for channels other than WEB). Blank = those paths answer 401 (fail closed).
+      # The same value goes into the Concierge .env (header X-Astor-Internal-Token). docs/operations/PUBLIC_API_GUARD.md
+      ASTOR_INTERNAL_API_TOKEN: ${ASTOR_INTERNAL_API_TOKEN:-}
       TELEGRAM_BOT_ENABLED: ${SMART_SOLUTION_BOT_ENABLED:-false}
       TELEGRAM_BOT_USERNAME: ${SMART_SOLUTION_BOT_USERNAME:-smart_solution_ops_bot}
       TELEGRAM_BOT_TOKEN: ${SMART_SOLUTION_BOT_TOKEN:-}
