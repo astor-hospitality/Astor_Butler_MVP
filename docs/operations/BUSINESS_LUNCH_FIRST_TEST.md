@@ -346,6 +346,10 @@ VM `astor-aeris-vm` (Cloud.ru), стек из `/opt/astor-butler/current` (`main
 
 **Автомат (дополнительно)**
 
+Сторона ресторана — по памятке для Дарьи [SABY_STAFF_MEMO_DASHA.md](SABY_STAFF_MEMO_DASHA.md): что должно существовать в Saby, как хостес,
+менеджер и официант работают в Presto во время теста, таблица людей для справочника Astor. Бот сотрудников Saby не читает и не заводит.
+
+- [ ] Памятка передана Дарье; пункты 1–7 её §2 отмечены рестораном, таблица §4 заполнена и хранится вне git.
 - [ ] Ключи от Тариэля в `.env.production`: `SABY_APP_CLIENT_ID`, `SABY_APP_SECRET`, `SABY_SECRET_KEY` (только там; в чаты и git не попадают).
 - [ ] `SABY_POINT_ID`, `SABY_HALL_ID`, `SABY_PRICE_LIST_ID` — сняты через `listPoints`/`hall/list`/`price-list` (стаб в режиме `record` или `SabyReadOnlySmokeTest` с `SABY_SMOKE=true`).
 - [ ] Read-only smoke прошёл; сутки с `ASTOR_SABY_ENABLED=true`, `SABY_WRITE_ENABLED=false` — занятость из Presto не ломает выбор стола (лог `External table occupancy is not used` должен отсутствовать или быть объяснён).
