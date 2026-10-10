@@ -14,6 +14,7 @@ Key files:
 
 - `PRODUCTION_DEPLOYMENT_PLAN.md`
 - `CLOUDRU_DEPLOY_RUNBOOK.md` (current production path: shared Cloud.ru VM, GHCR images)
+- `PUBLIC_API_GUARD.md` - internal token `ASTOR_INTERNAL_API_TOKEN` for the non-public Butler API, edge/gateway allow-list, rollout and smoke on the VM.
 - `SBER_AI_ACTIVATION.md` - switching models to Sber (Cloud.ru Foundation Models, GigaChat API), keys, certificates, rollback.
 - `TELEGRAM_VOICE_REPLIES.md` - Telegram bot answers with a voice note plus a short text summary: flag `ASTOR_TELEGRAM_VOICE_REPLIES`, `/voice on|off`, timeout and fallback, costs.
 - `BUSINESS_LUNCH_FIRST_TEST.md` - первый живой тест бизнес-ланча в AERIS: полуавтомат (хостес) и автомат (Saby), состав команды и статистов, pre-flight, таблица результатов, откат флагами.

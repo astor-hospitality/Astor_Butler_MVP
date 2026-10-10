@@ -342,6 +342,13 @@ astor:
         venue-code: ${ASTOR_AERIS_CHANNEL_VENUE_CODE:AERIS}
         username: ${ASTOR_AERIS_CHANNEL_USERNAME:aeris_gastrobar}
         url: ${ASTOR_AERIS_CHANNEL_URL:https://t.me/s/aeris_gastrobar}
+  security:
+    # Shared secret for the non-public API: /api/bookings, /api/fsm, /api/admin (except the staff portal), /api/internal
+    # (except the glasses relay), /api/concierge, /actuator (except health and prometheus), and /api/messages for every channel but WEB.
+    # Callers on the docker network (Concierge, ops scripts) send it as X-Astor-Internal-Token. Blank or shorter than
+    # 16 characters: those paths answer 401 (fail closed) and one WARN is logged at startup. Public web, glasses and
+    # staff paths are not affected. config/InternalApiGuardFilter, docs/operations/PUBLIC_API_GUARD.md.
+    internal-api-token: ${ASTOR_INTERNAL_API_TOKEN:}
   web:
     notifications:
       admin-chat-enabled: ${ASTOR_WEB_ADMIN_CHAT_NOTIFICATIONS_ENABLED:true}

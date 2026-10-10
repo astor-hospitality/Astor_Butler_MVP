@@ -20,13 +20,33 @@ c3ag.ru, c3ag.176-123-165-162.nip.io {
 			header_up X-Forwarded-Host {host}
 		}
 	}
-	@backend path /api/* /auth/* /actuator/health /gateway/health
-	handle @backend {
+	# Public Butler API: an explicit allow-list (docs/operations/PUBLIC_API_GUARD.md).
+	#   /api/messages        c3ag.ru chat widget (channel WEB; other channels need X-Astor-Internal-Token in Butler)
+	#   /api/astor/*         Astor site widget relay
+	#   /api/chat/*          web chat speech (transcribe / speak)
+	#   /api/staff/*         staff portal, own JWT chain (denyAll while astor.staff.enabled=false)
+	#   /api/admin/staff*    staff portal admin routes, same JWT chain
+	#   /api/auth/*, /auth/* browser session (/api/auth/me, /api/auth/logout, OAuth2 redirects)
+	#   /actuator/health, /gateway/health   liveness only
+	# Everything else under /api/* and /actuator/* (bookings, fsm, admin, internal, concierge, metrics) is internal:
+	# Concierge, the glasses relay and ops reach it over the docker network with X-Astor-Internal-Token, never here.
+	@public_api path /api/messages /api/astor/* /api/chat/* /api/staff/* /api/admin/staff* /api/auth/* /auth/* /actuator/health /gateway/health
+	handle @public_api {
 		reverse_proxy astor-api-gateway:8080 {
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Forwarded-Host {host}
 		}
+	}
+	# Concierge web channel (Astor_Concierge PR #28, container port 8096): enable once that container joins `edge`.
+	# It must NOT go to astor-api-gateway: Butler's own /api/concierge/** lists guest requests by chat id and is internal.
+	# @concierge path /api/concierge/messages
+	# handle @concierge {
+	# 	reverse_proxy <concierge-container>:8096
+	# }
+	@closed_api path /api/* /actuator/*
+	handle @closed_api {
+		respond 404
 	}
 	handle {
 		reverse_proxy c3ag-frontend:3000 {
@@ -38,5 +58,12 @@ c3ag.ru, c3ag.176-123-165-162.nip.io {
 }
 # api.c3ag.ru is added once its A record exists (Caddy would otherwise retry ACME for it endlessly)
 api.c3ag.176-123-165-162.nip.io {
-	reverse_proxy astor-api-gateway:8080
+	# Same public allow-list as above; everything else (swagger, internal API, actuator) is 404 on this name too.
+	@public_api path /api/messages /api/astor/* /api/chat/* /api/staff/* /api/admin/staff* /api/auth/* /auth/* /actuator/health /gateway/health
+	handle @public_api {
+		reverse_proxy astor-api-gateway:8080
+	}
+	handle {
+		respond 404
+	}
 }
