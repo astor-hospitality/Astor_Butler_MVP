@@ -18,6 +18,7 @@ Key files:
 - `SBER_AI_ACTIVATION.md` - switching models to Sber (Cloud.ru Foundation Models, GigaChat API), keys, certificates, rollback.
 - `TELEGRAM_VOICE_REPLIES.md` - Telegram bot answers with a voice note plus a short text summary: flag `ASTOR_TELEGRAM_VOICE_REPLIES`, `/voice on|off`, timeout and fallback, costs.
 - `BUSINESS_LUNCH_FIRST_TEST.md` - первый живой тест бизнес-ланча в AERIS: полуавтомат (хостес) и автомат (Saby), состав команды и статистов, pre-flight, таблица результатов, откат флагами.
+- `SABY_STAFF_MEMO_DASHA.md` - Памятка для Дарьи (менеджер зала AERIS): что должно существовать в Saby (СБИС Presto) для автомата ланча, как персонал работает в Presto во время теста, таблица людей для справочника Astor. Бот сотрудников Saby не использует.
 - `AERIS_MANAGER_INTERVIEW_1.md` - Опросник № 1 для менеджера смены AERIS (Discovery перед первым тестом ланча: процесс, роли, аккаунты команды, Saby, риски).
 - `AERIS_SYSTEM_ANALYSIS_TESTS.md`
 - `LOAD_TESTING.md`
