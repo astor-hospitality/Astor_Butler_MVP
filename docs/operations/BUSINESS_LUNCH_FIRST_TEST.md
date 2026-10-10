@@ -1,8 +1,8 @@
 # Бизнес-ланч: первый живой тест в AERIS (полуавтомат и автомат с Saby)
 
 Дата: 2026-10-10. Ветка `docs/business-lunch-first-test`, только документация: кода, деплоев и секретов здесь нет.
-Для Михаила, Димы (`@dmtrshm`, сторона Saby), Ромы и команды ресторана. Всё ниже сверено с `main` на `f5dd496`
-(последний деплой на Cloud.ru VM 2026-10-08) — ссылки на файлы даны, чтобы любое утверждение можно было перепроверить.
+Для Михаила, Димы (`@dmtrshm`, сторона Saby), Ромы и команды ресторана. Всё ниже сверено с `main` на `370e9b5`
+(2026-10-10, включает #117; на Cloud.ru VM на момент написания выложен `f5dd496` от 2026-10-08, выкладка нового образа в процессе 10.10) — ссылки на файлы даны, чтобы любое утверждение можно было перепроверить.
 
 Что проверяем: двое статистов оформляют бизнес-ланч через AERIS-бота двумя путями — **полуавтомат** (заявку подтверждает
 хостес кнопкой в Telegram) и **автомат** (бронь и блюда уходят в Saby Presto, подтверждение, оплата и закрытие приходят из
@@ -15,12 +15,12 @@ Presto). Связанные документы: [SABY_E2E_DEMO.md](../integratio
 
 | | Полуавтомат (хостес) | Автомат (Saby) |
 | --- | --- | --- |
-| Готовность кода | Готов, ничего включать не нужно | Код есть, но из Telegram-диалога **недостижим**: см. §1.7, п. 1 |
+| Готовность кода | Готов, ничего включать не нужно | Код есть; телефон гостя для Saby исправлен в #117 (`31b3d95`), выкладка на ВМ в процессе 10.10 — см. §1.7, п. 1 |
 | Что нужно на VM | `AERIS_ASTOR_BUTLER_STAFF_CHAT_ID`, желательно admin/system чаты | то же + ключи Saby + флаги `ASTOR_SABY_ENABLED`, `SABY_WRITE_ENABLED`, `SABY_PAYMENT_ENABLED`, `ASTOR_BILLING_ENABLED` |
 | Кто подтверждает | Хостес кнопкой «Да» в staff-чате | Сотрудник в Presto; Butler читает статус раз в минуту |
 | Риск для ресторана | Нулевой: Presto не трогается | Пишем в живой Presto; форма его ответов ни разу не проверена |
 
-Рекомендация: первый прогон — **полуавтомат с двумя статистами**, параллельно Дима снимает телефонный блокер (§1.7 п. 1)
+Рекомендация: первый прогон — **полуавтомат с двумя статистами**, параллельно Дима проверяет по логу ВМ, что выложен образ с #117 (§1.7 п. 1),
 и делает read-only smoke Saby. Автомат — вторым прогоном, когда оба пункта закрыты.
 
 ## 1. Что делает код сегодня
@@ -41,7 +41,7 @@ Presto). Связанные документы: [SABY_E2E_DEMO.md](../integratio
 поделиться контактом»). Черновик ланча из ссылки ждёт в Redis (`BusinessLunchDraftStorage`, ключ `astor:lunch:draft:telegram:<chatId>`,
 TTL сутки) и продолжается сразу после контакта: «Спасибо, контакт получил.» + первый вопрос ланча. Голый `/start` черновик стирает.
 
-**Concierge сегодня — это документация без приложения** (`~/IdeaProjects/Astor_Concierge/README.md`: «пока не содержит
+**Concierge сегодня — это документация без приложения** ([README репозитория Astor_Concierge](https://github.com/astor-hospitality/Astor_Concierge): «пока не содержит
 приложения»). Поэтому «путь из Concierge» в тесте означает: статист открывает deep-link, который мы ему пришлём.
 
 ### 1.2 Шаги диалога (состояния FSM)
@@ -152,19 +152,20 @@ Butler нигде не называет бронь подтверждённой 
 | `TELEGRAM_SYSTEM_CHAT_ID` ← `AERIS_ASTOR_BUTLER_SYSTEM_CHAT_ID` | пусто | system-чат: трассировка каждого диалога (`TelegramSystemNotifier`) | да (`:291`) |
 | `TELEGRAM_ANALYTICS_CHAT_ID` ← `AERIS_ASTOR_BUTLER_ANALYTICS_CHAT_ID` | = admin | карточки событий из Kafka, сводки смены | да (`:289`) |
 | `TELEGRAM_OPS_CHAT_ID` | = hostess-чат | ops-команды (`/ops`, `/projects`) у AERIS-бота | только у профиля `smart-solution` (`SMART_SOLUTION_OPS_CHAT_ID`, `docker-compose.prod.yml:275`) |
-| `TELEGRAM_BOOKING_MANAGER_CHAT_ID` | `876857557` | записывается в заявку как `managerTelegramId`; уведомлений на него код не шлёт | **нет** |
+| `TELEGRAM_BOOKING_MANAGER_CHAT_ID` | значение по умолчанию, зашитое в код (`TableReservationNotificationService.java:46`) | записывается в заявку как `managerTelegramId`; уведомлений на него код не шлёт | **нет** |
 
 ### 1.7 Чего нет, что заглушка, что допущение
 
-1. **Телефон гостя не доходит до Saby из диалога — блокер автомата.** `TelegramRouter.toIncomingMessage` (`:245-271`) кладёт
-   `contactPhone` только из `message.getContact()`, т.е. из того единственного сообщения, которым гость делится контактом.
-   На шаге «✅ Отправить заявку» это обычный текст, `incoming.contactPhone()` = `null`, и `BusinessLunchScenario.place` (`:408`)
-   передаёт `guestPhone = null` (так же `TableBookingScenario:435`). Дальше по цепочке: `SabyReservationProvider.reserve` →
-   `GUEST_DATA_REQUIRED` → нет `sbisExternalId` → `SabyLunchOrderProvider.submit` → `NO_SABY_BOOKING` → карточка хостес
-   «Saby: нет имени или телефона гостя. Внесите бронь в Presto вручную.» + алерт в admin-чат. Телефон при этом сохранён в
-   `user_contacts` (`domain/identity/IdentityService.upsertPhoneContact`), но никто его оттуда не читает. Нужна правка кода
-   (подставлять основной телефон из `user_contacts` при сборке `TableReservationCommand`/`BusinessLunchService.Request`) —
-   отдельный PR с тестом, не часть этого документа. **Побочный эффект уже сейчас:** на карточке хостес «Телефон: не указан».
+1. **Телефон гостя для Saby — исправлено в #117 (`31b3d95`), выкладка на ВМ в процессе 10.10; проверить на ВМ по логу.**
+   `TelegramRouter.toIncomingMessage` (`:245-271`) кладёт `contactPhone` только из `message.getContact()`, т.е. из того единственного
+   сообщения, которым гость делится контактом; на шаге «✅ Отправить заявку» это обычный текст и `incoming.contactPhone()` = `null`.
+   До #117 `BusinessLunchScenario.place` передавал `guestPhone = null`, и цепочка заканчивалась `GUEST_DATA_REQUIRED` → нет
+   `sbisExternalId` → `NO_SABY_BOOKING` → карточка хостес «Saby: нет имени или телефона гостя…» + алерт в admin-чат. С #117
+   `BusinessLunchScenario.guestPhone()` (`:822-826`, вызов в `place` — `:410`) берёт телефон из сообщения, а если его нет —
+   `IdentityService.primaryPhone(telegramUserId)` из `user_contacts` (основной → подтверждённый → последний обновлённый); то же в
+   `TableBookingScenario` (`:437`, `:564-568`). Образ на ВМ на момент написания — `f5dd496`, без #117. Признаки, что выложен новый:
+   в карточке хостес «Телефон: <номер>» вместо «не указан»; в system-чате на «✅ Отправить заявку» — action `EXTERNAL_ORDER_SENT`,
+   а не алерт `GUEST_DATA_REQUIRED`/`NO_SABY_BOOKING` в admin-чате.
 2. **Живой Saby ни разу не вызывался** (`SABY_BILLING.md` §10, `SABY_NEXT_CHAT.md`: «Реальный Saby не проверялся»). Форма ответов
    `order/create`, `GET order/{id}`, `price-list`, `nomenclature/list`, `payment-link` — допущения; `scripts/saby_stub` отвечает «как мы
    думаем» (`scripts/saby_stub/README.md`, «Честно»). Незнакомая форма снимка брони **блокирует** запись блюд (`RESULT_UNKNOWN`), а не ломает заявку.
@@ -184,7 +185,7 @@ Butler нигде не называет бронь подтверждённой 
    в этом тесте роли сотрудников = членство в Telegram-чатах, не JWT.
 9. **Миграции billing** (`2026-10-07-guest-billing.sql`, `2026-10-08-guest-billing-payment-review.sql`) «на настоящем PostgreSQL не запускались»
    (`SABY_BILLING.md` §10). База на VM создана пустой 2026-10-08, значит они уже применились при старте — проверить по логам `Liquibase` перед тестом.
-10. **Analytics-чат из Kafka** (`analytics/AnalyticsKafkaConsumer`, `KAFKA_TOPICS.md`) работает, только если Debezium/outbox на VM живы — это не
+10. **Analytics-чат из Kafka** (`analytics/AnalyticsKafkaConsumer`, [KAFKA_TOPICS.md](../contracts/KAFKA_TOPICS.md)) работает, только если Debezium/outbox на VM живы — это не
     условие теста, а приятный бонус.
 
 ## 2. Кого собрать и куда добавить
@@ -289,7 +290,7 @@ Id не пишем в чаты и документы. Они попадают т
 
 | Куда | Что | Файл |
 | --- | --- | --- |
-| staff-чат | «Новая заявка на бронь стола» #N: Гость, «Telegram: chat … / user …», Стол, Дата, Время 13:00 - 14:30, Гостей: 2, **«Телефон: не указан»** (см. §1.7 п. 1), «Зона/пожелание: Бизнес-ланч», блок «Исходный запрос гостя» с составом «Бизнес-ланч из Concierge: … Итого 1490 ₽. Пожелание: … В Saby внести вручную.», «Последние сообщения гостя», «Статус: ожидает решения хостес», кнопки **Да / Нет** | `TableReservationNotificationService.hostessApprovalRequestText` |
+| staff-чат | «Новая заявка на бронь стола» #N: Гость, «Telegram: chat … / user …», Стол, Дата, Время 13:00 - 14:30, Гостей: 2, «Телефон: <номер гостя>» (на образе без #117 — «не указан», см. §1.7 п. 1), «Зона/пожелание: Бизнес-ланч», блок «Исходный запрос гостя» с составом «Бизнес-ланч из Concierge: … Итого 1490 ₽. Пожелание: … В Saby внести вручную.», «Последние сообщения гостя», «Статус: ожидает решения хостес», кнопки **Да / Нет** | `TableReservationNotificationService.hostessApprovalRequestText` |
 | staff-чат, после «Да» | «Принял. Бронь #N подтверждена, гостю отправлен красивый ордер.» + «Бронь стола подтверждена командой» | `notifyHostessAcknowledged`, `notifyHostessConfirmed` |
 | гость, после «Да» | «Бронь подтверждена / Ваш стол ждет вас. / Заказ: #N / Стол … / Пожелание: Бизнес-ланч» | `guestConfirmedText` |
 | гость, после «Нет» | «Пока не получилось подтвердить этот стол …» + предложение другого стола/времени | `guestRejectedText` |
@@ -301,7 +302,7 @@ Id не пишем в чаты и документы. Они попадают т
 
 ### 3.3 Автомат: скрипт и ожидания (Saby запись + оплата + счета)
 
-Пред-условия: §4 «Автомат» выполнен целиком; **блокер §1.7 п. 1 закрыт отдельным PR и задеплоен** — иначе этот прогон
+Пред-условия: §4 «Автомат» выполнен целиком; **на ВМ выложен образ с #117 (§1.7 п. 1), проверено по логу** — на образе без него этот прогон
 детерминированно заканчивается на `GUEST_DATA_REQUIRED`/`NO_SABY_BOOKING`, и его бессмысленно начинать. Порядок включения — как в
 `SABY_NEXT_CHAT.md` §4: read-only smoke → сутки наблюдения занятости → запись на тестовой брони → оплата.
 
@@ -319,7 +320,7 @@ Id не пишем в чаты и документы. Они попадают т
 | 8 | (ветка) бронь отменяют в Presto после подтверждения | сотрудник | опрос → `cancelFromVenue` → гостю «Пока не получилось подтвердить этот стол…» с альтернативой | — |
 
 Если на шаге 1 вместо `EXTERNAL_ORDER_SENT` пришёл алерт в admin-чат — читать его «Статус:» по таблице:
-`GUEST_DATA_REQUIRED` (блокер п. 1), `DISH_NOT_IN_SABY` (названия в Presto), `NO_PRICE_LIST` (задать `SABY_PRICE_LIST_ID`),
+`GUEST_DATA_REQUIRED` (на ВМ образ без #117 или у гостя нет телефона в `user_contacts`, §1.7 п. 1), `DISH_NOT_IN_SABY` (названия в Presto), `NO_PRICE_LIST` (задать `SABY_PRICE_LIST_ID`),
 `PROVIDER_AUTH_FAILED` (ключи), `PROVIDER_RESULT_UNKNOWN` (форма ответа Saby не та, что ожидает `SabyLunchOrderProvider`;
 записать ответ через `scripts/saby_stub` в режиме `record`), `EXISTING_DISHES_REQUIRE_REVIEW` (у брони в Presto уже есть позиции).
 Заявка и карточка хостес при любом из них **остаются**; ланч вносится в Presto руками.
@@ -348,11 +349,11 @@ VM `astor-aeris-vm` (Cloud.ru), стек из `/opt/astor-butler/current` (`main
 - [ ] Ключи от Тариэля в `.env.production`: `SABY_APP_CLIENT_ID`, `SABY_APP_SECRET`, `SABY_SECRET_KEY` (только там; в чаты и git не попадают).
 - [ ] `SABY_POINT_ID`, `SABY_HALL_ID`, `SABY_PRICE_LIST_ID` — сняты через `listPoints`/`hall/list`/`price-list` (стаб в режиме `record` или `SabyReadOnlySmokeTest` с `SABY_SMOKE=true`).
 - [ ] Read-only smoke прошёл; сутки с `ASTOR_SABY_ENABLED=true`, `SABY_WRITE_ENABLED=false` — занятость из Presto не ломает выбор стола (лог `External table occupancy is not used` должен отсутствовать или быть объяснён).
-- [ ] `SabyWriteSmokeTest` (`SABY_SMOKE_WRITE=true`, тестовый телефон `SABY_SMOKE_GUEST_PHONE`, согласованный с Тариэлем стол) — реальная форма `order/create` записана в `SABY_PRESTO_BOOKING_API.md` 4.4; тестовая бронь снята.
+- [ ] `SabyWriteSmokeTest` (`SABY_SMOKE_WRITE=true`, тестовый телефон `SABY_SMOKE_GUEST_PHONE`, согласованный с Тариэлем стол) — реальная форма `order/create` записана в [SABY_PRESTO_BOOKING_API.md](../integrations/SABY_PRESTO_BOOKING_API.md) 4.4; тестовая бронь снята.
 - [ ] Названия 17 блюд ланча в прайс-листе Presto совпадают с `aeris.json` буква в букву (повар/менеджер сверяют по списку в §1.2).
 - [ ] Эквайринг и онлайн-оплата включены в Presto (иначе шаг 4 §3.3 даст `NO_LINK` — не ошибка, но кнопки «Оплатить» не будет).
 - [ ] Флаги: `ASTOR_SABY_ENABLED=true`, `SABY_WRITE_ENABLED=true`, `SABY_PAYMENT_ENABLED=true`, `ASTOR_BILLING_ENABLED=true`, `ASTOR_SABY_CALL_LOG_ENABLED=true`, `ASTOR_BILLING_REVIEW_DELAY_MINUTES=5` (на время теста) — затем `up -d aeris-astor-butler-bot`.
-- [ ] **PR с подстановкой телефона гостя (§1.7 п. 1) смержен и задеплоен** — без него автомат не стартует.
+- [ ] **На ВМ выложен образ с #117** (`31b3d95`, телефон гостя из `user_contacts`, §1.7 п. 1) — проверить по логу/тегу образа; без него автомат не стартует.
 - [ ] Договорённость с рестораном: тестовые брони помечены «Astor Butler #…», кто их снимет в Presto после теста, тестовая оплата возвращается.
 
 ## 5. Таблица результатов
@@ -390,7 +391,7 @@ VM `astor-aeris-vm` (Cloud.ru), стек из `/opt/astor-butler/current` (`main
 | Deep-link не продолжил ланч после контакта | после контакта — главное меню | Redis недоступен или прошли сутки (TTL черновика); повторить ссылку |
 | Время «уже прошло» | бот отказывает во времени | часовой пояс заведения Екатеринбург; выбрать слот позже текущего времени Екб |
 | Saby включён, заказ не принят | алерт в admin-чат | заявку **не трогать**; ланч вносится в Presto руками по карточке; код статуса — §3.3 |
-| Saby «не ответил, создана ли бронь» | строка «Saby не ответил…» на карточке | найти в Presto бронь с «Astor Butler #N»; есть — `adopt`, нет — внести руками (`SabyReservationProvider.adopt/forget`, `SABY_PRESTO_BOOKING_API.md`) |
+| Saby «не ответил, создана ли бронь» | строка «Saby не ответил…» на карточке | найти в Presto бронь с «Astor Butler #N»; есть — `adopt`, нет — внести руками (`SabyReservationProvider.adopt/forget`, [SABY_PRESTO_BOOKING_API.md](../integrations/SABY_PRESTO_BOOKING_API.md)) |
 | Двойное подтверждение | хостес нажала «Да», Presto тоже принял | штатно: второе — no-op (статус уже `CONFIRMED`); в `VENUE_SYSTEM` «Да» отвечает «подтверждается в Presto» |
 | Ссылка на оплату не пришла | нет кнопки «Оплатить» через 2 мин | `payment-link` пустой/не https (`NO_LINK`): эквайринг в Presto или незнакомая форма ответа (`SabyPaymentProvider.link`); повтор через 10 мин |
 | Мусор в Presto после теста | тестовые брони/оплаты | снимаются в Presto руками; Butler сам ничего не удаляет |
@@ -407,7 +408,7 @@ VM `astor-aeris-vm` (Cloud.ru), стек из `/opt/astor-butler/current` (`main
 ## 7. Открытые вопросы к Михаилу
 
 1. Дата и время первого прогона (будний день, 12:00–16:00 Екб) и кто из команды ресторана «хостес» на этот день.
-2. Делаем ли PR с подстановкой телефона гостя из `user_contacts` до 15.10 (без него автомат невозможен) и кто его делает — Дима или Рома.
+2. Телефон гостя для Saby исправлен в #117, выкладка на ВМ в процессе 10.10 — кто и когда подтверждает по логу ВМ, что образ с #117 выложен (до прогона автомата).
 3. Нужен ли `ASTOR_BOOKING_CONFIRMATION_SOURCE=VENUE_SYSTEM` на показе (требует строки в `docker-compose.prod.yml`), или оставляем `HOSTESS` + опрос.
 4. Поднят ли на VM профиль `smart-solution` (тогда `SMART_SOLUTION_OPS_CHAT_ID` нужно заполнить) или нет (тогда переменная не нужна).
 5. Ключи Saby от Тариэля: получены ли, и на какой точке (`SABY_POINT_ID`) можно создавать тестовые брони.
