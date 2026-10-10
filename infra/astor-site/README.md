@@ -11,7 +11,7 @@
 | --- | --- |
 | `compose.yaml` | контейнер `astor-site`: read-only раздача `/opt/astor-site/frontend/astor-butler`, сеть `edge`, `restart: unless-stopped`, healthcheck `/healthz` |
 | `nginx.conf` | раздача статики: `index.html` в подкаталогах, 404 для `server/`, `tests/` и dot-файлов, кэш только для css/js/картинок |
-| `astor.caddy` | vhost для `/opt/edge/sites.d/`: TLS и заголовки, `/api/astor/messages` в `astor_glasses_api` (relay веб-чата), остальной `/api/*` в `astor-api-gateway`, всё прочее в `astor-site` |
+| `astor.caddy` | vhost для `/opt/edge/sites.d/`: TLS и заголовки, `/api/astor/messages` в `astor-api-gateway` (Butler, веб-чат), `/api/concierge/messages` в контейнер Concierge `:8096`, остальной `/api/*` в `astor-api-gateway`, всё прочее в `astor-site` |
 
 Сборки нет: контейнер читает файлы прямо из checkout'а, поэтому `git pull` обновляет сайт
 без перезапуска.
@@ -127,9 +127,10 @@ vedal-med.ru и c3ag.ru этим не затрагиваются: их vhost'ы 
 ## Что здесь не делается
 
 - Нет сборки, Node и npm на ВМ не нужны.
-- Backend Astor не трогается: `/api/astor/messages` проксируется в уже работающий
-  `astor_glasses_api` (там живёт relay веб-чата), остальной `/api/*` - в `astor-api-gateway`,
-  как и на c3ag.ru. Если контейнеры backend остановлены, сайт продолжает открываться,
-  не работает только веб-чат виджета.
+- Backend Astor не трогается: `/api/astor/messages` проксируется в `astor-api-gateway`
+  (его отдаёт сам Butler, `docs/architecture/WEB_CHANNEL_ADAPTER.md`), `/api/concierge/messages` -
+  в контейнер Concierge (`astor-concierge-concierge-1:8096`, сеть `edge`), остальной `/api/*` -
+  в `astor-api-gateway`, как и на c3ag.ru. Если контейнеры backend остановлены, сайт продолжает
+  открываться, не работает только веб-чат виджета.
 - Страница `staff/` требует отдельного включения staff-маршрутов и Keycloak
   (`docs/operations/STAFF_PORTAL_RUNBOOK.md`); на превью она открывается, но к серверу не подключится.

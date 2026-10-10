@@ -171,27 +171,30 @@ Concierge (`/api/concierge/messages`) — та же форма плюс `message
 - **Границы.** Тело до 16 КиБ, текст до 4000 символов, payload по allow-list, `Cache-Control: no-store`.
 - **Нет PII в URL.** Единственный путь — `POST`, `sessionId` и телефон только в теле. `GET`-опроса нет: опрос — тот же `POST` с пустым `text`.
 - **HTML.** Butler отдаёт `html: true` для текста согласия со ссылкой; виджет превращает его в текст (`DOMParser`), ссылку сохраняет в скобках, в DOM через `textContent`.
-- **Известный пробел (вне этого PR).** `/api/messages` публично доступен через `c3ag.ru/api/` и принимает каналы `TELEGRAM`/`INTERNAL` с произвольным `chatId` (так он задуман для smoke-прогонов). Рекомендация: закрыть `/api/messages` на api-gateway для внешних запросов и оставить снаружи только `/api/astor/messages`, либо требовать внутренний токен для не-WEB каналов. Вопрос Михаилу.
+- **Не-WEB каналы на `/api/messages`** закрыты PR #123 (`InternalApiGuardFilter`: `TELEGRAM`/`INTERNAL` требуют `X-Astor-Internal-Token`, edge allow-list в Caddy/nginx). Веб-канал этого не касается: `WEB` на `/api/messages` и весь `/api/astor/*` проходят без токена, остальные `/api/**` снаружи — 404.
 
 ## 7. Маршрутизация на VM (Cloud.ru, `/opt/edge`)
 
 Ничего из этого PR не задеплоено. Нужные изменения:
 
-### 7.1 Caddy `/opt/edge/sites.d/c3ag.caddy` (или отдельный vhost сайта Astor)
+### 7.1 Caddy (`infra/cloudru/edge/c3ag.caddy` для c3ag.ru, `infra/astor-site/astor.caddy` для vhost сайта Astor)
+
+После PR #123 публичная поверхность Butler — явный allow-list: `@public_api path /api/messages /api/astor/* /api/chat/* …` → `astor-api-gateway:8080` (nginx `location /api/astor/` → `aeris_astor_butler_bot:8089`), всё остальное под `/api/*` — 404. `/api/astor/messages` таким образом **уже** доходит до `WebChatController`; `InternalApiGuardFilter` его не трогает (`/api/astor/**` не в `INTERNAL_PATHS`), а `/api/messages` пропускает без токена только канал `WEB`.
+
+Concierge нужен отдельный блок **до** `@closed_api`/общего `/api/*`, и он обязан вести в контейнер Concierge, а не в api-gateway: у Butler свой `/api/concierge/**` (заявки гостей по chat id), и он внутренний. В `c3ag.caddy` блок подготовлен и закомментирован — раскомментировать, когда контейнер Concierge войдёт в сеть `edge` (compose из PR #28):
 
 ```caddyfile
-# Astor Butler web chat: через api-gateway (nginx location /api/ → aeris_astor_butler_bot:8089)
-handle /api/astor/messages {
-    reverse_proxy astor-api-gateway:8080
-}
-
-# Astor Concierge web chat: напрямую в контейнер Concierge (порт WEB_PORT, по умолчанию 8096)
-handle /api/concierge/* {
-    reverse_proxy astor-concierge-concierge-1:8096
+@concierge path /api/concierge/messages
+handle @concierge {
+	reverse_proxy astor-concierge-concierge-1:8096 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
 }
 ```
 
-Обе директивы должны стоять **до** общего `handle /api/*` → `astor-api-gateway:8080`. Caddy по умолчанию добавляет `X-Forwarded-For`/`X-Forwarded-Host` — на них опираются лимит по IP и same-origin у Concierge. Пока Caddy не обновлён, `/api/astor/messages` продолжит попадать в общий `/api/*` → api-gateway → Butler, и это **уже правильный адрес** (nginx шлёт `/api/` в Butler); relay из приложения очков больше не на пути.
+Тот же блок добавлен в `infra/astor-site/astor.caddy` (vhost `astor.176-123-165-162.nip.io`), а `/api/astor/messages` там переведён с relay в контейнере очков (`astor_glasses_api:8091`, `AstorWebRelay`) на `astor-api-gateway:8080`: relay режет ответ до `{text}` и отвечает 400 на поля `payload.action`/`contactPhone`/`locale`, которые шлёт новый виджет. Caddy ставит `X-Forwarded-For {remote_host}` (одно значение — адрес клиента), `X-Forwarded-Proto` и `X-Forwarded-Host` — на них опираются лимиты по IP, same-origin у Concierge и `forward-headers-strategy` у Butler.
 
 ### 7.2 Compose Concierge (`docker-compose.cloudru.yml`, в этом PR)
 
@@ -256,7 +259,7 @@ curl -s https://c3ag.ru/api/concierge/messages -H 'Content-Type: application/jso
 
 1. Домен сайта Astor: `c3ag.ru/astor/` (same-origin с API, CORS не нужен) или отдельный домен (тогда `ASTOR_WEB_ALLOWED_ORIGINS`/`WEB_ALLOWED_ORIGINS` = его origin)?
 2. Имя docker-сети edge Caddy — `edge`? (`EDGE_NETWORK` в compose Concierge.) И имя контейнера Concierge на VM — `astor-concierge-concierge-1`?
-3. Закрыть ли `/api/messages` снаружи на api-gateway (оставить только `/api/astor/messages`), пока не-WEB каналы без аутентификации?
+3. ~~Закрыть ли `/api/messages` снаружи~~ — сделано в PR #123 (`InternalApiGuardFilter` + allow-list на edge).
 4. Сессия: оставить client-generated id в `sessionStorage` или перейти на HttpOnly cookie (нужен cookie-баннер)?
 5. Нужна ли карточка «website lead» в Telegram-аналитику на каждое сообщение веб-гостя Butler (сейчас — да, как для C3AG), или только на первое/при fallback?
 6. Состав главного меню веба (`ASTOR_WEB_MAIN_MENU`): оставить урезанный список Telegram-меню или свой?

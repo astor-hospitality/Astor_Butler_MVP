@@ -38,11 +38,16 @@ c3ag.ru, c3ag.176-123-165-162.nip.io {
 			header_up X-Forwarded-Host {host}
 		}
 	}
-	# Concierge web channel (Astor_Concierge PR #28, container port 8096): enable once that container joins `edge`.
-	# It must NOT go to astor-api-gateway: Butler's own /api/concierge/** lists guest requests by chat id and is internal.
+	# Concierge web channel (Astor_Concierge PR #28, container port 8096): uncomment once that container joins `edge`
+	# (its docker-compose.cloudru.yml does that). It must NOT go to astor-api-gateway: Butler's own /api/concierge/**
+	# lists guest requests by chat id and is internal (InternalApiGuardFilter). Same block as infra/astor-site/astor.caddy.
 	# @concierge path /api/concierge/messages
 	# handle @concierge {
-	# 	reverse_proxy <concierge-container>:8096
+	# 	reverse_proxy astor-concierge-concierge-1:8096 {
+	# 		header_up X-Forwarded-For {remote_host}
+	# 		header_up X-Forwarded-Proto {scheme}
+	# 		header_up X-Forwarded-Host {host}
+	# 	}
 	# }
 	@closed_api path /api/* /actuator/*
 	handle @closed_api {

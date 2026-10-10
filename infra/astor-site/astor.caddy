@@ -11,15 +11,30 @@ astor.176-123-165-162.nip.io {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		-Server
 	}
-	# Веб-чат виджета: /api/astor/messages отдаёт AstorWebRelay в контейнере очков
-	# (astor_glasses_api), как /api/glasses* в c3ag.caddy. Остальной /api/* - gateway.
-	# Если backend не нужен на этом имени, оба блока можно убрать: сайт работает без них.
-	@relay path /api/astor/messages
-	handle @relay {
+	# Веб-чат виджета (docs/architecture/WEB_CHANNEL_ADAPTER.md):
+	#   /api/astor/messages     Astor Butler сам (WebChatController) через api-gateway - как /api/astor/* в c3ag.caddy;
+	#                           старый relay в контейнере очков (AstorWebRelay) режет ответ до {text} и отклоняет
+	#                           поля payload.action/contactPhone/locale, поэтому сюда больше не ведёт.
+	#   /api/concierge/messages контейнер Astor Concierge (порт WEB_PORT=8096, сеть edge; Astor_Concierge PR #28).
+	#                           НЕ в api-gateway: /api/concierge/** у Butler - внутренний API (InternalApiGuardFilter).
+	# Если backend не нужен на этом имени, блоки можно убрать: сайт работает без них.
+	@butler_chat path /api/astor/messages
+	handle @butler_chat {
 		request_body {
 			max_size 2MB
 		}
-		reverse_proxy astor_glasses_api:8091 {
+		reverse_proxy astor-api-gateway:8080 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+	@concierge_chat path /api/concierge/messages
+	handle @concierge_chat {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy astor-concierge-concierge-1:8096 {
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Forwarded-Host {host}
