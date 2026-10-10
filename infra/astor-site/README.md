@@ -60,10 +60,10 @@ Astor уронила бы их вместе. Если `validate` ругаетс�
 ## 4. Проверка: Astor отвечает, соседи не пострадали
 
 ```bash
-for u in https://astor.176-123-165-162.nip.io/ \
-         https://astor.176-123-165-162.nip.io/astor_butler/ \
-         https://astor.176-123-165-162.nip.io/astor_concierge/feed/ \
-         https://astor.176-123-165-162.nip.io/policy.html \
+for u in https://astor-ai.ru/ \
+         https://astor-ai.ru/astor_butler/ \
+         https://astor-ai.ru/astor_concierge/feed/ \
+         https://astor-ai.ru/policy.html \
          https://vedal-med.ru/ \
          https://c3ag.ru/ ; do
   curl -sS -o /dev/null -w "%{http_code} $u\n" "$u"
