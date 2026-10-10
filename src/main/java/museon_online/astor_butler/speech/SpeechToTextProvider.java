@@ -4,16 +4,16 @@ import java.util.Locale;
 
 /**
  * Which speech-to-text backend a runtime uses. {@code cloudru} is the production default (paid cloud
- * model, no ML on the VM); {@code yandex} is SpeechKit sync recognition with the voice's key (bot only:
- * it takes Ogg Opus, not the glasses' MP4/AAC); {@code local} keeps the faster-whisper subprocess
- * selectable for rollback.
+ * model, no ML on the VM); {@code yandex} is SpeechKit sync recognition with the voice's key (Ogg Opus: the
+ * bot sends Telegram voice notes as they are, the glasses runtime transcodes MP4/AAC with ffmpeg first);
+ * {@code local} keeps the faster-whisper subprocess selectable for rollback.
  */
 public enum SpeechToTextProvider {
     /** faster-whisper subprocess: {@code ASTOR_STT_COMMAND} in the bot, {@code glasses_stt.py} in the glasses runtime. */
     LOCAL("local"),
     /** Cloud.ru Evolution Foundation Models, {@code POST /v1/audio/transcriptions} with {@code openai/whisper-large-v3}. */
     CLOUDRU("cloudru"),
-    /** Yandex SpeechKit v1, {@code POST /speech/v1/stt:recognize} with an {@code Api-Key}; Ogg Opus only. */
+    /** Yandex SpeechKit v1, {@code POST /speech/v1/stt:recognize} with an {@code Api-Key}; Ogg Opus only (the glasses transcode with ffmpeg). */
     YANDEX("yandex");
 
     public static final String DEFAULT = "cloudru";

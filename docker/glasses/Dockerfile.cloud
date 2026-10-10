@@ -1,14 +1,24 @@
-# Production glasses runtime: speech-to-text on Cloud.ru whisper-large-v3, no Python, no models, no ML
-# on the VM. Build context is the release staging directory with app.jar only (requirements.txt and
+# Production glasses runtime: speech-to-text in the cloud, no Python, no models, no ML on the VM.
+# The provider comes from runtime.env (ASTOR_GLASSES_STT_PROVIDER; the ENV below is only the image default):
+#   yandex  - Yandex SpeechKit v1; the ffmpeg installed here transcodes the phone's MP4/AAC to Ogg Opus first.
+#   cloudru - Cloud.ru whisper-large-v3; the bytes go out as they are, ffmpeg stays unused.
+# Build context is the release staging directory with app.jar only (requirements.txt and
 # glasses_stt.py are not needed):
 #   docker build -f Dockerfile.cloud -t astor-glasses:<version> .
-# Runtime env (runtime.env, see runtime.env.example): ASTOR_GLASSES_CLOUDRU_API_KEY and, optionally,
-# CLOUDRU_BASE_URL, ASTOR_GLASSES_STT_CLOUDRU_MODEL, ASTOR_GLASSES_STT_LANGUAGE, ASTOR_GLASSES_STT_TIMEOUT_MS.
+# Runtime env (runtime.env, see runtime.env.example):
+#   yandex:  ASTOR_GLASSES_STT_API_KEY (else YANDEX_SPEECHKIT_API_KEY) and, optionally, ASTOR_GLASSES_STT_LANGUAGE,
+#            ASTOR_GLASSES_STT_TIMEOUT_MS, ASTOR_GLASSES_FFMPEG (default: ffmpeg on PATH).
+#   cloudru: ASTOR_GLASSES_CLOUDRU_API_KEY and, optionally, CLOUDRU_BASE_URL, ASTOR_GLASSES_STT_CLOUDRU_MODEL,
+#            ASTOR_GLASSES_STT_LANGUAGE, ASTOR_GLASSES_STT_TIMEOUT_MS.
 # Rollback to the local decoder = the image from docker/glasses/Dockerfile (ASTOR_GLASSES_STT_PROVIDER=local).
 FROM eclipse-temurin:25-jre
+# ffmpeg (Ubuntu build, libopus included) for the yandex provider; installed at build time, the runtime user is not root.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY app.jar /app/app.jar
 ENV ASTOR_GLASSES_STT_PROVIDER=cloudru \
+    ASTOR_GLASSES_FFMPEG=ffmpeg \
     GLASSES_HTTP_ADDRESS=0.0.0.0 GLASSES_HTTP_PORT=8091 \
     ASTOR_GLASSES_WORK_DIR=/tmp/astor-glasses
 USER 10001:10001

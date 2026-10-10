@@ -25,8 +25,8 @@ import java.util.Map;
  *
  * <p>Sync limits are 1 MB, 30 seconds and one channel. The size is checked before anything leaves the process;
  * the duration is the service's to refuse. Only Ogg Opus goes out, which is what Telegram voice notes are:
- * v1 also takes headerless LPCM, which no caller here produces, and nothing else, so other encodings (the
- * glasses' MP4/AAC among them) are refused locally rather than transcoded on the VM.
+ * v1 also takes headerless LPCM, which no caller here produces, and nothing else, so other encodings are refused
+ * locally; the glasses runtime transcodes its MP4/AAC to Ogg Opus with ffmpeg before calling this adapter.
  *
  * <p>Retries: none on 4xx (the audio will not get better), one more attempt after a 5xx answer or a timeout.
  * Every failure is a {@link SpeechToTextException} with the HTTP status (0 when the service did not answer or
@@ -177,7 +177,8 @@ public final class YandexSpeechKitSpeechToText {
         return result.textValue().trim();
     }
 
-    static boolean isOgg(byte[] audio) {
+    /** True when the bytes start with an Ogg page header, the only encoding {@link #transcribe(byte[])} sends. */
+    public static boolean isOgg(byte[] audio) {
         return audio.length >= 4 && audio[0] == 'O' && audio[1] == 'g' && audio[2] == 'g' && audio[3] == 'S';
     }
 
