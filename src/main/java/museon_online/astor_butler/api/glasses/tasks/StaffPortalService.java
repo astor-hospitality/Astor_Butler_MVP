@@ -42,6 +42,11 @@ public final class StaffPortalService {
         return jdbc.query("SELECT type,actor,at,version_after FROM astor_staff_task_audit WHERE tenant=? AND task_id=? ORDER BY at DESC LIMIT 100",
                 (rs, n) -> new Audit(rs.getString(1), rs.getString(2), rs.getTimestamp(3).toInstant(), rs.getLong(4)), scope.tenant(), taskId);
     }
+    /** What an event id already did, so a repeated request answers with its task instead of acting again. */
+    public java.util.Optional<StaffTask> replay(String tenant, String eventId) {
+        if (tenant == null || eventId == null || eventId.isBlank()) return java.util.Optional.empty();
+        return store.event(tenant, eventId).map(StaffTaskStore.ProcessedEvent::result);
+    }
     public StaffTask create(StaffScope scope, String id, StaffTaskService.Draft draft) {
         if (draft != null) {
             bounded(draft.tableCode(), 32); bounded(draft.title(), 120); bounded(draft.instruction(), 1000);
@@ -105,7 +110,8 @@ public final class StaffPortalService {
             return action.get();
         });
     }
-    private List<Member> members(String tenant) {
+    /** The venue's directory, for server-side callers that are authorized another way (the glasses relay). */
+    public List<Member> members(String tenant) {
         var members = jdbc.query("SELECT staff_id,display_name,role,active,shift_open,device_id FROM astor_staff_members WHERE tenant=? ORDER BY display_name LIMIT 201",
                 (rs, n) -> new Member(rs.getString(1), rs.getString(2), rs.getString(3), rs.getBoolean(4), rs.getBoolean(5) ? "OPEN" : "CLOSED", rs.getString(6)), tenant);
         if (members.size() > 200) throw new StaffTaskFailure(503, "SNAPSHOT_LIMIT", "Staff directory exceeds the pilot limit; pagination is required");

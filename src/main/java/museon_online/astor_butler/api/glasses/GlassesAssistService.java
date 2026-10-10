@@ -20,6 +20,7 @@ public class GlassesAssistService implements AutoCloseable {
     private final GlassesS3Storage storage;
     private final GlassesSpeech speech;
     private final GlassesTranscriptRelay relay;
+    private final GlassesVoiceTasks tasks;
     private final GlassesReplyCache replies = new GlassesReplyCache();
     // Speech is a separate provider: one call at a time, and never a reason for an assist to fail.
     private final Semaphore speechSlot = new Semaphore(1);
@@ -47,7 +48,7 @@ public class GlassesAssistService implements AutoCloseable {
 
     @Autowired
     public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, GlassesSpeech speech,
-                                GlassesTranscriptRelay relay,
+                                GlassesTranscriptRelay relay, GlassesVoiceTasks tasks,
                                 @Value("${astor.glasses.text-enabled:false}") boolean textEnabled,
                                 @Value("${astor.glasses.timeout-ms:10000}") long timeoutMs) {
         this.gateway = gateway;
@@ -55,29 +56,42 @@ public class GlassesAssistService implements AutoCloseable {
         this.storage = storage;
         this.speech = speech;
         this.relay = relay;
+        this.tasks = tasks;
         this.textEnabled = textEnabled;
         this.timeoutMs = Math.max(1, Math.min(timeoutMs, 45000));
     }
 
     public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, boolean enabled, long timeoutMs) {
-        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), GlassesTranscriptRelay.disabled(), enabled, timeoutMs);
+        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), GlassesTranscriptRelay.disabled(),
+                GlassesVoiceTasks.disabled(), enabled, timeoutMs);
     }
 
     GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, boolean enabled, long timeoutMs) {
-        this(gateway, voice, storage, GlassesSpeech.disabled(), GlassesTranscriptRelay.disabled(), enabled, timeoutMs);
+        this(gateway, voice, storage, GlassesSpeech.disabled(), GlassesTranscriptRelay.disabled(), GlassesVoiceTasks.disabled(),
+                enabled, timeoutMs);
     }
 
     GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesSpeech speech, boolean enabled, long timeoutMs) {
-        this(gateway, voice, GlassesS3Storage.disabled(), speech, GlassesTranscriptRelay.disabled(), enabled, timeoutMs);
+        this(gateway, voice, GlassesS3Storage.disabled(), speech, GlassesTranscriptRelay.disabled(), GlassesVoiceTasks.disabled(),
+                enabled, timeoutMs);
     }
 
     GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesTranscriptRelay relay, boolean enabled, long timeoutMs) {
-        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, enabled, timeoutMs);
+        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, GlassesVoiceTasks.disabled(),
+                enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesTranscriptRelay relay, GlassesVoiceTasks tasks,
+                         boolean enabled, long timeoutMs) {
+        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, tasks, enabled, timeoutMs);
     }
 
     public GlassesAssistService(ModelGateway gateway, boolean enabled, long timeoutMs) {
         this(gateway, new GlassesVoice(false, "python3", "", "", "/tmp/astor-glasses", 20000), enabled, timeoutMs);
     }
+
+    /** The answer for the wearer and, when the request was a task, Butler's receipt for it. */
+    public record Outcome(String text, GlassesVoiceTasks.Receipt task) { }
 
     public record Capabilities(boolean text, boolean voice, boolean vision, boolean storage, boolean documents, int maxAudioSeconds,
                                int maxAudioBytes, int maxImageBytes, int maxImageDimension, int maxTextChars,
@@ -136,6 +150,17 @@ public class GlassesAssistService implements AutoCloseable {
         return assist(scope, id, "image", text, image, photoContext);
     }
 
+    /** A typed request, which may be a task: by the phone's intent or by its first words. */
+    Outcome respond(GlassesAccess.Scope scope, String id, String text, GlassesPhotoContext photoContext, String intent) {
+        return assist(scope, id, "text", text, new byte[0], photoContext, intent);
+    }
+
+    /** A spoken request, which may be a task: by the phone's intent or by the first words of the transcript. */
+    Outcome respondAudio(GlassesAccess.Scope scope, String id, String text, byte[] audio, GlassesPhotoContext photoContext,
+                         String intent) {
+        return assist(scope, id, "audio", text, audio, photoContext, intent);
+    }
+
     boolean archivesEnabled() { return storage.enabled(); }
 
     boolean speechConfigured() { return speech.configured(); }
@@ -165,13 +190,21 @@ public class GlassesAssistService implements AutoCloseable {
 
     private String assist(GlassesAccess.Scope scope, String id, String kind, String text, byte[] media,
                           GlassesPhotoContext photoContext) {
+        return assist(scope, id, kind, text, media, photoContext, null).text();
+    }
+
+    private Outcome assist(GlassesAccess.Scope scope, String id, String kind, String text, byte[] media,
+                           GlassesPhotoContext photoContext, String intent) {
         if (!kind.equals("image") && !textEnabled) throw unavailable();
         AtomicBoolean cancelled = new AtomicBoolean();
         return execute(() -> {
             String signature = GlassesReplyCache.digest(kind.getBytes(java.nio.charset.StandardCharsets.UTF_8),
                     text.getBytes(java.nio.charset.StandardCharsets.UTF_8), media,
-                    (photoContext == null ? "" : photoContext.signature()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    (photoContext == null ? "" : photoContext.signature()).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    (intent == null ? "" : intent).getBytes(java.nio.charset.StandardCharsets.UTF_8));
             String answer = replies.find(scope, id, signature);
+            // A repeat of a task request answers with the same confirmation and the same receipt, no new task.
+            GlassesVoiceTasks.Receipt task = answer == null ? null : tasks.receipt(scope, id);
             // What the staff member actually asked, for the system chat: the typed text, or what the
             // recorder heard. Empty when the answer came from the cache and no new question was spoken.
             String question = kind.equals("audio") ? "" : text;
@@ -182,11 +215,23 @@ public class GlassesAssistService implements AutoCloseable {
                 switch (kind) {
                     case "audio" -> {
                         question = voice.transcribe(media);
-                        answer = generate(stage + question, context);
+                        if (tasks.isTask(intent, question)) {
+                            task = tasks.create(scope, id, question);
+                            answer = GlassesVoiceTasks.confirmation(task);
+                        } else {
+                            answer = generate(stage + question, context);
+                        }
                     }
                     case "image" -> answer = image((photoContext == null ? "" : photoContext.prompt()) + text,
                             Base64.getEncoder().encodeToString(media), context);
-                    default -> answer = generate(stage + text, context);
+                    default -> {
+                        if (tasks.isTask(intent, text)) {
+                            task = tasks.create(scope, id, text);
+                            answer = GlassesVoiceTasks.confirmation(task);
+                        } else {
+                            answer = generate(stage + text, context);
+                        }
+                    }
                 }
                 if (cancelled.get()) throw unavailable();
                 replies.remember(scope, id, signature, answer);
@@ -195,9 +240,10 @@ public class GlassesAssistService implements AutoCloseable {
             if (photoContext == null) storage.archive(scope, id, kind, media, answer);
             else storage.archive(scope, id, kind, media, answer, photoContext);
             // Queued, not sent here: the provider slot is released with the answer, and the chat catches up
-            // on its own. The relay never changes the answer and never delays it.
+            // on its own. The relay never changes the answer and never delays it. A task travels as the
+            // words that gave it and the confirmation the wearer heard.
             relay.sendLater(scope, id, kind, question, answer, photoContext, kind.equals("image") ? media : null);
-            return answer;
+            return new Outcome(answer, task);
         }, kind.equals("image"), cancelled);
     }
 
@@ -236,9 +282,9 @@ public class GlassesAssistService implements AutoCloseable {
         return execute(call, image, new AtomicBoolean());
     }
 
-    private String execute(Callable<String> call, boolean image, AtomicBoolean cancelled) {
+    private <T> T execute(Callable<T> call, boolean image, AtomicBoolean cancelled) {
         if (!slot.tryAcquire()) throw new GlassesFailure(429, "BUSY", "Assistant is busy");
-        Future<String> future;
+        Future<T> future;
         try {
             future = executor.submit(() -> {
                 try {
@@ -255,7 +301,7 @@ public class GlassesAssistService implements AutoCloseable {
             throw new GlassesFailure(429, "BUSY", "Assistant is busy");
         }
         try {
-            String result = future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            T result = future.get(timeoutMs, TimeUnit.MILLISECONDS);
             if (image) visionReadyUntil = Instant.now().plusSeconds(300);
             else textReadyUntil = Instant.now().plusSeconds(300);
             return result;
@@ -269,7 +315,8 @@ public class GlassesAssistService implements AutoCloseable {
             cancelled.set(true);
             future.cancel(true);
             if (e.getCause() instanceof GlassesFailure failure) {
-                if (failure.status >= 500) clearReadiness(image);
+                // Butler refusing a task says nothing about the model: text stays ready.
+                if (failure.status >= 500 && !GlassesStaffTaskRelay.FAILURE_CODE.equals(failure.code)) clearReadiness(image);
                 throw failure;
             }
             clearReadiness(image);

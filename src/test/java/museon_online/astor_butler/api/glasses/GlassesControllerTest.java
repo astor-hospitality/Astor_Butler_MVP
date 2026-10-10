@@ -290,4 +290,110 @@ class GlassesControllerTest {
         for (int i = 0; i < 10; i++) rejects(json(Map.of("text", "")), 400, "MALFORMED_REQUEST");
         rejects(json(Map.of("text", "")), 429, "RATE_LIMITED");
     }
+
+    /* ---------- a task given by voice ---------- */
+
+    private static final String DRAFT_JSON = "{\"assignee\":\"Анна\",\"tableCode\":\"5\",\"title\":\"Принести воду\","
+            + "\"instruction\":\"Принести воду на пятый стол\",\"priority\":\"NORMAL\"}";
+
+    private GlassesStaffTaskRelay butler(GlassesVoiceTasks.Receipt receipt) {
+        var relay = mock(GlassesStaffTaskRelay.class);
+        when(relay.configured()).thenReturn(true);
+        if (receipt == null) when(relay.create(any(), any(), any()))
+                .thenThrow(new GlassesFailure(503, "TASK_UNAVAILABLE", "Не смог записать поручение, повторите"));
+        else when(relay.create(any(), any(), any())).thenReturn(receipt);
+        return relay;
+    }
+
+    private GlassesAssistService withTasks(GlassesStaffTaskRelay butler) {
+        return new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), true, 1000);
+    }
+
+    @Test void theTaskIntentRecordsATaskAndAnswersWithTheReceipt() throws Exception {
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text(DRAFT_JSON, "test", "test", Duration.ZERO));
+        var receipt = new GlassesVoiceTasks.Receipt("task-1", "Принести воду", "Анна", "anna", false,
+                "Принести воду на пятый стол", "5", "NORMAL", "ASSIGNED");
+        var butler = butler(receipt);
+        try (var service = withTasks(butler)) {
+            var mvc = MockMvcBuilders.standaloneSetup(new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper)).build();
+            mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer " + TOKEN).contentType("application/json")
+                            .content(json(Map.of("text", "Анне принести воду на пятый стол", "intent", "task"))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.requestId").value(ID))
+                    .andExpect(jsonPath("$.text").value("Записал поручение для Анна: Принести воду. Стол 5."))
+                    .andExpect(jsonPath("$.task.taskId").value("task-1"))
+                    .andExpect(jsonPath("$.task.assignee").value("Анна"))
+                    .andExpect(jsonPath("$.task.assigneeStaffId").value("anna"))
+                    .andExpect(jsonPath("$.task.self").value(false))
+                    .andExpect(jsonPath("$.task.tableCode").value("5"))
+                    .andExpect(jsonPath("$.task.status").value("ASSIGNED"));
+            // The request id is the event id Butler deduplicates on.
+            verify(butler).create(eq(new GlassesAccess.Scope("test-venue", "test-staff")), eq(ID), any());
+            // Only the draft prompt went to the model; no informational answer was generated.
+            verify(gateway, times(1)).generateText(argThat(r -> r.scenario().equals("GLASSES_STAFF_TASK")));
+            verifyNoMoreInteractions(gateway);
+        }
+    }
+
+    @Test void aTriggerWordAtTheStartIsATaskWithoutAnyIntent() throws Exception {
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text(DRAFT_JSON, "test", "test", Duration.ZERO));
+        var butler = butler(new GlassesVoiceTasks.Receipt("task-2", "Принести воду", null, "test-staff", true,
+                "Принести воду", null, "NORMAL", "ASSIGNED"));
+        try (var service = withTasks(butler)) {
+            var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper);
+            var result = c.assist(request(json(Map.of("text", "Задача: принести воду на пятый стол"))));
+            assertThat(result.getStatusCode().value()).isEqualTo(200);
+            var body = (GlassesController.AssistResponse) result.getBody();
+            assertThat(body.text()).isEqualTo("Поручение записал на вас: Принести воду.");
+            assertThat(body.task().taskId()).isEqualTo("task-2");
+            // A plain question with the same service stays a question: no task, no receipt.
+            when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Суп и паста.", "test", "test", Duration.ZERO));
+            var question = c.assist(request(json(Map.of("requestId", "80d26cf1-5139-4121-a4ca-dfb14aac225c", "text", "Что по бизнес-ланчу?"))));
+            assertThat(((GlassesController.AssistResponse) question.getBody()).task()).isNull();
+            verify(butler, times(1)).create(any(), any(), any());
+        }
+    }
+
+    @Test void anUnknownIntentIsMalformedAndAPhotoCannotBeATask() throws Exception {
+        rejects(json(Map.of("text", "Принести воду", "intent", "order")), 400, "MALFORMED_REQUEST");
+        rejects(json(Map.of("text", "Принести воду", "intent", "")), 400, "MALFORMED_REQUEST");
+        rejects(json(Map.of("imageBase64", jpeg(32), "imageMimeType", "image/jpeg", "intent", "task")), 400, "MALFORMED_REQUEST");
+    }
+
+    @Test void withTasksOffAnExplicitTaskIsRefusedAndTheWordsStayAQuestion() throws Exception {
+        // The default service has no Butler link: today's behaviour for every utterance.
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Подскажу, но не запишу.", "test", "test", Duration.ZERO));
+        var result = controller.assist(request(json(Map.of("text", "Задача: принести воду на пятый стол"))));
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        assertThat(((GlassesController.AssistResponse) result.getBody()).text()).isEqualTo("Подскажу, но не запишу.");
+        assertThat(((GlassesController.AssistResponse) result.getBody()).task()).isNull();
+        verify(gateway).generateText(argThat(r -> r.scenario().equals("GLASSES_INFORMATIONAL")));
+
+        var refused = controller.assist(request(json(Map.of("requestId", "80d26cf1-5139-4121-a4ca-dfb14aac225c",
+                "text", "Принести воду", "intent", "task"))));
+        assertThat(refused.getStatusCode().value()).isEqualTo(503);
+        assertThat(((GlassesController.ErrorResponse) refused.getBody()).error()).containsEntry("code", "TASK_UNAVAILABLE");
+        verifyNoMoreInteractions(gateway);
+    }
+
+    @Test void whenButlerCannotTakeTheTaskTheWearerHearsToRepeatAndTextStaysReady() throws Exception {
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text(DRAFT_JSON, "test", "test", Duration.ZERO));
+        try (var service = withTasks(butler(null))) {
+            var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper);
+            // A question first, so text is known to be ready.
+            when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Суп.", "test", "test", Duration.ZERO));
+            assertThat(c.assist(request(json(Map.of("text", "Что на обед?")))).getStatusCode().value()).isEqualTo(200);
+            when(gateway.generateText(any())).thenReturn(ModelTextResponse.text(DRAFT_JSON, "test", "test", Duration.ZERO));
+
+            var result = c.assist(request(json(Map.of("requestId", "80d26cf1-5139-4121-a4ca-dfb14aac225c",
+                    "text", "Принести воду", "intent", "task"))));
+
+            assertThat(result.getStatusCode().value()).isEqualTo(503);
+            var error = (GlassesController.ErrorResponse) result.getBody();
+            assertThat(error.requestId()).isEqualTo("80d26cf1-5139-4121-a4ca-dfb14aac225c");
+            assertThat(error.error()).containsEntry("code", "TASK_UNAVAILABLE")
+                    .containsEntry("message", "Не смог записать поручение, повторите");
+            assertThat(service.capabilities().text()).as("Butler's refusal says nothing about the model").isTrue();
+        }
+    }
 }

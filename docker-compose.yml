@@ -297,6 +297,11 @@ services:
       MAX_API_BASE_URL: ${MAX_API_BASE_URL:-https://platform-api2.max.ru}
       # The MAX API certificate is issued under the Russian Trusted Root CA (same PEM as GigaChat/SaluteSpeech).
       MAX_CA_CERT_PATH: ${MAX_CA_CERT_PATH:-${GIGACHAT_CA_CERT_PATH:-}}
+      # Astor Glass -> Butler: one shared relay token for the transcript relay and for tasks given by voice
+      # (docs/operations/GLASSES_VOICE_TASKS.md). Task persistence without the JWT portal, wearer's role.
+      ASTOR_GLASSES_RELAY_TOKEN: ${ASTOR_GLASSES_RELAY_TOKEN:-}
+      ASTOR_STAFF_TASKS_ENABLED: ${ASTOR_STAFF_TASKS_ENABLED:-false}
+      ASTOR_GLASSES_STAFF_ROLE: ${ASTOR_GLASSES_STAFF_ROLE:-MANAGER}
       ASTOR_OPERATIONAL_PREVIEW_ENABLED: ${AERIS_OPERATIONAL_PREVIEW_ENABLED:-true}
       ASTOR_INTENT_EXAMPLES_INGEST_ON_STARTUP: ${AERIS_INTENT_EXAMPLES_INGEST_ON_STARTUP:-false}
       ASTOR_SEMANTIC_CHUNKS_INGEST_ON_STARTUP: ${AERIS_SEMANTIC_CHUNKS_INGEST_ON_STARTUP:-true}

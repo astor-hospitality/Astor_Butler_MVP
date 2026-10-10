@@ -89,6 +89,36 @@ public class TelegramSystemNotifier {
         }
     }
 
+    /**
+     * A task given by voice through the glasses, as the team sees it in the system chat:
+     * «Поручение от <staff>: <title> — <instruction>. Стол <tableCode>. Для: <assignee>».
+     * Plain text, bounded fields; the caller passes display names, never credentials.
+     */
+    public boolean sendGlassesTask(String staff, String title, String instruction, String tableCode, String assignee) {
+        if (!telegramEnabled || !notificationsEnabled || systemChatId == null || systemChatId.isBlank()) {
+            return false;
+        }
+        TelegramBot telegramBot = telegramBotProvider.getIfAvailable();
+        if (telegramBot == null) {
+            return false;
+        }
+        StringBuilder text = new StringBuilder("Поручение от ").append(bounded(blank(staff), 120))
+                .append(": ").append(bounded(blank(title), 200));
+        if (instruction != null && !instruction.isBlank() && !instruction.strip().equals(title == null ? "" : title.strip())) {
+            text.append(" — ").append(bounded(instruction.strip(), 1000));
+        }
+        text.append('.');
+        if (tableCode != null && !tableCode.isBlank()) text.append(" Стол ").append(bounded(tableCode.strip(), 32)).append('.');
+        text.append(" Для: ").append(bounded(blank(assignee), 120));
+        try {
+            sendGlassesText(telegramBot, text.toString());
+            return true;
+        } catch (Exception e) {
+            log.warn("Telegram glasses task card failed: {}", e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     private void sendGlassesText(TelegramBot bot, String text) throws Exception {
         while (!text.isEmpty()) {
             String chunk = bounded(text, 4096);

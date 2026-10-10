@@ -224,7 +224,7 @@ class GlassesAssistServiceTest {
     // Kept for the one case where a provider that ignores cancellation releases the slot a moment after
     // it signals that it ended. Ordinary back-to-back calls no longer need it: see
     // aRequestRightAfterAnAnswerIsAdmittedEveryTime.
-    private static String whenSlotAvailable(Supplier<String> call) {
+    private static <T> T whenSlotAvailable(Supplier<T> call) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1);
         while (true) {
             try { return call.get(); }
@@ -241,5 +241,55 @@ class GlassesAssistServiceTest {
 
     private record ServiceCloser(GlassesAssistService service) implements AutoCloseable {
         @Override public void close() { service.close(); }
+    }
+
+    /* ---------- a task given by voice ---------- */
+
+    @Test void aSpokenTaskGoesToButlerAndTheChatGetsTheWordsAndTheConfirmation() {
+        var gateway = mock(ModelGateway.class);
+        var voice = mock(GlassesVoice.class);
+        var transcripts = mock(GlassesTranscriptRelay.class);
+        var butler = mock(GlassesStaffTaskRelay.class);
+        when(butler.configured()).thenReturn(true);
+        when(voice.transcribe(any())).thenReturn("Задача: Анне принести воду на пятый стол");
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("{\"assignee\":\"Анна\",\"tableCode\":\"5\","
+                + "\"title\":\"Принести воду\",\"instruction\":\"Принести воду на пятый стол\",\"priority\":\"NORMAL\"}", "test", "test", Duration.ZERO));
+        var receipt = new GlassesVoiceTasks.Receipt("task-1", "Принести воду", "Анна", "anna", false,
+                "Принести воду на пятый стол", "5", "NORMAL", "ASSIGNED");
+        when(butler.create(any(), any(), any())).thenReturn(receipt);
+        String id = UUID.randomUUID().toString();
+        try (var service = new GlassesAssistService(gateway, voice, transcripts, new GlassesVoiceTasks(gateway, butler, true,
+                GlassesVoiceTasks.DEFAULT_TRIGGERS), true, 1000)) {
+            var outcome = service.respondAudio(scope, id, "", new byte[]{1}, null, null);
+
+            assertThat(outcome.text()).isEqualTo("Записал поручение для Анна: Принести воду. Стол 5.");
+            assertThat(outcome.task()).isEqualTo(receipt);
+            verify(butler).create(scope, id, new GlassesVoiceTasks.Draft("Анна", "5", "Принести воду", "Принести воду на пятый стол", "NORMAL"));
+            verify(transcripts).sendLater(scope, id, "audio", "Задача: Анне принести воду на пятый стол",
+                    "Записал поручение для Анна: Принести воду. Стол 5.", null, null);
+            verify(gateway, times(1)).generateText(argThat(r -> r.scenario().equals("GLASSES_STAFF_TASK")));
+            verifyNoMoreInteractions(gateway);
+
+            // The same request again: the same confirmation and receipt from the cache, no second task.
+            var again = whenSlotAvailable(() -> service.respondAudio(scope, id, "", new byte[]{1}, null, null));
+            assertThat(again.text()).isEqualTo(outcome.text());
+            assertThat(again.task()).isEqualTo(receipt);
+            verify(butler, times(1)).create(any(), any(), any());
+        }
+    }
+
+    @Test void theSameWordsWithTheAssistIntentStayAQuestion() {
+        var gateway = mock(ModelGateway.class);
+        var butler = mock(GlassesStaffTaskRelay.class);
+        when(butler.configured()).thenReturn(true);
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Это была бы задача.", "test", "test", Duration.ZERO));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), true, 1000)) {
+            var outcome = service.respond(scope, UUID.randomUUID().toString(), "Задача: принести воду", null, "assist");
+            assertThat(outcome.text()).isEqualTo("Это была бы задача.");
+            assertThat(outcome.task()).isNull();
+            verify(gateway).generateText(argThat(r -> r.scenario().equals("GLASSES_INFORMATIONAL")));
+            verify(butler, never()).create(any(), any(), any());
+        }
     }
 }
