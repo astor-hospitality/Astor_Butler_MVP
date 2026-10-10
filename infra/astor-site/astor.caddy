@@ -1,0 +1,43 @@
+# Astor - презентационный сайт (статический контейнер astor-site, compose в infra/astor-site).
+# Пока только техническое имя: собственного домена у Astor нет. Когда появится A-запись
+# (astor.c3ag.ru или купленный домен), добавить его через запятую в строку адреса ниже
+# и сделать validate + reload - сертификат Caddy выпустит сам. Не добавлять имя раньше,
+# чем появится A-запись: иначе Caddy будет бесконечно повторять ACME для него.
+astor.176-123-165-162.nip.io {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	# Веб-чат виджета: /api/astor/messages отдаёт AstorWebRelay в контейнере очков
+	# (astor_glasses_api), как /api/glasses* в c3ag.caddy. Остальной /api/* - gateway.
+	# Если backend не нужен на этом имени, оба блока можно убрать: сайт работает без них.
+	@relay path /api/astor/messages
+	handle @relay {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy astor_glasses_api:8091 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+	@backend path /api/*
+	handle @backend {
+		reverse_proxy astor-api-gateway:8080 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+	handle {
+		reverse_proxy astor-site:80 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
+}

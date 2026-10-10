@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Astor Glass — умные очки для команды заведения</title>
+<meta name="description" content="Astor Glass - приложение для сотрудников ресторана: iPhone и умные очки с микрофоном и камерой. Вопрос голосом или фото стола, ответ текстом и голосом Астора. Продукт проходит пилот.">
+<meta property="og:title" content="Astor Glass — умные очки для команды заведения">
+<meta property="og:description" content="Вопрос голосом, фото сервировки, служебные сообщения в очки и журнал смены. Подсказка для сотрудника, решения остаются за людьми.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
+<meta property="og:image:secure_url" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Astor Glass — умные очки для команды заведения">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
+<meta name="theme-color" content="#0b0a08">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=20260707-aa">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="../css/brand-typography.css">
+<link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Перейти к содержанию</a>
+<div class="letterbox letterbox-top" aria-hidden="true"></div>
+<div class="letterbox letterbox-bottom" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="film-progress" aria-hidden="true"><span id="filmProgressBar"></span></div>
+<div class="cursor-key" id="cursorKey" aria-hidden="true">
+  <svg viewBox="0 0 48 48" width="34" height="34"><g fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round"><circle cx="15" cy="15" r="7.5"/><path d="M20.5 20.5 L38 38"/><path d="M31 31 L36 26"/><path d="M35 35 L40 30"/></g></svg>
+</div>
+<div class="ripple-layer" id="rippleLayer" aria-hidden="true"></div>
+<button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему" aria-pressed="false">
+  <span class="theme-toggle-icon" aria-hidden="true"></span>
+  <span class="theme-toggle-text">Светлая тема</span>
+</button>
+
+<header class="hero hero-glass" id="hero">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <canvas class="hero-dust" id="heroDust" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <div class="hero-brand rise" style="--d:0" aria-label="Astor Glass">
+      <span class="brand-monogram" aria-hidden="true">AG</span>
+      <span class="hero-brand-name">Astor Glass</span>
+    </div>
+
+    <h1 class="hero-hook">
+      <span class="hook-line rise" style="--d:1">Руки заняты сервисом,</span>
+      <span class="hook-line hook-accent rise" style="--d:2">подсказка - в очках.</span>
+    </h1>
+
+    <p class="hero-sub rise" style="--d:3">Astor Glass - приложение для сотрудников заведения: iPhone и умные очки с микрофоном и камерой. Сотрудник задает вопрос голосом или показывает стол на фото, Astor отвечает текстом и голосом. Продукт проходит пилот.</p>
+
+    <div class="hero-cta rise" style="--d:4">
+      <a href="#how" class="btn btn-quiet">Как работает</a>
+      <a href="#limits" class="btn btn-quiet">Что остается за людьми</a>
+    </div>
+  </div>
+  <button class="hero-scroll-hint rise" style="--d:5" id="scrollHint" aria-label="Прокрутить вниз"><span>Для команды</span><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 9l6 6 6-6"/></svg></button>
+</header>
+
+<main id="main">
+
+<section class="section" id="what" aria-labelledby="what-title">
+  <p class="chapter">Для команды в смене</p>
+  <h2 class="section-title" id="what-title">Официант спрашивает, не отходя от стола.</h2>
+  <p class="lede">В смене нет времени открывать телефон и искать ответ. Astor Glass отвечает в очки по справочным материалам, загруженным для заведения, пока руки заняты.</p>
+
+  <div class="what-grid">
+    <div class="what-item reveal"><span class="what-num">01</span><p>Вопрос голосом - ответ голосом Астора</p></div>
+    <div class="what-item reveal"><span class="what-num">02</span><p>Фото стола и проверка сервировки по шагам</p></div>
+    <div class="what-item reveal"><span class="what-num">03</span><p>Служебные сообщения заведения - в очки</p></div>
+    <div class="what-item reveal"><span class="what-num">04</span><p>Справочные материалы, загруженные для заведения</p></div>
+    <div class="what-item reveal"><span class="what-num">05</span><p>Журнал смены и отчет для менеджера</p></div>
+  </div>
+</section>
+
+<section class="section" id="how" aria-labelledby="how-title">
+  <p class="chapter">Как работает</p>
+  <h2 class="section-title" id="how-title">Кнопка, вопрос, ответ. Без постоянного прослушивания.</h2>
+  <p class="lede">Микрофон и камера включаются только действием сотрудника. Один вопрос - один ответ, одна фотография - одна проверка.</p>
+
+  <div class="timeline-list">
+    <div class="timeline-item reveal"><strong>1. Сотрудник включает</strong><span>нажатие на очках; пока его нет, Astor ничего не слушает и не снимает</span></div>
+    <div class="timeline-item reveal"><strong>2. Вопрос становится текстом</strong><span>голос распознается, Astor отвечает по справочным материалам заведения; запись хранится в закрытом хранилище не дольше суток</span></div>
+    <div class="timeline-item reveal"><strong>3. Ответ в очки</strong><span>текстом и голосом Астора - одним премиальным голосом, выбранным для заведения</span></div>
+    <div class="timeline-item reveal"><strong>4. Фото по команде</strong><span>снимок стола проверяется по шагам сервировки: подготовка стола, приборы и бокалы, вода и меню, финальная проверка</span></div>
+    <div class="timeline-item reveal"><strong>5. Сообщения заведения</strong><span>менеджер отправляет короткое сообщение, телефон читает его в очки в паузе, когда сотрудник свободен</span></div>
+    <div class="timeline-item reveal"><strong>6. Журнал смены</strong><span>после смены менеджер видит, что ответил Astor, где была ошибка и сколько заняло</span></div>
+  </div>
+</section>
+
+<section class="section section-roles" aria-labelledby="roles-title">
+  <p class="chapter">Рабочий контур</p>
+  <h2 class="section-title" id="roles-title">Сотрудник, менеджер и гость видят свое.</h2>
+
+  <div class="roles-grid">
+    <div class="role-card reveal">
+      <h3>Сотрудник</h3>
+      <p class="role-sub">слышит ответ в очках</p>
+      <div class="role-demo">
+        <div class="bubble guest small">Что входит в бизнес-ланч на двоих?</div>
+        <div class="bubble butler-msg small">Суп дня, горячее на выбор и напиток. Подача - после проверки сервировки.</div>
+      </div>
+    </div>
+
+    <div class="role-card reveal role-card-hostess">
+      <h3>Менеджер</h3>
+      <p class="role-sub">видит журнал смены</p>
+      <div class="hostess-card" role="img" aria-label="Журнал смены: шаги сервировки, вопросы и ответы">
+        <div class="hc-head">Смена · бизнес-ланч на двоих</div>
+        <div class="hc-row"><span>Подготовка стола</span><strong>готово</strong></div>
+        <div class="hc-row"><span>Приборы и бокалы</span><strong>фото проверено</strong></div>
+        <div class="hc-row"><span>Вода и меню</span><strong>готово</strong></div>
+        <div class="hc-msgs">
+          <div class="hc-msg">ответ Astor: уточните у кухни, подсказка - не подтверждение</div>
+          <div class="hc-msg">ошибок за смену: нет</div>
+        </div>
+        <div class="hc-actions"><span class="hc-btn hc-ok">Финальная проверка</span><span class="hc-btn hc-no">Отчет смены</span></div>
+      </div>
+    </div>
+
+    <div class="role-card reveal">
+      <h3>Гость</h3>
+      <p class="role-sub">не замечает технологию</p>
+      <div class="role-demo manager-demo">
+        <div class="mgr-row"><span class="mgr-dot ok"></span>Официант остается рядом и отвечает сразу</div>
+        <div class="mgr-row"><span class="mgr-dot"></span>Камера и микрофон не направлены на гостя без необходимости</div>
+        <div class="mgr-row"><span class="mgr-dot"></span>Бронь и заказ по-прежнему подтверждают люди</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="limits" aria-labelledby="limits-title">
+  <p class="chapter">Границы</p>
+  <h2 class="section-title" id="limits-title">Astor Glass подсказывает, но не решает.</h2>
+  <p class="lede">Подсказка в очках - информационная. Она не подтверждает выполнение поручения, не меняет бронь и не отправляет сообщение гостю. Это делают люди.</p>
+
+  <div class="features-list compact-features">
+    <div class="feature reveal">
+      <h3>Нет постоянного прослушивания</h3>
+      <p>Микрофон включается только по нажатию сотрудника. Запись превращается в текст и хранится в закрытом хранилище не дольше суток.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Фото и запись - не дольше суток</h3>
+      <p>Снимок и запись вопроса делаются только по команде сотрудника, обрабатываются по его задаче и хранятся в закрытом хранилище не дольше суток.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Ответ без подтверждения</h3>
+      <p>Astor не ставит отметку о выполнении и не меняет статус брони. Поручения подтверждает сам сотрудник, бронь - хостес.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Ключи только на сервере</h3>
+      <p>Доступ к облачным моделям и хранилищу живет на сервере заведения. В приложение и чаты ключи не попадают.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Журнал без лишнего</h3>
+      <p>В журнале смены - ответы Astor, шаги, время и задержки. Сырого аудио, расшифровок вопросов и ключей в нем нет.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Рядом с Astor Butler</h3>
+      <p>Очки - отдельный контур для сотрудников: справочные материалы загружаются для заведения отдельно, а брони и сценарии гостей остаются в Astor Butler.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="status" aria-labelledby="status-title">
+  <p class="chapter">Статус</p>
+  <h2 class="section-title" id="status-title">Пилот.</h2>
+  <p class="lede">Astor Glass проходит пилот. Публичного релиза в магазинах приложений пока нет: приложение ставится на iPhone команды заведения в рамках пилота. Подробно о данных, голосе и камере - в <a class="text-link" href="../policy.html">политике конфиденциальности</a>.</p>
+</section>
+
+<section class="section section-final" id="final" aria-labelledby="final-title">
+  <p class="chapter">Разговор о команде</p>
+  <h2 class="section-title" id="final-title">Расскажите, какие вопросы сотрудники задают чаще всего.</h2>
+  <p class="lede">Состав блюда, аллергены, правила подачи, кто за что отвечает в смене - с этого удобно начинать справочные материалы для очков.</p>
+  <div class="final-cta">
+    <a href="../" class="btn btn-quiet">Вернуться к Astor</a>
+    <a href="../astor_butler/" class="btn btn-quiet">Для заведений</a>
+    <a href="../astor_concierge/" class="btn btn-quiet">Для событий</a>
+  </div>
+  <footer class="footer">
+    <div class="footer-logo">ASTOR GLASS</div>
+    <p>Умные очки для команды заведения · пилот</p>
+    <p><a class="footer-link" href="../policy.html">Политика конфиденциальности</a></p>
+  </footer>
+</section>
+
+</main>
+
+<script src="../js/main.js" defer></script>
+</body>
+</html>

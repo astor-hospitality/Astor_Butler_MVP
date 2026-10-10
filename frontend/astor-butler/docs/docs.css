@@ -3,13 +3,14 @@
   --ink: #0b0a08; --ink-2: #14110d; --ink-3: #241f18;
   --paper: #f5efe4; --paper-dim: #b8ac97;
   --gold: #c9a227; --gold-soft: #e8cf7a;
-  --font-display: "Playfair Display", Georgia, serif;
-  --font-body: "Inter", -apple-system, sans-serif;
+  --font-display: var(--brand-font-heading);
+  --font-body: var(--brand-font-family);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
   background: var(--ink); color: var(--paper);
-  font-family: var(--font-body); font-weight: 300; line-height: 1.7;
+  font-family: var(--font-body); font-weight: var(--brand-body-weight); line-height: 1.7;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
 .doc-wrap { max-width: 760px; margin: 0 auto; padding: clamp(2rem, 6vh, 4rem) clamp(1.25rem, 5vw, 2rem) 5rem; }
 .doc-back {
@@ -19,26 +20,26 @@ body {
 }
 .doc-back:hover { color: var(--gold-soft); }
 .doc-kicker { font-size: 0.72rem; letter-spacing: 0.35em; text-transform: uppercase; color: var(--gold); margin-bottom: 1rem; }
-h1 { font-family: var(--font-display); font-weight: 500; font-size: clamp(1.9rem, 5vw, 2.8rem); line-height: 1.2; margin-bottom: 1.5rem; }
-h2 { font-family: var(--font-display); font-weight: 500; font-size: 1.45rem; color: var(--gold-soft); margin: 2.8rem 0 1rem; }
-h3 { font-family: var(--font-body); font-weight: 500; font-size: 1.05rem; margin: 1.8rem 0 0.6rem; }
+h1 { font-family: var(--font-display); font-weight: var(--brand-heading-weight); font-size: clamp(1.9rem, 5vw, 2.8rem); line-height: var(--brand-display-leading); letter-spacing: var(--brand-display-tracking); margin-bottom: 1.5rem; }
+h2 { font-family: var(--font-display); font-weight: var(--brand-heading-weight); font-size: 1.45rem; letter-spacing: var(--brand-heading-tracking); color: var(--gold-soft); margin: 2.8rem 0 1rem; }
+h3 { font-family: var(--font-display); font-weight: var(--brand-heading-weight); font-size: 1.05rem; letter-spacing: var(--brand-subhead-tracking); margin: 1.8rem 0 0.6rem; }
 p { margin-bottom: 1rem; color: var(--paper); }
 p.dim, li.dim { color: var(--paper-dim); }
 ul, ol { margin: 0 0 1.2rem 1.2rem; }
 li { margin-bottom: 0.45em; }
 blockquote {
   border-left: 3px solid var(--gold); padding: 0.6em 0 0.6em 1.4em; margin: 1.6rem 0;
-  font-family: var(--font-display); font-style: italic; font-size: 1.15rem; color: var(--gold-soft);
+  font-family: var(--font-display); font-weight: var(--brand-weight-medium); font-size: 1.15rem; color: var(--gold-soft);
 }
 .price-block {
   background: var(--ink-2); border: 1px solid rgba(201,162,39,0.3); border-radius: 8px;
   padding: 1.6rem; margin: 1.6rem 0; text-align: center;
 }
-.price-block strong { display: block; font-family: var(--font-display); font-size: 2rem; color: var(--gold); font-weight: 600; }
+.price-block strong { display: block; font-family: var(--font-display); font-size: 2rem; color: var(--gold); font-weight: var(--brand-weight-semibold); }
 .price-block span { color: var(--paper-dim); font-size: 0.9rem; }
 table { width: 100%; border-collapse: collapse; margin: 1.6rem 0; font-size: 0.88rem; }
 th, td { text-align: left; padding: 0.7em 0.8em; border-bottom: 1px solid rgba(245,239,228,0.1); vertical-align: top; }
-th { font-weight: 500; color: var(--gold-soft); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; }
+th { font-weight: var(--brand-weight-medium); color: var(--gold-soft); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; }
 td:first-child { color: var(--paper-dim); }
 .table-scroll { overflow-x: auto; }
 .doc-note { font-size: 0.82rem; color: var(--paper-dim); border-top: 1px solid rgba(245,239,228,0.1); margin-top: 3rem; padding-top: 1.2rem; }

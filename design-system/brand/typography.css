@@ -1,0 +1,43 @@
+/* ============================================================
+   Бренд-типографика C3AG / Astor — единственное место, где задан шрифт.
+
+   Источник правды: design-system/brand/typography.css (этот файл).
+   Копия для статического сайта Astor без сборки:
+     frontend/astor-butler/css/brand-typography.css
+   Совпадение копии проверяет тест
+     frontend/astor-butler/tests/brand-typography.test.mjs.
+   Next.js-сайт c3ag грузит ту же гарнитуру через next/font в
+     frontend/app/layout.tsx — при смене шрифта менять одновременно.
+   Порядок замены шрифта: design-system/brand/README.md.
+
+   Правило бренда: одна гарнитура на весь сайт. Заголовки отличаются
+   весом и трекингом, а не другим шрифтом; курсив не используется.
+   ============================================================ */
+
+/* 1. Загрузка гарнитуры. Для self-hosted шрифта заменить @import
+      на @font-face, файлы положить рядом с копией (css/fonts/). */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
+
+:root {
+  /* 2. Семейство. Первое имя в стеке — имя загруженного шрифта. */
+  --brand-font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --brand-font-heading: var(--brand-font-family);
+
+  /* 3. Веса — только те, что загружены выше. */
+  --brand-weight-regular: 400;
+  --brand-weight-medium: 500;
+  --brand-weight-semibold: 600;
+
+  /* 4. Заголовки: чем крупнее кегль, тем плотнее трекинг. */
+  --brand-heading-weight: var(--brand-weight-semibold);
+  --brand-heading-tracking: -0.022em;  /* h1–h3 по умолчанию */
+  --brand-heading-leading: 1.04;
+  --brand-hero-tracking: -0.035em;     /* заголовок hero */
+  --brand-hero-leading: 1.03;
+  --brand-display-tracking: -0.03em;   /* заголовки секций */
+  --brand-display-leading: 1.05;
+  --brand-subhead-tracking: -0.015em;  /* h3 внутри карточек */
+
+  /* 5. Текст. Интерлиньяж текста остаётся за страницей (1.5–1.7 по типу страницы). */
+  --brand-body-weight: var(--brand-weight-regular);
+}
