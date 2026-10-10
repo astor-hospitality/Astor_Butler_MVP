@@ -91,6 +91,25 @@ astor:
       voice-ttl-days: ${S3_VOICE_TTL_DAYS:3}
   message:
     log-conversations-enabled: ${ASTOR_LOG_CONVERSATIONS_ENABLED:true}
+  # Guest languages, see docs/architecture/I18N_MULTILANG_PLAN.md. Off: every guest is answered in Russian, as before.
+  i18n:
+    enabled: ${ASTOR_I18N_ENABLED:false}
+    default-language: ${ASTOR_I18N_DEFAULT_LANGUAGE:ru}
+    # Languages with a human-edited catalog in src/main/resources/i18n/guest/<language>.yaml.
+    catalog-languages: ${ASTOR_I18N_CATALOG_LANGUAGES:ru,en}
+    # A guest language without a catalog or a translation gets this one, except the languages listed below,
+    # which get the default language instead (an open question for the owner, empty until decided).
+    fallback-language: ${ASTOR_I18N_FALLBACK_LANGUAGE:en}
+    default-fallback-languages: ${ASTOR_I18N_DEFAULT_FALLBACK_LANGUAGES:}
+    detection:
+      min-confidence: ${ASTOR_I18N_DETECTION_MIN_CONFIDENCE:0.7}
+      min-letters: ${ASTOR_I18N_DETECTION_MIN_LETTERS:8}
+    machine-translation:
+      # Paid calls. Stays off until the Yandex Translate adapter (phase 2) exists and a budget is agreed.
+      enabled: ${ASTOR_I18N_MT_ENABLED:false}
+      provider: ${ASTOR_I18N_MT_PROVIDER:none}
+      source-language: ${ASTOR_I18N_MT_SOURCE_LANGUAGE:ru}
+      cache-max-entries: ${ASTOR_I18N_MT_CACHE_MAX_ENTRIES:5000}
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
