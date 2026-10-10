@@ -15,5 +15,6 @@ Key files:
 - `DATABASE_MODEL.md`
 - `LOCAL_DATABASES.md`
 - `ADR-salute-speaker.md` — ADR + план спайка: Astor Butler на колонках SberBoom через Chat App / SmartApp API webhook
+- `MAX_ADAPTER_PLAN.md` — канал MAX (VK) для Butler и Concierge: проверенный Bot API, сопоставление с Telegram, фазы, фаза 1 за флагом `ASTOR_MAX_ENABLED`
 
 Do not put scenario walkthroughs here; FSM flow belongs in `docs/fsm/`.

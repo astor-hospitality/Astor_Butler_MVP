@@ -75,3 +75,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-08-guest-billing-payment-review.yaml
   - include:
       file: db/changelog/2026-10-08-telegram-voice-replies.yaml
+  - include:
+      file: db/changelog/2026-10-10-max-channel.yaml

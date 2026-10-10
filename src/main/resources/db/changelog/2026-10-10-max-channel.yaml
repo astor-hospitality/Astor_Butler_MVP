@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-10-max-channel
+      author: astor-butler
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-10-max-channel.sql
