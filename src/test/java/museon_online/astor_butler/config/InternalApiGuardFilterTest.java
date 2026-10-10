@@ -137,25 +137,40 @@ class InternalApiGuardFilterTest {
                 "/api/admin/staff-tasks/dashboard",
                 "/api/admin/staff/members/anna",
                 "/api/internal/glasses/transcript",
+                "/api/internal/glasses/staff-tasks",
                 "/actuator/health",
                 "/actuator/health/liveness",
                 "/actuator/prometheus")) {
             mvc.perform(get(path)).andExpect(status().isOk());
         }
-        assertThat(stub.hits).hasSize(6);
+        assertThat(stub.hits).hasSize(7);
+    }
+
+    @Test void glassesRelayEndpointsAreReachableWithoutTheInternalTokenForPosts() throws Exception {
+        // The isolated glasses runtime sends only X-Astor-Relay-Token; both relay controllers verify it themselves.
+        for (String path : List.of("/api/internal/glasses/transcript", "/api/internal/glasses/staff-tasks")) {
+            mvc.perform(post(path).contentType("application/json").content("{}").header("X-Astor-Relay-Token", "runtime"))
+                    .andExpect(status().isOk());
+        }
+        mvc.perform(post("/api/internal/other").contentType("application/json").content("{}")
+                .header("X-Astor-Relay-Token", "runtime")).andExpect(status().isUnauthorized());
+        assertThat(stub.hits).containsExactly("POST /api/internal/glasses/transcript", "POST /api/internal/glasses/staff-tasks");
     }
 
     @Test void publicPathsAreUntouched() throws Exception {
         for (String path : List.of(
                 "/api/glasses/capabilities",
+                "/api/glasses/assist",
+                "/api/glasses/media/abc",
                 "/api/chat/speak",
                 "/api/astor/messages",
                 "/api/web/sessions",
                 "/api/staff/login-config",
                 "/api/auth/me")) {
             mvc.perform(get(path)).andExpect(status().isOk());
+            mvc.perform(post(path).contentType("application/json").content("{}")).andExpect(status().isOk());
         }
-        assertThat(stub.hits).hasSize(6);
+        assertThat(stub.hits).hasSize(16);
     }
 
     @Test void messageGatewayWebChannelPassesWithoutTokenAndBodyIsReplayedIntact() throws Exception {

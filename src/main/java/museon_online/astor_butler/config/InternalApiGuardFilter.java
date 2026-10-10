@@ -70,7 +70,7 @@ public final class InternalApiGuardFilter extends OncePerRequestFilter {
             "/api/bookings/**",   // reservations keyed by chat id, hostess confirm/reject
             "/api/fsm/**",        // raw FSM state reads and writes
             "/api/admin/**",      // admin tooling (the staff portal subtree is excepted below)
-            "/api/internal/**",   // service-to-service (the glasses relay is excepted below)
+            "/api/internal/**",   // service-to-service (the glasses relay subtree is excepted below)
             "/api/concierge/**",  // guest service requests listed by chat id
             "/actuator/**"        // env, loggers, threaddump (health and prometheus are excepted below)
     );
@@ -82,7 +82,8 @@ public final class InternalApiGuardFilter extends OncePerRequestFilter {
     static final List<String> PUBLIC_EXCEPTIONS = List.of(
             "/api/admin/staff/**",             // staff portal: own JWT chain, StaffPortalConfiguration (@Order(1))
             "/api/admin/staff-tasks/**",       // staff portal: same chain
-            "/api/internal/glasses/transcript", // glasses relay: own X-Astor-Relay-Token, GlassesTranscriptController
+            "/api/internal/glasses/**",        // glasses relay: own X-Astor-Relay-Token (GlassesTranscriptController,
+                                               // GlassesStaffTaskController); the runtime cannot send a second token
             "/actuator/health",                // compose / edge liveness
             "/actuator/health/**",
             "/actuator/prometheus"             // Prometheus 2.x scrape via api-gateway; cannot send custom headers

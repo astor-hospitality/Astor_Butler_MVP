@@ -36,7 +36,7 @@ Butler  config/SecurityConfig.java       anyRequest().permitAll(), CSRF выкл
 | Группа | Пути | Правило |
 | --- | --- | --- |
 | Внутренние (`INTERNAL_PATHS`) | `/api/bookings/**`, `/api/fsm/**`, `/api/admin/**`, `/api/internal/**`, `/api/concierge/**`, `/actuator/**` | Нужен заголовок `X-Astor-Internal-Token`, равный `ASTOR_INTERNAL_API_TOKEN`. Нет или неверный → **401** `UNAUTHORIZED`, `details.reason=INTERNAL_TOKEN_REQUIRED`. До контроллера запрос не доходит |
-| Исключения внутри них (`PUBLIC_EXCEPTIONS`) | `/api/admin/staff/**`, `/api/admin/staff-tasks/**` (JWT стаф-портала), `/api/internal/glasses/transcript` (свой `X-Astor-Relay-Token`), `/actuator/health`, `/actuator/health/**`, `/actuator/prometheus` (Prometheus 2.x не умеет свои заголовки; снаружи всё равно 404) | Фильтр не трогает |
+| Исключения внутри них (`PUBLIC_EXCEPTIONS`) | `/api/admin/staff/**`, `/api/admin/staff-tasks/**` (JWT стаф-портала), `/api/internal/glasses/**` — релей очков `transcript` и `staff-tasks` (PR #121), оба проверяют свой `X-Astor-Relay-Token`, runtime очков второй токен слать не умеет, `/actuator/health`, `/actuator/health/**`, `/actuator/prometheus` (Prometheus 2.x не умеет свои заголовки; снаружи всё равно 404) | Фильтр не трогает |
 | Шлюз сообщений | `POST /api/messages` | Без заголовка проходит только `channel: WEB` (или без канала — контроллер считает его WEB). `TELEGRAM`, `INTERNAL` и любой другой без заголовка → **403** `FORBIDDEN`, `details.reason=INTERNAL_CHANNEL_REQUIRES_TOKEN`, `details.channel`. С верным заголовком проходит любой канал. Заголовок есть, но неверный → 401 независимо от канала. Анонимное тело больше 256 KiB → 413. Тело после просмотра отдаётся контроллеру без изменений |
 | Публичные, не тронуты | `/api/glasses/**`, `/api/chat/**`, `/api/staff/**`, `/api/astor/**`, `/api/web/**`, `/api/auth/**` и остальные `/api/*` | Как раньше |
 
@@ -67,36 +67,32 @@ Butler  config/SecurityConfig.java       anyRequest().permitAll(), CSRF выкл
 | Concierge → Butler по docker-сети (`http://aeris-astor-butler-bot:8089`) | `POST /api/bookings/table-reservations`, чтение статусов `/api/bookings/**`, `/api/messages` с `channel` ≠ `WEB` | **Да** |
 | Ops / curl изнутри docker-сети | `/api/bookings/**`, `/api/fsm/**`, `/api/admin/**`, `/actuator/**` | **Да** |
 | Виджет c3ag.ru, `AstorWebRelay` (`/api/astor/messages` → `/api/messages` channel WEB) | `/api/messages` | Нет |
-| Runtime очков → релей | `/api/internal/glasses/transcript` | Нет — свой `X-Astor-Relay-Token` |
+| Runtime очков → релей | `/api/internal/glasses/transcript`, `/api/internal/glasses/staff-tasks` | Нет — свой `X-Astor-Relay-Token` |
 | Prometheus (`docker/prometheus/prometheus.yml`, через `api-gateway:8080`) | `/actuator/prometheus` | Нет — исключение; снаружи 404 |
 | Стаф-портал | `/api/staff/**`, `/api/admin/staff*` | Нет — своя JWT-цепочка |
 
-**Concierge.** На 2026-10-10 в репозитории `Astor_Concierge` нет кода приложения (только документация), файла `src/butler/client.ts` не существует — менять нечего. Когда клиент Butler появится, в нём нужна одна строка в заголовках каждого запроса к Butler и переменная в `.env` Concierge:
-
-```ts
-headers: {
-  "Content-Type": "application/json",
-  "X-Astor-Internal-Token": process.env.ASTOR_INTERNAL_API_TOKEN ?? "",
-},
-```
-
-Значение — то же, что в `/opt/astor-butler/.env.production`. Без него Butler ответит 401, и бронь из Concierge не создастся: это и есть ожидаемое поведение fail closed.
+**Concierge.** Бот Concierge (`Astor_Concierge`, TypeScript, `src/butler/client.ts`) ходит в Butler по docker-сети `BUTLER_API_BASE_URL=http://aeris_astor_butler_bot:8089`: `POST /api/bookings/table-reservations`, `GET /api/bookings/table-reservations/{id}`, `GET /api/bookings/tables/availability`, `POST /api/concierge/requests`. Все четыре пути после фикса внутренние, поэтому в Concierge есть парный PR `fix(butler): send the internal API token to Butler`: переменная `ASTOR_INTERNAL_API_TOKEN` в `src/config.ts` и `.env.example`, заголовок `X-Astor-Internal-Token` на каждый запрос к Butler, когда переменная задана. Значение — то же, что в `/opt/astor-butler/.env.production`. Пока Butler без фильтра, лишний заголовок он игнорирует — поэтому Concierge выкатывается **первым**. Без токена Butler ответит 401, и бронь из Concierge не создастся: это ожидаемое fail closed.
 
 ## 4. Порядок выката на VM (176.123.165.162)
 
-Предусловие: PR смержен в `main`, образ `astor-butler:main` собран workflow `Deploy to Cloud.ru VM` или `git pull` в `/opt/astor-butler/current`. Все команды — от пользователя из группы `docker`.
+Порядок важен: **Concierge → Butler + gateway → Caddy**. Concierge с заголовком работает и против старого Butler (заголовок игнорируется); Butler с фильтром против старого Concierge ломает брони (401). Каждый шаг откатывается отдельно (§5).
+
+Предусловие: оба PR смержены в `main`; образ `astor-butler:main` собран workflow `Deploy to Cloud.ru VM` или `git pull` в `/opt/astor-butler/current`; Concierge выкатывается своим `scripts/deploy-vm.sh` из его репозитория. Все команды — от пользователя из группы `docker`.
 
 ```bash
-# 1. Сгенерировать токен и положить в оба окружения. Значение в чат и в git не попадает.
+# 1. Один токен на оба окружения. Значение в чат и в git не попадает.
 umask 077
 TOKEN=$(openssl rand -hex 32)
 printf 'ASTOR_INTERNAL_API_TOKEN=%s\n' "$TOKEN" | sudo tee -a /opt/astor-butler/.env.production >/dev/null
-# Concierge: та же строка в его .env (путь на VM уточнить, когда контейнер появится), например:
-# printf 'ASTOR_INTERNAL_API_TOKEN=%s\n' "$TOKEN" | sudo tee -a /opt/astor-concierge/.env >/dev/null
+printf 'ASTOR_INTERNAL_API_TOKEN=%s\n' "$TOKEN" | sudo tee -a /opt/astor-concierge/.env >/dev/null   # путь .env Concierge — по его DEPLOY_VM.md
 unset TOKEN
 sudo chown root:docker /opt/astor-butler/.env.production && sudo chmod 0640 /opt/astor-butler/.env.production
 
-# 2. Проверить compose без вывода значений
+# 1a. Сначала Concierge: новый образ с заголовком (из репозитория Astor_Concierge, его runbook docs/operations/DEPLOY_VM.md)
+cd /opt/astor-concierge && bash scripts/deploy-vm.sh main
+docker compose logs --tail=50 concierge | grep -ciE 'ConfigError|ASTOR_INTERNAL_API_TOKEN'   # ожидается 0
+
+# 2. Butler: проверить compose без вывода значений
 cd /opt/astor-butler/current
 docker compose --env-file ../.env.production --env-file images.env \
   -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.cloudru.yml \
@@ -148,6 +144,14 @@ docker run --rm --network astor-butler_default curlimages/curl -s -o /dev/null -
 docker run --rm --network astor-butler_default curlimages/curl -s -o /dev/null -w '%{http_code}\n' \
   http://aeris-astor-butler-bot:8089/api/bookings/table-reservations/telegram/1                     # 401
 unset TOKEN
+
+# Concierge → Butler. Вариант А (без создания брони): availability из контейнера Concierge его же окружением —
+# 200 означает, что токен в .env Concierge совпадает с Butler.
+docker compose -f /opt/astor-concierge/docker-compose.yml exec concierge node -e '
+  fetch(process.env.BUTLER_API_BASE_URL + "/api/bookings/tables/availability?venueCode=AERIS&from=2026-12-01T10:00:00Z&to=2026-12-01T12:00:00Z&partySize=2",
+    { headers: { "x-astor-internal-token": process.env.ASTOR_INTERNAL_API_TOKEN ?? "" } }).then(r => console.log(r.status))'   # 200, не 401
+# Вариант Б (боевой путь): тестовая бронь из бота Concierge в Telegram → в Butler появляется заявка со статусом
+# AWAITING_MANAGER_CONFIRMATION и хостес видит её в своём чате. Делать только по согласованию: это настоящая заявка.
 ```
 
 ## 5. Откат
@@ -156,6 +160,7 @@ unset TOKEN
 
 - **Caddy**: `sudo cp /opt/edge/sites.d/c3ag.caddy.bak-<дата> /opt/edge/sites.d/c3ag.caddy && docker exec vedal-proxy caddy validate --config /etc/caddy/Caddyfile && docker exec vedal-proxy caddy reload --config /etc/caddy/Caddyfile`.
 - **Gateway и боты**: `bash /opt/astor-butler/current/scripts/deploy/cloudru-deploy.sh /opt/astor-butler rollback <sha> backend` на предыдущий образ (см. `CLOUDRU_DEPLOY_RUNBOOK.md`). Строку `ASTOR_INTERNAL_API_TOKEN` в `.env.production` можно оставить — старый образ её не читает.
+- **Concierge**: откат образа его `scripts/deploy-vm.sh <предыдущий ref>`; заголовок без фильтра в Butler безвреден, строку в `.env` можно оставить.
 - **Только Butler-фильтр не отключается флагом** намеренно: пустой токен закрывает внутренние пути, а не открывает. Если нужно временно открыть внутренний путь для отладки — делать это изнутри docker-сети с токеном, не через edge.
 
 Данные и миграции фикс не трогает.
@@ -165,5 +170,5 @@ unset TOKEN
 - Остальные `/api/*` контроллеры (users, consents, preferences, timelines, ops, manager, integrations, payments, content, media, merch, donations, tips, feedback, notifications, auctions, posts, system) по-прежнему `permitAll` внутри docker-сети; снаружи они закрыты edge (404). Добавить их в `INTERNAL_PATHS` — одна строка в константе, когда будет понятно, кто из них нужен Concierge.
 - `/internal/*` (`ObservabilityController`) доступен через `location /` в nginx, но edge его не проксирует.
 - Prometheus на Cloud.ru VM не поднят (профиль `observability`); исключение `/actuator/prometheus` сделано ради локального стенда и будущего включения.
-- Фактический путь include сниппета в общем Caddyfile Vedal и имя контейнера Concierge для `/api/concierge/messages` — проверить на VM при выкате.
+- Фактический путь include сниппета в общем Caddyfile Vedal, путь `.env` Concierge на VM и имя контейнера Concierge для `/api/concierge/messages` — проверить при выкате.
 - Prometheus 3.x умеет `http_headers`; при обновлении можно убрать исключение и слать токен из scrape-config.
