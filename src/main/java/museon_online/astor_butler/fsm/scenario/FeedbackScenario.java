@@ -1,30 +1,58 @@
 package museon_online.astor_butler.fsm.scenario;
 
-import lombok.RequiredArgsConstructor;
 import museon_online.astor_butler.domain.feedback.FeedbackService;
 import museon_online.astor_butler.domain.feedback.GuestFeedback;
 import museon_online.astor_butler.domain.feedback.GuestFeedbackCommand;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
+import museon_online.astor_butler.i18n.GuestTexts;
+import museon_online.astor_butler.i18n.LanguageTags;
+import museon_online.astor_butler.i18n.LocalizedText;
+import museon_online.astor_butler.i18n.ResolvedLocale;
 import museon_online.astor_butler.service.message.AdminAlert;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.OutgoingMessage;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Guest feedback: ask for the text, pass it to the team, thank the guest.
+ *
+ * <p>Also the worked example of the guest-language layer: guest texts come from {@code i18n/guest/*.yaml} through
+ * {@link GuestTexts}, the reply-keyboard label is recognised in every catalog language, and the staff alert names
+ * the guest's language. With {@code astor.i18n.enabled=false} every text is the Russian one, as before.
+ */
 @Component
-@RequiredArgsConstructor
 public class FeedbackScenario implements FsmScenario {
+
+    static final String TEXT_BUTTON = "feedback.button";
+    static final String TEXT_ASK = "feedback.ask_text";
+    static final String TEXT_THANKS = "feedback.thanks";
 
     private final FSMStorage fsmStorage;
     private final FeedbackService feedbackService;
+    private final GuestTexts guestTexts;
 
     @Value("${telegram.admin.chat-id:}")
     private String adminChatId;
+
+    @Autowired
+    public FeedbackScenario(FSMStorage fsmStorage, FeedbackService feedbackService, GuestTexts guestTexts) {
+        this.fsmStorage = fsmStorage;
+        this.feedbackService = feedbackService;
+        this.guestTexts = guestTexts == null ? GuestTexts.russianOnly() : guestTexts;
+    }
+
+    /** Without Spring: Russian texts only, exactly as before the guest-language layer. */
+    public FeedbackScenario(FSMStorage fsmStorage, FeedbackService feedbackService) {
+        this(fsmStorage, feedbackService, GuestTexts.russianOnly());
+    }
 
     @Override
     public String id() {
@@ -43,21 +71,23 @@ public class FeedbackScenario implements FsmScenario {
         if (normalized.isBlank()) {
             return false;
         }
-        return owns(state) || isFeedbackIntent(normalized);
+        return owns(state) || isFeedbackIntent(normalized) || guestTexts.matchesLabel(TEXT_BUTTON, text);
     }
 
     @Override
     public OutgoingMessage handle(IncomingMessage incoming, BotState currentState, String text) {
         BotState state = currentState == null ? BotState.UNKNOWN : currentState.canonical();
         String normalized = normalize(text);
+        ResolvedLocale locale = guestTexts.locale(incoming);
         if (state == BotState.FEEDBACK_COLLECT_TEXT) {
-            return sendFeedback(incoming, currentState, text, "FEEDBACK_TEXT_RECEIVED");
+            return sendFeedback(incoming, currentState, text, "FEEDBACK_TEXT_RECEIVED", locale);
         }
-        if (isShortFeedbackCall(normalized)) {
+        if (isShortFeedbackCall(normalized) || guestTexts.matchesLabel(TEXT_BUTTON, text, locale)) {
             fsmStorage.setState(incoming.chatId(), BotState.FEEDBACK_COLLECT_TEXT);
+            LocalizedText ask = guestTexts.text(locale, TEXT_ASK);
             return OutgoingMessage.of(
                     incoming,
-                    "Напишите отзыв одним сообщением. Я передам его команде AERIS без публичного сравнения и лишнего давления.",
+                    ask.text(),
                     BotState.FEEDBACK_COLLECT_TEXT.name(),
                     false,
                     false,
@@ -65,9 +95,9 @@ public class FeedbackScenario implements FsmScenario {
                     false,
                     AdminAlert.none(),
                     List.of("FEEDBACK", "ASK_FEEDBACK_TEXT")
-            ).withMetadata(Map.of("scenario", id()));
+            ).withMetadata(withLanguage(Map.of("scenario", id()), ask));
         }
-        return sendFeedback(incoming, currentState, text, "FEEDBACK_DIRECT_TEXT");
+        return sendFeedback(incoming, currentState, text, "FEEDBACK_DIRECT_TEXT", locale);
     }
 
     @Override
@@ -85,28 +115,48 @@ public class FeedbackScenario implements FsmScenario {
             IncomingMessage incoming,
             BotState previousState,
             String text,
-            String reasonAction
+            String reasonAction,
+            ResolvedLocale locale
     ) {
         GuestFeedback feedback = feedbackService.create(feedbackCommand(incoming, previousState, text));
         fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+        LocalizedText thanks = guestTexts.text(locale, TEXT_THANKS);
         return OutgoingMessage.of(
                 incoming,
-                "Спасибо, передал отзыв команде. Я остаюсь на связи: можно попросить меню, бронь, видео-тур или менеджера.",
+                thanks.text(),
                 BotState.READY_FOR_DIALOG.name(),
                 false,
                 false,
                 true,
                 false,
-                adminAlert(incoming, previousState, text, feedback),
+                adminAlert(incoming, previousState, text, feedback, locale),
                 List.of("FEEDBACK", reasonAction, "ADMIN_ALERT", "RETURN_MAIN_MENU")
-        ).withMetadata(Map.of(
+        ).withMetadata(withLanguage(Map.of(
                 "scenario", id(),
                 "feedbackId", feedback.id(),
                 "feedbackType", feedback.feedbackType().name(),
                 "sentiment", feedback.sentiment().name(),
                 "priority", feedback.priority().name(),
                 "handoffReason", reasonAction
-        ));
+        ), thanks));
+    }
+
+    private Map<String, Object> withLanguage(Map<String, Object> metadata, LocalizedText text) {
+        Map<String, Object> language = guestTexts.metadata(text);
+        if (language.isEmpty()) {
+            return metadata;
+        }
+        Map<String, Object> merged = new LinkedHashMap<>(metadata);
+        merged.putAll(language);
+        return merged;
+    }
+
+    /** Staff read Russian; the line appears only when the guest is answered in another language. */
+    private String guestLanguageLine(ResolvedLocale locale) {
+        if (!guestTexts.enabled() || locale == null || locale.is(guestTexts.defaultLanguage())) {
+            return "";
+        }
+        return "\nЯзык гостя: %s (%s)".formatted(html(LanguageTags.russianName(locale.language())), html(locale.language()));
     }
 
     private GuestFeedbackCommand feedbackCommand(IncomingMessage incoming, BotState previousState, String text) {
@@ -123,7 +173,13 @@ public class FeedbackScenario implements FsmScenario {
         );
     }
 
-    private AdminAlert adminAlert(IncomingMessage incoming, BotState previousState, String text, GuestFeedback feedback) {
+    private AdminAlert adminAlert(
+            IncomingMessage incoming,
+            BotState previousState,
+            String text,
+            GuestFeedback feedback,
+            ResolvedLocale locale
+    ) {
         if (adminChatId == null || adminChatId.isBlank()) {
             return AdminAlert.none();
         }
@@ -139,7 +195,7 @@ public class FeedbackScenario implements FsmScenario {
 
                 <b>Гость</b>
                 %s
-                chat %s / user %s%s
+                chat %s / user %s%s%s
 
                 <b>Отзыв</b>
                 <blockquote>%s</blockquote>
@@ -166,6 +222,7 @@ public class FeedbackScenario implements FsmScenario {
                 html(text(incoming.chatId())),
                 html(text(incoming.telegramUserId())),
                 incoming.username() == null || incoming.username().isBlank() ? "" : " / @" + html(incoming.username()),
+                guestLanguageLine(locale),
                 html(blankAsEmptyLabel(text)),
                 html(text(feedback.id())),
                 html(text(feedback.feedbackType())),

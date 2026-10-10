@@ -1,0 +1,14 @@
+# Guest-facing texts, Russian: the source of truth for every other language.
+#
+# Rules (checked by GuestCatalogConsistencyTest):
+# - every key here exists in en.yaml with the same {placeholders};
+# - values are double-quoted; multi-line texts use "|-" so they do not gain a trailing newline;
+# - staff texts (hostess, managers, ops chats) do not belong here: staff work in Russian.
+#
+# Keys are grouped by scenario: <scenario>.<text>. A ".button" key is a reply-keyboard label; the guest sends it
+# back as text, so scenarios recognise it with GuestTexts.matchesLabel.
+
+feedback:
+  button: "Оставить отзыв"
+  ask_text: "Напишите отзыв одним сообщением. Я передам его команде AERIS без публичного сравнения и лишнего давления."
+  thanks: "Спасибо, передал отзыв команде. Я остаюсь на связи: можно попросить меню, бронь, видео-тур или менеджера."
