@@ -1,24 +1,42 @@
 # Astor — Presentation Site
 
-Анимированный презентационный сайт Astor: общая титульная страница и два продуктовых направления.
-Чистая статика: HTML/CSS/vanilla JS, без сборки и зависимостей. Отдельный бренд, не смешан с C3FLEX Next.js-приложением (`frontend/`).
+Анимированный презентационный сайт Astor: общая титульная страница и три продуктовые страницы.
+Чистая статика: HTML/CSS/vanilla JS, без сборки и зависимостей. Своя цветовая идентичность
+(графит + серебро), но типографика общая с c3ag.ru: см. «Типографика» ниже.
 
 Продуктовая логика:
 
 - `Astor` - общий бренд системы гостевого внимания.
 - `Astor Butler` - продукт для ресторанов и отелей.
-- `Astor Concierge` - продукт для событий, фестивалей и городских программ.
+- `Astor Concierge` - продукт для событий, фестивалей и городских программ; лента заведений как Telegram Mini App.
+- `Astor Glass` - умные очки и iPhone для сотрудников заведения (пилот): вопрос голосом или фото, ответ текстом и голосом.
 - Внешний слой персонализируется под бренд заказчика: `AERIS Butler`, `Gastreet Concierge` и т.д.
+
+Факты для страниц берутся только из репозитория (`docs/commercial/*.md`, `docs/operations/GLASSES_*.md`,
+`docs/architecture`). Будущие каналы (MAX) и мультиязычность упоминаются только как «скоро».
+
+## Типографика
+
+Шрифт задан в одном месте - `design-system/brand/typography.css` (сейчас только Inter, одна гарнитура:
+заголовки отличаются весом и трекингом, курсива нет). Сайт без сборки, поэтому использует копию
+`css/brand-typography.css`, подключённую первой `<link rel="stylesheet">` на каждой странице; `style.css`,
+`feed.css`, `staff.css` и `docs/docs.css` берут семейство, веса и трекинги из токенов `--brand-*`.
+Тест `tests/brand-typography.test.mjs` следит, что копия совпадает с источником, что ни одна страница не
+грузит шрифт мимо неё и что `frontend/app/layout.tsx` (c3ag.ru) грузит ту же гарнитуру.
+Как сменить шрифт, когда придёт новый: `design-system/brand/README.md`.
 
 ## Структура
 
 ```
 frontend/astor-butler/
-├── index.html          # общая титулка Astor: выбор Butler / Concierge
+├── index.html          # общая титулка Astor: выбор Butler / Concierge / Glass
+├── policy.html         # политика конфиденциальности: боты, стаф-портал, Astor Glass
 ├── astor_butler/       # продуктовая страница для ресторанов и отелей
 ├── astor_concierge/    # продуктовая страница для событий и городских программ
 │   └── feed/           # лента заведений Concierge: Telegram Mini App и обычная страница
-├── css/style.css       # вся стилистика (dark + gold, Playfair Display + Inter — синхронно с C3FLEX)
+├── astor_glass/        # продуктовая страница очков для команды (пилот)
+├── css/brand-typography.css  # копия design-system/brand/typography.css: шрифт, веса, трекинги
+├── css/style.css       # вся стилистика продуктовых страниц (графит + серебро; шрифт из токенов бренда)
 ├── js/main.js          # курсор-ключ, рябь, дверь, scroll reveal, optional chat UI
 ├── js/widget.js        # transport layer виджета: submitMessage(payload), mock/backend режимы
 ├── css/feed.css        # стили ленты (те же токены, без интро-эффектов)
@@ -27,11 +45,12 @@ frontend/astor-butler/
 ├── data/venues.json    # заведения ленты и ссылки на объекты карт; фото — только с разрешения заведения
 ├── data/ratings/       # snapshot.json: опубликованный снимок рейтингов, обновляется scripts/concierge_ratings
 ├── assets/             # favicon.svg, og-image.png
-└── docs/               # коммерческий пакет как HTML-страницы
-    ├── offer.html      # КП (из docs/commercial/COMMERCIAL_OFFER_RU.md)
-    ├── comparison.html # сравнение (из docs/commercial/BENCHMARK_COMPARISON_RU.md)
-    ├── brand.html      # бренд-гайд (из docs/commercial/BRAND_GUIDE_RU.md)
-    └── docs.css
+├── docs/               # коммерческий пакет как HTML-страницы
+│   ├── offer.html      # КП (из docs/commercial/COMMERCIAL_OFFER_RU.md)
+│   ├── comparison.html # сравнение (из docs/commercial/BENCHMARK_COMPARISON_RU.md)
+│   ├── brand.html      # бренд-гайд (из docs/commercial/BRAND_GUIDE_RU.md)
+│   └── docs.css
+└── tests/              # node --test tests/*.mjs: бренд-типографика, ссылки, staff UI/auth
 ```
 
 ## Локальный запуск
@@ -46,20 +65,17 @@ python3 -m http.server 8090
 
 Или просто открыть `index.html` в браузере (Google Fonts требует сеть; без сети — системные fallback-шрифты).
 
+Проверка перед push:
+
+```bash
+node --test frontend/astor-butler/tests/*.mjs
+```
+
 ## Деплой
 
-Сайт хостится где угодно: nginx на Selectel, GitHub Pages, любой static hosting.
-Достаточно отдать папку `frontend/astor-butler/` как document root. Никакой сборки.
-
-nginx пример:
-
-```nginx
-server {
-  server_name astorbutler.example;
-  root /var/www/astor-butler;
-  index index.html;
-}
-```
+Сайт хостится где угодно: достаточно отдать папку `frontend/astor-butler/` как document root, никакой сборки.
+Превью на ВМ Cloud.ru за общим edge-Caddy (техническое имя `astor.176-123-165-162.nip.io`, своего домена
+пока нет) описано в `infra/astor-site/README.md`: compose с nginx, сниппет Caddy и порядок проверки.
 
 ## Лента Concierge
 
@@ -113,9 +129,11 @@ window.AstorChatConfig = {
 - [ ] Hero открывается «дверью», ключ-курсор на desktop
 - [ ] Рябь при движении мыши
 - [ ] Маскот Butler появляется после hero и меняет позу/подпись по главам
-- [ ] Главная ведет в `Astor Butler` и `Astor Concierge`
+- [ ] Главная ведет в `Astor Butler`, `Astor Concierge` и `Astor Glass`
 - [ ] На странице Butler ясно видны: заведения, хостес, менеджер, внедрение, поддержка
-- [ ] На странице Concierge ясно видны: события, программа, карта, VIP, поток гостей, отчет
+- [ ] На странице Concierge ясно видны: события, программа, карта, VIP, поток гостей, лента `feed/`, отчет
+- [ ] На странице Glass ясно видны: голос, фото по шагам, сообщения в очки, журнал смены, границы (подсказка, не решение), статус «пилот»
+- [ ] Политика конфиденциальности доступна из футера каждой продуктовой страницы
 - [ ] Chat widget появляется на финальной секции, mock-ответы работают
 - [ ] Telegram CTA в hero и в финале
 - [ ] Ссылки на docs/offer.html, comparison.html, brand.html работают

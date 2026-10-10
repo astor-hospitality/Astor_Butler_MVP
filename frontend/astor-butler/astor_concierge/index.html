@@ -20,7 +20,7 @@
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=20260707-aa">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/brand-typography.css">
 <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
@@ -114,6 +114,23 @@
   </div>
 </section>
 
+<section class="section" id="feed" aria-labelledby="feed-title">
+  <p class="chapter">Лента заведений</p>
+  <h2 class="section-title" id="feed-title">«Куда пойти» открывается прямо в Telegram.</h2>
+  <p class="lede">Astor Concierge работает и как Telegram Mini App: гость события или города открывает ленту заведений, смотрит фото и рейтинг и бронирует стол через команду ресторана. Та же лента работает как обычная страница сайта.</p>
+
+  <div class="timeline-list">
+    <div class="timeline-item reveal"><strong>Выбор Astor</strong><span>закрепленные заведения идут первыми и помечены как выбор Astor, а не позиция в рейтинге</span></div>
+    <div class="timeline-item reveal"><strong>Рейтинг</strong><span>остальные - по среднему рейтингу Яндекс Карт и 2ГИС с датой проверки; давно не проверявшиеся помечаются</span></div>
+    <div class="timeline-item reveal"><strong>Бронь</strong><span>«Забронировать» открывает Telegram-бот заведения, бронь подтверждает хостес</span></div>
+    <div class="timeline-item reveal"><strong>Фото</strong><span>только с разрешения заведения</span></div>
+  </div>
+
+  <div class="final-cta">
+    <a href="feed/" class="btn btn-quiet">Открыть ленту</a>
+  </div>
+</section>
+
 <section class="section" aria-labelledby="load-title">
   <p class="chapter">Нагрузка</p>
   <h2 class="section-title" id="load-title">До 2000 гостей за короткий период - рабочий сценарий.</h2>
@@ -162,8 +179,13 @@
   <div class="final-cta">
     <a href="../" class="btn btn-quiet">Вернуться к Astor</a>
     <a href="../astor_butler/" class="btn btn-quiet">Для заведений</a>
+    <a href="../astor_glass/" class="btn btn-quiet">Для команды</a>
   </div>
-  <footer class="footer"><div class="footer-logo">ASTOR CONCIERGE</div><p>Консьерж для событий, фестивалей и городских программ · персонализируется под бренд заказчика</p></footer>
+  <footer class="footer">
+    <div class="footer-logo">ASTOR CONCIERGE</div>
+    <p>Консьерж для событий, фестивалей и городских программ · персонализируется под бренд заказчика</p>
+    <p><a class="footer-link" href="../policy.html">Политика конфиденциальности</a></p>
+  </footer>
 </section>
 
 </main>

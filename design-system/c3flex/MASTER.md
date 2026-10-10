@@ -28,6 +28,10 @@
 
 ### Typography
 
+> Актуальная типографика бренда (сейчас - только Inter, одна гарнитура для C3AG и Astor) задана в
+> `design-system/brand/typography.css`; порядок смены шрифта - `design-system/brand/README.md`.
+> Блок ниже - исторический слепок C3FLEX 2026-06-20.
+
 - **Heading Font:** Playfair Display
 - **Body Font:** Inter
 - **Mood:** elegant, luxury, sophisticated, timeless, premium, editorial

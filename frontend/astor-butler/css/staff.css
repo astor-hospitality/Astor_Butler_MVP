@@ -18,7 +18,7 @@
   --warn: #e4b05e;
   --danger: #ea8f80;
   --focus: #2aabee;
-  --font-body: "Inter", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  --font-body: var(--brand-font-family);
   --ease-lux: cubic-bezier(0.22, 1, 0.36, 1);
   --radius: 16px;
 }
@@ -95,7 +95,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .top-brand {
   color: var(--paper-dim);
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: var(--brand-weight-semibold);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -103,9 +103,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .top-title {
   margin-top: 4px;
   font-size: 1.8rem;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
+  font-weight: var(--brand-weight-semibold);
+  letter-spacing: var(--brand-heading-tracking);
+  line-height: var(--brand-heading-leading);
 }
 
 .btn {
@@ -117,7 +117,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
-  font-weight: 600;
+  font-weight: var(--brand-weight-semibold);
   cursor: pointer;
   transition: background-color 0.2s var(--ease-lux);
 }
@@ -145,8 +145,8 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .shift { position: sticky; top: 16px; }
 }
 
-.section-title { font-size: 1.05rem; font-weight: 700; }
-.sub-title { margin-top: 22px; font-size: 0.95rem; font-weight: 700; }
+.section-title { font-size: 1.05rem; font-weight: var(--brand-weight-semibold); }
+.sub-title { margin-top: 22px; font-size: 0.95rem; font-weight: var(--brand-weight-semibold); }
 
 /* ---------- Shift ---------- */
 .staff-list {
@@ -179,7 +179,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: var(--ink-2);
 }
 
-.staff-name { font-weight: 600; }
+.staff-name { font-weight: var(--brand-weight-semibold); }
 .staff-meta { color: var(--paper-dim); font-size: 0.85rem; }
 .staff .chip { margin-top: 8px; }
 
@@ -248,7 +248,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: 8px;
   background: var(--surface-strong);
   font-size: 0.82rem;
-  font-weight: 600;
+  font-weight: var(--brand-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -259,7 +259,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: 999px;
   color: var(--paper-dim);
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: var(--brand-weight-semibold);
 }
 
 .chip-accepted,
@@ -303,7 +303,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .task-title {
   margin-top: 8px;
   font-size: 1.02rem;
-  font-weight: 600;
+  font-weight: var(--brand-weight-semibold);
   line-height: 1.3;
 }
 
@@ -346,7 +346,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 
-.sheet-title { font-size: 1.1rem; font-weight: 700; line-height: 1.3; }
+.sheet-title { font-size: 1.1rem; font-weight: var(--brand-weight-semibold); line-height: 1.3; }
 
 .sheet-body {
   max-height: calc(100vh - 110px);
@@ -363,7 +363,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .say-label {
   color: var(--paper-dim);
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: var(--brand-weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -394,10 +394,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-radius: 50%;
   background: var(--surface-strong);
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: var(--brand-weight-semibold);
 }
 
-.stage-title { font-weight: 600; }
+.stage-title { font-weight: var(--brand-weight-semibold); }
 .stage-meta { color: var(--paper-dim); font-size: 0.83rem; }
 
 .photos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -419,7 +419,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
   margin-top: 14px;
   color: var(--danger);
   font-size: 0.9rem;
-  font-weight: 500;
+  font-weight: var(--brand-weight-medium);
 }
 .sheet-message:empty { margin-top: 0; min-height: 0; }
 
