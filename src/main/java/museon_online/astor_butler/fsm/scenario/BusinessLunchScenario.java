@@ -3,6 +3,7 @@ package museon_online.astor_butler.fsm.scenario;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.api.common.ApiException;
+import museon_online.astor_butler.domain.identity.IdentityService;
 import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOffer;
 import museon_online.astor_butler.domain.lunch.BusinessLunchService;
@@ -67,6 +68,7 @@ public class BusinessLunchScenario implements FsmScenario {
     private final GuestInputUnderstandingService understandingService;
     private final TableBookingDraftMerger draftMerger;
     private final BookingTimeProvider timeProvider;
+    private final IdentityService identityService;
 
     @Value("${astor.business-lunch.enabled:true}")
     private boolean enabled = true;
@@ -405,7 +407,7 @@ public class BusinessLunchScenario implements FsmScenario {
                     draft.date(),
                     draft.time(),
                     guestName(incoming),
-                    incoming.contactPhone(),
+                    guestPhone(incoming),
                     draft.comment(),
                     draft.source(),
                     draft.conciergeRequestId()
@@ -810,6 +812,18 @@ public class BusinessLunchScenario implements FsmScenario {
 
     private BotState canonical(BotState state) {
         return state == null ? BotState.UNKNOWN : state.canonical();
+    }
+
+    /**
+     * The phone for the hostess card and the venue's own system. A contact in this very message wins; otherwise it is
+     * the one the guest shared earlier in the dialogue, because the last step of a booking is plain text and Saby takes
+     * no booking without a phone. Null when the guest never shared one: the request then stays with the hostess.
+     */
+    private String guestPhone(IncomingMessage incoming) {
+        if (incoming.contactPhone() != null && !incoming.contactPhone().isBlank()) {
+            return incoming.contactPhone();
+        }
+        return identityService.primaryPhone(incoming.telegramUserId()).orElse(null);
     }
 
     private String guestName(IncomingMessage incoming) {
