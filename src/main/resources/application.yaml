@@ -165,6 +165,22 @@ astor:
       max-links: ${ASTOR_TELEGRAM_VOICE_MAX_LINKS:3}
       max-photos: ${ASTOR_TELEGRAM_VOICE_MAX_PHOTOS:3}
       details-ttl-days: ${ASTOR_TELEGRAM_VOICE_DETAILS_TTL_DAYS:7}
+  # MAX messenger (VK) as a second guest channel next to Telegram: docs/architecture/MAX_ADAPTER_PLAN.md.
+  # Off by default; with enabled=false or a blank token no thread starts and no MAX call is made. MAX is reached
+  # directly from the VM (no proxy). Phase 1 = long polling, one-to-one dialogs, text and inline keyboards.
+  # platform-api2.max.ru is the API host since 19.07.2026 (platform-api.max.ru is deprecated); its certificate is
+  # issued under the Russian Trusted Root CA, so the same PEM as GigaChat/SaluteSpeech is needed.
+  max:
+    enabled: ${ASTOR_MAX_ENABLED:false}
+    token: ${MAX_BOT_TOKEN:}
+    base-url: ${MAX_API_BASE_URL:https://platform-api2.max.ru}
+    ca-cert-path: ${MAX_CA_CERT_PATH:${GIGACHAT_CA_CERT_PATH:}}
+    poll-timeout-seconds: ${MAX_POLL_TIMEOUT_SECONDS:30}
+    poll-limit: ${MAX_POLL_LIMIT:100}
+    request-timeout-ms: ${MAX_REQUEST_TIMEOUT_MS:10000}
+    retry-delay-ms: ${MAX_POLL_RETRY_DELAY_MS:5000}
+    group-chats-enabled: ${ASTOR_MAX_GROUP_CHATS_ENABLED:false}
+    admin-alerts-to-telegram: ${ASTOR_MAX_ADMIN_ALERTS_TO_TELEGRAM:true}
   # Server voice (text-to-speech): paid cloud voices only, no local model. ASTOR_TTS_PROVIDER=salute (Sber
   # SaluteSpeech, production) or yandex (SpeechKit, rollback). The web chat endpoint POST /api/chat/speak
   # is off until ASTOR_TTS_WEB_ENABLED=true because every call is billed. docs/operations/SBER_AI_ACTIVATION.md

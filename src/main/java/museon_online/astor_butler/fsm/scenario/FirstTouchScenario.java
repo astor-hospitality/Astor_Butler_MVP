@@ -6,6 +6,7 @@ import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
 import museon_online.astor_butler.service.message.AdminAlert;
 import museon_online.astor_butler.service.message.IncomingMessage;
+import museon_online.astor_butler.service.message.MessageChannel;
 import museon_online.astor_butler.service.message.OutgoingMessage;
 import org.springframework.stereotype.Component;
 
@@ -54,7 +55,7 @@ public class FirstTouchScenario implements FsmScenario {
         if ("/start".equalsIgnoreCase(text) || "/restart".equalsIgnoreCase(text)) {
             return FirstTouchSignal.START_COMMAND;
         }
-        if (currentState == BotState.UNKNOWN && incoming.telegramUserId() != null) {
+        if (currentState == BotState.UNKNOWN && incoming.hasMessengerUser()) {
             return FirstTouchSignal.START_COMMAND;
         }
         if (currentState != null && currentState.waitsForConsentAndContact()) {
@@ -67,7 +68,7 @@ public class FirstTouchScenario implements FsmScenario {
         fsmStorage.clear(incoming.chatId());
         tableBookingDraftStorage.clear(incoming.chatId());
         changeCancelDraftStorage.clear(incoming.chatId());
-        if (consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())) {
+        if (hasGrantedPrivacyPolicy(incoming)) {
             fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
             return OutgoingMessage.of(
                     incoming,
@@ -99,6 +100,14 @@ public class FirstTouchScenario implements FsmScenario {
         );
     }
 
+    /** Telegram keeps its consent by Telegram user id; MAX by the internal dialog chat id (no Telegram id exists). */
+    private boolean hasGrantedPrivacyPolicy(IncomingMessage incoming) {
+        if (incoming.channel() == MessageChannel.MAX) {
+            return consentVaultService.hasGrantedMaxPrivacyPolicy(incoming.chatId());
+        }
+        return consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId());
+    }
+
     private String restartText(IncomingMessage incoming) {
         String text = incoming == null ? "" : incoming.text();
         if ("/restart".equalsIgnoreCase(text == null ? "" : text.trim())) {
@@ -109,7 +118,11 @@ public class FirstTouchScenario implements FsmScenario {
 
     private OutgoingMessage handleContact(IncomingMessage incoming) {
         fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
-        consentVaultService.grantPrivacyPolicyFromTelegramContact(incoming);
+        if (incoming.channel() == MessageChannel.MAX) {
+            consentVaultService.grantPrivacyPolicyFromMaxContact(incoming);
+        } else {
+            consentVaultService.grantPrivacyPolicyFromTelegramContact(incoming);
+        }
         return OutgoingMessage.of(
                 incoming,
                 "Спасибо, контакт получил. Я на связи: можете выбрать действие кнопкой, написать своими словами или отправить голосовое. Я разберу запрос и аккуратно проведу дальше.",

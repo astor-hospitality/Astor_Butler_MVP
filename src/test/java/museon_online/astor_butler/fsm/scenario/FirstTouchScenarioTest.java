@@ -4,6 +4,7 @@ import museon_online.astor_butler.domain.consent.ConsentVaultService;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
 import museon_online.astor_butler.service.message.IncomingMessage;
+import museon_online.astor_butler.service.message.MessageChannel;
 import museon_online.astor_butler.service.message.OutgoingMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -132,6 +134,49 @@ class FirstTouchScenarioTest {
         verifyNoInteractions(consentVaultService);
     }
 
+    @Test
+    void unknownMaxGuestGetsTheSameConsentGateAsTelegram() {
+        IncomingMessage incoming = max("Привет", null);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.UNKNOWN, "Привет");
+
+        assertThat(scenario.supports(incoming, BotState.UNKNOWN, "Привет")).isTrue();
+        assertThat(outgoing.nextState()).isEqualTo(BotState.CONSENT_REQUIRED.name());
+        assertThat(outgoing.requestContact()).isTrue();
+        verify(consentVaultService).hasGrantedMaxPrivacyPolicy(MAX_CHAT_ID);
+        verify(fsmStorage).setState(MAX_CHAT_ID, BotState.CONSENT_REQUIRED);
+    }
+
+    @Test
+    void maxGuestWithConsentRestartsIntoReadyWithoutTelegramLookups() {
+        IncomingMessage incoming = max("/start", null);
+        when(consentVaultService.hasGrantedMaxPrivacyPolicy(MAX_CHAT_ID)).thenReturn(true);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.AI_FALLBACK, "/start");
+
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        verify(consentVaultService, never()).hasGrantedPrivacyPolicy(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void maxContactStoresConsentThroughTheMaxRecord() {
+        IncomingMessage incoming = max("", "+79990000000");
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.CONSENT_REQUIRED, "");
+
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        verify(consentVaultService).grantPrivacyPolicyFromMaxContact(incoming);
+        verify(consentVaultService, never()).grantPrivacyPolicyFromTelegramContact(incoming);
+    }
+
+    @Test
+    void webVisitorInUnknownStateIsNotTreatedAsAMessengerGuest() {
+        IncomingMessage incoming = new IncomingMessage(MessageChannel.WEB, "web:anon:s1", 9_000_000_000_001L, null, null,
+                null, "Привет", null, null, null, null, null, false, "c1", java.time.Instant.now(), java.util.Map.of());
+
+        assertThat(scenario.supports(incoming, BotState.UNKNOWN, "Привет")).isFalse();
+    }
+
     private IncomingMessage telegram(String text, String phone) {
         return IncomingMessage.telegram(
                 421441838L,
@@ -147,5 +192,12 @@ class FirstTouchScenarioTest {
                 false,
                 "20"
         );
+    }
+
+    private static final long MAX_CHAT_ID = 8_000_000_000_007L;
+
+    private IncomingMessage max(String text, String phone) {
+        return IncomingMessage.max(MAX_CHAT_ID, 9_123_456L, text, phone, "Анна", null, null, "ru", false, "max-1",
+                java.util.Map.of("maxChatId", 555L));
     }
 }
