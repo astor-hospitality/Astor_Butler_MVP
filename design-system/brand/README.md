@@ -14,7 +14,8 @@
 
 Синхронность копии проверяет `frontend/astor-butler/tests/brand-typography.test.mjs`:
 копия должна совпадать с `typography.css` байт в байт, каждая страница Astor должна подключать
-ее первой, а первое имя в `--brand-font-family` должно встречаться в `layout.tsx`.
+ее первой, а `layout.tsx` должен импортировать первое имя из `--brand-font-family` из
+`next/font/google` (для self-hosted шрифта - `localFont(...)` с этим именем в `src`).
 
 ## Как поменять шрифт, когда придет новый
 
@@ -31,7 +32,9 @@
    ```
 
 3. В `frontend/app/layout.tsx` заменить `Inter` из `next/font/google` на новую гарнитуру
-   (для файла шрифта - `next/font/local`), сохранив `variable: "--font-body"` и веса из токенов.
+   (для файла шрифта - `localFont` из `next/font/local`, имя семейства в пути `src`),
+   сохранив `variable: "--font-body"` и веса из токенов. c3ag грузит ещё вес 300 для
+   своих нужд - это его локальное решение, в бренд-токены он не входит.
    Если менялись трекинги - поправить блок «Minimal skin» в `frontend/app/globals.css`.
 4. Проверить:
 
@@ -52,10 +55,10 @@
 | --- | --- | --- |
 | `--brand-font-family` | Inter + системный стек | `--font-body` на всех сайтах |
 | `--brand-font-heading` | = `--brand-font-family` | `--font-display`; заголовки |
-| `--brand-weight-light/regular/medium/semibold` | 300 / 400 / 500 / 600 | единственные загруженные веса |
+| `--brand-weight-regular/medium/semibold` | 400 / 500 / 600 | единственные загруженные веса |
 | `--brand-heading-weight` | 600 | h1-h3 |
 | `--brand-heading-tracking` / `-leading` | -0.022em / 1.04 | h1-h3 по умолчанию |
 | `--brand-hero-tracking` / `-leading` | -0.035em / 1.03 | заголовок hero |
 | `--brand-display-tracking` / `-leading` | -0.03em / 1.05 | заголовки секций (`.section-title`, docs h1) |
 | `--brand-subhead-tracking` | -0.015em | h3 внутри карточек |
-| `--brand-body-weight` / `-leading` | 400 / 1.6 | текст |
+| `--brand-body-weight` | 400 | текст; интерлиньяж задаёт страница |

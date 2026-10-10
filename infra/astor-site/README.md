@@ -11,7 +11,7 @@
 | --- | --- |
 | `compose.yaml` | контейнер `astor-site`: read-only раздача `/opt/astor-site/frontend/astor-butler`, сеть `edge`, `restart: unless-stopped`, healthcheck `/healthz` |
 | `nginx.conf` | раздача статики: `index.html` в подкаталогах, 404 для `server/`, `tests/` и dot-файлов, кэш только для css/js/картинок |
-| `astor.caddy` | vhost для `/opt/edge/sites.d/`: TLS и заголовки, `/api/*` в `astor-api-gateway` (веб-чат виджета), остальное в `astor-site` |
+| `astor.caddy` | vhost для `/opt/edge/sites.d/`: TLS и заголовки, `/api/astor/messages` в `astor_glasses_api` (relay веб-чата), остальной `/api/*` в `astor-api-gateway`, всё прочее в `astor-site` |
 
 Сборки нет: контейнер читает файлы прямо из checkout'а, поэтому `git pull` обновляет сайт
 без перезапуска.
@@ -21,9 +21,11 @@
 ```bash
 sudo mkdir -p /opt/astor-site && sudo chown "$USER" /opt/astor-site
 git clone https://github.com/astor-hospitality/Astor_Butler_MVP.git /opt/astor-site
-cd /opt/astor-site
-git checkout feat/astor-site-brand          # до merge PR; после merge - main, см. §6
+cd /opt/astor-site && git checkout main      # после merge PR сайт живёт в main
 ```
+
+Только для превью до merge: `git checkout feat/astor-site-brand` вместо `main`, а после
+merge - §6.
 
 Отдельный checkout, а не `/opt/astor-butler/current`: у backend-деплоя свой скрипт и
 свой порядок обновления, сайт должен обновляться независимо от него.
@@ -125,8 +127,9 @@ vedal-med.ru и c3ag.ru этим не затрагиваются: их vhost'ы 
 ## Что здесь не делается
 
 - Нет сборки, Node и npm на ВМ не нужны.
-- Backend Astor не трогается: `/api/*` только проксируется в уже работающий `astor-api-gateway`,
-  как и на c3ag.ru. Если gateway остановлен, сайт продолжает открываться, не работает только
-  веб-чат виджета.
+- Backend Astor не трогается: `/api/astor/messages` проксируется в уже работающий
+  `astor_glasses_api` (там живёт relay веб-чата), остальной `/api/*` - в `astor-api-gateway`,
+  как и на c3ag.ru. Если контейнеры backend остановлены, сайт продолжает открываться,
+  не работает только веб-чат виджета.
 - Страница `staff/` требует отдельного включения staff-маршрутов и Keycloak
   (`docs/operations/STAFF_PORTAL_RUNBOOK.md`); на превью она открывается, но к серверу не подключится.

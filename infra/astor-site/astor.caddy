@@ -11,8 +11,20 @@ astor.176-123-165-162.nip.io {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		-Server
 	}
-	# Веб-чат виджета (/api/astor/messages) - тот же gateway, что у c3ag.ru.
-	# Если backend не нужен на этом имени, блок можно убрать: сайт работает без него.
+	# Веб-чат виджета: /api/astor/messages отдаёт AstorWebRelay в контейнере очков
+	# (astor_glasses_api), как /api/glasses* в c3ag.caddy. Остальной /api/* - gateway.
+	# Если backend не нужен на этом имени, оба блока можно убрать: сайт работает без них.
+	@relay path /api/astor/messages
+	handle @relay {
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy astor_glasses_api:8091 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
 	@backend path /api/*
 	handle @backend {
 		reverse_proxy astor-api-gateway:8080 {

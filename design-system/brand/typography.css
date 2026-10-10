@@ -16,7 +16,7 @@
 
 /* 1. Загрузка гарнитуры. Для self-hosted шрифта заменить @import
       на @font-face, файлы положить рядом с копией (css/fonts/). */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap");
 
 :root {
   /* 2. Семейство. Первое имя в стеке — имя загруженного шрифта. */
@@ -24,7 +24,6 @@
   --brand-font-heading: var(--brand-font-family);
 
   /* 3. Веса — только те, что загружены выше. */
-  --brand-weight-light: 300;
   --brand-weight-regular: 400;
   --brand-weight-medium: 500;
   --brand-weight-semibold: 600;
@@ -39,7 +38,6 @@
   --brand-display-leading: 1.05;
   --brand-subhead-tracking: -0.015em;  /* h3 внутри карточек */
 
-  /* 5. Текст. */
+  /* 5. Текст. Интерлиньяж текста остаётся за страницей (1.5–1.7 по типу страницы). */
   --brand-body-weight: var(--brand-weight-regular);
-  --brand-body-leading: 1.6;
 }

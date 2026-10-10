@@ -59,5 +59,8 @@ test('c3ag Next.js layout loads the same family as the brand tokens', () => {
   const family = /--brand-font-family:\s*"([^"]+)"/.exec(tokens)?.[1];
   assert.ok(family, 'first family in --brand-font-family must be quoted');
   const layout = readFileSync(join(repo, 'frontend', 'app', 'layout.tsx'), 'utf8');
-  assert.ok(layout.includes(family), `frontend/app/layout.tsx must load "${family}" too (see design-system/brand/README.md)`);
+  const viaGoogle = new RegExp(String.raw`import\s*\{[^}]*\b${family}\b[^}]*\}\s*from\s*["']next/font/google["']`);
+  const viaLocal = /localFont\(/.test(layout) && new RegExp(String.raw`src:[^}]*${family}`).test(layout);
+  assert.ok(viaGoogle.test(layout) || viaLocal,
+    `frontend/app/layout.tsx must load "${family}" via next/font/google or localFont (see design-system/brand/README.md)`);
 });
