@@ -350,6 +350,13 @@ astor:
     # staff paths are not affected. config/InternalApiGuardFilter, docs/operations/PUBLIC_API_GUARD.md.
     internal-api-token: ${ASTOR_INTERNAL_API_TOKEN:}
   web:
+    # CORS allow-list for the site widget. Empty value = same-origin only (no cross-origin browser may call /api/**).
+    allowed-origins: ${ASTOR_WEB_ALLOWED_ORIGINS:http://localhost:8090,http://127.0.0.1:8090,http://localhost:8080,http://localhost:8088}
+    # Sites whose web chat runs the guest FSM (same scenarios as Telegram); any other site keeps the C3AG lead fast path.
+    fsm-sites: ${ASTOR_WEB_FSM_SITES:astor-butler-commercial,astor-butler,astor}
+    default-site: ${ASTOR_WEB_DEFAULT_SITE:c3ag}
+    # Quick replies shown in READY_FOR_DIALOG (web counterpart of the Telegram guest main menu). CSV, empty = none.
+    main-menu: ${ASTOR_WEB_MAIN_MENU:Бронь стола,Меню кухни,Бар,Коктейли,Винная карта,Афиша,Видео-тур,Сабраж,Концепция AERIS,Связаться с командой,Изменить / отменить,Оставить отзыв,Главное меню}
     notifications:
       admin-chat-enabled: ${ASTOR_WEB_ADMIN_CHAT_NOTIFICATIONS_ENABLED:true}
     rate-limit:
@@ -357,6 +364,7 @@ astor:
       max-per-minute: ${ASTOR_WEB_RATE_LIMIT_MAX_PER_MINUTE:12}
       burst-window-seconds: ${ASTOR_WEB_RATE_LIMIT_BURST_WINDOW_SECONDS:10}
       max-burst: ${ASTOR_WEB_RATE_LIMIT_MAX_BURST:4}
+      max-per-minute-per-ip: ${ASTOR_WEB_RATE_LIMIT_MAX_PER_MINUTE_PER_IP:60}
 
 spring:
   application:

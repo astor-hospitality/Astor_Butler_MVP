@@ -5,8 +5,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import museon_online.astor_butler.api.common.ApiException;
 import museon_online.astor_butler.api.common.ErrorCode;
+import museon_online.astor_butler.domain.web.WebChannelPolicy;
 import museon_online.astor_butler.domain.web.WebLeadNotificationService;
 import museon_online.astor_butler.domain.web.WebChatRateLimiter;
+import museon_online.astor_butler.domain.web.WebQuickReply;
+import museon_online.astor_butler.domain.web.WebQuickReplyResolver;
 import museon_online.astor_butler.domain.web.WebSessionMessageService;
 import museon_online.astor_butler.domain.web.WebSessionResolution;
 import museon_online.astor_butler.service.message.IncomingMessage;
@@ -35,17 +38,23 @@ public class MessageController {
     private final WebSessionMessageService webSessionMessageService;
     private final WebLeadNotificationService webLeadNotificationService;
     private final WebChatRateLimiter webChatRateLimiter;
+    private final WebChannelPolicy webChannelPolicy;
+    private final WebQuickReplyResolver webQuickReplyResolver;
 
     public MessageController(
             MessageGatewayService messageGatewayService,
             WebSessionMessageService webSessionMessageService,
             WebLeadNotificationService webLeadNotificationService,
-            WebChatRateLimiter webChatRateLimiter
+            WebChatRateLimiter webChatRateLimiter,
+            WebChannelPolicy webChannelPolicy,
+            WebQuickReplyResolver webQuickReplyResolver
     ) {
         this.messageGatewayService = messageGatewayService;
         this.webSessionMessageService = webSessionMessageService;
         this.webLeadNotificationService = webLeadNotificationService;
         this.webChatRateLimiter = webChatRateLimiter;
+        this.webChannelPolicy = webChannelPolicy;
+        this.webQuickReplyResolver = webQuickReplyResolver;
     }
 
     @PostMapping
@@ -68,24 +77,34 @@ public class MessageController {
         WebSessionResolution webSession = null;
         Long chatId = request.chatId();
         String externalUserId = request.externalUserId();
+        String text = request.text();
+        String contactPhone = request.contactPhone();
 
         if (messageChannel == MessageChannel.WEB) {
+            // The browser is anonymous: identity comes from payload.sessionId only, never from chatId/externalUserId.
+            WebChannelPolicy.WebInbound inbound = webChannelPolicy.sanitize(externalUserId, text, contactPhone, payload);
+            payload = inbound.payload();
+            chatId = null;
+            externalUserId = inbound.externalUserId();
+            text = inbound.text();
+            contactPhone = inbound.contactPhone();
+
             WebChatRateLimiter.Decision decision = webChatRateLimiter.check(
                     clientIp(httpRequest),
                     externalUserId,
-                    chatId,
+                    null,
                     payload
             );
             if (!decision.allowed()) {
                 return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                         .header("Retry-After", String.valueOf(decision.retryAfterSeconds()))
-                        .body(rateLimitedResponse(request, correlationId, decision));
+                        .body(rateLimitedResponse(inbound.sessionId(), correlationId, decision));
             }
             try {
-                webSession = webSessionMessageService.resolve(externalUserId, chatId, payload);
+                webSession = webSessionMessageService.resolve(externalUserId, null, payload);
                 chatId = webSession.chatId();
                 externalUserId = webSession.externalUserId();
-                webSessionMessageService.recordInbound(webSession, correlationId, request.text(), payload);
+                webSessionMessageService.recordInbound(webSession, correlationId, text, payload);
             } catch (IllegalArgumentException e) {
                 throw new ApiException(
                         HttpStatus.BAD_REQUEST,
@@ -123,11 +142,12 @@ public class MessageController {
                         messageChannel,
                         externalUserId,
                         chatId,
+                        // WEB: the stable per-session chatId doubles as the guest id the FSM scenarios key consents and bookings by.
+                        messageChannel == MessageChannel.WEB ? chatId : null,
                         null,
                         null,
-                        null,
-                        request.text(),
-                        request.contactPhone(),
+                        text,
+                        contactPhone,
                         request.firstName(),
                         null,
                         request.username(),
@@ -138,17 +158,18 @@ public class MessageController {
                         payload
                 );
 
-        if (messageChannel == MessageChannel.WEB && webSession != null) {
+        if (messageChannel == MessageChannel.WEB && webSession != null && !webChannelPolicy.routesToFsm(webChannelPolicy.site(payload))) {
             OutgoingMessage outgoing = webLeadReply(incoming);
             webSessionMessageService.recordOutbound(webSession, correlationId, outgoing);
             webLeadNotificationService.project(webSession, incoming, outgoing);
-            return ResponseEntity.ok(MessageResponse.from(outgoing));
+            return ResponseEntity.ok(MessageResponse.from(outgoing, webSession.sessionId(), List.of()));
         }
 
         OutgoingMessage outgoing = messageGatewayService.handle(incoming);
         if (webSession != null) {
             webSessionMessageService.recordOutbound(webSession, correlationId, outgoing);
             webLeadNotificationService.project(webSession, incoming, outgoing);
+            return ResponseEntity.ok(MessageResponse.from(outgoing, webSession.sessionId(), webQuickReplyResolver.resolve(outgoing)));
         }
         return ResponseEntity.ok(MessageResponse.from(outgoing));
     }
@@ -164,12 +185,12 @@ public class MessageController {
         return request.getRemoteAddr();
     }
 
-    private MessageResponse rateLimitedResponse(MessageRequest request, String correlationId, WebChatRateLimiter.Decision decision) {
+    private MessageResponse rateLimitedResponse(String sessionId, String correlationId, WebChatRateLimiter.Decision decision) {
         String text = "Сейчас слишком много сообщений. Пожалуйста, попробуйте ещё раз через минуту — так я смогу не потерять ваш запрос.";
         return new MessageResponse(
                 "WEB",
-                request.externalUserId(),
-                request.chatId(),
+                null,
+                null,
                 text,
                 "WEB_RATE_LIMITED",
                 false,
@@ -183,7 +204,9 @@ public class MessageController {
                         "rateLimitReason", decision.reason(),
                         "retryAfterSeconds", decision.retryAfterSeconds()
                 ),
-                Instant.now()
+                Instant.now(),
+                sessionId,
+                List.of()
         );
     }
 
@@ -268,9 +291,17 @@ public class MessageController {
             boolean adminAlertRequired,
             List<String> actions,
             Map<String, Object> metadata,
-            Instant createdAt
+            Instant createdAt,
+            /** WEB only: the session the browser must keep sending; generated when the request had none. */
+            String sessionId,
+            /** WEB only: buttons to render under the reply (web equivalent of the Telegram keyboard). */
+            List<WebQuickReply> quickReplies
     ) {
         static MessageResponse from(OutgoingMessage outgoing) {
+            return from(outgoing, null, List.of());
+        }
+
+        static MessageResponse from(OutgoingMessage outgoing, String sessionId, List<WebQuickReply> quickReplies) {
             return new MessageResponse(
                     outgoing.channel().name(),
                     outgoing.externalUserId(),
@@ -284,7 +315,9 @@ public class MessageController {
                     outgoing.adminAlert() != null && outgoing.adminAlert().required(),
                     outgoing.actions(),
                     outgoing.metadata(),
-                    outgoing.createdAt()
+                    outgoing.createdAt(),
+                    sessionId,
+                    quickReplies == null ? List.of() : quickReplies
             );
         }
     }

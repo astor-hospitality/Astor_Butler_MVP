@@ -30,6 +30,10 @@ public class WebChatRateLimiter {
     @Value("${astor.web.rate-limit.max-burst:4}")
     private long maxBurst;
 
+    /** Second window keyed by client IP: a browser rotating sessionIds still shares one address. 0 disables it. */
+    @Value("${astor.web.rate-limit.max-per-minute-per-ip:60}")
+    private long maxPerMinutePerIp;
+
     public Decision check(String clientIp, String externalUserId, Long chatId, Map<String, Object> payload) {
         if (!enabled) {
             count("disabled");
@@ -44,6 +48,12 @@ public class WebChatRateLimiter {
             Decision minute = incrementWindow("web-chat:rate:minute:" + key, maxPerMinute, Duration.ofMinutes(1), "minute");
             if (!minute.allowed()) {
                 return minute;
+            }
+            if (maxPerMinutePerIp > 0 && clientIp != null && !clientIp.isBlank() && !key.startsWith("ip:")) {
+                Decision ip = incrementWindow("web-chat:rate:ip:" + sanitize(clientIp), maxPerMinutePerIp, Duration.ofMinutes(1), "ip");
+                if (!ip.allowed()) {
+                    return ip;
+                }
             }
             count("allowed");
             return Decision.allow();
