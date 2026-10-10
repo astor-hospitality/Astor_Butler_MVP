@@ -7,6 +7,7 @@ import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
 import museon_online.astor_butler.domain.booking.VenueOpeningHours;
+import museon_online.astor_butler.domain.identity.IdentityService;
 import museon_online.astor_butler.domain.media.AerisMediaCatalog;
 import museon_online.astor_butler.domain.media.MediaAsset;
 import museon_online.astor_butler.fsm.understanding.InputIntent;
@@ -57,6 +58,9 @@ class TableBookingScenarioTest {
     @Mock
     private AerisMediaCatalog mediaCatalog;
 
+    @Mock
+    private IdentityService identityService;
+
     private TableBookingScenario scenario;
     private BookingTimeProvider timeProvider;
 
@@ -94,7 +98,8 @@ class TableBookingScenarioTest {
                 new TableBookingStepRegistry(),
                 new BookingPhraseService(),
                 clock,
-                new VenueOpeningHours()
+                new VenueOpeningHours(),
+                identityService
         );
         ReflectionTestUtils.setField(created, "planPdfAssetCode", "AERIS_FLOOR_PLAN");
         ReflectionTestUtils.setField(created, "managerTelegramId", 876857557L);
@@ -513,6 +518,34 @@ class TableBookingScenarioTest {
         assertThat(commandCaptor.getValue().tableCode()).isNull();
         assertThat(commandCaptor.getValue().preferredZone()).isNull();
         assertThat(commandCaptor.getValue().partySize()).isEqualTo(3);
+    }
+
+    /**
+     * The contact was shared at the first touch, long before the booking; "Подбери сам" is plain text.
+     * The reservation still carries that phone, so Saby takes it and the hostess card does not say "не указан".
+     */
+    @Test
+    void theReservationCarriesThePhoneTheGuestSharedEarlier() {
+        when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(new TableBookingDraftStorage.Draft(
+                "AERIS",
+                Instant.parse("2026-06-27T15:00:00Z"),
+                Instant.parse("2026-06-27T17:00:00Z"),
+                LocalDate.of(2026, 6, 27),
+                LocalTime.of(20, 0),
+                3,
+                null,
+                null,
+                null,
+                "Хочу забронировать стол на троих завтра в 20:00"
+        )));
+        when(identityService.primaryPhone(1773317437L)).thenReturn(Optional.of("+79990000000"));
+
+        OutgoingMessage outgoing = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
+
+        assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
+        var commandCaptor = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(commandCaptor.capture());
+        assertThat(commandCaptor.getValue().guestPhone()).isEqualTo("+79990000000");
     }
 
     @Test

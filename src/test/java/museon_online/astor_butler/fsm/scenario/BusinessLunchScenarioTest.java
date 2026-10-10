@@ -5,6 +5,7 @@ import museon_online.astor_butler.api.common.ErrorCode;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
+import museon_online.astor_butler.domain.identity.IdentityService;
 import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
 import museon_online.astor_butler.domain.lunch.BusinessLunchFixtures;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOrder;
@@ -57,6 +58,9 @@ class BusinessLunchScenarioTest {
     @Mock
     private TableReservationService tableReservationService;
 
+    @Mock
+    private IdentityService identityService;
+
     private final Map<Long, BotState> states = new HashMap<>();
     private final Map<Long, BusinessLunchDraftStorage.Draft> drafts = new HashMap<>();
     private final List<ExternalLunchOrderProvider> providers = new ArrayList<>();
@@ -72,7 +76,8 @@ class BusinessLunchScenarioTest {
                 new BusinessLunchService(tableReservationService, providers, timeProvider, new BusinessLunchCatalog(List.of(BusinessLunchFixtures.fullMenu()))),
                 new GuestInputUnderstandingService(),
                 new TableBookingDraftMerger(mock(TableBookingDraftStorage.class), timeProvider),
-                timeProvider
+                timeProvider,
+                identityService
         );
         ReflectionTestUtils.setField(scenario, "adminChatId", "100500");
         states.put(CHAT, BotState.READY_FOR_DIALOG);
@@ -516,6 +521,40 @@ class BusinessLunchScenarioTest {
         var command = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(command.capture());
         assertThat(command.getValue().guestComment()).doesNotContain("вручную");
+    }
+
+    /**
+     * The guest shared the contact once, at the first touch; "да" at the end is plain text. The table and the order
+     * still carry that phone, or Saby answers GUEST_DATA_REQUIRED and the hostess enters everything by hand.
+     */
+    @Test
+    void aLunchSentAsPlainTextCarriesThePhoneTheGuestSharedEarlier() {
+        VenueSystem saby = new VenueSystem(new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-501", ""));
+        providers.add(saby);
+        when(identityService.primaryPhone(CHAT)).thenReturn(Optional.of("+79990000000"));
+        say("/start lunch_simple_s2_p2_d20261006_t1300");
+        say("Суп дня");
+
+        say("да");
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestPhone()).isEqualTo("+79990000000");
+        assertThat(saby.order.guestPhone()).isEqualTo("+79990000000");
+    }
+
+    @Test
+    void aContactInTheMessageItselfIsTakenAsItIsWithoutALookup() {
+        say("/start lunch_simple_s2_p2_d20261006_t1300");
+        say("Суп дня");
+        IncomingMessage yesWithContact = telegram("да", "+79990000001");
+
+        scenario.handle(yesWithContact, states.get(CHAT), yesWithContact.text());
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestPhone()).isEqualTo("+79990000001");
+        verify(identityService, never()).primaryPhone(any());
     }
 
     @Test

@@ -6,6 +6,8 @@ import museon_online.astor_butler.service.message.MessageChannel;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -23,6 +25,32 @@ public class IdentityService {
         upsertTelegramProfile(userId, incoming);
         upsertPhoneContact(userId, incoming);
         return new IdentityRecord(userId, incoming.telegramUserId());
+    }
+
+    /**
+     * The phone this guest can be reached at: the primary PHONE contact the guest shared with the bot earlier,
+     * as {@link #identifyTelegram} stores it. A guest shares the contact once, at the first touch; every later
+     * message is plain text, so a booking placed at the end of a dialogue has to read the phone back from here.
+     * Empty for a guest who never shared one. The number is returned to the caller and never logged.
+     */
+    public Optional<String> primaryPhone(Long telegramUserId) {
+        if (telegramUserId == null) {
+            return Optional.empty();
+        }
+        List<String> phones = jdbcTemplate.queryForList("""
+                SELECT uc.contact_value
+                FROM user_contacts uc
+                JOIN users u ON u.id = uc.user_id
+                WHERE u.telegram_id = ?
+                  AND uc.contact_type = 'PHONE'
+                  AND NULLIF(TRIM(uc.contact_value), '') IS NOT NULL
+                ORDER BY uc.is_primary DESC, uc.verified_at DESC NULLS LAST, uc.updated_at DESC
+                LIMIT 1
+                """,
+                String.class,
+                telegramUserId
+        );
+        return phones.stream().findFirst();
     }
 
     private Long upsertUser(IncomingMessage incoming) {

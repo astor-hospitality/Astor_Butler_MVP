@@ -7,6 +7,7 @@ import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.VenueOpeningHours;
+import museon_online.astor_butler.domain.identity.IdentityService;
 import museon_online.astor_butler.domain.media.AerisMediaCatalog;
 import museon_online.astor_butler.domain.media.MediaAsset;
 import museon_online.astor_butler.fsm.core.BotState;
@@ -57,6 +58,7 @@ public class TableBookingScenario implements FsmScenario {
     private final BookingPhraseService phraseService;
     private final BookingTimeProvider timeProvider;
     private final VenueOpeningHours openingHours;
+    private final IdentityService identityService;
 
     @Value("${telegram.booking.plan-pdf-asset-code:AERIS_FLOOR_PLAN}")
     private String planPdfAssetCode;
@@ -432,7 +434,7 @@ public class TableBookingScenario implements FsmScenario {
                     draft.requestedEndAt(),
                     draft.partySize(),
                     guestName(incoming),
-                    incoming.contactPhone(),
+                    guestPhone(incoming),
                     draft.originalText(),
                     managerTelegramId,
                     hostessChatId
@@ -552,6 +554,18 @@ public class TableBookingScenario implements FsmScenario {
 
     public boolean sideEffecting() {
         return true;
+    }
+
+    /**
+     * The phone for the hostess card and the venue's own system. A contact in this very message wins; otherwise it is
+     * the one the guest shared earlier in the dialogue, because the last step of a booking is plain text and Saby takes
+     * no booking without a phone. Null when the guest never shared one: the request then stays with the hostess.
+     */
+    private String guestPhone(IncomingMessage incoming) {
+        if (incoming.contactPhone() != null && !incoming.contactPhone().isBlank()) {
+            return incoming.contactPhone();
+        }
+        return identityService.primaryPhone(incoming.telegramUserId()).orElse(null);
     }
 
     private String guestName(IncomingMessage incoming) {
