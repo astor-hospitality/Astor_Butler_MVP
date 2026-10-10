@@ -243,6 +243,33 @@ class MessageGatewayServiceTest {
     }
 
     @Test
+    void webModelBudgetShortCircuitsThePaidModelPath() {
+        IncomingMessage telegramLike = telegram("Check админки");
+        IncomingMessage incoming = new IncomingMessage(MessageChannel.WEB, "web:anon:s", telegramLike.chatId(), telegramLike.chatId(),
+                null, null, telegramLike.text(), null, null, null, null, null, false, "corr", java.time.Instant.now(), java.util.Map.of());
+        String routeText = "check админки";
+        when(fsmStorage.getState(incoming.chatId())).thenReturn(BotState.READY_FOR_DIALOG);
+        when(firstTouchScenario.supports(eq(incoming), eq(BotState.READY_FOR_DIALOG), eq(incoming.text()))).thenReturn(false);
+        when(tableBookingScenario.supports(eq(incoming), eq(BotState.READY_FOR_DIALOG), eq(routeText))).thenReturn(false);
+        when(menuAssetsScenario.supports(eq(incoming), eq(BotState.READY_FOR_DIALOG), eq(routeText))).thenReturn(false);
+        when(quietGuideScenario.supports(eq(incoming), eq(BotState.READY_FOR_DIALOG), eq(routeText))).thenReturn(false);
+        when(mainMenuScenario.supports(eq(incoming), eq(BotState.READY_FOR_DIALOG), eq(routeText))).thenReturn(false);
+        museon_online.astor_butler.domain.web.WebModelBudget budget = org.mockito.Mockito.mock(museon_online.astor_butler.domain.web.WebModelBudget.class);
+        when(budget.check(eq(incoming), eq(incoming.text())))
+                .thenReturn(museon_online.astor_butler.domain.web.WebModelBudget.Decision.deny("daily_budget", "На сегодня лимит исчерпан."));
+        ReflectionTestUtils.setField(service, "webModelBudget", budget);
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.text()).isEqualTo("На сегодня лимит исчерпан.");
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(outgoing.fallback()).isFalse();
+        assertThat(outgoing.actions()).containsExactly("WEB_MODEL_GUARD", "WEB_MODEL_DAILY_BUDGET");
+        verify(modelGateway, never()).generateText(any());
+        verify(fsmStorage, never()).setState(incoming.chatId(), BotState.AI_FALLBACK);
+    }
+
+    @Test
     void returnsFallbackWhenLlmTimesOut() {
         IncomingMessage incoming = telegram("Check админки");
         String routeText = "check админки";

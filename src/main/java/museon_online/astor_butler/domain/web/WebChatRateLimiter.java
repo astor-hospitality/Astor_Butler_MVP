@@ -30,6 +30,14 @@ public class WebChatRateLimiter {
     @Value("${astor.web.rate-limit.max-burst:4}")
     private long maxBurst;
 
+    /** Second window keyed by client IP: a browser rotating sessionIds still shares one address. 0 disables it. */
+    @Value("${astor.web.rate-limit.max-per-minute-per-ip:60}")
+    private long maxPerMinutePerIp;
+
+    /** How many never-seen sessionIds one address may open per minute: caps web_sessions growth and id rotation. 0 disables it. */
+    @Value("${astor.web.rate-limit.max-new-sessions-per-minute-per-ip:5}")
+    private long maxNewSessionsPerMinutePerIp;
+
     public Decision check(String clientIp, String externalUserId, Long chatId, Map<String, Object> payload) {
         if (!enabled) {
             count("disabled");
@@ -37,6 +45,10 @@ public class WebChatRateLimiter {
         }
         String key = clientKey(clientIp, externalUserId, chatId, payload);
         try {
+            Decision fresh = newSessionWindow(clientIp, string(payload == null ? null : payload.get("sessionId")));
+            if (!fresh.allowed()) {
+                return fresh;
+            }
             Decision burst = incrementWindow("web-chat:rate:burst:" + key, maxBurst, Duration.ofSeconds(Math.max(1, burstWindowSeconds)), "burst");
             if (!burst.allowed()) {
                 return burst;
@@ -45,6 +57,12 @@ public class WebChatRateLimiter {
             if (!minute.allowed()) {
                 return minute;
             }
+            if (maxPerMinutePerIp > 0 && clientIp != null && !clientIp.isBlank() && !key.startsWith("ip:")) {
+                Decision ip = incrementWindow("web-chat:rate:ip:" + sanitize(clientIp), maxPerMinutePerIp, Duration.ofMinutes(1), "ip");
+                if (!ip.allowed()) {
+                    return ip;
+                }
+            }
             count("allowed");
             return Decision.allow();
         } catch (RuntimeException e) {
@@ -52,6 +70,23 @@ public class WebChatRateLimiter {
             count("error_open");
                 return Decision.allow();
         }
+    }
+
+    private Decision newSessionWindow(String clientIp, String sessionId) {
+        if (maxNewSessionsPerMinutePerIp <= 0 || sessionId.isBlank() || clientIp == null || clientIp.isBlank()) {
+            return Decision.allow();
+        }
+        String seenKey = "web-chat:session-seen:" + sanitize(sessionId);
+        Boolean fresh = redisTemplate.opsForValue().setIfAbsent(seenKey, "1", Duration.ofDays(1));
+        if (!Boolean.TRUE.equals(fresh)) {
+            return Decision.allow();
+        }
+        Decision decision = incrementWindow("web-chat:rate:newsessions:" + sanitize(clientIp), maxNewSessionsPerMinutePerIp, Duration.ofMinutes(1), "new_sessions");
+        if (!decision.allowed()) {
+            // Not admitted: forget the mark so the same id counts as new again once the window has passed.
+            redisTemplate.delete(seenKey);
+        }
+        return decision;
     }
 
     private Decision incrementWindow(String key, long limit, Duration ttl, String scope) {
