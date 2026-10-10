@@ -24,7 +24,9 @@ public class GlassesController {
     private static final int BODY_LIMIT = 5 * 1024 * 1024;
     private static final int MEDIA_LIMIT = 2 * 1024 * 1024;
     private static final Set<String> FIELDS = Set.of("requestId", "text", "audioBase64", "audioMimeType",
-            "imageBase64", "imageMimeType", "photoContext");
+            "imageBase64", "imageMimeType", "photoContext", "intent");
+    // What the phone means by the request: a question (default) or a task from the dedicated gesture.
+    private static final Set<String> INTENTS = Set.of(GlassesVoiceTasks.INTENT_ASSIST, GlassesVoiceTasks.INTENT_TASK);
     private final GlassesAccess access;
     private final GlassesAssistService service;
     private final GlassesSessionJournal journal;
@@ -87,8 +89,12 @@ public class GlassesController {
             String audioMime = field(body, "audioMimeType");
             String imageMime = field(body, "imageMimeType");
             photoContext = photoContext(body.get("photoContext"));
+            String intent = field(body, "intent");
+            if (intent != null && !INTENTS.contains(intent)) throw malformed();
             if ((audio != null && image != null) || (audio == null && audioMime != null)
                     || (image == null && imageMime != null)) throw malformed();
+            // A photo is looked at, never turned into a task.
+            if (image != null && GlassesVoiceTasks.INTENT_TASK.equals(intent)) throw malformed();
             if (audio != null) {
                 if (!"audio/mp4".equals(audioMime)) throw malformed();
                 byte[] media = decode(audio);
@@ -99,9 +105,9 @@ public class GlassesController {
                 long boxSize = Integer.toUnsignedLong(ByteBuffer.wrap(media).getInt());
                 if (boxSize < 16 || boxSize > media.length) throw malformed();
                 kind = "audio";
-                String answer = service.assistAudio(scope, requestId, text, media, photoContext);
-                record(scope, photoContext, requestId, kind, answer, null, started);
-                return success(requestId, answer);
+                var outcome = service.respondAudio(scope, requestId, text, media, photoContext, intent);
+                record(scope, photoContext, requestId, kind, outcome.text(), null, started);
+                return success(requestId, outcome.text(), null, outcome.task());
             }
             if (image != null) {
                 if (!"image/jpeg".equals(imageMime)) throw malformed();
@@ -114,9 +120,9 @@ public class GlassesController {
             }
             if (text.isBlank()) throw malformed();
             kind = "text";
-            String answer = service.assist(scope, requestId, text, photoContext);
-            record(scope, photoContext, requestId, kind, answer, null, started);
-            return success(requestId, answer);
+            var outcome = service.respond(scope, requestId, text, photoContext, intent);
+            record(scope, photoContext, requestId, kind, outcome.text(), null, started);
+            return success(requestId, outcome.text(), null, outcome.task());
         } catch (GlassesFailure e) {
             if (kind != null) record(scope, photoContext, requestId, kind, null, e.code, started);
             return error(requestId, e);
@@ -137,11 +143,12 @@ public class GlassesController {
         }
     }
 
-    private ResponseEntity<?> success(String requestId, String answer) {
-        return success(requestId, answer, null);
+    private ResponseEntity<?> success(String requestId, String answer, GlassesPhotoContext photoContext) {
+        return success(requestId, answer, photoContext, null);
     }
 
-    private ResponseEntity<?> success(String requestId, String answer, GlassesPhotoContext photoContext) {
+    private ResponseEntity<?> success(String requestId, String answer, GlassesPhotoContext photoContext,
+                                      GlassesVoiceTasks.Receipt task) {
         // Astor's own voice when the server has one; otherwise the phone reads the text itself.
         byte[] audio = null;
         try {
@@ -153,12 +160,14 @@ public class GlassesController {
                 .body(new AssistResponse(requestId, answer, service.capabilities(), photoContext == null ? null
                         : new PhotoReceipt(requestId, photoContext, service.archivesEnabled()),
                         audio == null ? null : Base64.getEncoder().encodeToString(audio),
-                        audio == null ? null : service.audioMimeType(), audio == null ? null : service.voiceGender()));
+                        audio == null ? null : service.audioMimeType(), audio == null ? null : service.voiceGender(),
+                        task));
     }
 
+    /** {@code task} is present only when the request was a task and Butler recorded it. */
     public record AssistResponse(String requestId, String text, GlassesAssistService.Capabilities capabilities,
                                  PhotoReceipt photoReceipt, String audioBase64, String audioMimeType,
-                                 String audioVoiceGender) { }
+                                 String audioVoiceGender, GlassesVoiceTasks.Receipt task) { }
     public record PhotoReceipt(String requestId, GlassesPhotoContext context, boolean archived) { }
     public record ErrorResponse(String requestId, Map<String, String> error) { }
 
