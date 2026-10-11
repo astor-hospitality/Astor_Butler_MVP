@@ -1,5 +1,7 @@
 package museon_online.astor_butler.fsm.scenario;
 
+import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.feedback.FeedbackService;
 import museon_online.astor_butler.domain.feedback.GuestFeedback;
 import museon_online.astor_butler.domain.feedback.GuestFeedbackCommand;
@@ -20,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Guest feedback: ask for the text, pass it to the team, thank the guest.
@@ -29,6 +32,7 @@ import java.util.Map;
  * the guest's language. With {@code astor.i18n.enabled=false} every text is the Russian one, as before.
  */
 @Component
+@Slf4j
 public class FeedbackScenario implements FsmScenario {
 
     static final String TEXT_BUTTON = "feedback.button";
@@ -41,6 +45,10 @@ public class FeedbackScenario implements FsmScenario {
 
     @Value("${telegram.admin.chat-id:}")
     private String adminChatId;
+
+    /** Ties a comment the guest asked to write after rating a visit back to that visit; absent outside Spring. */
+    @Autowired(required = false)
+    private VisitReviewService visitReviews;
 
     @Autowired
     public FeedbackScenario(FSMStorage fsmStorage, FeedbackService feedbackService, GuestTexts guestTexts) {
@@ -121,6 +129,16 @@ public class FeedbackScenario implements FsmScenario {
         GuestFeedback feedback = feedbackService.create(feedbackCommand(incoming, previousState, text));
         fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
         LocalizedText thanks = guestTexts.text(locale, TEXT_THANKS);
+        Optional<VisitReviewService.CommentLink> visit = ratedVisit(incoming, feedback);
+        Map<String, Object> metadata = new LinkedHashMap<>(Map.of(
+                "scenario", id(),
+                "feedbackId", feedback.id(),
+                "feedbackType", feedback.feedbackType().name(),
+                "sentiment", feedback.sentiment().name(),
+                "priority", feedback.priority().name(),
+                "handoffReason", reasonAction
+        ));
+        visit.ifPresent(link -> metadata.put("visitReviewBillId", link.billId()));
         return OutgoingMessage.of(
                 incoming,
                 thanks.text(),
@@ -129,16 +147,34 @@ public class FeedbackScenario implements FsmScenario {
                 false,
                 true,
                 false,
-                adminAlert(incoming, previousState, text, feedback, locale),
+                adminAlert(incoming, previousState, text, feedback, locale, visit),
                 List.of("FEEDBACK", reasonAction, "ADMIN_ALERT", "RETURN_MAIN_MENU")
-        ).withMetadata(withLanguage(Map.of(
-                "scenario", id(),
-                "feedbackId", feedback.id(),
-                "feedbackType", feedback.feedbackType().name(),
-                "sentiment", feedback.sentiment().name(),
-                "priority", feedback.priority().name(),
-                "handoffReason", reasonAction
-        ), thanks));
+        ).withMetadata(withLanguage(metadata, thanks));
+    }
+
+    /** The visit the guest rated, when this is the comment they asked to write after the stars. */
+    private Optional<VisitReviewService.CommentLink> ratedVisit(IncomingMessage incoming, GuestFeedback feedback) {
+        if (visitReviews == null || feedback == null) {
+            return Optional.empty();
+        }
+        try {
+            return visitReviews.attachComment(incoming.chatId(), feedback.id());
+        } catch (RuntimeException e) {
+            // The comment still reaches the team; only its tie to the rated visit is lost.
+            log.warn("Feedback #{} was not tied to a rated visit: {}", feedback.id(), e.toString());
+            return Optional.empty();
+        }
+    }
+
+    /** "Комментарий к оценке визита: ★★★★☆, заявка #77" for the team; empty for any other feedback. */
+    private static String ratedVisitLine(Optional<VisitReviewService.CommentLink> visit) {
+        if (visit.isEmpty()) {
+            return "";
+        }
+        VisitReviewService.CommentLink link = visit.get();
+        String stars = link.stars() == null ? "без звёзд" : "★".repeat(link.stars()) + "☆".repeat(Math.max(0, 5 - link.stars()));
+        String reservation = link.tableReservationId() == null ? "" : ", заявка #" + link.tableReservationId();
+        return "\nКомментарий к оценке визита: " + stars + reservation;
     }
 
     private Map<String, Object> withLanguage(Map<String, Object> metadata, LocalizedText text) {
@@ -178,7 +214,8 @@ public class FeedbackScenario implements FsmScenario {
             BotState previousState,
             String text,
             GuestFeedback feedback,
-            ResolvedLocale locale
+            ResolvedLocale locale,
+            Optional<VisitReviewService.CommentLink> visit
     ) {
         if (adminChatId == null || adminChatId.isBlank()) {
             return AdminAlert.none();
@@ -209,7 +246,7 @@ public class FeedbackScenario implements FsmScenario {
 
                 <b>Контекст</b>
                 Previous state: %s
-                Scenario: FEEDBACK
+                Scenario: FEEDBACK%s
 
                 <b>Действие</b>
                 Проверьте карточку feedback #%s. Если это жалоба, высокий приоритет или нужен персональный follow-up, ответьте гостю вручную и закройте запись после решения.
@@ -230,6 +267,7 @@ public class FeedbackScenario implements FsmScenario {
                 html(text(feedback.priority())),
                 html(text(feedback.status())),
                 html(text(previousState)),
+                html(ratedVisitLine(visit)),
                 html(text(feedback.id())),
                 html(text(incoming.channel())),
                 html(blankAsEmptyLabel(incoming.correlationId()))

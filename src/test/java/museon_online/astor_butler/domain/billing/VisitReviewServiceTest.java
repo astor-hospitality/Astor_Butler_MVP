@@ -7,10 +7,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -91,7 +94,7 @@ class VisitReviewServiceTest {
         assertThat(review.thumb()).isEqualTo(VisitReview.Thumb.UP);
         assertThat(review.tipRequestedAt()).isNotNull();
         assertThat(review.ratedAt()).isNotNull();
-        verify(notifier, times(2)).reviewThanks(any(), any());
+        verify(notifier, times(2)).reviewThanks(any(), any(), eq(true));
         assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type, BillOperation::details).containsExactly(
                 tuple(BillOperationType.ESTIMATE_CREATED, "estimate=54000"),
                 tuple(BillOperationType.REVIEW_PROMPTED, null),
@@ -115,7 +118,61 @@ class VisitReviewServiceTest {
         assertThat(reviews.handleCallback("table_booking:confirm:1", CHAT).handled()).isFalse();
         assertThat(reviews.handleCallback("visit_review:" + bill.id() + ":stars:9", CHAT).handled()).isFalse();
         assertThat(reviews.handleCallback(null, CHAT).handled()).isFalse();
-        verify(notifier, never()).reviewThanks(any(), any());
+        verify(notifier, never()).reviewThanks(any(), any(), anyBoolean());
+    }
+
+    @Test
+    void offersACommentAfterTheStarsAndSendsTheGuestToWriteIt() {
+        GuestBill bill = bill(77L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(bill);
+        reviews.handleCallback("visit_review:" + bill.id() + ":stars:4", CHAT);
+
+        VisitReviewService.CallbackResult comment = reviews.handleCallback("visit_review:" + bill.id() + ":comment", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":thumb:DOWN", CHAT);
+
+        assertThat(comment.handled()).isTrue();
+        assertThat(comment.answerText()).isEqualTo("Напишите пару слов — передадим команде.");
+        assertThat(comment.guestText()).isEqualTo("Оставить отзыв");
+        // Stars thanked with the comment offered; after the guest asked to write one, it is not offered again.
+        verify(notifier).reviewThanks(any(), any(), eq(true));
+        verify(notifier).reviewThanks(any(), any(), eq(false));
+        assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type, BillOperation::details).containsSubsequence(
+                tuple(BillOperationType.REVIEW_RECEIVED, "stars=4"),
+                tuple(BillOperationType.COMMENT_REQUESTED, null),
+                tuple(BillOperationType.REVIEW_RECEIVED, "thumb=DOWN"));
+    }
+
+    @Test
+    void theCommentIsTiedToTheVisitTheGuestRatedOnce() {
+        GuestBill bill = bill(77L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(bill);
+        reviews.handleCallback("visit_review:" + bill.id() + ":stars:4", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":comment", CHAT);
+
+        Optional<VisitReviewService.CommentLink> link = reviews.attachComment(CHAT, 88L);
+        Optional<VisitReviewService.CommentLink> again = reviews.attachComment(CHAT, 89L);
+
+        assertThat(link).contains(new VisitReviewService.CommentLink(bill.id(), 77L, 4));
+        assertThat(again).isEmpty();
+        assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type, BillOperation::details)
+                .contains(tuple(BillOperationType.REVIEW_RECEIVED, "comment=feedback#88"))
+                .doesNotContain(tuple(BillOperationType.REVIEW_RECEIVED, "comment=feedback#89"));
+    }
+
+    @Test
+    void feedbackWithoutTheCommentButtonOrTooLateIsNotTiedToAVisit() {
+        GuestBill rated = bill(77L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(rated);
+        reviews.handleCallback("visit_review:" + rated.id() + ":stars:5", CHAT);
+
+        assertThat(reviews.attachComment(CHAT, 88L)).isEmpty();
+
+        reviews.handleCallback("visit_review:" + rated.id() + ":comment", CHAT);
+        clock.advance(Duration.ofDays(3650));
+
+        assertThat(reviews.attachComment(CHAT, 88L)).isEmpty();
+        assertThat(reviews.attachComment(CHAT + 1, 88L)).isEmpty();
+        assertThat(reviews.attachComment(null, 88L)).isEmpty();
     }
 
     @Test
