@@ -1,10 +1,13 @@
 package museon_online.astor_butler.api.glasses.tasks;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
@@ -60,12 +63,49 @@ public class StaffPortalController {
     public StaffTask delivery(@AuthenticationPrincipal Jwt jwt, @PathVariable("task") String task, @RequestBody Delivery request) {
         return portal.delivery(scope(jwt), task, request.eventId(), request.kind());
     }
+    /** A proof photo for one stage: the file is the body, eventId and stageCode are query parameters. */
     @PostMapping("/api/staff/tasks/{task}/evidence")
-    public ResponseEntity<?> evidence(@AuthenticationPrincipal Jwt jwt, @PathVariable("task") String task) {
-        // Never increment an evidence counter without a real persisted photo and scoped retrieval.
-        portal.snapshot(scope(jwt));
-        return ResponseEntity.status(503).body(Map.of("error", Map.of("code", "EVIDENCE_UNAVAILABLE",
-                "message", "Photo storage is not connected yet")));
+    public ResponseEntity<?> evidence(@AuthenticationPrincipal Jwt jwt, @PathVariable("task") String task,
+                                      HttpServletRequest request) throws IOException {
+        StaffScope scope = scope(jwt);
+        var limits = portal.evidenceLimits();
+        if (limits.isEmpty()) {
+            // Never increment an evidence counter without a real persisted photo and scoped retrieval.
+            portal.snapshot(scope);
+            return ResponseEntity.status(503).body(Map.of("error", Map.of("code", "EVIDENCE_UNAVAILABLE",
+                    "message", "Photo storage is not connected yet")));
+        }
+        // Who may upload is settled before a single byte of the photo is read.
+        portal.evidenceUpload(scope, task);
+        StaffEvidenceUpload upload = StaffEvidenceUpload.read(request, limits.get());
+        return ResponseEntity.ok().header("Cache-Control", "no-store").body(portal.evidence(scope, task,
+                upload.eventId(), upload.stageCode(), upload.capturedAt(), upload.contentType(), upload.bytes()));
+    }
+    @GetMapping("/api/staff/tasks/{task}/evidence")
+    public Map<String, Object> ownEvidence(@AuthenticationPrincipal Jwt jwt, @PathVariable("task") String task) {
+        return Map.of("items", portal.evidenceForAssignee(scope(jwt), task));
+    }
+    @GetMapping("/api/staff/tasks/{task}/evidence/{evidence}")
+    public ResponseEntity<byte[]> ownPhoto(@AuthenticationPrincipal Jwt jwt, @PathVariable("task") String task,
+                                           @PathVariable("evidence") String evidence) {
+        return photo(portal.evidenceFileForAssignee(scope(jwt), task, evidence));
+    }
+    @GetMapping("/api/admin/staff-tasks/{task}/evidence")
+    public Map<String, Object> taskEvidence(@AuthenticationPrincipal Jwt jwt, @PathVariable("task") String task) {
+        return Map.of("items", portal.evidenceForManager(scope(jwt), task));
+    }
+    @GetMapping("/api/admin/staff-tasks/{task}/evidence/{evidence}")
+    public ResponseEntity<byte[]> taskPhoto(@AuthenticationPrincipal Jwt jwt, @PathVariable("task") String task,
+                                            @PathVariable("evidence") String evidence) {
+        return photo(portal.evidenceFileForManager(scope(jwt), task, evidence));
+    }
+    /** The stored bytes under their recorded type; never cached, never guessed at by a browser. */
+    private static ResponseEntity<byte[]> photo(StaffEvidence.File file) {
+        String type = file.evidence().contentType();
+        return ResponseEntity.ok().header("Cache-Control", "no-store").header("X-Content-Type-Options", "nosniff")
+                .header("Content-Disposition", "inline; filename=\"" + file.evidence().evidenceId() + "."
+                        + StaffEvidenceImages.extension(type) + "\"")
+                .contentType(MediaType.parseMediaType(type)).body(file.bytes());
     }
     @ExceptionHandler(StaffTaskFailure.class)
     public ResponseEntity<?> failure(StaffTaskFailure failure) {

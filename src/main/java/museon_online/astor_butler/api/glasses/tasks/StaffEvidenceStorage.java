@@ -1,5 +1,6 @@
 package museon_online.astor_butler.api.glasses.tasks;
 
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -9,6 +10,7 @@ import java.util.Optional;
  * keeps private objects under keys the server made. No public links, and a client never names a key.
  */
 public interface StaffEvidenceStorage {
+    String PREFIX = "staff-evidence/";
 
     /** Stores the object or throws a 503 {@link StaffTaskFailure}. A photo that was not stored must not be counted. */
     void put(String key, byte[] bytes, String contentType);
@@ -19,13 +21,14 @@ public interface StaffEvidenceStorage {
      */
     Optional<byte[]> get(String key, int limit);
 
-    /** One prefix for a venue and, inside it, one for a task. */
+    /** One prefix for a venue and, inside it, one for a task: staff-evidence/&lt;venue&gt;/&lt;task&gt;/. */
     static String taskPrefix(String tenant, String taskId) {
-        throw new UnsupportedOperationException("Proof photos are not implemented yet");
+        // The venue goes in as a hash: a key then holds no venue name and no character a bucket would refuse.
+        return PREFIX + sha256(tenant.getBytes(StandardCharsets.UTF_8)) + "/" + segment(taskId) + "/";
     }
 
     static String key(String tenant, String taskId, String evidenceId, String contentType) {
-        throw new UnsupportedOperationException("Proof photos are not implemented yet");
+        return taskPrefix(tenant, taskId) + segment(evidenceId) + "." + StaffEvidenceImages.extension(contentType);
     }
 
     static StaffTaskFailure unavailable() {
@@ -38,5 +41,10 @@ public interface StaffEvidenceStorage {
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** Server-made ids are already safe; anything else is hashed rather than trusted as part of a path. */
+    private static String segment(String id) {
+        return id != null && id.matches("[A-Za-z0-9_-]{1,64}") ? id : sha256(String.valueOf(id).getBytes(StandardCharsets.UTF_8));
     }
 }

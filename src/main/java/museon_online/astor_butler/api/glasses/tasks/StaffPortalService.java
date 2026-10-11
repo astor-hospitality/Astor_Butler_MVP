@@ -5,8 +5,10 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 /** PostgreSQL is authoritative; never fall back to demo data or an in-memory store. */
@@ -19,17 +21,23 @@ public final class StaffPortalService {
     private final TransactionTemplate tx;
     private final JdbcStaffTaskStore store;
     private final StaffTaskService rules;
+    private final JdbcStaffEvidenceRecords proofs;
+    /** Null while no storage for proof photos is configured: every evidence route then answers 503. */
+    private final StaffEvidenceSettings evidence;
+    private final Clock clock;
 
-    /** Signatures only: the storage settings and the clock are accepted and not used yet. */
-    public StaffPortalService(JdbcTemplate jdbc, PlatformTransactionManager manager, StaffEvidenceSettings evidence, Clock clock) {
-        this(jdbc, manager);
-    }
     public StaffPortalService(JdbcTemplate jdbc, PlatformTransactionManager manager) {
+        this(jdbc, manager, null, Clock.systemUTC());
+    }
+    public StaffPortalService(JdbcTemplate jdbc, PlatformTransactionManager manager, StaffEvidenceSettings evidence, Clock clock) {
         this.jdbc = jdbc;
         this.tx = new TransactionTemplate(manager);
         this.tx.setTimeout(10);
         this.store = new JdbcStaffTaskStore(jdbc);
-        this.rules = new StaffTaskService(store, this::onShift, Clock.systemUTC());
+        this.rules = new StaffTaskService(store, this::onShift, clock);
+        this.proofs = new JdbcStaffEvidenceRecords(jdbc);
+        this.evidence = evidence;
+        this.clock = clock;
     }
     public Dashboard dashboard(StaffScope scope) {
         manager(scope);
@@ -82,34 +90,108 @@ public final class StaffPortalService {
             active(scope);
             boolean replay = id != null && store.event(scope.tenant(), id).isPresent();
             StaffTask result = action.get();
-            if (!replay) jdbc.update("INSERT INTO astor_staff_task_audit(tenant,event_id,task_id,actor,type,version_after) VALUES (?,?,?,?,?,?)",
-                    scope.tenant(), id, result.taskId(), scope.staffId(), type, result.version());
+            if (!replay) audit(scope, id, type, result);
             return result;
         });
     }
-    /* ---------- Proof photos: signatures only, every one answers as the route did before ---------- */
+    private void audit(StaffScope scope, String id, String type, StaffTask result) {
+        jdbc.update("INSERT INTO astor_staff_task_audit(tenant,event_id,task_id,actor,type,version_after) VALUES (?,?,?,?,?,?)",
+                scope.tenant(), id, result.taskId(), scope.staffId(), type, result.version());
+    }
 
+    /* ---------- Proof photos: docs/operations/STAFF_TASK_EVIDENCE.md ---------- */
+
+    /** What an upload may be, or empty while proof photos have no storage. */
     public Optional<StaffEvidence.Limits> evidenceLimits() {
-        return Optional.empty();
+        return Optional.ofNullable(evidence).map(StaffEvidenceSettings::limits);
     }
+    /** Asked before a photo is read from the wire: only this task's assignee with an open shift goes on. */
     public void evidenceUpload(StaffScope scope, String task) {
-        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+        assignee(scope, task);
     }
+    /**
+     * Stores a photo and counts it on its stage. The file goes to the storage first; only then, in one
+     * tenant-locked transaction, the stage gets its photo, the task its next version, the audit its line and
+     * the file its row. A photo that was not stored is never counted, so a stage that requires one stays open.
+     */
     public StaffEvidence.Receipt evidence(StaffScope scope, String task, String id, String stage, Instant captured,
                                           String contentType, byte[] photo) {
-        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+        StaffEvidenceSettings settings = storing();
+        // Rights, the file itself, a repeated event and the state of the stage are settled by reading only,
+        // without the tenant lock: nothing is written for a request that will be refused, and no lock waits
+        // for the storage.
+        StaffTask own = assignee(scope, task);
+        bounded(stage, 32);
+        settings.accept(contentType, photo);
+        Instant capturedAt = captured == null ? null : captured.truncatedTo(ChronoUnit.MILLIS);
+        String sha256 = StaffEvidenceStorage.sha256(photo);
+        Optional<StaffTask> before = rules.evidenceReplay(scope, task, id, stage, capturedAt, sha256);
+        if (before.isPresent()) return new StaffEvidence.Receipt(stored(scope, id), before.get());
+        String evidenceId = UUID.randomUUID().toString();
+        // The key is made here from the stored task and a fresh id; nothing in it comes from the request.
+        String key = StaffEvidenceStorage.key(scope.tenant(), own.taskId(), evidenceId, contentType);
+        settings.storage().put(key, photo, contentType);
+        // If the transaction below refuses after all (the task was reassigned meanwhile), the object stays
+        // without a row: nothing can reach it, and the lifecycle rule of the bucket removes it.
+        return locked(scope, () -> {
+            active(scope);
+            boolean replay = store.event(scope.tenant(), id).isPresent();
+            StaffTask result = rules.evidence(scope, task, id, stage, capturedAt, sha256);
+            if (replay) return new StaffEvidence.Receipt(stored(scope, id), result);
+            audit(scope, id, "EVIDENCE", result);
+            Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
+            StaffEvidence saved = new StaffEvidence(evidenceId, result.taskId(), stage, result.version(), id,
+                    scope.staffId(), contentType, photo.length, sha256, capturedAt, now, now.plus(settings.retention()));
+            proofs.insert(scope.tenant(), saved, key);
+            return new StaffEvidence.Receipt(saved, result);
+        });
     }
+    /** The photos of a task for the manager or the hostess of its venue. */
     public List<StaffEvidence> evidenceForManager(StaffScope scope, String task) {
-        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+        return proofs.byTask(scope.tenant(), managed(scope, task).taskId());
     }
+    /** The photos of a task for its assignee with an open shift, whoever uploaded them. */
     public List<StaffEvidence> evidenceForAssignee(StaffScope scope, String task) {
-        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+        return proofs.byTask(scope.tenant(), assignee(scope, task).taskId());
     }
     public StaffEvidence.File evidenceFileForManager(StaffScope scope, String task, String evidenceId) {
-        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+        return file(scope, managed(scope, task), evidenceId);
     }
     public StaffEvidence.File evidenceFileForAssignee(StaffScope scope, String task, String evidenceId) {
-        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+        return file(scope, assignee(scope, task), evidenceId);
+    }
+    private StaffTask managed(StaffScope scope, String task) {
+        manager(scope);
+        storing();
+        return rules.managed(scope, task);
+    }
+    private StaffTask assignee(StaffScope scope, String task) {
+        active(scope);
+        storing();
+        return rules.assigned(scope, task);
+    }
+    private StaffEvidence.File file(StaffScope scope, StaffTask task, String evidenceId) {
+        var row = proofs.find(scope.tenant(), task.taskId(), evidenceId == null ? "" : evidenceId)
+                .orElseThrow(() -> new StaffTaskFailure(404, "NOT_FOUND", "Photo was not found"));
+        StaffEvidence found = row.evidence();
+        if (!clock.instant().isBefore(found.expiresAt())) throw expired();
+        byte[] bytes = evidence.storage().get(row.objectKey(), (int) found.size()).orElseThrow(StaffPortalService::expired);
+        // Only the bytes that were recorded at upload are served under this record.
+        if (bytes.length != found.size() || !StaffEvidenceStorage.sha256(bytes).equals(found.sha256())) {
+            throw StaffEvidenceStorage.unavailable();
+        }
+        return new StaffEvidence.File(found, bytes);
+    }
+    private StaffEvidence stored(StaffScope scope, String eventId) {
+        return proofs.byEvent(scope.tenant(), eventId).map(JdbcStaffEvidenceRecords.Row::evidence)
+                .orElseThrow(() -> new StaffTaskFailure(409, "EVENT_CONFLICT", "This event id was already used for another request"));
+    }
+    private StaffEvidenceSettings storing() {
+        if (evidence == null) throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+        return evidence;
+    }
+    private static StaffTaskFailure expired() {
+        return new StaffTaskFailure(410, "EVIDENCE_EXPIRED", "The photo is no longer kept");
     }
     public void shift(StaffScope scope, String staff, boolean open, String device) {
         bounded(device, 128);

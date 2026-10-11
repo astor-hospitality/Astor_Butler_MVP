@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-11-staff-task-evidence
+      author: 0xLaki
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-11-staff-task-evidence.sql

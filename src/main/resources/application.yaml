@@ -130,6 +130,20 @@ astor:
     # The role Butler gives the pilot wearer when a task comes from the glasses. MANAGER or HOSTESS may
     # create tasks; the wearer must be registered under that role in astor_staff_members.
     glasses-role: ${ASTOR_GLASSES_STAFF_ROLE:MANAGER}
+    # Proof photos of a task stage (POST /api/staff/tasks/{task}/evidence, docs/operations/STAFF_TASK_EVIDENCE.md).
+    # Off by default, and off while any of endpoint, bucket and the two keys is missing: the upload then
+    # answers 503 EVIDENCE_UNAVAILABLE and a stage that requires a photo stays open. The bucket is private
+    # and is never created here. Keys come from the environment only.
+    evidence:
+      enabled: ${ASTOR_STAFF_EVIDENCE_ENABLED:false}
+      s3-endpoint: ${ASTOR_STAFF_EVIDENCE_S3_ENDPOINT:}
+      s3-region: ${ASTOR_STAFF_EVIDENCE_S3_REGION:}
+      s3-bucket: ${ASTOR_STAFF_EVIDENCE_S3_BUCKET:}
+      s3-access-key: ${ASTOR_STAFF_EVIDENCE_S3_ACCESS_KEY:}
+      s3-secret-key: ${ASTOR_STAFF_EVIDENCE_S3_SECRET_KEY:}
+      max-bytes: ${ASTOR_STAFF_EVIDENCE_MAX_BYTES:10485760}
+      content-types: ${ASTOR_STAFF_EVIDENCE_CONTENT_TYPES:image/jpeg,image/png,image/webp,image/heic,image/heif}
+      retention-days: ${ASTOR_STAFF_EVIDENCE_RETENTION_DAYS:30}
   glasses:
     # The isolated glasses runtime repeats a staff question, Astor's answer and the photo of that request
     # to Butler, which puts them in the system chat and the shift feed. Off by default; both services need
