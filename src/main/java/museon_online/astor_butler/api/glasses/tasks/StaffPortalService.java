@@ -6,6 +6,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /** PostgreSQL is authoritative; never fall back to demo data or an in-memory store. */
@@ -19,6 +20,10 @@ public final class StaffPortalService {
     private final JdbcStaffTaskStore store;
     private final StaffTaskService rules;
 
+    /** Signatures only: the storage settings and the clock are accepted and not used yet. */
+    public StaffPortalService(JdbcTemplate jdbc, PlatformTransactionManager manager, StaffEvidenceSettings evidence, Clock clock) {
+        this(jdbc, manager);
+    }
     public StaffPortalService(JdbcTemplate jdbc, PlatformTransactionManager manager) {
         this.jdbc = jdbc;
         this.tx = new TransactionTemplate(manager);
@@ -81,6 +86,30 @@ public final class StaffPortalService {
                     scope.tenant(), id, result.taskId(), scope.staffId(), type, result.version());
             return result;
         });
+    }
+    /* ---------- Proof photos: signatures only, every one answers as the route did before ---------- */
+
+    public Optional<StaffEvidence.Limits> evidenceLimits() {
+        return Optional.empty();
+    }
+    public void evidenceUpload(StaffScope scope, String task) {
+        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+    }
+    public StaffEvidence.Receipt evidence(StaffScope scope, String task, String id, String stage, Instant captured,
+                                          String contentType, byte[] photo) {
+        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+    }
+    public List<StaffEvidence> evidenceForManager(StaffScope scope, String task) {
+        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+    }
+    public List<StaffEvidence> evidenceForAssignee(StaffScope scope, String task) {
+        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+    }
+    public StaffEvidence.File evidenceFileForManager(StaffScope scope, String task, String evidenceId) {
+        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
+    }
+    public StaffEvidence.File evidenceFileForAssignee(StaffScope scope, String task, String evidenceId) {
+        throw new StaffTaskFailure(503, "EVIDENCE_UNAVAILABLE", "Photo storage is not connected yet");
     }
     public void shift(StaffScope scope, String staff, boolean open, String device) {
         bounded(device, 128);

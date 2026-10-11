@@ -37,4 +37,43 @@ class StaffTasksConfigurationTest {
         runner.withPropertyValues("astor.staff.enabled=true", "astor.staff.tasks-enabled=true").run(context ->
                 assertThat(context).hasSingleBean(StaffPortalService.class));
     }
+
+    @Test void proofPhotosAreOffUntilTheirStorageIsSwitchedOnAndComplete() {
+        runner.withPropertyValues("astor.staff.enabled=true").run(context ->
+                assertThat(context.getBean(StaffPortalService.class).evidenceLimits()).isEmpty());
+        // Every storage setting is there but the switch: still off.
+        runner.withPropertyValues("astor.staff.enabled=true", "astor.staff.evidence.s3-endpoint=https://storage.example.test",
+                "astor.staff.evidence.s3-bucket=unit-evidence", "astor.staff.evidence.s3-access-key=unit-key-id",
+                "astor.staff.evidence.s3-secret-key=unit-key-value").run(context ->
+                assertThat(context.getBean(StaffPortalService.class).evidenceLimits()).isEmpty());
+        // Switched on without a bucket, or with a limit that is not a number: the application starts, photos stay off.
+        runner.withPropertyValues("astor.staff.enabled=true", "astor.staff.evidence.enabled=true",
+                "astor.staff.evidence.s3-endpoint=https://storage.example.test", "astor.staff.evidence.s3-access-key=unit-key-id",
+                "astor.staff.evidence.s3-secret-key=unit-key-value").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(StaffPortalService.class).evidenceLimits()).isEmpty();
+        });
+        runner.withPropertyValues("astor.staff.enabled=true", "astor.staff.evidence.enabled=true",
+                "astor.staff.evidence.s3-endpoint=https://storage.example.test", "astor.staff.evidence.s3-bucket=unit-evidence",
+                "astor.staff.evidence.s3-access-key=unit-key-id", "astor.staff.evidence.s3-secret-key=unit-key-value",
+                "astor.staff.evidence.max-bytes=ten").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(StaffPortalService.class).evidenceLimits()).isEmpty();
+        });
+    }
+
+    @Test void aCompleteStorageConfigurationTurnsProofPhotosOnWithTheDefaultLimits() {
+        runner.withPropertyValues("astor.staff.enabled=true", "astor.staff.evidence.enabled=true",
+                "astor.staff.evidence.s3-endpoint=https://storage.example.test", "astor.staff.evidence.s3-region=ru-central1",
+                "astor.staff.evidence.s3-bucket=unit-evidence", "astor.staff.evidence.s3-access-key=unit-key-id",
+                "astor.staff.evidence.s3-secret-key=unit-key-value").run(context ->
+                assertThat(context.getBean(StaffPortalService.class).evidenceLimits()).contains(new StaffEvidence.Limits(
+                        10 * 1024 * 1024, java.util.Set.of("image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"))));
+        runner.withPropertyValues("astor.staff.tasks-enabled=true", "astor.staff.evidence.enabled=true",
+                "astor.staff.evidence.s3-endpoint=http://minio:9000", "astor.staff.evidence.s3-bucket=unit-evidence",
+                "astor.staff.evidence.s3-access-key=unit-key-id", "astor.staff.evidence.s3-secret-key=unit-key-value",
+                "astor.staff.evidence.max-bytes=2097152", "astor.staff.evidence.content-types=image/jpeg").run(context ->
+                assertThat(context.getBean(StaffPortalService.class).evidenceLimits())
+                        .contains(new StaffEvidence.Limits(2097152, java.util.Set.of("image/jpeg"))));
+    }
 }

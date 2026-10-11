@@ -36,7 +36,8 @@ public class StaffPortalConfiguration {
     @Bean @Order(1)
     SecurityFilterChain staffSecurity(HttpSecurity http,
             @Value("${astor.staff.enabled:false}") boolean enabled,
-            @Qualifier("staffJwtDecoder") ObjectProvider<JwtDecoder> decoder) throws Exception {
+            @Qualifier("staffJwtDecoder") ObjectProvider<JwtDecoder> decoder,
+            ObjectProvider<StaffPortalService> portal) throws Exception {
         http.securityMatcher("/api/staff/**", "/api/admin/staff/**", "/api/admin/staff-tasks/**")
                 .cors(Customizer.withDefaults()).csrf(c -> c.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -30,6 +31,8 @@ public final class StaffTaskService {
 
     private static final int MAX_STAGES = 10;
     private static final int MAX_PAGE = 100;
+    /** A pilot limit: a stage keeps a few photos, not a gallery, so one task cannot fill the storage. */
+    static final int MAX_STAGE_PHOTOS = 10;
 
     private final StaffTaskStore store;
     private final StaffShifts shifts;
@@ -99,6 +102,28 @@ public final class StaffTaskService {
             return save(replaceStage(task, new StaffTask.Stage(stage.code(), stage.title(), stage.evidenceRequired(),
                     false, stage.evidence() + 1)), task.version());
         });
+    }
+
+    /** The same for a photo whose bytes are already stored: the hash of the file is part of the request. */
+    public synchronized StaffTask evidence(StaffScope scope, String taskId, String eventId, String stageCode,
+                                           Instant capturedAt, String contentSha256) {
+        throw new UnsupportedOperationException("Proof photos are not implemented yet");
+    }
+
+    /** What evidence would answer, without changing anything. Asked before a file is written. */
+    public synchronized Optional<StaffTask> evidenceReplay(StaffScope scope, String taskId, String eventId,
+                                                           String stageCode, Instant capturedAt, String contentSha256) {
+        throw new UnsupportedOperationException("Proof photos are not implemented yet");
+    }
+
+    /** The caller's own task: same venue, assigned to the caller, shift open. */
+    public synchronized StaffTask assigned(StaffScope scope, String taskId) {
+        throw new UnsupportedOperationException("Proof photos are not implemented yet");
+    }
+
+    /** A task of the caller's venue, for a hostess or a manager. */
+    public synchronized StaffTask managed(StaffScope scope, String taskId) {
+        throw new UnsupportedOperationException("Proof photos are not implemented yet");
     }
 
     /* ---------- Hostess or manager ---------- */

@@ -156,6 +156,61 @@ class StaffTaskServiceTest {
         refused(() -> service.evidence(ANNA, task.taskId(), event(), "seats", NOW), 409, "STAGE_CLOSED");
     }
 
+    @Test void aStoredPhotoIsCountedOnceAndBoundToItsFile() {
+        StaffTask task = table("13", "anna");
+        service.command(ANNA, task.taskId(), event(), Command.ACCEPT, 1, null);
+        service.command(ANNA, task.taskId(), event(), Command.STAGE_DONE, 2, "seats");
+        String photo = event();
+
+        assertThat(service.evidenceReplay(ANNA, task.taskId(), photo, "setting", NOW, "file-a"))
+                .as("nothing was counted yet, the photo may be stored").isEmpty();
+        assertThat(service.list(HOSTESS).getFirst().version()).as("asking changes nothing").isEqualTo(3);
+
+        StaffTask counted = service.evidence(ANNA, task.taskId(), photo, "setting", NOW, "file-a");
+        assertThat(counted.version()).isEqualTo(4);
+        assertThat(counted.stages().get(1).evidence()).isEqualTo(1);
+        assertThat(service.evidenceReplay(ANNA, task.taskId(), photo, "setting", NOW, "file-a")).contains(counted);
+        assertThat(service.evidence(ANNA, task.taskId(), photo, "setting", NOW, "file-a")).isEqualTo(counted);
+
+        refused(() -> service.evidenceReplay(ANNA, task.taskId(), photo, "setting", NOW, "file-b"), 409, "EVENT_CONFLICT");
+        refused(() -> service.evidence(ANNA, task.taskId(), photo, "setting", NOW, "file-b"), 409, "EVENT_CONFLICT");
+        refused(() -> service.evidenceReplay(ANNA, task.taskId(), " ", "setting", NOW, "file-a"), 400, "MALFORMED_REQUEST");
+    }
+
+    @Test void aPhotoThatWouldBeRefusedIsRefusedBeforeItIsStored() {
+        StaffTask task = table("13", "anna");
+        refused(() -> service.evidenceReplay(ANNA, task.taskId(), event(), "setting", NOW, "file"), 409, "INVALID_TRANSITION");
+        service.command(ANNA, task.taskId(), event(), Command.ACCEPT, 1, null);
+        service.command(ANNA, task.taskId(), event(), Command.STAGE_DONE, 2, "seats");
+
+        refused(() -> service.evidenceReplay(ILYA, task.taskId(), event(), "setting", NOW, "file"), 403, "FORBIDDEN");
+        refused(() -> service.evidenceReplay(HOSTESS, task.taskId(), event(), "setting", NOW, "file"), 403, "FORBIDDEN");
+        refused(() -> service.evidenceReplay(STRANGER, task.taskId(), event(), "setting", NOW, "file"), 404, "NOT_FOUND");
+        refused(() -> service.evidenceReplay(ANNA, task.taskId(), event(), "unknown", NOW, "file"), 400, "MALFORMED_REQUEST");
+        refused(() -> service.evidenceReplay(ANNA, task.taskId(), event(), "seats", NOW, "file"), 409, "STAGE_CLOSED");
+        onShift.remove("AERIS/anna");
+        refused(() -> service.evidenceReplay(ANNA, task.taskId(), event(), "setting", NOW, "file"), 403, "SHIFT_CLOSED");
+        refused(() -> service.assigned(ANNA, task.taskId()), 403, "SHIFT_CLOSED");
+        onShift.add("AERIS/anna");
+
+        assertThat(service.assigned(ANNA, task.taskId()).taskId()).isEqualTo(task.taskId());
+        refused(() -> service.assigned(ILYA, task.taskId()), 403, "FORBIDDEN");
+        refused(() -> service.assigned(STRANGER, task.taskId()), 404, "NOT_FOUND");
+        assertThat(service.managed(HOSTESS, task.taskId()).taskId()).isEqualTo(task.taskId());
+        refused(() -> service.managed(ANNA, task.taskId()), 403, "FORBIDDEN");
+        refused(() -> service.managed(new StaffScope("OTHER", "boss", StaffScope.Role.MANAGER), task.taskId()), 404, "NOT_FOUND");
+    }
+
+    @Test void aStageKeepsAFewPhotosNotAGallery() {
+        StaffTask task = table("13", "anna");
+        service.command(ANNA, task.taskId(), event(), Command.ACCEPT, 1, null);
+        for (int i = 0; i < StaffTaskService.MAX_STAGE_PHOTOS; i++) {
+            service.evidence(ANNA, task.taskId(), event(), "setting", NOW, "file-" + i);
+        }
+        refused(() -> service.evidenceReplay(ANNA, task.taskId(), event(), "setting", NOW, "one-more"), 409, "EVIDENCE_LIMIT");
+        refused(() -> service.evidence(ANNA, task.taskId(), event(), "setting", NOW, "one-more"), 409, "EVIDENCE_LIMIT");
+    }
+
     @Test void helpPausesWorkUntilManagerResolvesIt() {
         StaffTask task = table("2", "ilya");
         service.command(ILYA, task.taskId(), event(), Command.ACCEPT, 1, null);

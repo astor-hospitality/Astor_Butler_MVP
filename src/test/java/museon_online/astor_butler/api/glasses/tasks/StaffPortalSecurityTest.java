@@ -29,6 +29,8 @@ class StaffPortalSecurityTest {
     static final String ISSUER = "https://keycloak.example.test/realms/astor";
     static final KeyPair KEYS = keys();
     static boolean enabled = true;
+    /** What the portal says about proof photos: empty while they have no storage, as by default. */
+    static Optional<StaffEvidence.Limits> evidence = Optional.empty();
     private AnnotationConfigWebApplicationContext context;
     private MockMvc mvc;
     static KeyPair keys() {
@@ -44,27 +46,30 @@ class StaffPortalSecurityTest {
                 if (!scope.manages()) throw new StaffTaskFailure(403, "FORBIDDEN", "Manager required");
                 return new StaffPortalService.Dashboard(scope.tenant(), List.of(), List.of(), true);
             });
+            when(portal.evidenceLimits()).thenReturn(evidence);
             return portal;
         }
         @Bean StaffPortalController controller(StaffPortalService portal) { return new StaffPortalController(portal); }
         @Bean StaffLoginConfigurationController login() { return new StaffLoginConfigurationController(enabled, ISSUER); }
-        @Bean @Order(1) SecurityFilterChain security(HttpSecurity http) throws Exception {
+        @Bean @Order(1) SecurityFilterChain security(HttpSecurity http, StaffPortalService portal) throws Exception {
             NimbusJwtDecoder decoder = NimbusJwtDecoder.withPublicKey((RSAPublicKey) KEYS.getPublic()).build();
             decoder.setJwtValidator(StaffPortalConfiguration.validator(ISSUER));
             var beans = new StaticListableBeanFactory(); beans.addBean("staffJwtDecoder", decoder);
-            return new StaffPortalConfiguration().staffSecurity(http, enabled, beans.getBeanProvider(JwtDecoder.class));
+            beans.addBean("staffPortalService", portal);
+            return new StaffPortalConfiguration().staffSecurity(http, enabled, beans.getBeanProvider(JwtDecoder.class),
+                    beans.getBeanProvider(StaffPortalService.class));
         }
         @Bean @Order(2) SecurityFilterChain legacyPermitAll(HttpSecurity http) throws Exception {
             return http.authorizeHttpRequests(a -> a.anyRequest().permitAll()).csrf(c -> c.disable()).build();
         }
     }
-    @BeforeEach void start() { enabled = true; open(); }
+    @BeforeEach void start() { enabled = true; evidence = Optional.empty(); open(); }
     private void open() {
         context = new AnnotationConfigWebApplicationContext(); context.setServletContext(new MockServletContext());
         context.register(Harness.class); context.refresh();
         mvc = MockMvcBuilders.webAppContextSetup(context).addFilters(context.getBean(FilterChainProxy.class)).build();
     }
-    @AfterEach void close() { context.close(); enabled = true; }
+    @AfterEach void close() { context.close(); enabled = true; evidence = Optional.empty(); }
     private String token(String issuer, String audience, Instant expiry, String tenant, String role, KeyPair pair) throws Exception {
         var claims = new JWTClaimsSet.Builder().issuer(issuer).subject("manager").audience(audience)
                 .issueTime(Date.from(Instant.now())).claim("tenant", tenant).claim("realm_access", Map.of("roles", List.of(role)));
@@ -118,6 +123,75 @@ class StaffPortalSecurityTest {
     @Test void noFakePhotoAcknowledgement() throws Exception {
         mvc.perform(post("/api/staff/tasks/task-1/evidence").header("Authorization", "Bearer " + good()))
                 .andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.error.code").value("EVIDENCE_UNAVAILABLE"));
+    }
+    @Test void aPhotoPassesTheJsonBodyLimitOnlyOnItsOwnRouteAndOnlyWhileItHasAStorage() throws Exception {
+        String bearer = "Bearer " + good(), route = "/api/staff/tasks/task-1/evidence?eventId=photo-1&stageCode=setting";
+        byte[] photo = InMemoryStaffEvidenceStorage.jpeg(100 * 1024);
+        // No storage: the route is bounded like every other staff route, exactly as before.
+        mvc.perform(post(route).header("Authorization", bearer).contentType("image/jpeg").content(photo))
+                .andExpect(status().isPayloadTooLarge());
+        verify(context.getBean(StaffPortalService.class), never()).evidence(any(), any(), any(), any(), any(), any(), any());
+
+        context.close(); evidence = Optional.of(new StaffEvidence.Limits(200 * 1024, Set.of("image/jpeg"))); open();
+        var portal = context.getBean(StaffPortalService.class);
+        var caller = new StaffScope("AERIS", "manager", StaffScope.Role.MANAGER);
+        mvc.perform(post(route).header("Authorization", bearer).contentType("image/jpeg").content(photo))
+                .andExpect(status().isOk());
+        var order = inOrder(portal);
+        order.verify(portal).evidenceUpload(caller, "task-1");
+        order.verify(portal).evidence(eq(caller), eq("task-1"), eq("photo-1"), eq("setting"), isNull(), eq("image/jpeg"), eq(photo));
+
+        mvc.perform(post(route).header("Authorization", bearer).contentType("image/jpeg")
+                        .content(InMemoryStaffEvidenceStorage.jpeg(200 * 1024 + 1)))
+                .andExpect(status().isPayloadTooLarge()).andExpect(jsonPath("$.error.code").value("PAYLOAD_TOO_LARGE"));
+        // Every other route keeps the JSON limit, also one that only looks like the photo route.
+        for (String other : List.of("/api/staff/tasks/task-1/commands", "/api/staff/tasks/task-1/evidence/extra",
+                "/api/admin/staff-tasks/task-1/evidence", "/api/staff/tasks/evidence")) {
+            mvc.perform(post(other).header("Authorization", bearer).contentType("image/jpeg").content(photo))
+                    .andExpect(status().isPayloadTooLarge());
+        }
+        verify(portal, times(1)).evidence(any(), any(), any(), any(), any(), any(), any());
+    }
+    @Test void evidenceRoutesNeedAStaffTokenAndServeAPhotoUnderItsRecordedType() throws Exception {
+        context.close(); evidence = Optional.of(new StaffEvidence.Limits(200 * 1024, Set.of("image/jpeg"))); open();
+        var portal = context.getBean(StaffPortalService.class);
+        byte[] photo = InMemoryStaffEvidenceStorage.png();
+        mvc.perform(post("/api/staff/tasks/task-1/evidence?eventId=photo-1&stageCode=setting").contentType("image/jpeg")
+                .content(InMemoryStaffEvidenceStorage.jpeg(64))).andExpect(status().isUnauthorized());
+        for (String route : List.of("/api/staff/tasks/task-1/evidence", "/api/staff/tasks/task-1/evidence/photo-1",
+                "/api/admin/staff-tasks/task-1/evidence", "/api/admin/staff-tasks/task-1/evidence/photo-1")) {
+            mvc.perform(get(route)).andExpect(status().isUnauthorized());
+        }
+        verifyNoInteractions(portal);
+
+        var caller = new StaffScope("AERIS", "manager", StaffScope.Role.MANAGER);
+        Instant at = Instant.parse("2026-10-11T09:00:00Z");
+        var file = new StaffEvidence.File(new StaffEvidence("photo-1", "task-1", "setting", 4, "event-1", "anna",
+                "image/png", photo.length, "0".repeat(64), null, at, at.plusSeconds(60)), photo);
+        doReturn(file).when(portal).evidenceFileForManager(caller, "task-1", "photo-1");
+        doReturn(file).when(portal).evidenceFileForAssignee(caller, "task-1", "photo-1");
+        doReturn(List.of(file.evidence())).when(portal).evidenceForManager(caller, "task-1");
+        String bearer = "Bearer " + good();
+        for (String route : List.of("/api/staff/tasks/task-1/evidence/photo-1", "/api/admin/staff-tasks/task-1/evidence/photo-1")) {
+            mvc.perform(get(route).header("Authorization", bearer)).andExpect(status().isOk())
+                    .andExpect(content().bytes(photo)).andExpect(header().string("Content-Type", "image/png"))
+                    .andExpect(header().string("Cache-Control", "no-store"))
+                    .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        }
+        mvc.perform(get("/api/admin/staff-tasks/task-1/evidence").header("Authorization", bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].evidenceId").value("photo-1"))
+                .andExpect(jsonPath("$.items[0].versionAfter").value(4))
+                .andExpect(jsonPath("$.items[0].receivedAt").value("2026-10-11T09:00:00Z"));
+        mvc.perform(get("/api/staff/tasks/task-1/evidence").header("Authorization", bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.items").isEmpty());
+        verify(portal).evidenceForAssignee(caller, "task-1");
+
+        context.close(); enabled = false; open();
+        mvc.perform(post("/api/staff/tasks/task-1/evidence?eventId=photo-1&stageCode=setting").header("Authorization", bearer)
+                .contentType("image/jpeg").content(InMemoryStaffEvidenceStorage.jpeg(64))).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/admin/staff-tasks/task-1/evidence/photo-1").header("Authorization", bearer))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(context.getBean(StaffPortalService.class));
     }
     @Test void pathParametersBindWithoutCompilerParameterMetadata() throws Exception {
         String bearer = "Bearer " + good();
