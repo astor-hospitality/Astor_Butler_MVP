@@ -51,6 +51,16 @@ public class TipService {
         return cancelDraft(order.id());
     }
 
+    /** The guest changed the size of a tip they have not confirmed yet: the same thanks, a new sum. */
+    @Transactional
+    public TipOrder changeDraftAmount(Long id, long amountMinor, String guestComment) {
+        if (amountMinor < 1) {
+            throw badRequest("amountMinor must be positive");
+        }
+        TipOrder order = requireAwaitingConfirmation(id);
+        return repository.updateAmount(order.id(), amountMinor, guestComment);
+    }
+
     @Transactional
     public TipOrder confirmDraft(Long id) {
         TipOrder order = requireAwaitingConfirmation(id);
