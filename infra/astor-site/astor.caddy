@@ -31,6 +31,19 @@ astor-ai.ru, astor.176-123-165-162.nip.io {
 			header_up X-Forwarded-Host {host}
 		}
 	}
+	# Telegram Mini App Консьержа (Astor_Concierge PR #27): страница /app/ и её API /app/api/* отдаёт сам контейнер
+	# Консьержа на внутреннем порту 8080 (сеть edge). Подпись Telegram проверяется в приложении; тело до 16 KB.
+	@miniapp path /app /app/*
+	handle @miniapp {
+		request_body {
+			max_size 16KB
+		}
+		reverse_proxy astor-concierge-concierge-1:8080 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
 	@concierge_chat path /api/concierge/messages
 	handle @concierge_chat {
 		request_body {
