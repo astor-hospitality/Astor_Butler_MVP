@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start -p 3001",
     "lint": "eslint .",
-    "test:voice": "node scripts/test-clio-voice.mjs"
+    "test:voice": "node scripts/test-clio-voice.mjs",
+    "check:archive": "node scripts/archive-check.mjs"
   },
   "dependencies": {
     "framer-motion": "^12.0.0",
