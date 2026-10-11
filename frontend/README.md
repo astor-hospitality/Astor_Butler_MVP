@@ -50,6 +50,10 @@ The frontend display assistant is `Clio`. User-facing copy and deterministic
 demo replies live in `lib/clio-persona.ts`; backend/FSM identities are not
 renamed by this frontend layer.
 
+## Checks Before a Deploy
+
+The archive plays on `localhost` even when it is broken on the real domain ([#72](https://github.com/astor-hospitality/Astor_Butler_MVP/pull/72)), so three checks look where a person does not: `npm run check:referer:build` after `npm run build` (no network, fit for CI), and by hand against a running site `npm run check:referer https://c3ag.ru` (a visitor's browser gets the clips and posters from Yandex) and `npm run check:archive https://c3ag.ru` (every path of `data/videos.json` is still on the Disk).
+
 ## Lightweight Preview
 
 `preview.html` is a dependency-free visual preview for environments where frontend packages cannot be installed yet. The Next.js application remains the source of truth.
