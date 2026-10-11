@@ -1,0 +1,102 @@
+# Local stack for the staff portal rehearsal only. It has its own project name, container names,
+# volumes and ports, so the usual local stand (docker-compose.yml in the repository root,
+# containers astor_*_test, volumes astor_butler_mvp_*) is not touched.
+#
+#   docker compose -p astor-rehearsal -f scripts/staff-portal-rehearsal/compose.yaml up -d postgres
+#   docker compose -p astor-rehearsal -f scripts/staff-portal-rehearsal/compose.yaml down -v
+#
+# The passwords are the public defaults of the repository's docker-compose.yml. Nothing here is a secret
+# and nothing here may be pointed at a shared or production host.
+name: astor-rehearsal
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: astor-rehearsal-postgres
+    ports:
+      - "127.0.0.1:${REHEARSAL_PG_PUBLISHED_PORT:-25434}:5432"
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: astor
+      POSTGRES_PASSWORD: astor
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U astor -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # The three services below are needed only to start the application for step 5.
+  redis:
+    profiles: ["app"]
+    image: redis:7.2
+    container_name: astor-rehearsal-redis
+    ports:
+      - "127.0.0.1:${REHEARSAL_REDIS_PUBLISHED_PORT:-26379}:6379"
+
+  mongo:
+    profiles: ["app"]
+    image: mongo:7
+    container_name: astor-rehearsal-mongo
+    command: ["mongod", "--quiet", "--auth", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "127.0.0.1:${REHEARSAL_MONGO_PUBLISHED_PORT:-27117}:27017"
+    environment:
+      MONGO_INITDB_DATABASE: aether
+      MONGO_INITDB_ROOT_USERNAME: oracle
+      MONGO_INITDB_ROOT_PASSWORD: astor_unlock
+    volumes:
+      - mongodata:/data/db
+
+  kafka:
+    profiles: ["app"]
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.7
+    container_name: astor-rehearsal-kafka
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - INTERNAL://kafka:9092,EXTERNAL://localhost:${REHEARSAL_KAFKA_PUBLISHED_PORT:-29092}
+    ports:
+      - "127.0.0.1:${REHEARSAL_KAFKA_PUBLISHED_PORT:-29092}:19092"
+    volumes:
+      - kafkadata:/var/lib/redpanda/data
+
+  # A throwaway Keycloak for Astor on this machine: development mode, self-signed certificate,
+  # realm imported from a local copy of docker/keycloak/astor-realm.json (05_identity_prepare.sh makes
+  # the certificate, the realm copy and a random bootstrap password; none of them is kept in git).
+  keycloak:
+    profiles: ["identity"]
+    image: ${REHEARSAL_KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.4}
+    container_name: astor-rehearsal-keycloak
+    command:
+      - start-dev
+      - --https-certificate-file=/opt/keycloak/conf/rehearsal/tls.crt
+      - --https-certificate-key-file=/opt/keycloak/conf/rehearsal/tls.key
+      - --hostname=https://localhost:${REHEARSAL_KEYCLOAK_PUBLISHED_PORT:-28443}
+      - --import-realm
+    ports:
+      - "127.0.0.1:${REHEARSAL_KEYCLOAK_PUBLISHED_PORT:-28443}:8443"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: rehearsal-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${REHEARSAL_KC_ADMIN_PASSWORD:-}
+    volumes:
+      - ${REHEARSAL_IDENTITY_DIR:-./identity-not-prepared}/tls:/opt/keycloak/conf/rehearsal:ro
+      - ${REHEARSAL_IDENTITY_DIR:-./identity-not-prepared}/realm:/opt/keycloak/data/import:ro
+
+volumes:
+  pgdata: {}
+  mongodata: {}
+  kafkadata: {}
