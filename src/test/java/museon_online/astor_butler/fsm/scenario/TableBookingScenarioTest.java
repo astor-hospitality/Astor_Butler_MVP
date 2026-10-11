@@ -1,5 +1,7 @@
 package museon_online.astor_butler.fsm.scenario;
 
+import museon_online.astor_butler.api.common.ApiException;
+import museon_online.astor_butler.api.common.ErrorCode;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
@@ -61,8 +64,14 @@ class TableBookingScenarioTest {
     @Mock
     private IdentityService identityService;
 
+    /** The buttons under the summary, and the state the guest reads it in. */
+    private static final String SEND = "✅ Отправить заявку";
+    private static final String CHANGE = "✏️ Изменить";
+    private static final String SUMMARY = "TABLE_BOOKING_CONFIRMATION";
+
     private TableBookingScenario scenario;
     private BookingTimeProvider timeProvider;
+    private AtomicReference<TableBookingDraftStorage.Draft> kept;
 
     @BeforeEach
     void setUp() {
@@ -139,11 +148,14 @@ class TableBookingScenarioTest {
                 null
         );
 
-        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, understood.routeText(), understood);
+        stored(null);
 
+        OutgoingMessage summary = scenario.handle(incoming, BotState.READY_FOR_DIALOG, understood.routeText(), understood);
+
+        assertThat(summary.actions()).doesNotContain("ASK_TIME", "ASK_PARTY_SIZE", "ASK_TABLE_SELECTION");
+        OutgoingMessage outgoing = send(summary);
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION");
-        assertThat(outgoing.actions()).doesNotContain("ASK_TIME", "ASK_PARTY_SIZE", "ASK_TABLE_SELECTION");
         var commandCaptor = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(commandCaptor.capture());
         assertThat(commandCaptor.getValue().partySize()).isEqualTo(2);
@@ -246,17 +258,18 @@ class TableBookingScenarioTest {
         }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
         when(tableReservationService.createReservation(any(TableReservationCommand.class))).thenReturn(order(44L));
 
-        OutgoingMessage outgoing = scenario.handle(
+        OutgoingMessage summary = scenario.handle(
                 telegram("На троих"),
                 BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION,
                 "На троих"
         );
 
+        assertThat(summary.actions()).doesNotContain("ASK_PARTY_SIZE", "SEND_HALL_PLAN");
+        assertThat(summary.metadata()).doesNotContainKey("documentObjectKey");
+        assertThat(storedDraft.get().partySize()).isEqualTo(3);
+        OutgoingMessage outgoing = send(summary);
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
-        assertThat(outgoing.actions()).doesNotContain("ASK_PARTY_SIZE", "SEND_HALL_PLAN");
-        assertThat(outgoing.metadata()).doesNotContainKey("documentObjectKey");
-        assertThat(storedDraft.get().partySize()).isEqualTo(3);
         verify(tableReservationService).createReservation(any(TableReservationCommand.class));
     }
 
@@ -324,27 +337,31 @@ class TableBookingScenarioTest {
                 storedDraft.set(invocation.getArgument(1));
                 return null;
             }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
-            OutgoingMessage plan = scenario.handle(
+            OutgoingMessage summary = scenario.handle(
                     telegram(reply),
                     BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE,
                     reply
             );
 
-            assertThat(plan.nextState()).as(reply).isEqualTo(BotState.READY_FOR_DIALOG.name());
-            assertThat(plan.actions()).as(reply).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
-            assertThat(plan.actions()).as(reply).doesNotContain("ASK_PARTY_SIZE");
+            assertThat(summary.actions()).as(reply).doesNotContain("ASK_PARTY_SIZE");
             int expectedPartySize = reply.equals("На одного") || reply.equals("соло") ? 1 : 3;
             assertThat(storedDraft.get().partySize()).as(reply).isEqualTo(expectedPartySize);
+            assertThat(summary.text()).as(reply).contains("Гостей: " + expectedPartySize);
+            OutgoingMessage plan = send(summary);
+            assertThat(plan.nextState()).as(reply).isEqualTo(BotState.READY_FOR_DIALOG.name());
+            assertThat(plan.actions()).as(reply).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
         }
     }
 
     @Test
     void acceptsExplicitTableSelectionDuringTableSelection() {
         IncomingMessage incoming = telegram("17");
-        when(draftStorage.find(incoming.chatId())).thenReturn(Optional.of(draft()));
+        stored(draft());
 
-        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, incoming.text());
+        OutgoingMessage summary = scenario.handle(incoming, BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, incoming.text());
 
+        assertThat(summary.text()).contains("Стол 17");
+        OutgoingMessage outgoing = send(summary);
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
     }
@@ -353,7 +370,7 @@ class TableBookingScenarioTest {
     void carriesSeatingPreferenceIntoReservationCommand() {
         IncomingMessage incoming = telegram("винная комната, тихий стол");
         Instant start = Instant.parse("2026-06-27T15:00:00Z");
-        when(draftStorage.find(incoming.chatId())).thenReturn(Optional.of(new TableBookingDraftStorage.Draft(
+        stored(new TableBookingDraftStorage.Draft(
                 "AERIS",
                 start,
                 start.plusSeconds(7200),
@@ -364,10 +381,10 @@ class TableBookingScenarioTest {
                 "MAIN_HALL",
                 "тихий стол",
                 "Хочу забронировать столик завтра на 20:00 на двоих"
-        )));
+        ));
         when(tableReservationService.createReservation(any(TableReservationCommand.class))).thenReturn(order(44L));
 
-        scenario.handle(incoming, BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, incoming.text());
+        send(scenario.handle(incoming, BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, incoming.text()));
 
         var commandCaptor = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(commandCaptor.capture());
@@ -468,15 +485,19 @@ class TableBookingScenarioTest {
         assertThat(timePrompt.nextState()).isEqualTo(BotState.TABLE_BOOKING_COLLECT_TIME.name());
         assertThat(timePrompt.metadata()).containsKey("replyKeyboardRows");
 
-        OutgoingMessage created = scenario.handle(
+        OutgoingMessage summary = scenario.handle(
                 telegram("20:00"),
                 BotState.TABLE_BOOKING_COLLECT_TIME,
                 "20:00"
         );
+        assertThat(summary.text()).contains("Стол 18\n" + bookingDateText + " в 20:00\nГостей: 2");
+        assertThat(summary.actions()).doesNotContain("SEND_HALL_PLAN");
+        assertThat(summary.metadata()).doesNotContainKey("documentObjectKey");
+        verify(tableReservationService, never()).createReservation(any());
+
+        OutgoingMessage created = send(summary);
         assertThat(created.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(created.actions()).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
-        assertThat(created.actions()).doesNotContain("SEND_HALL_PLAN");
-        assertThat(created.metadata()).doesNotContainKey("documentObjectKey");
         assertThat(storedDraft.get().requestedDate()).isEqualTo(bookingDate);
         assertThat(storedDraft.get().requestedTime()).isEqualTo(LocalTime.of(20, 0));
         assertThat(storedDraft.get().partySize()).isEqualTo(2);
@@ -505,12 +526,14 @@ class TableBookingScenarioTest {
             return null;
         }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
 
-        OutgoingMessage outgoing = scenario.handle(
+        OutgoingMessage summary = scenario.handle(
                 telegram("Подбери сам"),
                 BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION,
                 "Подбери сам"
         );
 
+        assertThat(summary.actions()).doesNotContain("ASK_TABLE_SELECTION");
+        OutgoingMessage outgoing = send(summary);
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
         var commandCaptor = forClass(TableReservationCommand.class);
@@ -526,7 +549,7 @@ class TableBookingScenarioTest {
      */
     @Test
     void theReservationCarriesThePhoneTheGuestSharedEarlier() {
-        when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(new TableBookingDraftStorage.Draft(
+        stored(new TableBookingDraftStorage.Draft(
                 "AERIS",
                 Instant.parse("2026-06-27T15:00:00Z"),
                 Instant.parse("2026-06-27T17:00:00Z"),
@@ -537,10 +560,10 @@ class TableBookingScenarioTest {
                 null,
                 null,
                 "Хочу забронировать стол на троих завтра в 20:00"
-        )));
+        ));
         when(identityService.primaryPhone(1773317437L)).thenReturn(Optional.of("+79990000000"));
 
-        OutgoingMessage outgoing = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
+        OutgoingMessage outgoing = send(scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам"));
 
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
         var commandCaptor = forClass(TableReservationCommand.class);
@@ -550,7 +573,7 @@ class TableBookingScenarioTest {
 
     @Test
     void theGuestIsToldWhatWentToTheHostess() {
-        when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(new TableBookingDraftStorage.Draft(
+        stored(new TableBookingDraftStorage.Draft(
                 "AERIS",
                 Instant.parse("2026-06-27T15:00:00Z"),
                 Instant.parse("2026-06-27T17:00:00Z"),
@@ -561,9 +584,9 @@ class TableBookingScenarioTest {
                 null,
                 null,
                 "Хочу забронировать стол на двоих завтра в 20:00"
-        )));
+        ));
 
-        OutgoingMessage outgoing = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
+        OutgoingMessage outgoing = send(scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам"));
 
         // The numbers are the ones of the request the service returned, not of the draft: that is what the hostess sees.
         assertThat(outgoing.text()).contains("Заявку #44 передал команде AERIS", "Стол 17\n06.06 в 20:00\nГостей: 2");
@@ -648,16 +671,39 @@ class TableBookingScenarioTest {
                 null,
                 "Хочу забронировать стол на двоих завтра в 20:00"
         );
-        when(draftStorage.find(eq(1773317437L))).thenReturn(Optional.of(complete));
+        stored(complete);
         // Another evening, a cancelled request and a table at another venue are told apart in TableReservationServiceTest.
 
-        OutgoingMessage outgoing = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
+        OutgoingMessage outgoing = send(scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам"));
 
-        // The scenario asks about its own venue and exactly the hours it is about to hold.
-        verify(tableReservationService).findOverlappingReservation(1773317437L, "AERIS",
+        // The scenario asks about its own venue and exactly the hours it is about to hold: before the summary, so the guest
+        // is not asked to confirm what cannot be sent, and again right before the request is created.
+        verify(tableReservationService, org.mockito.Mockito.times(2)).findOverlappingReservation(1773317437L, "AERIS",
                 Instant.parse("2026-06-27T15:00:00Z"), Instant.parse("2026-06-27T17:00:00Z"));
         verify(tableReservationService).createReservation(any());
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
+    }
+
+    @Test
+    void aRequestThatAppearedWhileTheGuestReadTheSummaryIsStillInTheWay() {
+        stored(new TableBookingDraftStorage.Draft(
+                "AERIS", null, null, LocalDate.of(2026, 6, 27), null, 2, "5", null, null, true, "Забронировать стол"));
+        OutgoingMessage summary = scenario.handle(telegram("20:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "20:00");
+        assertThat(summary.nextState()).isEqualTo(SUMMARY);
+        // Meanwhile the same guest got a table for that evening another way: from the site, or with a second tap.
+        when(tableReservationService.findOverlappingReservation(1773317437L, "AERIS",
+                Instant.parse("2026-06-27T15:00:00Z"), Instant.parse("2026-06-27T17:00:00Z"))).thenReturn(Optional.of(new TableReservationOrder(
+                51L, 1773317437L, 1773317437L, null, 4L, "4", "Стол 4 · у окна", null, null,
+                TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, "TELEGRAM",
+                Instant.parse("2026-06-27T14:00:00Z"), Instant.parse("2026-06-27T16:00:00Z"), 2,
+                "Наталья Поединенко", null, null, 876857557L, null, "-1004291419562", null,
+                Instant.parse("2026-06-26T09:00:00Z"), Instant.parse("2026-06-26T09:00:00Z"))));
+
+        OutgoingMessage outgoing = reply(summary, SEND);
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(outgoing.actions()).contains("RESERVATION_ALREADY_EXISTS");
+        assertThat(outgoing.text()).contains("уже есть заявка #51");
     }
 
     /** A table and two guests are chosen for Saturday 27.06; AERIS opens at 14:00 on Saturdays and closes at 04:00. */
@@ -699,7 +745,7 @@ class TableBookingScenarioTest {
         saturdayWithoutATime();
 
         // One o'clock on Saturday night is still Friday's evening, which runs until 04:00.
-        OutgoingMessage outgoing = scenario.handle(telegram("01:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "01:00");
+        OutgoingMessage outgoing = send(scenario.handle(telegram("01:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "01:00"));
 
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED");
         verify(tableReservationService).createReservation(any());
@@ -750,7 +796,7 @@ class TableBookingScenarioTest {
 
         scenario.handle(telegram("на 2х"), BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE, "на 2х");
         scenario.handle(telegram("на завтра"), BotState.TABLE_BOOKING_COLLECT_DATE, "на завтра");
-        OutgoingMessage plan = scenario.handle(telegram("в 8 вечера"), BotState.TABLE_BOOKING_COLLECT_TIME, "в 8 вечера");
+        OutgoingMessage plan = send(scenario.handle(telegram("в 8 вечера"), BotState.TABLE_BOOKING_COLLECT_TIME, "в 8 вечера"));
 
         assertThat(plan.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(plan.actions()).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
@@ -836,17 +882,18 @@ class TableBookingScenarioTest {
                 null
         );
 
-        OutgoingMessage outgoing = scenario.handle(
+        OutgoingMessage summary = scenario.handle(
                 telegram("На троих"),
                 BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE,
                 "На троих",
                 understood
         );
 
+        assertThat(summary.actions()).doesNotContain("ASK_PARTY_SIZE");
+        assertThat(storedDraft.get().partySize()).isEqualTo(3);
+        OutgoingMessage outgoing = send(summary);
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(outgoing.actions()).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
-        assertThat(outgoing.actions()).doesNotContain("ASK_PARTY_SIZE");
-        assertThat(storedDraft.get().partySize()).isEqualTo(3);
     }
 
     @Test
@@ -872,16 +919,19 @@ class TableBookingScenarioTest {
         }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
         when(tableReservationService.createReservation(any(TableReservationCommand.class))).thenReturn(order(44L));
 
-        OutgoingMessage outgoing = scenario.handle(
+        // Here "нет" declines a seating wish; it is not the guest leaving the booking.
+        OutgoingMessage summary = scenario.handle(
                 telegram("нет"),
                 BotState.TABLE_BOOKING_COLLECT_SEATING_PREFERENCE,
                 "нет"
         );
 
-        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
-        assertThat(outgoing.actions()).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
         assertThat(storedDraft.get().seatingPreference()).isNull();
         assertThat(storedDraft.get().seatingPreferenceResolved()).isTrue();
+        assertThat(summary.text()).doesNotContain("Пожелание:");
+        OutgoingMessage outgoing = send(summary);
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(outgoing.actions()).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
         verify(tableReservationService).createReservation(any(TableReservationCommand.class));
     }
 
@@ -908,15 +958,17 @@ class TableBookingScenarioTest {
         }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
         when(tableReservationService.createReservation(any(TableReservationCommand.class))).thenReturn(order(44L));
 
-        OutgoingMessage outgoing = scenario.handle(
+        OutgoingMessage summary = scenario.handle(
                 telegram("тихий стол не у прохода"),
                 BotState.TABLE_BOOKING_COLLECT_SEATING_PREFERENCE,
                 "тихий стол не у прохода"
         );
 
-        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(storedDraft.get().seatingPreference()).contains("тихий стол");
         assertThat(storedDraft.get().seatingPreferenceResolved()).isTrue();
+        assertThat(summary.text()).contains("Пожелание: тихий стол не у прохода");
+        OutgoingMessage outgoing = send(summary);
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         verify(tableReservationService).createReservation(any(TableReservationCommand.class));
     }
 
@@ -943,15 +995,16 @@ class TableBookingScenarioTest {
         }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
         when(tableReservationService.createReservation(any(TableReservationCommand.class))).thenReturn(order(77L));
 
-        OutgoingMessage outgoing = scenario.handle(
+        OutgoingMessage summary = scenario.handle(
                 telegram("Возможно будет четыре"),
                 BotState.TABLE_BOOKING_COLLECT_SEATING_PREFERENCE,
                 "Возможно будет четыре"
         );
 
-        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(storedDraft.get().seatingPreference()).isEqualTo("возможно будет четыре");
         assertThat(storedDraft.get().seatingPreferenceResolved()).isTrue();
+        OutgoingMessage outgoing = send(summary);
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         var commandCaptor = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(commandCaptor.capture());
         assertThat(commandCaptor.getValue().seatingPreference()).isEqualTo("возможно будет четыре");
@@ -965,7 +1018,352 @@ class TableBookingScenarioTest {
             stored.set(invocation.getArgument(1));
             return null;
         }).when(draftStorage).save(eq(1773317437L), any(TableBookingDraftStorage.Draft.class));
+        lenient().doAnswer(invocation -> {
+            stored.set(null);
+            return null;
+        }).when(draftStorage).clear(eq(1773317437L));
         return stored;
+    }
+
+    /** What the guest says next, in the state the previous reply left the dialogue in. */
+    private OutgoingMessage reply(OutgoingMessage previous, String text) {
+        return reply(scenario, previous, text);
+    }
+
+    private OutgoingMessage reply(TableBookingScenario booking, OutgoingMessage previous, String text) {
+        return booking.handle(telegram(text), BotState.valueOf(previous.nextState()), text);
+    }
+
+    /** The last answer of the booking gave a summary and created nothing; the guest reads it and sends the request. */
+    private OutgoingMessage send(OutgoingMessage summary) {
+        assertThat(summary.nextState()).isEqualTo(SUMMARY);
+        assertThat(summary.actions()).containsExactly("ASK_BOOKING_CONFIRMATION");
+        return reply(summary, SEND);
+    }
+
+    /** Table 5, Saturday 27.06, two guests; "20:00" is the last answer, so what comes back is the summary. */
+    private OutgoingMessage atTheSummary() {
+        kept = stored(new TableBookingDraftStorage.Draft(
+                "AERIS", null, null, LocalDate.of(2026, 6, 27), null, 2, "5", null, null, true, "Забронировать стол"));
+        return scenario.handle(telegram("20:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "20:00");
+    }
+
+    @Test
+    void theGuestSeesASummaryBeforeAnythingIsSent() {
+        OutgoingMessage summary = atTheSummary();
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(summary.nextState()).isEqualTo(SUMMARY);
+        assertThat(summary.actions()).containsExactly("ASK_BOOKING_CONFIRMATION");
+        assertThat(summary.text()).isEqualTo("""
+                Проверьте, пожалуйста, бронь:
+
+                Стол 5
+                27.06 в 20:00
+                Гостей: 2
+
+                Отправляю заявку команде AERIS? Если что-то не так, напишите коротко: «в 20:00», «на троих», «стол 5». \
+                Пожелания тоже можно написать одной строкой, я передам.""");
+        assertThat(buttons(summary)).containsExactly(SEND, CHANGE);
+        verify(fsmStorage).setState(1773317437L, BotState.valueOf(SUMMARY));
+        assertThat(kept.get().requestedTime()).isEqualTo(LocalTime.of(20, 0));
+    }
+
+    @Test
+    void aTableLeftToTheTeamIsNamedAsSuchInTheSummary() {
+        stored(new TableBookingDraftStorage.Draft(
+                "AERIS", null, null, LocalDate.of(2026, 6, 27), LocalTime.of(20, 0), 2, null, null, null, false, "Хочу стол на двоих завтра в 20:00"));
+
+        OutgoingMessage summary = scenario.handle(telegram("Подбери сам"), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "Подбери сам");
+
+        assertThat(summary.nextState()).isEqualTo(SUMMARY);
+        // "Подбери сам" is the choice of a table, not a wish to pass on.
+        assertThat(summary.text()).contains("Стол: подберем свободный\n27.06 в 20:00\nГостей: 2").doesNotContain("Пожелание:");
+    }
+
+    @Test
+    void theRequestIsSentOnlyOnTheGuestsWord() {
+        String[] yes = {SEND, "да", "Да, все верно", "ок", "хорошо", "подтверждаю", "отправляйте, пожалуйста"};
+        for (String word : yes) {
+            OutgoingMessage sent = reply(atTheSummary(), word);
+
+            assertThat(sent.actions()).as(word).contains("RESERVATION_CREATED", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
+            assertThat(sent.nextState()).as(word).isEqualTo(BotState.READY_FOR_DIALOG.name());
+            assertThat(kept.get()).as(word).isNull();
+        }
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService, org.mockito.Mockito.times(yes.length)).createReservation(command.capture());
+        // What goes to the hostess is what the summary showed. The button itself is not passed on as the guest's words.
+        assertThat(command.getAllValues()).allSatisfy(sent -> {
+            assertThat(sent.tableCode()).isEqualTo("5");
+            assertThat(sent.requestedStartAt()).isEqualTo(Instant.parse("2026-06-27T15:00:00Z"));
+            assertThat(sent.partySize()).isEqualTo(2);
+            assertThat(sent.guestComment()).isEqualTo("Забронировать стол | 20:00");
+        });
+    }
+
+    @Test
+    void aShortReplyCorrectsTheSummaryAndNothingIsSentYet() {
+        OutgoingMessage later = reply(atTheSummary(), "лучше в 21:00");
+        assertThat(later.nextState()).isEqualTo(SUMMARY);
+        assertThat(later.actions()).containsExactly("ASK_BOOKING_CONFIRMATION");
+        assertThat(later.text()).startsWith("Поправил.").contains("Стол 5\n27.06 в 21:00\nГостей: 2");
+        assertThat(buttons(later)).containsExactly(SEND, CHANGE);
+
+        OutgoingMessage three = reply(later, "на троих");
+        assertThat(three.text()).startsWith("Поправил.").contains("Стол 5\n27.06 в 21:00\nГостей: 3");
+
+        OutgoingMessage table = reply(three, "стол 7");
+        assertThat(table.text()).startsWith("Поправил.").contains("Стол 7\n27.06 в 21:00\nГостей: 3");
+
+        OutgoingMessage day = reply(table, "в воскресенье");
+        assertThat(day.nextState()).isEqualTo(SUMMARY);
+        assertThat(day.text()).startsWith("Поправил.").contains("Стол 7\n28.06 в 21:00\nГостей: 3");
+        verify(tableReservationService, never()).createReservation(any());
+
+        reply(day, SEND);
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().tableCode()).isEqualTo("7");
+        assertThat(command.getValue().partySize()).isEqualTo(3);
+        assertThat(command.getValue().requestedStartAt()).isEqualTo(Instant.parse("2026-06-28T16:00:00Z"));
+        assertThat(command.getValue().requestedEndAt()).isEqualTo(Instant.parse("2026-06-28T18:00:00Z"));
+    }
+
+    @Test
+    void aReplyThatRepeatsTheSummaryChangesNothing() {
+        OutgoingMessage same = reply(atTheSummary(), "в 20:00");
+
+        // It names the time, so it is not kept as a wish; the time is already the one in the summary.
+        assertThat(same.nextState()).isEqualTo(SUMMARY);
+        assertThat(same.text()).startsWith("Проверьте, пожалуйста, бронь:").contains("27.06 в 20:00").doesNotContain("Пожелание:", "Поправил");
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aCorrectionToAnHourWhenTheVenueIsClosedIsExplainedAndNotSent() {
+        OutgoingMessage closed = reply(atTheSummary(), "в 9 утра");
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(closed.nextState()).isEqualTo(BotState.TABLE_BOOKING_COLLECT_TIME.name());
+        assertThat(closed.actions()).contains("TIME_OUTSIDE_OPENING_HOURS", "ASK_TIME");
+        assertThat(closed.text()).startsWith("В это время AERIS закрыт. В этот день ждем гостей с 14:00 до 04:00.");
+
+        OutgoingMessage again = reply(closed, "19:00");
+
+        assertThat(again.nextState()).isEqualTo(SUMMARY);
+        assertThat(again.text()).contains("Стол 5\n27.06 в 19:00\nГостей: 2");
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aLongerReplyIsAWishForTheTeamAndIsNotSearchedForNumbers() {
+        // "Один гость" must not turn the party of two into one, and "стул" is not a table.
+        OutgoingMessage wish = reply(atTheSummary(), "Один гость не ест лук, и нужен детский стул");
+
+        assertThat(wish.nextState()).isEqualTo(SUMMARY);
+        assertThat(wish.text()).startsWith("Пожелание записал.")
+                .contains("Стол 5\n27.06 в 20:00\nГостей: 2\nПожелание: Один гость не ест лук, и нужен детский стул");
+        assertThat(buttons(wish)).containsExactly(SEND, CHANGE);
+        verify(tableReservationService, never()).createReservation(any());
+
+        reply(wish, SEND);
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().partySize()).isEqualTo(2);
+        assertThat(command.getValue().tableCode()).isEqualTo("5");
+        // The hostess reads the wish with the guest's own words, marked as a wish.
+        assertThat(command.getValue().guestComment())
+                .isEqualTo("Забронировать стол | 20:00 | Пожелание: Один гость не ест лук, и нужен детский стул");
+    }
+
+    @Test
+    void aShortReplyThatNamesNothingOfTheVisitIsAWishToo() {
+        OutgoingMessage chair = reply(atTheSummary(), "детский стул");
+        assertThat(chair.text()).startsWith("Пожелание записал.").contains("Гостей: 2\nПожелание: детский стул");
+
+        OutgoingMessage both = reply(chair, "у нас годовщина");
+        assertThat(both.nextState()).isEqualTo(SUMMARY);
+        assertThat(both.text()).contains("Стол 5\n27.06 в 20:00\nГостей: 2\nПожелание: детский стул; у нас годовщина");
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aSmallNumberAtTheSummaryIsNotTakenForAnHour() {
+        // The summary itself suggests «на троих». Typed with a digit it is the party too, not four in the morning.
+        for (String party : new String[]{"на 4", "нас 4"}) {
+            OutgoingMessage four = reply(atTheSummary(), party);
+            assertThat(four.nextState()).as(party).isEqualTo(SUMMARY);
+            assertThat(four.text()).as(party).startsWith("Поправил.").contains("Стол 5\n27.06 в 20:00\nГостей: 4");
+        }
+        // A wish with a number in it stays a wish and does not send the guest back to the question about the time.
+        for (String wish : new String[]{"2 детских стула", "торт на 5 свечей"}) {
+            OutgoingMessage kept = reply(atTheSummary(), wish);
+            assertThat(kept.nextState()).as(wish).isEqualTo(SUMMARY);
+            assertThat(kept.text()).as(wish).startsWith("Пожелание записал.").contains("Стол 5\n27.06 в 20:00\nГостей: 2\nПожелание: " + wish);
+        }
+        // An hour of the evening is heard as before, said as an hour or not.
+        for (String hour : new String[]{"лучше 21", "на 21", "21", "к 9 вечера", "в 21"}) {
+            OutgoingMessage later = reply(atTheSummary(), hour);
+            assertThat(later.nextState()).as(hour).isEqualTo(SUMMARY);
+            assertThat(later.text()).as(hour).startsWith("Поправил.").contains("Стол 5\n27.06 в 21:00\nГостей: 2");
+        }
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aThankYouIsNotKeptAsAWish() {
+        OutgoingMessage again = reply(atTheSummary(), "Спасибо!");
+
+        assertThat(again.nextState()).isEqualTo(SUMMARY);
+        assertThat(again.text()).startsWith("Проверьте, пожалуйста, бронь:").doesNotContain("Пожелание:");
+        assertThat(kept.get().originalText()).isEqualTo("Забронировать стол | 20:00");
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void changeStartsTheBookingOverAndNothingIsSent() {
+        for (String word : new String[]{CHANGE, "изменить", "давайте заново"}) {
+            OutgoingMessage again = reply(atTheSummary(), word);
+
+            assertThat(again.nextState()).as(word).isEqualTo(BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE.name());
+            assertThat(again.actions()).as(word).containsExactly("ASK_PARTY_SIZE");
+            assertThat(again.text()).as(word).startsWith("Хорошо, соберем заново.").contains("на сколько гостей");
+            // The buttons of the summary go away with it.
+            assertThat(again.removeKeyboard()).as(word).isTrue();
+            assertThat(kept.get()).as(word).isNull();
+        }
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void noAtTheSummaryLeavesTheBookingWithoutARequest() {
+        for (String word : new String[]{"нет", "Нет, спасибо", "не надо", "отмена", "передумал", "не отправляйте", "Отменить бронь"}) {
+            OutgoingMessage left = reply(atTheSummary(), word);
+
+            assertThat(left.nextState()).as(word).isEqualTo(BotState.READY_FOR_DIALOG.name());
+            assertThat(left.actions()).as(word).contains("TABLE_BOOKING_CANCELLED_BY_GUEST", "RETURN_MAIN_MENU");
+            assertThat(left.text()).as(word).contains("бронь не оформляю");
+            assertThat(kept.get()).as(word).isNull();
+        }
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aReplyThatIsNotAPlainYesSendsNothing() {
+        // "Да, но..." is not a yes, "не знаю" is not a no: the summary stays and waits for a clear word.
+        for (String word : new String[]{"да, но лучше попозже, часов в девять", "да нет", "не знаю", "спасибо", "?"}) {
+            OutgoingMessage again = reply(atTheSummary(), word);
+
+            assertThat(again.nextState()).as(word).isEqualTo(SUMMARY);
+            assertThat(again.actions()).as(word).containsExactly("ASK_BOOKING_CONFIRMATION");
+            assertThat(buttons(again)).as(word).containsExactly(SEND, CHANGE);
+        }
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aPartyTooLargeNamedAtTheSummaryIsToldTheLimit() {
+        // "На 21" is not here: at the summary that is nine in the evening.
+        for (String party : new String[]{"на 25 человек", "нас 21", "на 30"}) {
+            OutgoingMessage again = reply(atTheSummary(), party);
+
+            assertThat(again.nextState()).as(party).isEqualTo(SUMMARY);
+            assertThat(again.text()).as(party).startsWith("В одну бронь стола могу записать до 20 гостей.")
+                    .contains("27.06 в 20:00\nГостей: 2").doesNotContain("Пожелание:");
+        }
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aSummaryWhoseDraftIsGoneSendsNothing() {
+        OutgoingMessage summary = atTheSummary();
+        // The draft is kept for a day. The guest comes back to the old summary later and presses the button under it.
+        kept.set(null);
+
+        OutgoingMessage late = reply(summary, SEND);
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(late.nextState()).isEqualTo(BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE.name());
+        assertThat(late.actions()).containsExactly("ASK_PARTY_SIZE");
+        assertThat(late.text()).startsWith("Данные этой брони не сохранились, заявку я не отправлял.").contains("на сколько гостей");
+    }
+
+    @Test
+    void aSummaryReadAfterItsTimeHasPassedIsNotSent() {
+        OutgoingMessage summary = atTheSummary();
+        // The same Saturday, 21:30: the table was asked for 20:00.
+        TableBookingScenario laterThatEvening = scenarioAt(new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-27T16:30:00Z"), BookingTimeProvider.VENUE_ZONE)));
+
+        OutgoingMessage late = reply(laterThatEvening, summary, SEND);
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(late.nextState()).isEqualTo(BotState.TABLE_BOOKING_COLLECT_TIME.name());
+        assertThat(late.actions()).contains("TIME_ALREADY_PASSED", "ASK_TIME");
+        assertThat(late.text()).startsWith("Это время уже прошло.");
+        assertThat(buttons(late)).startsWith("22:00", "23:00");
+    }
+
+    @Test
+    void aSummaryLeftUntilItsDayIsOverStartsTheBookingAgain() {
+        // Sunday afternoon: no hour of Saturday is left to offer, so the day is not kept either.
+        TableBookingScenario nextDay = scenarioAt(new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-28T09:00:00Z"), BookingTimeProvider.VENUE_ZONE)));
+
+        for (String word : new String[]{SEND, "лучше в 21:00"}) {
+            OutgoingMessage late = reply(nextDay, atTheSummary(), word);
+
+            assertThat(late.nextState()).as(word).isEqualTo(BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE.name());
+            assertThat(late.text()).as(word).startsWith("День этой брони уже прошел, заявку я не отправлял.").contains("на сколько гостей");
+        }
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aLateHourAlreadyGoneIsNotMovedToAnotherNightBehindTheSummary() {
+        todayWithoutATime();
+        // "Сегодня в 00:30", said on Friday afternoon, is the coming night: the summary shows 27.06.
+        OutgoingMessage summary = scenario.handle(telegram("00:30"), BotState.TABLE_BOOKING_COLLECT_TIME, "00:30");
+        assertThat(summary.nextState()).isEqualTo(SUMMARY);
+        assertThat(summary.text()).contains("27.06 в 00:30");
+        // Saturday 15:00: that night is over. The guest never saw 28.06, so the request is not sent for it.
+        TableBookingScenario saturdayAfternoon = scenarioAt(new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-27T10:00:00Z"), BookingTimeProvider.VENUE_ZONE)));
+
+        OutgoingMessage late = reply(saturdayAfternoon, summary, SEND);
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(late.text()).startsWith("Это время уже прошло.");
+    }
+
+    @Test
+    void aTableThatCannotBeHeldIsChosenAgainAndSummarisedAgain() {
+        OutgoingMessage summary = atTheSummary();
+        when(tableReservationService.createReservation(any(TableReservationCommand.class)))
+                .thenThrow(new ApiException(HttpStatus.CONFLICT, ErrorCode.CONFLICT, "Table is not available"));
+
+        OutgoingMessage refused = reply(summary, SEND);
+
+        assertThat(refused.nextState()).isEqualTo(BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION.name());
+        assertThat(refused.actions()).contains("TABLE_SELECTION_REJECTED", "ASK_TABLE_SELECTION");
+        // The buttons of the summary would send the same table again.
+        assertThat(refused.removeKeyboard()).isTrue();
+
+        OutgoingMessage again = reply(refused, "7");
+
+        assertThat(again.nextState()).isEqualTo(SUMMARY);
+        assertThat(again.text()).contains("Стол 7\n27.06 в 20:00\nГостей: 2");
+        verify(tableReservationService).createReservation(any());
+    }
+
+    @Test
+    void theSummaryStepBelongsToTheTableBooking() {
+        BotState summary = BotState.valueOf(SUMMARY);
+
+        assertThat(scenario.owns(summary)).isTrue();
+        for (String answer : new String[]{SEND, CHANGE, "нет", "лучше в 21:00", "у нас годовщина"}) {
+            assertThat(scenario.supports(telegram(answer), summary, answer)).as(answer).isTrue();
+        }
     }
 
     private AtomicReference<TableBookingDraftStorage.Draft> todayWithoutATime() {
@@ -994,7 +1392,10 @@ class TableBookingScenarioTest {
         AtomicReference<TableBookingDraftStorage.Draft> stored = todayWithoutATime();
 
         // Half past midnight "today", said in the afternoon, is the night after this evening: 27.06 on the calendar.
-        OutgoingMessage outgoing = scenario.handle(telegram("00:30"), BotState.TABLE_BOOKING_COLLECT_TIME, "00:30");
+        // The guest said "сегодня", so the summary is where they see the date the request really goes for.
+        OutgoingMessage summary = scenario.handle(telegram("00:30"), BotState.TABLE_BOOKING_COLLECT_TIME, "00:30");
+        assertThat(summary.text()).contains("27.06 в 00:30");
+        OutgoingMessage outgoing = send(summary);
 
         var command = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(command.capture());
@@ -1024,7 +1425,10 @@ class TableBookingScenarioTest {
         TableBookingScenario afterMidnight = scenarioAt(new BookingTimeProvider(Clock.fixed(Instant.parse("2026-06-26T19:30:00Z"), BookingTimeProvider.VENUE_ZONE)));
         stored(new TableBookingDraftStorage.Draft("AERIS", null, null, LocalDate.of(2026, 6, 27), null, 2, "5", null, null, true, "Забронировать стол"));
 
-        afterMidnight.handle(telegram("01:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "01:00");
+        OutgoingMessage summary = afterMidnight.handle(telegram("01:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "01:00");
+        assertThat(summary.text()).contains("27.06 в 01:00");
+        assertThat(summary.nextState()).isEqualTo(SUMMARY);
+        reply(afterMidnight, summary, SEND);
 
         var command = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(command.capture());
@@ -1035,7 +1439,7 @@ class TableBookingScenarioTest {
     void anEveningHourStillAheadStaysOnItsDay() {
         todayWithoutATime();
 
-        scenario.handle(telegram("23:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "23:00");
+        send(scenario.handle(telegram("23:00"), BotState.TABLE_BOOKING_COLLECT_TIME, "23:00"));
 
         var command = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(command.capture());
