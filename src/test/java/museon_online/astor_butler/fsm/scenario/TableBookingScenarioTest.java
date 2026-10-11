@@ -1082,8 +1082,44 @@ class TableBookingScenarioTest {
     }
 
     @Test
+    void aBookingAskedInOnePhraseShowsTheZoneAndNotThePhraseAsItsWish() {
+        stored(null);
+        IncomingMessage incoming = telegram("Хочу забронировать стол завтра в 20:00 на двоих у окна");
+        // The understanding service keeps the whole phrase, already rewritten, as the seating wish.
+        String heard = "хочу забронировать стол завтра в 20:00 на 2 гостей у окна";
+        UnderstoodInput understood = new UnderstoodInput(
+                incoming.text(),
+                heard,
+                InputIntent.TABLE_BOOKING,
+                0.92,
+                Map.of(
+                        "date", new SlotValue("date", "завтра", 0.95),
+                        "time", new SlotValue("time", "20:00", 0.98),
+                        "partySize", new SlotValue("partySize", "2", 0.95),
+                        "seatingPreference", new SlotValue("seatingPreference", heard, 0.78)
+                ),
+                List.of(InputIntent.TABLE_BOOKING),
+                false,
+                null
+        );
+
+        OutgoingMessage summary = scenario.handle(incoming, BotState.READY_FOR_DIALOG, understood.routeText(), understood);
+
+        assertThat(summary.nextState()).isEqualTo(SUMMARY);
+        assertThat(summary.text()).contains("Стол: подберем свободный\n27.06 в 20:00\nГостей: 2\nПожелание: у окна\n").doesNotContain("на 2 гостей");
+
+        send(summary);
+
+        // The hostess still gets the words whole.
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().preferredZone()).isEqualTo("WINDOW");
+        assertThat(command.getValue().seatingPreference()).isEqualTo(heard);
+    }
+
+    @Test
     void theRequestIsSentOnlyOnTheGuestsWord() {
-        String[] yes = {SEND, "да", "Да, все верно", "ок", "хорошо", "подтверждаю", "отправляйте, пожалуйста"};
+        String[] yes = {SEND, "да", "Да, все верно", "ок", "хорошо", "подтверждаю", "отправляйте, пожалуйста", "Подтверждаю бронь", "все подходит", "+", "👍"};
         for (String word : yes) {
             OutgoingMessage sent = reply(atTheSummary(), word);
 
@@ -1198,6 +1234,7 @@ class TableBookingScenarioTest {
             assertThat(four.nextState()).as(party).isEqualTo(SUMMARY);
             assertThat(four.text()).as(party).startsWith("Поправил.").contains("Стол 5\n27.06 в 20:00\nГостей: 4");
         }
+        assertThat(reply(atTheSummary(), "нас 15").text()).contains("27.06 в 20:00\nГостей: 15");
         // A wish with a number in it stays a wish and does not send the guest back to the question about the time.
         for (String wish : new String[]{"2 детских стула", "торт на 5 свечей"}) {
             OutgoingMessage kept = reply(atTheSummary(), wish);
@@ -1240,7 +1277,7 @@ class TableBookingScenarioTest {
 
     @Test
     void noAtTheSummaryLeavesTheBookingWithoutARequest() {
-        for (String word : new String[]{"нет", "Нет, спасибо", "не надо", "отмена", "передумал", "не отправляйте", "Отменить бронь"}) {
+        for (String word : new String[]{"нет", "Нет, спасибо", "не надо", "отмена", "передумал", "не отправляйте", "Отменить бронь", "хочу отменить", "я передумала"}) {
             OutgoingMessage left = reply(atTheSummary(), word);
 
             assertThat(left.nextState()).as(word).isEqualTo(BotState.READY_FOR_DIALOG.name());

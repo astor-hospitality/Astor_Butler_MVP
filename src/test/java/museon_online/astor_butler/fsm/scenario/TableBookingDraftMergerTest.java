@@ -277,6 +277,56 @@ class TableBookingDraftMergerTest {
         assertThat(askedAtOnce("Забронируй стол на двоих завтра в 21 у окна").preferredZone()).isEqualTo("WINDOW");
     }
 
+    /** A reply under the summary of a complete booking, the way the bot hears it: table 5, tomorrow at 20:00, two guests. */
+    private TableBookingDraftStorage.Draft saidUnderTheSummary(String text) {
+        LocalDate day = TODAY.plusDays(1);
+        Instant startAt = day.atTime(20, 0).atZone(BookingTimeProvider.VENUE_ZONE).toInstant();
+        lenient().when(draftStorage.find(any())).thenReturn(Optional.of(new TableBookingDraftStorage.Draft(
+                "AERIS", startAt, startAt.plusSeconds(7200), day, LocalTime.of(20, 0), 2, "5", null, null, true, "Забронировать стол")));
+        UnderstoodInput understood = understanding.understand(text, BotState.TABLE_BOOKING_CONFIRMATION);
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 356, 284069928, text, null,
+                "Наталья", "Поединенко", "Poedinenko", "ru", false, "284069928");
+        return merger.merge(incoming, BotState.TABLE_BOOKING_CONFIRMATION, understood.routeText(), understood);
+    }
+
+    @Test
+    void underTheSummaryASmallNumberIsNotAnHour() {
+        // The summary suggests «на троих»; a guest types the same with a digit. Before, "на 4" was four in the morning.
+        String[][] parties = {{"на 4", "4"}, {"нас 4", "4"}, {"На 4 человек", "4"}, {"нас 15", "15"}, {"на троих", "3"}};
+        for (String[] party : parties) {
+            TableBookingDraftStorage.Draft draft = saidUnderTheSummary(party[0]);
+
+            assertThat(draft.partySize()).as(party[0]).isEqualTo(Integer.parseInt(party[1]));
+            assertThat(draft.requestedTime()).as(party[0]).isEqualTo(LocalTime.of(20, 0));
+            assertThat(draft.tableCode()).as(party[0]).isEqualTo("5");
+        }
+        // A wish with a number in it changes nothing of the visit.
+        for (String wish : new String[]{"2 детских стула", "торт на 5 свечей"}) {
+            TableBookingDraftStorage.Draft draft = saidUnderTheSummary(wish);
+
+            assertThat(draft.requestedTime()).as(wish).isEqualTo(LocalTime.of(20, 0));
+            assertThat(draft.partySize()).as(wish).isEqualTo(2);
+            assertThat(draft.tableCode()).as(wish).isEqualTo("5");
+        }
+    }
+
+    @Test
+    void underTheSummaryAnHourIsStillHeard() {
+        String[][] hours = {
+                {"в 9", "21:00"}, {"к 9", "21:00"}, {"9 вечера", "21:00"}, {"в 21:30", "21:30"}, {"21.30", "21:30"},
+                {"на 19", "19:00"}, {"21", "21:00"}, {"лучше 21", "21:00"}, {"в 9 утра", "09:00"}};
+        for (String[] hour : hours) {
+            TableBookingDraftStorage.Draft draft = saidUnderTheSummary(hour[0]);
+
+            assertThat(draft.requestedTime()).as(hour[0]).isEqualTo(LocalTime.parse(hour[1]));
+            assertThat(draft.partySize()).as(hour[0]).isEqualTo(2);
+            assertThat(draft.tableCode()).as(hour[0]).isEqualTo("5");
+        }
+        // A number alone that can be a table is the table, as at the step that asks for one.
+        assertThat(saidUnderTheSummary("7").tableCode()).isEqualTo("7");
+        assertThat(saidUnderTheSummary("7").requestedTime()).isEqualTo(LocalTime.of(20, 0));
+    }
+
     @Test
     void aLoneNumberNextToATableIsStillNotTheHour() {
         // At the table step these are answers about the table and nothing else.

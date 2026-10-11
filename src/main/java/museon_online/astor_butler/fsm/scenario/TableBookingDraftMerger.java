@@ -34,6 +34,10 @@ public class TableBookingDraftMerger {
     private static final Pattern TABLE_NUMBER_IN_TEXT = Pattern.compile(".*(?:^|\\s)стол(?:ик)?\\s*(?:[1-9]|1\\d)(?:\\s|$).*");
     private static final Pattern TABLE_NUMBER_BEFORE_WORD = Pattern.compile(".*(?:^|\\s)(?:[1-9]|1\\d)\\s*стол(?:ик)?(?:\\s|$).*");
     private static final Pattern SHORT_PARTY_SIZE_ANSWER = Pattern.compile("^(?:на\\s*)?(\\d{1,2})(?:\\s*(?:гостей|гостя|человек|персон|чел))?$");
+    /** Under the summary the bot itself suggests «на троих»; typed with a digit, "на 4" is the party as well. */
+    private static final Pattern PARTY_UNDER_SUMMARY = Pattern.compile("^(на|нас)\\s*(\\d{1,2})$");
+    /** Under the summary a bare number below this is not an hour: "на 4" is four guests, "2 детских стула" is a wish. */
+    private static final int EARLIEST_BARE_HOUR_UNDER_SUMMARY = 12;
     private static final String[] AUTO_SELECTION_PHRASES = {
             "выбери сам",
             "подбери сам",
@@ -89,7 +93,7 @@ public class TableBookingDraftMerger {
                 ? slotTime
                 : shouldIgnoreTimeInCurrentStep(currentState, normalized, extractedDate)
                 ? Optional.empty()
-                : extractTime(normalized);
+                : extractTime(normalized, underSummary(currentState));
         LocalTime time = extractedTime.or(() -> storedTime(stored)).orElse(null);
 
         Integer partySize = partySizeFromSlot(slots)
@@ -281,7 +285,11 @@ public class TableBookingDraftMerger {
     }
 
     private Optional<LocalTime> extractTime(String text) {
-        if (looksLikePartySizeAnswer(text)) {
+        return extractTime(text, false);
+    }
+
+    private Optional<LocalTime> extractTime(String text, boolean underSummary) {
+        if (looksLikePartySizeAnswer(text) || underSummary && partyUnderSummary(text).isPresent()) {
             return Optional.empty();
         }
         // In a phrase that names a table or a zone a lone number is the table: "5", "стол 12", "у окна 7".
@@ -297,6 +305,10 @@ public class TableBookingDraftMerger {
         int surest = 0;
         while (matcher.find()) {
             int sure = howSureItIsTheHour(matcher, text);
+            // Said as an hour ("в 9", "9 вечера") it is one at any step; an evening hour needs no such word even here.
+            if (underSummary && sure == 1 && Integer.parseInt(matcher.group(3)) < EARLIEST_BARE_HOUR_UNDER_SUMMARY) {
+                continue;
+            }
             if (sure >= atLeast && sure > surest) {
                 surest = sure;
                 hour = matcher.toMatchResult();
@@ -339,6 +351,9 @@ public class TableBookingDraftMerger {
         if (explicit.isPresent()) {
             return explicit;
         }
+        if (underSummary(currentState)) {
+            return partyUnderSummary(text);
+        }
         BotState state = currentState == null ? BotState.UNKNOWN : currentState.canonical();
         if (state != BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE) {
             return Optional.empty();
@@ -349,6 +364,24 @@ public class TableBookingDraftMerger {
         }
         int value = Integer.parseInt(shortAnswer.group(1));
         return value > 0 && value <= 20 ? Optional.of(value) : Optional.empty();
+    }
+
+    private boolean underSummary(BotState currentState) {
+        return currentState != null && currentState.canonical() == BotState.TABLE_BOOKING_CONFIRMATION;
+    }
+
+    /**
+     * The whole reply "на 4" or "нас 4". "Нас 15" is a party whatever the number; "на 19" is seven in the evening,
+     * so after "на" twelve and more is left to be read as an hour.
+     */
+    private Optional<Integer> partyUnderSummary(String text) {
+        Matcher party = PARTY_UNDER_SUMMARY.matcher(text.trim());
+        if (!party.matches()) {
+            return Optional.empty();
+        }
+        int value = Integer.parseInt(party.group(2));
+        int largest = party.group(1).equals("нас") ? 20 : EARLIEST_BARE_HOUR_UNDER_SUMMARY - 1;
+        return value > 0 && value <= largest ? Optional.of(value) : Optional.empty();
     }
 
     private boolean looksLikePartySizeAnswer(String text) {

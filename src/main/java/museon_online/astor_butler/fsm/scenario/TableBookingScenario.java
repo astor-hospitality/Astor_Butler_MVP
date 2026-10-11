@@ -29,8 +29,10 @@ import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,6 +50,34 @@ public class TableBookingScenario implements FsmScenario {
     /** The largest party the draft reader takes for one table, see TableBookingDraftMerger. */
     private static final int MAX_PARTY_SIZE = 20;
     private static final Pattern GUEST_COUNT_REPLY = Pattern.compile("(?:на\\s+|нас\\s+)?(\\d{2,4})(?:\\s*(?:гост\\p{L}*|человек\\p{L}*|персон\\p{L}*|чел\\.?))?");
+
+    private static final String SEND_BUTTON = "✅ Отправить заявку";
+    private static final String CHANGE_BUTTON = "✏️ Изменить";
+    /** The words a reply to the summary must consist of to send it. "Да, но позже" has other words in it and sends nothing. */
+    private static final Set<String> YES_WORDS = Set.of(
+            "да", "ага", "угу", "ок", "окей", "хорошо", "ладно", "конечно", "верно", "правильно", "точно", "так", "отлично",
+            "подходит", "устраивает", "годится", "согласен", "согласна", "подтверждаю", "подтверждаем", "подтвердить",
+            "отправить", "отправляй", "отправляйте", "отправь", "отправьте", "бронируй", "бронируйте", "оформляй", "оформляйте",
+            "давай", "давайте");
+    private static final Set<String> YES_SIGNS = Set.of("+", "👍", "👌", "✅");
+    private static final Set<String> POLITE_WORDS = Set.of("все", "заявку", "бронь", "пожалуйста", "спасибо");
+    /** The venue's own names of its zones, for a guest who asked for one of them in the same phrase as the booking. */
+    private static final Map<String, String> ZONE_WORDS = Map.of(
+            "WINDOW", "у окна",
+            "WINE_ROOM", "винная комната",
+            "BAR", "у бара",
+            "VIP_ZONE", "VIP-зона",
+            "CENTER_STAGE", "центр зала",
+            "SOFT_LOUNGE", "камерная гостиная",
+            "CORNER", "угловой столик");
+    /** Whole replies that decline the summary. Elsewhere in the booking "нет" declines a seating wish, so it is not a leave word. */
+    private static final Set<String> NO_REPLIES = Set.of("нет", "неа", "не", "нет спасибо", "не хочу", "не буду", "не сейчас");
+    /** A wish written under the summary is kept among the guest's own words under this mark, which is how the hostess reads it. */
+    private static final String WISH_MARK = "Пожелание: ";
+    private static final int WISH_LIMIT = 200;
+    /** A reply longer than this is a wish and is not searched for a day, a time or a number. */
+    private static final int CORRECTION_WORDS = 4;
+    private static final String STARTING_OVER = "Хорошо, соберем заново.";
 
     private final FSMStorage fsmStorage;
     private final TableBookingDraftStorage draftStorage;
@@ -96,11 +126,29 @@ public class TableBookingScenario implements FsmScenario {
         if (isTableBookingState(state) && wantsToLeave(normalized)) {
             return leave(incoming);
         }
-        TableBookingDraftStorage.Draft draft = draftMerger.merge(incoming, state, normalized, understood);
+        if (state == BotState.TABLE_BOOKING_CONFIRMATION) {
+            return onSummaryReply(incoming, normalized, understood);
+        }
+        return proceed(incoming, state, draftMerger.merge(incoming, state, normalized, understood), normalized, false, "");
+    }
 
+    /**
+     * Checks the time against the clock and the opening hours, asks for whatever is still missing, and with nothing
+     * missing shows the summary. The request is created only when the guest has already said yes to that summary.
+     */
+    private OutgoingMessage proceed(
+            IncomingMessage incoming,
+            BotState state,
+            TableBookingDraftStorage.Draft known,
+            String normalized,
+            boolean confirmed,
+            String lead
+    ) {
+        TableBookingDraftStorage.Draft draft = known;
         if (draft.requestedDate() != null && draft.requestedTime() != null) {
             if (alreadyPassed(draft)) {
-                Optional<TableBookingDraftStorage.Draft> tonight = laterTonight(draft);
+                // The guest said yes to the night in the summary. It is not moved to the next one behind their back.
+                Optional<TableBookingDraftStorage.Draft> tonight = confirmed ? Optional.empty() : laterTonight(draft);
                 if (tonight.isEmpty()) {
                     return askForAnotherTime(incoming, state, draft, "Это время уже прошло.", "TIME_ALREADY_PASSED");
                 }
@@ -115,7 +163,216 @@ public class TableBookingScenario implements FsmScenario {
         if (nextStep.isPresent()) {
             return askForStep(incoming, state, draft, nextStep.get(), normalized);
         }
-        return createReservation(incoming, draft);
+        return confirmed ? createReservation(incoming, draft) : askForConfirmation(incoming, draft, lead);
+    }
+
+    /**
+     * Everything is known. The guest reads what will go to the hostess and decides: until the yes nothing is created.
+     * The lines are the ones the "Готово" message repeats afterwards.
+     */
+    private OutgoingMessage askForConfirmation(IncomingMessage incoming, TableBookingDraftStorage.Draft draft, String lead) {
+        // A second table for a time the guest already holds is refused when it is created; better to say so before the yes.
+        Optional<TableReservationOrder> held = tableReservationService.findOverlappingReservation(
+                incoming.chatId(), draft.venueCode(), draft.requestedStartAt(), draft.requestedEndAt());
+        if (held != null && held.isPresent()) {
+            return alreadyBooked(incoming, held.get());
+        }
+        fsmStorage.setState(incoming.chatId(), BotState.TABLE_BOOKING_CONFIRMATION);
+        String question = """
+                Проверьте, пожалуйста, бронь:
+
+                %s
+
+                Отправляю заявку команде AERIS? Если что-то не так, напишите коротко: «в 20:00», «на троих», «стол 5». \
+                Пожелания тоже можно написать одной строкой, я передам.""".formatted(summary(draft));
+        return message(
+                incoming,
+                lead == null || lead.isBlank() ? question : lead + "\n\n" + question,
+                BotState.TABLE_BOOKING_CONFIRMATION,
+                "ASK_BOOKING_CONFIRMATION"
+        ).withMetadata(Map.of("replyKeyboardRows", List.of(List.of(SEND_BUTTON), List.of(CHANGE_BUTTON))));
+    }
+
+    private String summary(TableBookingDraftStorage.Draft draft) {
+        List<String> lines = new ArrayList<>();
+        lines.add(draft.tableCode() == null || draft.tableCode().isBlank() ? "Стол: подберем свободный" : "Стол " + draft.tableCode().trim());
+        lines.add(draft.requestedDate().format(DATE_BUTTON) + " в " + draft.requestedTime().format(TIME_BUTTON));
+        lines.add("Гостей: " + draft.partySize());
+        String wish = wish(draft);
+        if (!wish.isBlank()) {
+            lines.add(WISH_MARK + wish);
+        }
+        return String.join("\n", lines);
+    }
+
+    /** What the guest asked for besides the table: the words about the seating, and the wishes written under the summary. */
+    private String wish(TableBookingDraftStorage.Draft draft) {
+        List<String> wishes = new ArrayList<>();
+        String seating = draft.seatingPreference() == null ? "" : draft.seatingPreference().trim();
+        // "Подбери сам" on its own is the choice of a table. Said with more words, the rest is still a wish.
+        boolean onlyLeavesTheChoice = stepRegistry.leavesTheChoiceToUs(seating) && seating.split("\\s+").length <= 3;
+        if (!seating.isBlank() && !onlyLeavesTheChoice) {
+            // A booking asked in one phrase is kept whole as the seating wish: "стол завтра в 20:00 на 2 гостей у окна".
+            // The day, the time and the party are already in the lines above, so only the zone is repeated, in the venue's words.
+            TableBookingDraftStorage.Draft inTheWish = draftMerger.read(Optional.empty(), seating, BotState.TABLE_BOOKING_INTENT, seating, null);
+            boolean wholePhrase = inTheWish.requestedDate() != null || inTheWish.requestedTime() != null || inTheWish.partySize() != null;
+            String shown = wholePhrase ? ZONE_WORDS.getOrDefault(draft.preferredZone() == null ? "" : draft.preferredZone(), "") : seating;
+            if (!shown.isBlank()) {
+                wishes.add(shown);
+            }
+        }
+        String guestWords = draft.originalText() == null ? "" : draft.originalText();
+        for (String said : guestWords.split(" \\| ")) {
+            if (said.startsWith(WISH_MARK)) {
+                wishes.add(said.substring(WISH_MARK.length()).trim());
+            }
+        }
+        return String.join("; ", wishes);
+    }
+
+    /**
+     * The guest is reading the summary. A plain yes sends it, "нет" leaves the booking, "изменить" starts it over.
+     * A short reply that names a day, a time, a party or a table corrects the summary. Anything else is a wish for the
+     * team: it is kept in the guest's own words and is not searched for numbers, so "один гость не ест лук" does not
+     * turn the party into one guest. Whatever the reply, nothing is created without the yes.
+     */
+    private OutgoingMessage onSummaryReply(IncomingMessage incoming, String normalized, UnderstoodInput understood) {
+        BotState state = BotState.TABLE_BOOKING_CONFIRMATION;
+        // The router may hand over a rewritten phrase ("на троих" as "на 3 гостей"); a yes, a no and a wish are the guest's own words.
+        String said = incoming.text() == null || incoming.text().isBlank() ? normalized : incoming.text().trim();
+        String reply = words(normalize(said));
+        if (declines(reply)) {
+            return leave(incoming);
+        }
+        Optional<TableBookingDraftStorage.Draft> stored = draftStorage.find(incoming.chatId());
+        if (stored == null || stored.isEmpty()) {
+            // The draft is kept for a day. Without it there is nothing to send, so nothing is sent.
+            return startOver(incoming, asksToStartOver(reply)
+                    ? STARTING_OVER
+                    : "Данные этой брони не сохранились, заявку я не отправлял. Давайте соберем ее заново.");
+        }
+        // Read with no words on top: a draft may hold only the start of the visit, without the day and the time apart.
+        TableBookingDraftStorage.Draft draft = draftMerger.read(stored, "", state, "", null);
+        if (stepRegistry.nextMissingStep(draft).isPresent()) {
+            return proceed(incoming, state, draftMerger.merge(incoming, state, normalized, understood), normalized, false, "");
+        }
+        if (draft.requestedDate().isBefore(timeProvider.today())) {
+            // No hour of that day is left to offer, so asking for another time would refuse every answer.
+            return startOver(incoming, "День этой брони уже прошел, заявку я не отправлял. Давайте соберем ее заново.");
+        }
+        if (isYes(reply) || YES_SIGNS.contains(said)) {
+            return proceed(incoming, state, draft, "", true, "");
+        }
+        if (reply.isBlank() || POLITE_WORDS.containsAll(List.of(reply.split(" ")))) {
+            // An emoji or a "спасибо" answers nothing and is not a wish to pass on.
+            return askForConfirmation(incoming, draft, "");
+        }
+        // "21" and "на 21" under the summary are nine in the evening; said with guests, or too large for an hour, it is a party.
+        if (namesTooManyGuests(normalized) && !normalized.trim().matches("(?:на\\s+)?(?:1\\d|2[0-3])")) {
+            return askForConfirmation(incoming, draft, tooManyGuests());
+        }
+        if (said.split("\\s+").length <= CORRECTION_WORDS) {
+            TableBookingDraftStorage.Draft corrected = draftMerger.read(stored, incoming.text(), state, normalized, understood);
+            boolean changed = !sameVisit(draft, corrected);
+            if (changed || namesTheVisit(draftMerger.read(Optional.empty(), incoming.text(), state, normalized, understood))) {
+                draftStorage.save(incoming.chatId(), corrected);
+                return proceed(incoming, state, corrected, normalized, false, changed ? "Поправил." : "");
+            }
+            // "Нет, спасибо", "хочу отменить": said in a few words and with nothing to correct, it is a no.
+            if (reply.startsWith("нет ") || reply.contains("отмен")) {
+                return leave(incoming);
+            }
+        }
+        // A longer reply is a no only when it says so outright: "нет, лучше в субботу вечером, часов в семь" must not lose the draft.
+        if (reply.startsWith("отмен") || reply.contains("передумал")) {
+            return leave(incoming);
+        }
+        if (asksToStartOver(reply)) {
+            return startOver(incoming, STARTING_OVER);
+        }
+        TableBookingDraftStorage.Draft withWish = withWish(draft, said);
+        draftStorage.save(incoming.chatId(), withWish);
+        return askForConfirmation(incoming, withWish, "Пожелание записал.");
+    }
+
+    /** Only words of agreement and nothing else: "да, все верно", "отправляйте, пожалуйста". */
+    private boolean isYes(String reply) {
+        List<String> said = java.util.Arrays.stream(reply.split(" ")).filter(word -> !POLITE_WORDS.contains(word)).toList();
+        return !said.isEmpty() && YES_WORDS.containsAll(said);
+    }
+
+    private boolean declines(String reply) {
+        return NO_REPLIES.contains(reply) || reply.startsWith("не отправ");
+    }
+
+    private boolean asksToStartOver(String reply) {
+        return reply.startsWith("изменить")
+                || reply.startsWith("поменять")
+                || reply.startsWith("исправить")
+                || reply.contains("заново")
+                || reply.equals("сначала")
+                || reply.equals("начать сначала");
+    }
+
+    private boolean sameVisit(TableBookingDraftStorage.Draft one, TableBookingDraftStorage.Draft other) {
+        return Objects.equals(one.requestedDate(), other.requestedDate())
+                && Objects.equals(one.requestedTime(), other.requestedTime())
+                && Objects.equals(one.partySize(), other.partySize())
+                && Objects.equals(one.tableCode(), other.tableCode())
+                && Objects.equals(one.preferredZone(), other.preferredZone())
+                && Objects.equals(one.seatingPreference(), other.seatingPreference());
+    }
+
+    /** Whether a reply, read on its own, says anything about the visit: "в 20:00" does even when the summary already says 20:00. */
+    private boolean namesTheVisit(TableBookingDraftStorage.Draft said) {
+        return said.requestedDate() != null
+                || said.requestedTime() != null
+                || said.partySize() != null
+                || said.tableCode() != null
+                || said.preferredZone() != null
+                || said.seatingPreference() != null;
+    }
+
+    private TableBookingDraftStorage.Draft withWish(TableBookingDraftStorage.Draft draft, String said) {
+        String wish = said.replace("|", "/").replaceAll("\\s+", " ").trim();
+        String note = WISH_MARK + (wish.length() > WISH_LIMIT ? wish.substring(0, WISH_LIMIT) : wish);
+        String guestWords = draft.originalText() == null ? "" : draft.originalText();
+        return new TableBookingDraftStorage.Draft(
+                draft.venueCode(),
+                draft.requestedStartAt(),
+                draft.requestedEndAt(),
+                draft.requestedDate(),
+                draft.requestedTime(),
+                draft.partySize(),
+                draft.tableCode(),
+                draft.preferredZone(),
+                draft.seatingPreference(),
+                draft.seatingPreferenceResolved(),
+                guestWords.isBlank() ? note : guestWords.contains(note) ? guestWords : guestWords + " | " + note
+        );
+    }
+
+    /** Drops what was collected and asks the first question again. Nothing is created. */
+    private OutgoingMessage startOver(IncomingMessage incoming, String lead) {
+        BotState state = BotState.TABLE_BOOKING_CONFIRMATION;
+        draftStorage.clear(incoming.chatId());
+        TableBookingDraftStorage.Draft nothing = draftMerger.read(Optional.empty(), "", state, "", null);
+        OutgoingMessage question = askForStep(incoming, state, nothing, stepRegistry.nextMissingStep(nothing).orElseThrow(), "");
+        return new OutgoingMessage(
+                question.channel(),
+                question.externalUserId(),
+                question.chatId(),
+                lead + "\n\n" + question.text(),
+                question.nextState(),
+                question.html(),
+                question.requestContact(),
+                question.removeKeyboard(),
+                question.fallback(),
+                question.adminAlert(),
+                question.actions(),
+                question.metadata(),
+                question.createdAt()
+        );
     }
 
     /**
@@ -221,8 +478,13 @@ public class TableBookingScenario implements FsmScenario {
      * declines a seating wish.
      */
     private boolean wantsToLeave(String normalized) {
-        String words = normalized.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
+        String words = words(normalized);
         return LEAVE_WORDS.contains(words) || words.startsWith("отменить") || words.startsWith("отмени ");
+    }
+
+    /** The reply without emoji and punctuation, so a button and the same words typed by hand read alike. */
+    private String words(String normalized) {
+        return normalized.replaceAll("[^\\p{L}\\p{Nd} ]", " ").replaceAll("\\s+", " ").trim();
     }
 
     private OutgoingMessage askForStep(
@@ -272,7 +534,7 @@ public class TableBookingScenario implements FsmScenario {
         }
         if (nextState == BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE && draft.partySize() == null) {
             return Optional.of(namesTooManyGuests(normalizedText)
-                    ? "В одну бронь стола могу записать до " + MAX_PARTY_SIZE + " гостей. Для большей компании напишите «менеджер», команда AERIS подберет вариант."
+                    ? tooManyGuests()
                     : "Не понял, сколько будет гостей. Напишите число, например 4.");
         }
         if (nextState == BotState.TABLE_BOOKING_COLLECT_DATE && draft.requestedDate() == null) {
@@ -287,6 +549,10 @@ public class TableBookingScenario implements FsmScenario {
     private boolean namesTooManyGuests(String normalizedText) {
         Matcher count = GUEST_COUNT_REPLY.matcher(normalizedText.trim());
         return count.matches() && Integer.parseInt(count.group(1)) > MAX_PARTY_SIZE;
+    }
+
+    private String tooManyGuests() {
+        return "В одну бронь стола могу записать до " + MAX_PARTY_SIZE + " гостей. Для большей компании напишите «менеджер», команда AERIS подберет вариант.";
     }
 
     private String withAcknowledgement(
@@ -458,13 +724,14 @@ public class TableBookingScenario implements FsmScenario {
         } catch (ApiException e) {
             log.warn("Table booking reservation was not created: chatId={}, reason={}", incoming.chatId(), e.getMessage());
             fsmStorage.setState(incoming.chatId(), BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION);
+            // The buttons of the summary go away: "Отправить заявку" would only ask for the same table again.
             return message(
                     incoming,
                     "Этот вариант сейчас не получается поставить в бронь. Выберите другой стол на плане или напишите «выбери сам» — подберу свободный вариант.",
                     BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION,
                     "TABLE_SELECTION_REJECTED",
                     "ASK_TABLE_SELECTION"
-            );
+            ).withRemoveKeyboard(true);
         }
     }
 
@@ -543,7 +810,8 @@ public class TableBookingScenario implements FsmScenario {
                  TABLE_BOOKING_COLLECT_PARTY_SIZE,
                  TABLE_BOOKING_COLLECT_SEATING_PREFERENCE,
                  TABLE_BOOKING_SHOW_PLAN,
-                 TABLE_BOOKING_WAIT_TABLE_SELECTION -> true;
+                 TABLE_BOOKING_WAIT_TABLE_SELECTION,
+                 TABLE_BOOKING_CONFIRMATION -> true;
             default -> false;
         };
     }

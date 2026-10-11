@@ -157,6 +157,33 @@ class TableBookingSummaryRoutingTest {
     }
 
     @Test
+    void anHourSaidTheShortWayIsTheEveningAsAtTheTimeStep() {
+        assertThat(say("20:00").nextState()).isEqualTo(SUMMARY);
+
+        OutgoingMessage nine = say("в 9");
+
+        assertThat(nine.nextState()).isEqualTo(SUMMARY);
+        assertThat(nine.text()).startsWith("Поправил.").contains("Стол 5\n27.06 в 21:00\nГостей: 2");
+    }
+
+    @Test
+    void aBookingAskedInOnePhraseGoesToTheSummaryAndThenToTheHostess() {
+        drafts.remove(CHAT);
+        states.put(CHAT, BotState.READY_FOR_DIALOG);
+
+        OutgoingMessage summary = say("Хочу забронировать стол завтра в 20:00 на двоих у окна");
+
+        assertThat(summary.nextState()).isEqualTo(SUMMARY);
+        assertThat(summary.text()).contains("Стол: подберем свободный\n27.06 в 20:00\nГостей: 2\nПожелание: у окна\n");
+        verify(tableReservationService, never()).createReservation(any());
+
+        OutgoingMessage sent = say(SEND);
+
+        assertThat(sent.actions()).contains("RESERVATION_CREATED");
+        verify(tableReservationService).createReservation(any());
+    }
+
+    @Test
     void theChangeButtonStartsThisBookingOver() {
         assertThat(say("20:00").nextState()).isEqualTo(SUMMARY);
 

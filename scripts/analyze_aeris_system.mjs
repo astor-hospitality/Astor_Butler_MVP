@@ -342,6 +342,7 @@ function evaluate(report) {
     !bookingActions.includes("RESERVATION_CREATED")
     && !bookingActions.includes("ASK_BOOKING_DETAILS")
     && !bookingActions.includes("ASK_TABLE_SELECTION")
+    && !bookingActions.includes("ASK_BOOKING_CONFIRMATION")
     && !bookingActions.includes("TABLE_SELECTION_REJECTED")
   ) {
     failures.push("booking scenario did not create/continue a reservation");

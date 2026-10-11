@@ -55,6 +55,11 @@ Optional slots:
   attached/sent and ask them to choose table/zone or let Astor choose.
 - `TABLE_BOOKING_WAIT_TABLE_SELECTION`: ask for table number/zone or permission
   to choose the best available option.
+- `TABLE_BOOKING_CONFIRMATION`: the application has shown the summary (table,
+  date and time, guests, wish) with the buttons `✅ Отправить заявку` and
+  `✏️ Изменить`. Nothing is created yet. Do not send or confirm anything
+  yourself: ask the guest to send the request with the button, or to write a
+  short correction or a wish.
 - `TABLE_BOOKING_WAIT_HOSTESS_CONFIRMATION`: tell the guest the request was sent
   to hostess and you are waiting for confirmation. Do not ask for more fields.
 - `TABLE_BOOKING_CONFIRMED`: give a concise confirmed-order summary.

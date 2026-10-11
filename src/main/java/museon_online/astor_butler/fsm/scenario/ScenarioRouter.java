@@ -65,6 +65,15 @@ public class ScenarioRouter {
         }
 
         UnderstoodInput understood = inputUnderstandingService.understand(text, currentState, understandingContext(incoming));
+        // The summary of a table booking waits for its own answer: a yes, "изменить", a correction or a wish for the team.
+        // A wish may name a birthday, a wine or a menu, and "изменить время" may mean this very summary, so the reply
+        // goes to the booking before an intent is guessed from those words. A call for the team is still a call.
+        if (waitsAtTableBookingSummary(currentState) && understood.primaryIntent() != InputIntent.MANAGER_HELP) {
+            return withUnderstandingMetadata(
+                    withExecutablePendingContent(incoming, tableBookingScenario.handle(incoming, currentState, understood.routeText(), understood)),
+                    understood
+            );
+        }
         captureUnderstandingMissIfNeeded(incoming, currentState, understood);
         String routeText = understood.routeText();
         OutgoingMessage composite = tryCompositeIntent(incoming, currentState, routeText, understood);
@@ -88,6 +97,10 @@ public class ScenarioRouter {
             }
         }
         return null;
+    }
+
+    private boolean waitsAtTableBookingSummary(BotState currentState) {
+        return currentState != null && currentState.canonical() == BotState.TABLE_BOOKING_CONFIRMATION;
     }
 
     private OutgoingMessage tryKeyboardShortcutRoute(IncomingMessage incoming, BotState currentState, String text) {

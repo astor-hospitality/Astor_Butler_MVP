@@ -29,6 +29,7 @@ public class GuestInputUnderstandingService {
     private static final Pattern HOUR_TIME = Pattern.compile("(?:^|\\s)(?:в|к)?\\s*([01]?\\d|2[0-3])\\s*(?:час(?:ов|а)?|ч)(?:\\s|$)");
     private static final Pattern AROUND_HOUR_TIME = Pattern.compile("(?:^|\\s)(?:к|около|примерно|часам к)\\s*([1-9]|1[0-1])(?:\\s|$)");
     private static final Pattern BARE_HOUR_TIME = Pattern.compile("^(?:в\\s+|к\\s+)?([1-9]|1[0-1])$");
+    private static final Pattern HOUR_SAID_UNDER_SUMMARY = Pattern.compile("^в\\s+([1-9]|1[0-1])$");
     private static final Pattern EXPLICIT_TIME = Pattern.compile("\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b");
     private static final Pattern SHORT_PARTY_SIZE = Pattern.compile("^(?:на\\s+)?(\\d{1,2})$");
     private static final Pattern TABLE_NUMBER = Pattern.compile("^(?:стол(?:ик)?\\s*)?(1\\d|[1-9])$");
@@ -323,6 +324,14 @@ public class GuestInputUnderstandingService {
             if (bare.matches()) {
                 int parsedHour = Integer.parseInt(bare.group(1));
                 return replaceTime(text, slots, bare, parsedHour + 12);
+            }
+        }
+        if (state == BotState.TABLE_BOOKING_CONFIRMATION) {
+            // Under the summary "в 8" corrects the time and means the evening, as it does in answer to "во сколько".
+            // A number alone is not read this way there: it may be a table.
+            Matcher said = HOUR_SAID_UNDER_SUMMARY.matcher(text);
+            if (said.matches()) {
+                return replaceTime(text, slots, said, Integer.parseInt(said.group(1)) + 12);
             }
         }
         return text;
