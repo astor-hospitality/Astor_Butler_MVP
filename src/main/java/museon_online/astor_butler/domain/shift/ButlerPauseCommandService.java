@@ -76,7 +76,7 @@ public class ButlerPauseCommandService {
                 String head = changed
                         ? "⏸ <b>Butler остановлен.</b> Остановил(а): %s.".formatted(escape(who))
                         : "⏸ Butler уже остановлен%s.".formatted(switchedLine(state));
-                String body = head + "\n" + PAUSED_NOTE + "\n\n" + summary();
+                String body = head + "\n" + PAUSED_NOTE + "\nВернуть автоматику: /start_butler\n\n" + summary();
                 notificationService.sendStaffNotice(chatId, body);
                 if (changed) {
                     tellStaffChat(chatId, body);
