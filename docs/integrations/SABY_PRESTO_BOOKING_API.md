@@ -1,6 +1,6 @@
 # Saby Presto: API бронирования столов
 
-Дата: 2026-10-05. Автор: Дима (`@dmtrshm`). Для issue [#24](https://github.com/astor-hospitality/Astor_Butler_MVP/issues/24), для Михаила и для ревью adapter.
+Дата: 2026-10-05, сверено с кодом `integration/saby/*` 2026-10-11 ([#126](https://github.com/astor-hospitality/Astor_Butler_MVP/issues/126)). Автор: Дима (`@dmtrshm`). Для issue [#24](https://github.com/astor-hospitality/Astor_Butler_MVP/issues/24), для Михаила и для ревью adapter.
 
 Документ фиксирует, что Saby Presto предоставляет для бронирования столов по официальной документации, что из этого не подтверждено и какие решения приняты для adapter в Butler. План работ по MR лежит рядом: [SABY_INTEGRATION_PLAN.md](SABY_INTEGRATION_PLAN.md).
 
@@ -99,7 +99,9 @@
 | `booking.hall` | да* | integer | Из 4.2 или 4.3 |
 | `booking.table` | нет | integer | Из 4.3 |
 | `booking.woTable` | нет | boolean | `true` — стол выбирает администратор, зал и стол можно не указывать |
-| `nomenclatures[]` | нет | array | Предзаказ блюд. Butler пока не передаёт |
+| `nomenclatures[]` | нет | array | Предзаказ блюд. Butler в `create` не передаёт: блюда ланча уходят вторым шагом, `PUT order/{id}/update` (4.5, PR #51) |
+
+Что Butler отправляет на самом деле (`SabyOrderPayload.create`): `product`, `pointId`, `datetime`, `comment` (`Astor Butler #<номер заявки>` и пожелание), `customer.name`, `customer.phone` (только цифры, российский номер), `booking.visitors`, `booking.woTable: true` и `booking.hall`, если задан `SABY_HALL_ID`. `booking.table` Butler не передаёт никогда: стол выбирает администратор Saby (см. 6.7).
 
 Пример из документации:
 
@@ -127,7 +129,19 @@
 | Отменить | `PUT https://api.sbis.ru/retail/order/{externalId}/cancel` |
 | Статус | `GET https://api.sbis.ru/retail/order/{externalId}/state` |
 | Статус нескольких | `GET https://api.sbis.ru/retail/order/states?externalIds=[...]` |
-| Ссылка на оплату | `GET https://api.sbis.ru/retail/order/{externalId}/payment-link` — Butler не использует |
+| Ссылка на оплату | `GET https://api.sbis.ru/retail/order/{externalId}/payment-link` — Butler использует (`SabyPaymentProvider`, PR #59, за `SABY_PAYMENT_ENABLED`). Форма ответа не описана: берётся `https`-ссылка из полей `link`, `url`, `paymentLink`, `payment_link`, `paymentUrl`, `payment_url`, `href` (в корне или внутри `result`/`data`/`payment`), иначе «ссылки нет» |
+
+Кто в Butler какую операцию вызывает:
+
+| Операция | Где в Butler |
+| --- | --- |
+| `order/create` | `SabyReservationProvider.reserve` → `TableReservationService` после удержания стола (PR #41) |
+| `GET order/{id}` | `SabyLunchOrderProvider.submit`: перед добавлением блюд проверить, что бронь своя и блюд в ней ещё нет |
+| `order/{id}/update` | изменение гостем — `SabyReservationProvider.updateReservation` (PR #49); блюда ланча — `SabyLunchOrderProvider` (PR #51) |
+| `order/{id}/cancel` | отмена гостем — `SabyReservationProvider.cancelReservation` |
+| `order/{id}/state` | опрос `ExternalBookingSync` раз в минуту по кругу по всем активным броням (PR #48); `payState` оттуда же уходит в счёт (`BillingSync`, PR #59) |
+| `order/states` | не используется: опрос читает брони по одной |
+| `order/{id}/payment-link` | `GuestBillPaymentPrompter` после подтверждения брони (PR #59) |
 
 Ответ статуса: `state` (статус брони), `payState` (статус оплаты), `payments[]`, `productState` (продуктовый статус). Значения выписаны со страницы документации 06.10.2026 (B5 закрыт):
 
@@ -144,7 +158,17 @@
 
 Карта для Butler (`SabyBookingState`, PR #47): 5/10/1000 → PENDING; 20/50/1001/1002 → CONFIRMED; 180/200/1999 → COMPLETED; 220/1998 → CANCELLED, отмена побеждает; 150 и всё вне списка → UNKNOWN (не подтверждено). Форма ответа `order/create` и `GET order/{externalId}` в документации **не описана** — проверяется первым живым вызовом (B4), удобнее всего через записывающий прокси `scripts/saby_stub` (режим `record`, PR #52).
 
-### 4.6. Уведомления — не подтверждено для броней
+### 4.6. Прайс-лист и блюда — как ищет Butler
+
+Нужно только для блюд бизнес-ланча (`SabyLunchOrderProvider`, `SabyMenuCatalog`, PR #51).
+
+1. **Прайс-лист.** Если задан `SABY_PRICE_LIST_ID`, берётся он. Иначе `GET /retail/nomenclature/price-list` с `pointId` и `actualDate` = **момент отправки заявки**, а не день ланча; из ответа берётся первый прайс-лист. Найденный id кэшируется на час.
+   - Ограничение: заявка вечером на завтра получит прайс-лист, действующий вечером. Если ланч в Presto — отдельный прайс-лист, действующий только днём, ответ будет `NO_PRICE_LIST` или не тот прайс-лист, и заказ блюд останется хостес.
+   - Обход до проверки на живом Saby: задать `SABY_PRICE_LIST_ID` явно. Передавать ли дату визита в `actualDate`, решится, когда станет ясно, как Saby считает действие прайс-листа.
+2. **Блюдо.** `GET /retail/v2/nomenclature/list` с `priceListId` и `searchString` = название из `business-lunch/aeris.json`. Совпадение — по названию после нормализации (`SabyMenuCatalog.normalize`): регистр не важен, «ё» = «е», пробелы по краям и повторные пробелы не важны; всё остальное (точки, дефисы, «/», кавычки) должно совпадать. Подходит только позиция с числовым `id` (товар, не папка).
+3. **Одно несовпадение — весь заказ блюд остаётся хостес** (`DISH_NOT_IN_SABY`): частичный заказ в Presto не уходит. Бронь стола при этом в Saby уже есть.
+
+### 4.7. Уведомления — не подтверждено для броней
 
 Источник: [Настроить оповещения об изменениях](https://saby.ru/help/integration/api/app_presto/webhook).
 
@@ -154,27 +178,29 @@
 
 | Butler | Saby | Статус |
 | --- | --- | --- |
-| `ExternalReservationProvider.status()` | Наличие ключей и `pointId`, без вызова API | Есть в коде как заглушка |
-| `checkAvailability(request)` | `hall/list` на время начала: свободный стол — `!busy && !isBookingLocked && visible && capacity >= partySize` | Метод есть |
-| `reserve(command, idempotencyKey)` | `order/create` | Метод есть, нет ключа идемпотентности |
-| Статус брони | `order/{id}/state`, `order/states` | Нет в интерфейсе Butler |
-| Отмена | `order/{id}/cancel` | Нет в интерфейсе Butler |
-| Изменение | `order/{id}/update` | Нет в интерфейсе Butler |
-| `sbisExternalId` в заявке | UUID брони из ответа `create` | Поле есть, не заполняется |
+| `ExternalReservationProvider.status()` | Наличие ключей и `pointId`, без вызова API | Есть |
+| `checkAvailability(request)` | `hall/list` на время начала: свободный стол — `!busy && !isBookingLocked && visible && capacity >= partySize` | Есть; занятость из Saby учитывается при выборе стола (`ExternalTableOccupancy`, PR #41) |
+| `reserve(command, idempotencyKey)` | `order/create` | Есть, без повторов POST |
+| `fetchReservationState(externalId)` | `order/{id}/state` | Есть; вызывает `ExternalBookingSync` (PR #48) |
+| `cancelReservation(externalId)` | `order/{id}/cancel` | Есть; при отмене гостем |
+| `updateReservation(externalId, command, ref)` | `order/{id}/update` | Есть; при изменении гостем (PR #49) |
+| `sbisExternalId` в заявке | UUID брони из ответа `create` | Заполняется (`TableReservationService.attachExternalId`) |
 | `venueCode` (`AERIS`) | `pointId` | Маппинг через настройку |
-| `tableCode` Butler | `booking.table` | Маппинга нет, используем `woTable=true` |
+| `tableCode` Butler | `booking.table` | Не передаётся: всегда `woTable=true`. Имена столов из `hall/list` сопоставляются с кодами Butler только для занятости (`ExternalTableCodes`) |
+| Блюда ланча | `nomenclatures[]` в `order/{id}/update` | Есть (`SabyLunchOrderProvider`, PR #51), см. 4.6 |
+| Оплата | `order/{id}/payment-link`, `payState` | Есть (`SabyPaymentProvider`, `BillingSync`, PR #59) |
 | `guestName`, `guestPhone` | `customer.name`, `customer.phone` | В Butler необязательны, в Saby обязательны |
 | Время `Instant` (UTC) | `datetime` в местном времени точки | Часовой пояс через настройку, по умолчанию `Asia/Yekaterinburg` |
 
 ## 6. Решения для adapter
 
 1. **POST `create` не повторяется.** У Saby нет ключа идемпотентности, повтор может создать вторую бронь. Если ответ не получен после отправки, результат — «неизвестен, проверить вручную в Saby», заявка уходит хостес.
-2. **Защита от дублей — на стороне Butler.** UUID брони сохраняется в `sbisExternalId` до любой повторной попытки. До подключения к `TableReservationService` adapter держит кеш `ключ → результат` в памяти процесса.
+2. **Защита от дублей — на стороне Butler.** UUID брони сохраняется в `sbisExternalId` заявки; повторная попытка по той же заявке в Saby не уходит. Дополнительно adapter держит кеш `ключ → результат` в памяти процесса (24 ч).
 3. **Номер заявки Butler — в `comment`** (`Astor Butler #<номер>`), чтобы администратор мог сверить бронь вручную.
-4. **«Создано в Saby» не значит «подтверждено».** Пока не известны значения `state` и не согласован порядок подтверждения, гостю финальную бронь подтверждает хостес, как сейчас.
+4. **«Создано в Saby» не значит «подтверждено».** Кто даёт гостю «подтверждено», задаёт `ASTOR_BOOKING_CONFIRMATION_SOURCE`: `HOSTESS` (по умолчанию, кнопка в Telegram) или `VENUE_SYSTEM` (только `state` 20 из опроса Saby; хостес может отклонить). PR #50.
 5. **Запись выключена отдельным флагом.** Чтение включается ключами, создание и отмена — только дополнительным `SABY_WRITE_ENABLED=true`.
 6. **Повторы только для GET и авторизации** — при `5xx`, `429` и сетевых ошибках, с таймаутом на каждый запрос.
-7. **Стол выбирает администратор** (`woTable=true`), пока нет маппинга столов Butler на `tableId` Saby.
+7. **Стол выбирает администратор** (`woTable=true`) — всегда: `booking.table` Butler не передаёт, хотя `SabyOrderPayload` это умеет. `SABY_HALL_ID` влияет только на фильтр `hall/list` и поле `booking.hall` в `create`; для выбора стола он не нужен.
 8. **Без имени и телефона гостя бронь в Saby не создаётся** — заявка идёт только хостес.
 9. **Реальные гостевые данные в тестах не используются.** Smoke-тест записи — только на тестовой точке, созданная бронь сразу отменяется.
 
@@ -208,12 +234,13 @@ SABY_APP_CLIENT_ID
 SABY_APP_SECRET
 SABY_SECRET_KEY
 SABY_POINT_ID
-SABY_HALL_ID              необязателен
+SABY_HALL_ID              необязателен; фильтр hall/list и booking.hall, стол всё равно выбирает администратор (6.7)
 SABY_VENUE_CODE           по умолчанию AERIS
 SABY_ZONE_ID              по умолчанию Asia/Yekaterinburg
 SABY_TIMEOUT_MS           по умолчанию 3000
 SABY_MAX_RETRIES          по умолчанию 1, только для GET и авторизации
-SABY_PRICE_LIST_ID        необязателен; прайс-лист Presto с блюдами ланча, иначе ищется через API (PR #51)
+SABY_PRICE_LIST_ID        необязателен; прайс-лист Presto с блюдами ланча, иначе первый прайс-лист «на момент заявки» (4.6) — для ланча лучше задать явно
+SABY_PAYMENT_ENABLED      брать у Saby payment-link и отдавать гостю, по умолчанию false; нужен эквайринг в Presto (PR #59)
 
 ASTOR_EXTERNAL_SYNC_DELAY_MS          по умолчанию 60000 — опрос статусов брони в Saby (PR #48)
 ASTOR_EXTERNAL_SYNC_INITIAL_DELAY_MS  по умолчанию 90000

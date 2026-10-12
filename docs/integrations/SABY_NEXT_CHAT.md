@@ -61,7 +61,7 @@
 2. `ASTOR_SABY_ENABLED=true`, запись выключена → сутки смотрим, что занятость из Saby не ломает выбор стола.
 3. `SABY_SMOKE_WRITE=true` + тестовый телефон на согласованный с Тариэлем стол → в выводе `responseFields` реальная форма `create` → поправить `firstText` в `SabyReservationProvider`, если поле другое; записать в `SABY_PRESTO_BOOKING_API.md` 4.4.
 4. `SABY_WRITE_ENABLED=true` на стенде (сначала прогон 9 шагов на стабе — `SABY_E2E_DEMO.md` §2); `ExternalBookingSync` подтверждает заявки по Presto; решить `ASTOR_BOOKING_CONFIRMATION_SOURCE` для показа 15.10 (решение Михаила).
-5. Ланч: `SABY_PRICE_LIST_ID` из `price-list`, проверить, что названия блюд в `business-lunch/aeris.json` совпадают с Presto буква в букву (иначе `DISH_NOT_IN_SABY` и заказ остаётся хостес).
+5. Ланч: `SABY_PRICE_LIST_ID` из `price-list`, проверить, что названия блюд в `business-lunch/aeris.json` совпадают с Presto с точностью до регистра, «ё»/«е» и пробелов (иначе `DISH_NOT_IN_SABY` и заказ остаётся хостес). `SABY_PRICE_LIST_ID` задать явно: без него прайс-лист ищется на момент заявки, а не на день ланча (`SABY_PRESTO_BOOKING_API.md` 4.6).
 
 Без ключей: на стенде `docker compose … -f docker-compose.saby-stub.yml`, прогнать в Telegram полный цикл; на показе — страховка «эмуляция Presto».
 

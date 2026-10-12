@@ -111,8 +111,9 @@ TTL сутки) и продолжается сразу после контакт
      «Saby: …» (`TableReservationNotificationService.externalSyncLine`).
 4. `SabyLunchOrderProvider.submit(order, "astor-lunch-<id>")` (`integration/saby/SabyLunchOrderProvider.java`): fail-closed цепочка
    `NO_SABY_BOOKING` (нет `sbisExternalId`) → `GUEST_DATA_REQUIRED` → `GET /retail/nomenclature/price-list` (или `SABY_PRICE_LIST_ID`) →
-   `GET /retail/v2/nomenclature/list?searchString=<название>` по каждому блюду, совпадение названия **буква в букву** без учёта
-   регистра (`SabyMenuCatalog.normalize`), иначе `DISH_NOT_IN_SABY` и заказ целиком остаётся хостес → `GET /retail/order/{id}`
+   `GET /retail/v2/nomenclature/list?searchString=<название>` по каждому блюду, совпадение названия после нормализации
+   (`SabyMenuCatalog.normalize`: регистр, «ё»/«е» и лишние пробелы не важны, остальное — точно), иначе `DISH_NOT_IN_SABY` и заказ
+   целиком остаётся хостес → `GET /retail/order/{id}`
    (проверка полноты снимка, своей точки, отсутствия блюд, иначе `EXISTING_DISHES_REQUIRE_REVIEW`) → `PUT /retail/order/{id}/update`
    с `nomenclatures` → `SABY_LUNCH_ATTACHED`.
 5. Слушатели (`BusinessLunchOrderListener`): `domain/billing/LunchBillRecorder` при `ASTOR_BILLING_ENABLED=true` открывает счёт
@@ -165,7 +166,7 @@ Butler нигде не называет бронь подтверждённой 
 | `ASTOR_SABY_CALL_LOG_ENABLED` | `false` | `saby_call_log` (метод, путь, код, длительность; без тел и токенов) | да |
 | `ASTOR_BILLING_REVIEW_DELAY_MINUTES` | `60` | через сколько минут после конца ланча спросить оценку, если Presto не закрыл заказ | да |
 | `SABY_APP_CLIENT_ID`, `SABY_APP_SECRET`, `SABY_SECRET_KEY`, `SABY_POINT_ID` | пусто | обязательные для `configured()` | да |
-| `SABY_HALL_ID`, `SABY_PRICE_LIST_ID` | пусто | зал (нужен, если Butler называет стол) и прайс-лист ланча (иначе берётся первый из `price-list`) | да |
+| `SABY_HALL_ID`, `SABY_PRICE_LIST_ID` | пусто | зал: только фильтр `hall/list` и `booking.hall`, стол Butler не называет (`woTable=true` всегда); прайс-лист ланча: иначе первый из `price-list` **на момент заявки, не на день ланча** — для ланча задать явно | да |
 | `ASTOR_BOOKING_CONFIRMATION_SOURCE` | `HOSTESS` | кто даёт финальное «подтверждено» | **нет** |
 | `ASTOR_EXTERNAL_SYNC_DELAY_MS` / `_INITIAL_DELAY_MS` | 60000 / 90000 | период опроса Presto | **нет** |
 | `ASTOR_BUSINESS_LUNCH_ENABLED`, `ASTOR_BUSINESS_LUNCH_VENUE` | `true` / `AERIS` | сам сценарий | **нет** (значит, выключить его на VM без правки compose нельзя) |
@@ -201,7 +202,9 @@ Butler нигде не называет бронь подтверждённой 
    параллельно: кто первый подтвердил, тот и подтвердил; второе действие — no-op). Для показа 15.10 решение по `VENUE_SYSTEM` требует
    строки в `docker-compose.prod.yml` (зона Егора/Димы).
 6. **Меню не сверено**: `confirmedByVenue: false`, цены и окно 12:00–16:00 — с фото печатного меню 06.10 (`CONCIERGE_BUTLER_HANDOFF_DRAFT.md` §6).
-   Названия блюд в Presto должны совпадать с `aeris.json` буква в букву, иначе `DISH_NOT_IN_SABY` на весь заказ.
+   Названия блюд в Presto должны совпадать с `aeris.json` с точностью до регистра, «ё»/«е» и пробелов, иначе `DISH_NOT_IN_SABY` на весь заказ.
+   Без `SABY_PRICE_LIST_ID` прайс-лист ищется на момент отправки заявки, а не на день ланча: заявка вечером на завтра может получить
+   `NO_PRICE_LIST` или не тот прайс-лист ([SABY_PRESTO_BOOKING_API.md](../integrations/SABY_PRESTO_BOOKING_API.md) 4.6).
 7. **Нет**: чаевых через Saby (кнопка ведёт в сценарий СБП сотрудника), суммы ресторана до оплаты (показывается предварительная Butler),
    «Мои счета», повторной отправки ссылки, повторной отправки заказа в Saby после сбоя, разных комбо на гостей (`SABY_E2E_DEMO.md` §4, `SABY_BILLING.md` §9).
 8. **Staff portal / роли `StaffScope` (WAITER, HOSTESS, MANAGER)** — Keycloak-контур поднят, но staff API не задеплоен (`STAFF_PORTAL_RUNBOOK.md`);
@@ -387,7 +390,8 @@ VM `astor-aeris-vm` (Cloud.ru), стек из `/opt/astor-butler/current` (`main
 - [ ] `SABY_POINT_ID`, `SABY_HALL_ID`, `SABY_PRICE_LIST_ID` — сняты через `listPoints`/`hall/list`/`price-list` (стаб в режиме `record` или `SabyReadOnlySmokeTest` с `SABY_SMOKE=true`).
 - [ ] Read-only smoke прошёл; сутки с `ASTOR_SABY_ENABLED=true`, `SABY_WRITE_ENABLED=false` — занятость из Presto не ломает выбор стола (лог `External table occupancy is not used` должен отсутствовать или быть объяснён).
 - [ ] `SabyWriteSmokeTest` (`SABY_SMOKE_WRITE=true`, тестовый телефон `SABY_SMOKE_GUEST_PHONE`, согласованный с Тариэлем стол) — реальная форма `order/create` записана в [SABY_PRESTO_BOOKING_API.md](../integrations/SABY_PRESTO_BOOKING_API.md) 4.4; тестовая бронь снята.
-- [ ] Названия 17 блюд ланча в прайс-листе Presto совпадают с `aeris.json` буква в букву (повар/менеджер сверяют по списку в §1.2).
+- [ ] Названия 17 блюд ланча в прайс-листе Presto совпадают с `aeris.json`: регистр, «ё»/«е» и лишние пробелы не важны, точки, дефисы и «/» — важны (повар/менеджер сверяют по списку в §1.2).
+- [ ] `SABY_PRICE_LIST_ID` задан явно — id прайс-листа, где лежит ланч.
 - [ ] Эквайринг и онлайн-оплата включены в Presto (иначе шаг 4 §3.3 даст `NO_LINK` — не ошибка, но кнопки «Оплатить» не будет).
 - [ ] Флаги: `ASTOR_SABY_ENABLED=true`, `SABY_WRITE_ENABLED=true`, `SABY_PAYMENT_ENABLED=true`, `ASTOR_BILLING_ENABLED=true`, `ASTOR_SABY_CALL_LOG_ENABLED=true`, `ASTOR_BILLING_REVIEW_DELAY_MINUTES=5` (на время теста) — затем `up -d aeris-astor-butler-bot`.
 - [ ] **На ВМ выложен образ с #117** (`31b3d95`, телефон гостя из `user_contacts`, §1.7 п. 1) — проверить по логу/тегу образа; без него автомат не стартует.
