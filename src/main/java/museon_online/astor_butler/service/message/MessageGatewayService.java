@@ -62,6 +62,10 @@ public class MessageGatewayService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.billing.GuestBillRequestService guestBillRequestService;
 
+    /** Направляющий вопрос в конце ответа сценария (#101); optional so the constructor and its tests stay unchanged. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.fsm.reply.GuidingQuestionAppender guidingQuestionAppender;
+
     public OutgoingMessage handle(IncomingMessage incoming) {
         if (incoming == null || incoming.chatId() == null) {
             throw new IllegalArgumentException("Incoming message must contain chatId for current MVP flow");
@@ -173,7 +177,7 @@ public class MessageGatewayService {
 
         OutgoingMessage routed = scenarioRouter.route(incoming, currentState, text);
         if (routed != null) {
-            return finish(incoming, currentState, routed);
+            return finish(incoming, currentState, withGuidingQuestion(incoming, routed));
         }
 
         if (isVoiceMessage(incoming) && text.isBlank()) {
@@ -349,6 +353,17 @@ public class MessageGatewayService {
                 adminAlert(incoming, currentState, reason),
                 List.of("FALLBACK", "ADMIN_ALERT")
         ));
+    }
+
+    /**
+     * Only a reply the scenario router produced gets the guiding question (#101): ops commands, group and service chats,
+     * voice retries and the AI fallback never pass here. Without the bean, or with the flag off, the reply is returned as is.
+     */
+    private OutgoingMessage withGuidingQuestion(IncomingMessage incoming, OutgoingMessage routed) {
+        if (guidingQuestionAppender == null) {
+            return routed;
+        }
+        return guidingQuestionAppender.append(incoming, routed);
     }
 
     private OutgoingMessage finish(IncomingMessage incoming, BotState previousState, OutgoingMessage outgoing) {
