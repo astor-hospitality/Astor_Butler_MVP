@@ -413,6 +413,39 @@ class GlassesControllerTest {
         }
     }
 
+    /** #184: «забить 14 на 12» over HTTP — the task for the table in the answer, the confirmation in the earpiece. */
+    @Test void aShortOrderAnswersWithTheTasksReceiptAndSpeaksTheConfirmation() throws Exception {
+        var butler = butler(new GlassesVoiceTasks.Receipt("task-7", "Стол 12: Борщ со сметаной ×1 (голосовой заказ)", "Анна", "anna", false,
+                "забить 14 на 12", "12", "NORMAL", "ASSIGNED"));
+        when(butler.create(any(), any(), any(), any())).thenReturn(new GlassesVoiceTasks.Receipt("task-7",
+                "Стол 12: Борщ со сметаной ×1 (голосовой заказ)", "Анна", "anna", false, "забить 14 на 12", "12", "NORMAL", "ASSIGNED"));
+        var dishes = mock(GlassesLunchDishes.class);
+        when(dishes.configured()).thenReturn(true);
+        when(dishes.dishes("aeris")).thenReturn(java.util.List.of(new GlassesLunchDishes.Dish(14, "BORSCHT", "Борщ со сметаной")));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS),
+                new GlassesShortOrders(butler, dishes, true, "aeris"), GlassesSpeechFilter.defaults(), true, 1000)) {
+            var mvc = MockMvcBuilders.standaloneSetup(new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper)).build();
+            mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer " + TOKEN).contentType("application/json")
+                            .content(json(Map.of("text", "забить 14 на 12"))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.requestId").value(ID))
+                    .andExpect(jsonPath("$.text").value("Записал: стол 12, Борщ со сметаной"))
+                    .andExpect(jsonPath("$.pronounceText").value("Записал: стол 12, Борщ со сметаной"))
+                    .andExpect(jsonPath("$.task.taskId").value("task-7"))
+                    .andExpect(jsonPath("$.task.title").value("Стол 12: Борщ со сметаной ×1 (голосовой заказ)"))
+                    .andExpect(jsonPath("$.task.assignee").value("Анна"))
+                    .andExpect(jsonPath("$.task.tableCode").value("12"));
+            verify(butler).create(eq(new GlassesAccess.Scope("test-venue", "test-staff")), eq(ID), any(), eq("order"));
+            verifyNoInteractions(gateway);
+            // A number the menu does not have: an answer, no task.
+            var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper);
+            var body = (GlassesController.AssistResponse) c.assist(request(json(Map.of("requestId",
+                    "80d26cf1-5139-4121-a4ca-dfb14aac225c", "text", "забить 99 на 12")))).getBody();
+            assertThat(body.text()).isEqualTo("Блюда с номером 99 нет");
+            assertThat(body.task()).isNull();
+        }
+    }
+
     @Test void anUnknownIntentIsMalformedAndAPhotoCannotBeATask() throws Exception {
         rejects(json(Map.of("text", "Принести воду", "intent", "order")), 400, "MALFORMED_REQUEST");
         rejects(json(Map.of("text", "Принести воду", "intent", "")), 400, "MALFORMED_REQUEST");

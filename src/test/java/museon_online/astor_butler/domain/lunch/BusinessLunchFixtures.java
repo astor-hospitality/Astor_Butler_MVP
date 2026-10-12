@@ -65,7 +65,8 @@ public final class BusinessLunchFixtures {
     /**
      * A venue with no sets: every dish has its own price, the guest takes what they like. The borscht and the Caesar carry
      * a made-up composition so that the answers about what is in a dish can be tested; the rest say nothing, as a real menu
-     * file does until the restaurant fills it in.
+     * file does until the restaurant fills it in. Every dish carries a spoken number (#184) — salads 1…, soups 11…,
+     * drinks 31… — as the technologist would assign them; the shipped AERIS file has none yet.
      */
     public static BusinessLunchOffer aLaCarte() {
         return new BusinessLunchOffer(
@@ -79,15 +80,15 @@ public final class BusinessLunchFixtures {
                 "",
                 List.of(
                         new BusinessLunchOffer.Course("SALAD", "Салаты", List.of(
-                                new BusinessLunchOffer.Dish("NICOISE", "Нисуаз", 290, "170 г"),
+                                new BusinessLunchOffer.Dish("NICOISE", "Нисуаз", 290, "170 г").withNumber(1),
                                 new BusinessLunchOffer.Dish("CAESAR", "Цезарь с цыплёнком", 290, "130 г",
-                                        "романо, цыплёнок, пармезан, соус цезарь", null, List.of()))),
+                                        "романо, цыплёнок, пармезан, соус цезарь", null, List.of()).withNumber(2))),
                         new BusinessLunchOffer.Course("SOUP", "Суп", List.of(
                                 new BusinessLunchOffer.Dish("BORSCHT", "Борщ со сметаной", 270, "320 г",
-                                        "свёкла, говядина, капуста, картофель, сметана", "молоко", List.of("сметаны")))),
+                                        "свёкла, говядина, капуста, картофель, сметана", "молоко", List.of("сметаны")).withNumber(11))),
                         new BusinessLunchOffer.Course("DRINKS", "Напитки", List.of(
-                                new BusinessLunchOffer.Dish("MORS", "Клюквенный морс", 140, "200 мл"),
-                                new BusinessLunchOffer.Dish("CAPPUCCINO", "Капучино", 220, null)))
+                                new BusinessLunchOffer.Dish("MORS", "Клюквенный морс", 140, "200 мл").withNumber(31),
+                                new BusinessLunchOffer.Dish("CAPPUCCINO", "Капучино", 220, null).withNumber(32)))
                 ),
                 List.of()
         );
