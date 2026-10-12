@@ -278,6 +278,59 @@ class GlassesAssistServiceTest {
         }
     }
 
+    /* ---------- what the earpiece hears ---------- */
+
+    @Test void theEarpieceHearsTheAnswerWithoutSumsAndSwearingWhileTheChatGetsItInFull() {
+        var gateway = mock(ModelGateway.class);
+        var transcripts = mock(GlassesTranscriptRelay.class);
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Ланч стоит 650 рублей, блядь. Стол 12 свободен.",
+                "test", "test", Duration.ZERO));
+        String id = UUID.randomUUID().toString();
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), transcripts, true, 1000)) {
+            var outcome = service.respond(scope, id, "Что по ланчу?", null, null);
+            assertThat(outcome.text()).isEqualTo("Ланч стоит 650 рублей, блядь. Стол 12 свободен.");
+            assertThat(outcome.spoken()).isEqualTo("Ланч — цена в меню. Стол 12 свободен.");
+            verify(transcripts).sendLater(scope, id, "text", "Что по ланчу?", "Ланч стоит 650 рублей, блядь. Стол 12 свободен.", null, null);
+            verify(gateway).generateText(argThat(r -> r.prompt().contains("не называй цены и суммы")
+                    && r.prompt().contains("не давай оценок сотрудникам")));
+            // The cached repeat says the same filtered line.
+            assertThat(whenSlotAvailable(() -> service.respond(scope, id, "Что по ланчу?", null, null)).spoken())
+                    .isEqualTo("Ланч — цена в меню. Стол 12 свободен.");
+        }
+    }
+
+    @Test void withNamesOffTheConfirmationIsSpokenWithoutTheAssigneeAndWrittenWithIt() {
+        var gateway = mock(ModelGateway.class);
+        var transcripts = mock(GlassesTranscriptRelay.class);
+        var butler = mock(GlassesStaffTaskRelay.class);
+        when(butler.configured()).thenReturn(true);
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("{\"assignee\":\"Анна\",\"tableCode\":\"5\","
+                + "\"title\":\"Принести воду\",\"instruction\":\"Принести воду на пятый стол\",\"priority\":\"NORMAL\"}", "test", "test", Duration.ZERO));
+        var receipt = new GlassesVoiceTasks.Receipt("task-1", "Принести воду", "Анна", "anna", false,
+                "Принести воду на пятый стол", "5", "NORMAL", "ASSIGNED");
+        when(butler.create(any(), any(), any())).thenReturn(receipt);
+        String id = UUID.randomUUID().toString();
+        var noNames = new GlassesSpeechFilter(true, false, "");
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), transcripts,
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), noNames, true, 1000)) {
+            var outcome = service.respond(scope, id, "Задача: Анне принести воду на пятый стол", null, null);
+            assertThat(outcome.text()).isEqualTo("Записал поручение для Анна: Принести воду. Стол 5.");
+            assertThat(outcome.spoken()).isEqualTo("Записал поручение. Стол 5.");
+            assertThat(outcome.task()).isEqualTo(receipt);
+            verify(transcripts).sendLater(scope, id, "text", "Задача: Анне принести воду на пятый стол",
+                    "Записал поручение для Анна: Принести воду. Стол 5.", null, null);
+            var again = whenSlotAvailable(() -> service.respond(scope, id, "Задача: Анне принести воду на пятый стол", null, null));
+            assertThat(again.spoken()).isEqualTo("Записал поручение. Стол 5.");
+            verify(butler, times(1)).create(any(), any(), any());
+        }
+        // Names on (the default): the earpiece hears the assignee, as the manager allowed.
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), true, 1000)) {
+            var outcome = service.respond(scope, UUID.randomUUID().toString(), "Задача: Анне принести воду на пятый стол", null, null);
+            assertThat(outcome.spoken()).isEqualTo("Записал поручение для Анна: Принести воду. Стол 5.");
+        }
+    }
+
     @Test void theSameWordsWithTheAssistIntentStayAQuestion() {
         var gateway = mock(ModelGateway.class);
         var butler = mock(GlassesStaffTaskRelay.class);

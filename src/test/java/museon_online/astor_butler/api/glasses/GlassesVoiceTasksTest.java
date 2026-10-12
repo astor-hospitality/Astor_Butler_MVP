@@ -185,4 +185,24 @@ class GlassesVoiceTasksTest {
         assertThat(GlassesVoiceTasks.confirmation(receipt(null, "manager-1", true, "")))
                 .isEqualTo("Поручение записал на вас: Принести воду.");
     }
+
+    @Test void withNamesOffTheSpokenConfirmationKeepsOnlyTheFactAndTheTable() {
+        // ASTOR_GLASSES_SPEAK_NAMES=false: the earpiece names nobody — neither the assignee nor the title, which
+        // repeats the words of the task and may hold a name too. The text form is unchanged.
+        assertThat(GlassesVoiceTasks.confirmation(receipt("Анна", "anna", false, "5"), false))
+                .isEqualTo("Записал поручение. Стол 5.");
+        assertThat(GlassesVoiceTasks.confirmation(receipt("Илья", "ilya", false, null), false))
+                .isEqualTo("Записал поручение.");
+        assertThat(GlassesVoiceTasks.confirmation(receipt(null, "manager-1", true, "5"), false))
+                .isEqualTo("Поручение записал на вас. Стол 5.");
+        assertThat(GlassesVoiceTasks.confirmation(receipt("Анна", "anna", false, "5"), true))
+                .isEqualTo(GlassesVoiceTasks.confirmation(receipt("Анна", "anna", false, "5")));
+    }
+
+    @Test void theDraftPromptKeepsSumsAndRemarksOutOfTheSpokenTitle() {
+        when(gateway.generateText(any())).thenReturn(text("{\"title\":\"Принести счёт\",\"instruction\":\"Принести счёт на 1500 рублей\"}"));
+        tasks(true).parse("Задача: принести счёт на 1500 рублей");
+        verify(gateway).generateText(argThat(request -> request.prompt().contains("без сумм, цен и оценок сотрудников")
+                && request.prompt().contains("оставь в instruction")));
+    }
 }

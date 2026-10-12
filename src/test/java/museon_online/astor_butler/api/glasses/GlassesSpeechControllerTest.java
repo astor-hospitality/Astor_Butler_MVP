@@ -76,6 +76,22 @@ class GlassesSpeechControllerTest {
         verifyNoInteractions(gateway);
     }
 
+    @Test void theServerVoiceNeverReadsSumsOrSwearingFromAStaffMessage() throws Exception {
+        byte[] mp3 = {(byte) 0xFF, (byte) 0xFB, 9};
+        when(speech.configured()).thenReturn(true);
+        when(speech.synthesize("Стол пять просит счёт — цена в меню. Передай Анне.")).thenReturn(mp3);
+        when(speech.voiceGender()).thenReturn("male");
+        when(speech.mimeType()).thenReturn("audio/mpeg");
+        try (var service = new GlassesAssistService(gateway, voice, speech, true, 1000)) {
+            var result = controller(service).speech(request("/api/glasses/speech", mapper.writeValueAsString(
+                    Map.of("requestId", ID, "text", "Стол пять просит счёт на 1 500 ₽, блядь. Передай Анне.")), TOKEN));
+            assertThat(result.getStatusCode().value()).isEqualTo(200);
+            assertThat(Base64.getDecoder().decode(((GlassesSpeechController.Speech) result.getBody()).audioBase64())).isEqualTo(mp3);
+            verify(speech).synthesize("Стол пять просит счёт — цена в меню. Передай Анне.");
+            verify(speech, never()).synthesize(contains("1 500"));
+        }
+    }
+
     @Test void saysSoWhenTheServerVoiceIsOffOrFails() throws Exception {
         try (var off = new GlassesAssistService(gateway, voice, GlassesSpeech.disabled(), true, 1000)) {
             var result = controller(off).speech(request("/api/glasses/speech",

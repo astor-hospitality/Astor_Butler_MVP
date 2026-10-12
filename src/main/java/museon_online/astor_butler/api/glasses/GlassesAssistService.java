@@ -21,6 +21,8 @@ public class GlassesAssistService implements AutoCloseable {
     private final GlassesSpeech speech;
     private final GlassesTranscriptRelay relay;
     private final GlassesVoiceTasks tasks;
+    // What the earpiece may say: the answer without swearing and sums; the text itself stays complete.
+    private final GlassesSpeechFilter filter;
     private final GlassesReplyCache replies = new GlassesReplyCache();
     // Speech is a separate provider: one call at a time, and never a reason for an assist to fail.
     private final Semaphore speechSlot = new Semaphore(1);
@@ -48,7 +50,7 @@ public class GlassesAssistService implements AutoCloseable {
 
     @Autowired
     public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, GlassesSpeech speech,
-                                GlassesTranscriptRelay relay, GlassesVoiceTasks tasks,
+                                GlassesTranscriptRelay relay, GlassesVoiceTasks tasks, GlassesSpeechFilter filter,
                                 @Value("${astor.glasses.text-enabled:false}") boolean textEnabled,
                                 @Value("${astor.glasses.timeout-ms:10000}") long timeoutMs) {
         this.gateway = gateway;
@@ -57,41 +59,56 @@ public class GlassesAssistService implements AutoCloseable {
         this.speech = speech;
         this.relay = relay;
         this.tasks = tasks;
+        this.filter = filter;
         this.textEnabled = textEnabled;
         this.timeoutMs = Math.max(1, Math.min(timeoutMs, 45000));
     }
 
     public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, boolean enabled, long timeoutMs) {
         this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), GlassesTranscriptRelay.disabled(),
-                GlassesVoiceTasks.disabled(), enabled, timeoutMs);
+                GlassesVoiceTasks.disabled(), GlassesSpeechFilter.defaults(), enabled, timeoutMs);
     }
 
     GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, boolean enabled, long timeoutMs) {
         this(gateway, voice, storage, GlassesSpeech.disabled(), GlassesTranscriptRelay.disabled(), GlassesVoiceTasks.disabled(),
-                enabled, timeoutMs);
+                GlassesSpeechFilter.defaults(), enabled, timeoutMs);
     }
 
     GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesSpeech speech, boolean enabled, long timeoutMs) {
         this(gateway, voice, GlassesS3Storage.disabled(), speech, GlassesTranscriptRelay.disabled(), GlassesVoiceTasks.disabled(),
-                enabled, timeoutMs);
+                GlassesSpeechFilter.defaults(), enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesSpeech speech, GlassesSpeechFilter filter,
+                         boolean enabled, long timeoutMs) {
+        this(gateway, voice, GlassesS3Storage.disabled(), speech, GlassesTranscriptRelay.disabled(), GlassesVoiceTasks.disabled(),
+                filter, enabled, timeoutMs);
     }
 
     GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesTranscriptRelay relay, boolean enabled, long timeoutMs) {
         this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, GlassesVoiceTasks.disabled(),
-                enabled, timeoutMs);
+                GlassesSpeechFilter.defaults(), enabled, timeoutMs);
     }
 
     GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesTranscriptRelay relay, GlassesVoiceTasks tasks,
                          boolean enabled, long timeoutMs) {
-        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, tasks, enabled, timeoutMs);
+        this(gateway, voice, relay, tasks, GlassesSpeechFilter.defaults(), enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesTranscriptRelay relay, GlassesVoiceTasks tasks,
+                         GlassesSpeechFilter filter, boolean enabled, long timeoutMs) {
+        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, tasks, filter, enabled, timeoutMs);
     }
 
     public GlassesAssistService(ModelGateway gateway, boolean enabled, long timeoutMs) {
         this(gateway, new GlassesVoice(false, "python3", "", "", "/tmp/astor-glasses", 20000), enabled, timeoutMs);
     }
 
-    /** The answer for the wearer and, when the request was a task, Butler's receipt for it. */
-    public record Outcome(String text, GlassesVoiceTasks.Receipt task) { }
+    /**
+     * The answer for the wearer — {@code text} as the screen, the chat and the feed get it, {@code spoken} as
+     * the earpiece may say it — and, when the request was a task, Butler's receipt for it.
+     */
+    public record Outcome(String text, String spoken, GlassesVoiceTasks.Receipt task) { }
 
     public record Capabilities(boolean text, boolean voice, boolean vision, boolean storage, boolean documents, int maxAudioSeconds,
                                int maxAudioBytes, int maxImageBytes, int maxImageDimension, int maxTextChars,
@@ -168,15 +185,23 @@ public class GlassesAssistService implements AutoCloseable {
     String voiceGender() { return speech.voiceGender(); }
     String audioMimeType() { return speech.mimeType(); }
 
-    /** Astor's own voice for one line, or null when server speech is off or the provider fails. */
+    /**
+     * Astor's own voice for one line, or null when server speech is off or the provider fails. Every line
+     * passes the speech filter first: the voice never says what the earpiece must not say.
+     */
     byte[] speak(String line) {
         if (!speech.configured()) return null;
         if (!speechSlot.tryAcquire()) throw new GlassesFailure(429, "BUSY", "Voice is busy");
         try {
-            return speech.synthesize(line);
+            return speech.synthesize(filter.spoken(line));
         } finally {
             speechSlot.release();
         }
+    }
+
+    /** What the phone may read aloud itself when there is no server voice: the text through the speech filter. */
+    String spoken(String text) {
+        return filter.spoken(text);
     }
 
     /** One bounded recording turned into text. No model call, no answer, nothing sent anywhere. */
@@ -243,7 +268,9 @@ public class GlassesAssistService implements AutoCloseable {
             // on its own. The relay never changes the answer and never delays it. A task travels as the
             // words that gave it and the confirmation the wearer heard.
             relay.sendLater(scope, id, kind, question, answer, photoContext, kind.equals("image") ? media : null);
-            return new Outcome(answer, task);
+            // The earpiece hears the filtered answer; a task confirmation is rebuilt without names when so configured.
+            String spoken = filter.spoken(task == null || filter.speakNames() ? answer : GlassesVoiceTasks.confirmation(task, false));
+            return new Outcome(answer, spoken, task);
         }, kind.equals("image"), cancelled);
     }
 
@@ -263,6 +290,8 @@ public class GlassesAssistService implements AutoCloseable {
         if (!textEnabled) throw unavailable();
         var response = gateway.generateText(ModelTextRequest.of(
                 "Ты информационный помощник сотрудника ресторана. Ответь максимум тремя короткими предложениями по-русски, без списков, для озвучивания. "
+                        + "Ответ прозвучит в наушнике рядом с гостями: не называй цены и суммы (скажи, что цена в меню), "
+                        + "не давай оценок сотрудникам и не повторяй замечания о них; имена называть можно. "
                         + "Если нет данных заведения, скажи об этом. Не утверждай, что принял задачу, изменил заказ "
                         + "или завершил действие. Не выдумывай меню, столы, назначения и статусы. "
                         + reference(context) + "Вопрос сотрудника:\n" + text,
