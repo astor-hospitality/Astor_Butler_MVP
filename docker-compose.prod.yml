@@ -138,6 +138,9 @@ services:
       ASTOR_BUSINESS_LUNCH_ENABLED: ${AERIS_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
       # Shift manager's kill switch (#134): /stop, /start_butler, /status_butler in the staff chat. Off by default.
       ASTOR_KILL_SWITCH_ENABLED: ${AERIS_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
+      # Tips to the waiter of the table (#161): /официант and /чаевые in the staff chat, the recipient by table. Off by default.
+      ASTOR_TIPS_PERSONAL_ENABLED: ${AERIS_TIPS_PERSONAL_ENABLED:-${ASTOR_TIPS_PERSONAL_ENABLED:-false}}
+      ASTOR_TIPS_PERSONAL_TENANT: ${ASTOR_TIPS_PERSONAL_TENANT:-AERIS}
       # Hostess edits a booking from its card (#150): «✏️ Изменить» → table / time / party size. Off by default.
       ASTOR_BOOKING_STAFF_EDIT_ENABLED: ${AERIS_BOOKING_STAFF_EDIT_ENABLED:-${ASTOR_BOOKING_STAFF_EDIT_ENABLED:-false}}
       # Table hold expiry (#87): off by default. On, a request the hostess did not answer within the TTL becomes EXPIRED,

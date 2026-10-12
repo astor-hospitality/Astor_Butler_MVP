@@ -113,6 +113,16 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+  tips:
+    personal:
+      # Tips to the waiter of the table (#161): the manager assigns a waiter to a table for the shift (/официант) and keeps the
+      # waiter's own tip link in the staff directory (/чаевые). With a waiter and a link, the guest's tip goes to that person by
+      # name and link; otherwise the venue's default recipient, as before. Off by default: the commands are unknown and the
+      # recipient is the default one, word for word. The directory is astor_staff_members of this tenant; the shift day is
+      # counted in the venue's time zone.
+      enabled: ${ASTOR_TIPS_PERSONAL_ENABLED:false}
+      tenant: ${ASTOR_TIPS_PERSONAL_TENANT:AERIS}
+      timezone: ${ASTOR_TIPS_PERSONAL_TIMEZONE:Asia/Yekaterinburg}
   kill-switch:
     # The shift manager's stop button (#134): /stop (/стоп), /start_butler (/go), /status_butler in the staff, manager
     # or admin chat. Paused, guest requests (booking, change/cancel, lunch, event) go to the staff chat as plain cards
