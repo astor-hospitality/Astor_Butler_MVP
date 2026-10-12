@@ -44,11 +44,12 @@ class SmartTipScenarioTest {
 
     private static final long CHAT = 1773317437L;
     private static final Instant NOW = Instant.parse("2026-10-06T12:00:00Z");
-    private static final List<List<String>> PERCENT_ROWS = List.of(List.of("5%", "10%", "15%"), List.of("Свой процент (от 15%)"), List.of("Отмена"));
+    private static final List<List<String>> PERCENT_ROWS = List.of(List.of("5%", "10%", "15%"), List.of("Своя сумма"), List.of("Отмена"));
     private static final List<List<String>> CONFIRM_ROWS = List.of(List.of("Да", "Нет"), List.of("Изменить размер чаевых"));
-    private static final List<List<String>> CHECK_ROWS = List.of(List.of("Отмена"));
-    private static final String PERCENT_RULE = "Можно выбрать 5%, 10% или 15% кнопкой либо написать свой процент — от 15 до 100. "
-            + "Если удобнее сумма в рублях, напишите её с ₽, например 500 ₽.";
+    private static final List<List<String>> CHECK_ROWS = List.of(List.of("Своя сумма"), List.of("Отмена"));
+    private static final String QUESTION = "Сколько чаевых оставить?";
+    private static final String OWN_SUM_ASK = "Напишите сумму чаевых в рублях, например 300.";
+    private static final String CHOICE_HINT = "Выберите 5%, 10% или 15% либо напишите сумму чаевых в рублях, например 300.";
 
     @Mock
     private FSMStorage fsmStorage;
@@ -68,63 +69,22 @@ class SmartTipScenarioTest {
                 new BookingTimeProvider(Clock.fixed(NOW, BookingTimeProvider.VENUE_ZONE)));
     }
 
-    // --- the question: the check first, when Butler does not know it ---
+    // --- the question: three shares of the check, or a sum of the guest's own ---
 
     @Test
-    void asksForTheCheckWhenButlerDoesNotKnowIt() {
+    void offersThreeSharesOfTheCheckOrASumOfTheGuestsOwn() {
         IncomingMessage incoming = telegram("хочу оставить чаевые");
 
         OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, incoming.text());
 
+        // Right after paying the guest needs no reminder of the check: a short question and the buttons.
+        assertThat(outgoing.text()).isEqualTo(QUESTION);
         assertThat(outgoing.nextState()).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
-        assertThat(outgoing.actions()).containsExactly("SMART_TIP", "ASK_CHECK_AMOUNT");
-        assertThat(outgoing.text()).isEqualTo("Какая сумма в чеке? Напишите её числом, например 2400, — посчитаю чаевые в процентах.");
-        assertThat(outgoing.metadata()).containsEntry("replyKeyboardRows", CHECK_ROWS);
+        assertThat(outgoing.actions()).containsExactly("SMART_TIP", "ASK_TIP_PERCENT");
+        assertThat(outgoing.metadata()).containsEntry("replyKeyboardRows", PERCENT_ROWS);
         verify(fsmStorage).setState(CHAT, BotState.TIP_COLLECT_AMOUNT);
         verify(tipService, never()).createDraft(any());
     }
-
-    @Test
-    void offersPercentsOfTheCheckFromTheGuestsBill() {
-        when(bills.billsOf(eq(CHAT), anyInt())).thenReturn(List.of(bill(240_000L, null, NOW.minus(Duration.ofHours(1)), GuestBillStatus.ISSUED)));
-        IncomingMessage incoming = telegram("Чаевые");
-
-        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, incoming.text());
-
-        assertThat(outgoing.nextState()).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
-        assertThat(outgoing.actions()).containsExactly("SMART_TIP", "ASK_TIP_PERCENT");
-        // Right after paying the guest needs no reminder of the check: a short question and the buttons.
-        assertThat(outgoing.text()).isEqualTo("Сколько чаевых оставить?");
-        assertThat(outgoing.metadata()).containsEntry("replyKeyboardRows", PERCENT_ROWS);
-        verify(fsmStorage).setState(CHAT, BotState.TIP_COLLECT_AMOUNT);
-    }
-
-    @Test
-    void aBillWithoutTheVenuesSumIsCountedFromTheMenu() {
-        when(bills.billsOf(eq(CHAT), anyInt())).thenReturn(List.of(bill(null, 111_000L, NOW.plus(Duration.ofMinutes(40)), GuestBillStatus.ESTIMATED)));
-        whenDraftsAreCreated();
-        scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
-
-        OutgoingMessage outgoing = scenario.handle(telegram("15%"), BotState.TIP_COLLECT_AMOUNT, "15%");
-
-        // 15% of 1110 ₽ is 166,5 ₽: a half ruble goes up.
-        assertThat(outgoing.text()).contains("Сумма: 167 ₽\n");
-    }
-
-    @Test
-    void billsOfOtherVisitsAreNotTheCheck() {
-        when(bills.billsOf(eq(CHAT), anyInt())).thenReturn(List.of(
-                bill(240_000L, null, NOW.plus(Duration.ofHours(5)), GuestBillStatus.ISSUED),
-                bill(240_000L, null, NOW.minus(Duration.ofHours(1)), GuestBillStatus.CANCELLED),
-                bill(240_000L, null, NOW.minus(Duration.ofHours(30)), GuestBillStatus.PAID),
-                bill(240_000L, null, null, GuestBillStatus.ISSUED)));
-
-        OutgoingMessage outgoing = scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
-
-        assertThat(outgoing.actions()).containsExactly("SMART_TIP", "ASK_CHECK_AMOUNT");
-    }
-
-    // --- choosing a percent ---
 
     @Test
     void aPercentButtonGivesTheSumInRublesToConfirm() {
@@ -149,8 +109,46 @@ class SmartTipScenarioTest {
         var command = forClass(TipOrderCommand.class);
         verify(tipService).createDraft(command.capture());
         assertThat(command.getValue().amountMinor()).isEqualTo(24_000L);
+        // How the sum was counted is kept for the team, not shown to the guest.
         assertThat(command.getValue().guestComment()).isEqualTo("10% от 2400 ₽");
         verify(fsmStorage).setState(CHAT, BotState.TIP_CONFIRMATION);
+    }
+
+    @Test
+    void theCheckIsTheGuestsBillForThisVisit() {
+        when(bills.billsOf(eq(CHAT), anyInt())).thenReturn(List.of(bill(240_000L, null, NOW.minus(Duration.ofHours(1)), GuestBillStatus.PAID)));
+        whenDraftsAreCreated();
+        scenario.handle(telegram("Чаевые"), BotState.READY_FOR_DIALOG, "Чаевые");
+
+        OutgoingMessage outgoing = scenario.handle(telegram("10%"), BotState.TIP_COLLECT_AMOUNT, "10%");
+
+        assertThat(outgoing.text()).contains("Сумма: 240 ₽\n");
+    }
+
+    @Test
+    void aBillWithoutTheVenuesSumIsCountedFromTheMenu() {
+        when(bills.billsOf(eq(CHAT), anyInt())).thenReturn(List.of(bill(null, 111_000L, NOW.plus(Duration.ofMinutes(40)), GuestBillStatus.ESTIMATED)));
+        whenDraftsAreCreated();
+        scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
+
+        OutgoingMessage outgoing = scenario.handle(telegram("15%"), BotState.TIP_COLLECT_AMOUNT, "15%");
+
+        // 15% of 1110 ₽ is 166,5 ₽: a half ruble goes up.
+        assertThat(outgoing.text()).contains("Сумма: 167 ₽\n");
+    }
+
+    @Test
+    void billsOfOtherVisitsAreNotTheCheck() {
+        when(bills.billsOf(eq(CHAT), anyInt())).thenReturn(List.of(
+                bill(240_000L, null, NOW.plus(Duration.ofHours(5)), GuestBillStatus.ISSUED),
+                bill(240_000L, null, NOW.minus(Duration.ofHours(1)), GuestBillStatus.CANCELLED),
+                bill(240_000L, null, NOW.minus(Duration.ofHours(30)), GuestBillStatus.PAID),
+                bill(240_000L, null, null, GuestBillStatus.ISSUED)));
+        scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
+
+        OutgoingMessage outgoing = scenario.handle(telegram("10%"), BotState.TIP_COLLECT_AMOUNT, "10%");
+
+        assertThat(outgoing.actions()).containsExactly("SMART_TIP", "ASK_CHECK_AMOUNT");
     }
 
     @Test
@@ -164,26 +162,38 @@ class SmartTipScenarioTest {
     }
 
     @Test
-    void theGuestCanNameTheirOwnPercentFromFifteen() {
+    void aTypedPercentIsAPercent() {
+        choosingPercentsOf(240_000L);
+        whenDraftsAreCreated();
+
+        OutgoingMessage outgoing = scenario.handle(telegram("20%"), BotState.TIP_COLLECT_AMOUNT, "20%");
+
+        assertThat(outgoing.text()).contains("Сумма: 480 ₽\n");
+    }
+
+    // --- a sum of the guest's own, in rubles ---
+
+    @Test
+    void theGuestCanWriteTheirOwnSumInRubles() {
         choosingPercentsOf(240_000L);
 
-        OutgoingMessage prompt = scenario.handle(telegram("Свой процент (от 15%)"), BotState.TIP_COLLECT_AMOUNT, "Свой процент (от 15%)");
+        OutgoingMessage prompt = scenario.handle(telegram("Своя сумма"), BotState.TIP_COLLECT_AMOUNT, "Своя сумма");
 
         assertThat(prompt.nextState()).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
-        assertThat(prompt.actions()).containsExactly("SMART_TIP", "ASK_OWN_PERCENT");
-        assertThat(prompt.text()).isEqualTo("Напишите процент числом — от 15 до 100, например 20. "
-                + "Если удобнее сумма в рублях, напишите её с ₽, например 500 ₽.");
+        assertThat(prompt.actions()).containsExactly("SMART_TIP", "ASK_OWN_SUM");
+        assertThat(prompt.text()).isEqualTo(OWN_SUM_ASK);
         assertThat(prompt.metadata()).containsEntry("replyKeyboardRows", PERCENT_ROWS);
         verify(tipService, never()).createDraft(any());
 
         whenDraftsAreCreated();
-        Object[][] cases = {{"20", 48_000L}, {"20%", 48_000L}, {"15", 36_000L}, {"100 %", 240_000L}};
+        Object[][] cases = {{"300", 30_000L}, {"500 ₽", 50_000L}, {"1 000", 100_000L}, {"15", 1_500L}, {"пятьсот рублей", 50_000L}};
         for (Object[] example : cases) {
             choosingPercentsOf(240_000L);
 
             OutgoingMessage outgoing = scenario.handle(telegram((String) example[0]), BotState.TIP_COLLECT_AMOUNT, (String) example[0]);
 
             assertThat(outgoing.nextState()).as((String) example[0]).isEqualTo(BotState.TIP_CONFIRMATION.name());
+            assertThat(outgoing.metadata()).as((String) example[0]).doesNotContainKey("tipPercent");
         }
         var command = forClass(TipOrderCommand.class);
         verify(tipService, times(cases.length)).createDraft(command.capture());
@@ -193,60 +203,54 @@ class SmartTipScenarioTest {
     }
 
     @Test
-    void aPercentOutsideTheOfferIsAskedAgainWithTheRule() {
-        for (String text : new String[]{"7", "3%", "14%", "150", "500", "17,5%", "ну не знаю"}) {
-            choosingPercentsOf(240_000L);
+    void aSumNeedsNoCheck() {
+        whenDraftsAreCreated();
+        scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
 
-            OutgoingMessage outgoing = scenario.handle(telegram(text), BotState.TIP_COLLECT_AMOUNT, text);
+        OutgoingMessage outgoing = scenario.handle(telegram("300"), BotState.TIP_COLLECT_AMOUNT, "300");
 
-            assertThat(outgoing.nextState()).as(text).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
-            assertThat(outgoing.actions()).as(text).containsExactly("SMART_TIP", "TIP_PERCENT_HINT");
-            assertThat(outgoing.text()).as(text).isEqualTo(PERCENT_RULE);
-            assertThat(outgoing.metadata()).as(text).containsEntry("replyKeyboardRows", PERCENT_ROWS);
+        assertThat(outgoing.nextState()).isEqualTo(BotState.TIP_CONFIRMATION.name());
+        assertThat(outgoing.text()).contains("Сумма: 300 ₽\n");
+        verify(bills, never()).billsOf(anyLong(), anyInt());
+    }
+
+    @Test
+    void anAnswerThatIsNeitherIsAskedAgainWithTheChoice() {
+        for (boolean remembered : new boolean[]{true, false}) {
+            for (String text : new String[]{"7", "0", "-100", "ноль рублей", "ну не знаю", "меню кухни", "17,5%", "150%"}) {
+                drafts.clear();
+                if (remembered) {
+                    choosingPercentsOf(240_000L);
+                }
+
+                OutgoingMessage outgoing = scenario.handle(telegram(text), BotState.TIP_COLLECT_AMOUNT, text);
+
+                assertThat(outgoing.nextState()).as(text).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
+                assertThat(outgoing.actions()).as(text).containsExactly("SMART_TIP", "TIP_CHOICE_HINT");
+                assertThat(outgoing.text()).as(text).isEqualTo(CHOICE_HINT);
+                assertThat(outgoing.metadata()).as(text).containsEntry("replyKeyboardRows", PERCENT_ROWS);
+            }
         }
         verify(tipService, never()).createDraft(any());
     }
 
-    @Test
-    void aSumWithRublesIsStillAccepted() {
-        choosingPercentsOf(240_000L);
-        whenDraftsAreCreated();
-
-        OutgoingMessage outgoing = scenario.handle(telegram("500 ₽"), BotState.TIP_COLLECT_AMOUNT, "500 ₽");
-
-        assertThat(outgoing.text()).contains("Сумма: 500 ₽\n").doesNotContain("% от");
-        assertThat(outgoing.metadata()).doesNotContainKey("tipPercent");
-        var command = forClass(TipOrderCommand.class);
-        verify(tipService).createDraft(command.capture());
-        assertThat(command.getValue().amountMinor()).isEqualTo(50_000L);
-        assertThat(command.getValue().guestComment()).isEqualTo("500 ₽");
-    }
+    // --- a percent when Butler does not know the check ---
 
     @Test
-    void aPercentWithItsSignIsNeverReadAsRubles() {
-        // In the amount step without a remembered question (the hour has passed) "10%" is still ten percent, not 10 ₽.
-        when(bills.billsOf(eq(CHAT), anyInt())).thenReturn(List.of(bill(240_000L, null, NOW.minus(Duration.ofHours(1)), GuestBillStatus.ISSUED)));
-        whenDraftsAreCreated();
-
-        OutgoingMessage outgoing = scenario.handle(telegram("10%"), BotState.TIP_COLLECT_AMOUNT, "10%");
-
-        assertThat(outgoing.text()).contains("Сумма: 240 ₽\n");
-    }
-
-    // --- the check named by the guest ---
-
-    @Test
-    void theGuestTellsTheCheckAndThenChoosesAPercent() {
+    void aPercentWithoutAKnownCheckAsksForTheCheckOnce() {
         scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
 
-        OutgoingMessage percents = scenario.handle(telegram("2400"), BotState.TIP_COLLECT_AMOUNT, "2400");
+        OutgoingMessage askCheck = scenario.handle(telegram("15%"), BotState.TIP_COLLECT_AMOUNT, "15%");
 
-        assertThat(percents.actions()).containsExactly("SMART_TIP", "ASK_TIP_PERCENT");
-        assertThat(percents.text()).isEqualTo("Сколько чаевых оставить?");
+        assertThat(askCheck.nextState()).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
+        assertThat(askCheck.actions()).containsExactly("SMART_TIP", "ASK_CHECK_AMOUNT");
+        assertThat(askCheck.text()).isEqualTo("Посчитаю 15% — подскажите сумму в чеке, например 2400.");
+        assertThat(askCheck.metadata()).containsEntry("replyKeyboardRows", CHECK_ROWS);
 
         whenDraftsAreCreated();
-        OutgoingMessage outgoing = scenario.handle(telegram("15%"), BotState.TIP_COLLECT_AMOUNT, "15%");
+        OutgoingMessage outgoing = scenario.handle(telegram("2400"), BotState.TIP_COLLECT_AMOUNT, "2400");
 
+        assertThat(outgoing.nextState()).isEqualTo(BotState.TIP_CONFIRMATION.name());
         assertThat(outgoing.text()).contains("Сумма: 360 ₽\n");
     }
 
@@ -266,7 +270,7 @@ class SmartTipScenarioTest {
 
     @Test
     void aCheckThatIsNotASumIsAskedAgain() {
-        scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
+        scenario.handle(telegram("чаевые 10%"), BotState.READY_FOR_DIALOG, "чаевые 10%");
 
         OutgoingMessage outgoing = scenario.handle(telegram("ну не знаю"), BotState.TIP_COLLECT_AMOUNT, "ну не знаю");
 
@@ -274,6 +278,18 @@ class SmartTipScenarioTest {
         assertThat(outgoing.actions()).containsExactly("SMART_TIP", "ASK_CHECK_AMOUNT");
         assertThat(outgoing.text()).isEqualTo("Не смог понять сумму чека. Напишите её числом, например 2400.");
         verify(tipService, never()).createDraft(any());
+    }
+
+    @Test
+    void aGuestWhoDoesNotKnowTheCheckCanWriteTheirOwnSum() {
+        scenario.handle(telegram("чаевые 10%"), BotState.READY_FOR_DIALOG, "чаевые 10%");
+        scenario.handle(telegram("Своя сумма"), BotState.TIP_COLLECT_AMOUNT, "Своя сумма");
+        whenDraftsAreCreated();
+
+        OutgoingMessage outgoing = scenario.handle(telegram("300"), BotState.TIP_COLLECT_AMOUNT, "300");
+
+        // 300 is the tip now, not the check.
+        assertThat(outgoing.text()).contains("Сумма: 300 ₽\n");
     }
 
     // --- confirmation: yes, no, change ---
@@ -304,7 +320,7 @@ class SmartTipScenarioTest {
 
         assertThat(change.nextState()).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
         assertThat(change.actions()).containsExactly("SMART_TIP", "TIP_CHANGE_REQUESTED");
-        assertThat(change.text()).isEqualTo("Сколько чаевых оставить?");
+        assertThat(change.text()).isEqualTo(QUESTION);
         assertThat(change.metadata()).containsEntry("replyKeyboardRows", PERCENT_ROWS);
         verify(fsmStorage).setState(CHAT, BotState.TIP_COLLECT_AMOUNT);
 
@@ -361,16 +377,16 @@ class SmartTipScenarioTest {
     }
 
     @Test
-    void cancelsTipDraftAndReturnsToMainMenu() {
+    void noIsAnsweredWithThanksAndNothingInternal() {
         drafts.put(CHAT, TipDraftStorage.Draft.empty().withOrder(55L));
-        IncomingMessage incoming = telegram("нет");
+        IncomingMessage incoming = telegram("Нет");
         when(tipService.cancelLatestDraft(incoming.chatId())).thenReturn(cancelledTipOrder());
 
         OutgoingMessage outgoing = scenario.handle(incoming, BotState.TIP_CONFIRMATION, incoming.text());
 
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(outgoing.actions()).containsExactly("SMART_TIP", "TIP_CANCELLED", "RETURN_MAIN_MENU");
-        assertThat(outgoing.text()).contains("чаевые #55 отменил");
+        assertThat(outgoing.text()).isEqualTo("Хорошо, без чаевых. Спасибо, что были у нас!");
         assertThat(outgoing.metadata()).containsEntry("tipOrderId", 55L);
         assertThat(outgoing.metadata()).containsEntry("tipOrderStatus", "CANCELLED");
         verify(tipService).cancelLatestDraft(incoming.chatId());
@@ -378,7 +394,7 @@ class SmartTipScenarioTest {
         assertThat(drafts).doesNotContainKey(CHAT);
     }
 
-    // --- a guest who was answering the old ruble question when the new flow was deployed ---
+    // --- a sum in rubles the way a guest writes it, with or without a remembered question ---
 
     @Test
     void theSumIsReadTheWayTheGuestMeantIt() {
@@ -398,34 +414,6 @@ class SmartTipScenarioTest {
         for (int i = 0; i < cases.length; i++) {
             assertThat(command.getAllValues().get(i).amountMinor()).as((String) cases[i][0]).isEqualTo((Long) cases[i][1] * 100L);
         }
-    }
-
-    @Test
-    void aMinusOrAZeroIsNotATip() {
-        for (String text : new String[]{"-100", "0", "ноль рублей"}) {
-            IncomingMessage incoming = telegram(text);
-
-            OutgoingMessage outgoing = scenario.handle(incoming, BotState.TIP_COLLECT_AMOUNT, incoming.text());
-
-            assertThat(outgoing.nextState()).as(text).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
-            assertThat(outgoing.text()).as(text)
-                    .isEqualTo("Сумма чаевых должна быть больше нуля. Напишите ее числом в рублях, например 500. Если передумали, напишите «отмена».");
-        }
-        verify(tipService, never()).createDraft(any());
-    }
-
-    @Test
-    void anAnswerWithNoSumIsAskedAgainWithAWayOut() {
-        for (String text : new String[]{"ну не знаю", "5", "меню кухни"}) {
-            IncomingMessage incoming = telegram(text);
-
-            OutgoingMessage outgoing = scenario.handle(incoming, BotState.TIP_COLLECT_AMOUNT, incoming.text());
-
-            assertThat(outgoing.nextState()).as(text).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
-            assertThat(outgoing.text()).as(text)
-                    .isEqualTo("Не смог понять сумму. Напишите ее числом в рублях, например 500. Если передумали, напишите «отмена».");
-        }
-        verify(tipService, never()).createDraft(any());
     }
 
     @Test
@@ -464,10 +452,10 @@ class SmartTipScenarioTest {
         when(tipService.cancelLatestDraft(any())).thenReturn(cancelledTipOrder());
         String everything = String.join("\n",
                 scenario.handle(telegram("хочу оставить чаевые"), BotState.READY_FOR_DIALOG, "хочу оставить чаевые").text(),
-                scenario.handle(telegram("700"), BotState.TIP_COLLECT_AMOUNT, "700").text(),
-                scenario.handle(telegram("Свой процент (от 15%)"), BotState.TIP_COLLECT_AMOUNT, "Свой процент (от 15%)").text(),
+                scenario.handle(telegram("Своя сумма"), BotState.TIP_COLLECT_AMOUNT, "Своя сумма").text(),
                 scenario.handle(telegram("7"), BotState.TIP_COLLECT_AMOUNT, "7").text(),
                 scenario.handle(telegram("10%"), BotState.TIP_COLLECT_AMOUNT, "10%").text(),
+                scenario.handle(telegram("2400"), BotState.TIP_COLLECT_AMOUNT, "2400").text(),
                 scenario.handle(telegram("может быть"), BotState.TIP_CONFIRMATION, "может быть").text(),
                 scenario.handle(telegram("да"), BotState.TIP_CONFIRMATION, "да").text(),
                 scenario.handle(telegram("нет"), BotState.TIP_CONFIRMATION, "нет").text());

@@ -23,32 +23,29 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
- * Tips as a share of the check: 5%, 10%, 15% or the guest's own percent from 15, then the sum in rubles to confirm,
- * decline or change. The check is the guest's bill for the visit that is going on or ended within a day; when Butler
- * does not know it, the guest is asked. A sum written with ₽ is still taken as rubles.
- *
- * <p>A guest who was answering the old "what sum" question when this flow came, or whose hour has passed, is read
- * in rubles as before; "10%" with its sign is always a percent. No money moves here: a confirmed tip waits for
- * the payment boundary.
+ * Tips right after paying: a button with 5%, 10% or 15% of the check, or a sum the guest writes in rubles; then the
+ * sum in rubles to confirm, decline or change. The check is the guest's bill for the visit that is going on or ended
+ * within a day; it is needed only for a percent, and when Butler does not know it, the guest who chose a percent is
+ * asked for it. "10%" with its sign is a percent; any other number the guest writes is rubles. No money moves here:
+ * a confirmed tip waits for the payment boundary.
  */
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class SmartTipScenario implements FsmScenario {
 
-    static final String OWN_PERCENT_BUTTON = "Свой процент (от 15%)";
+    static final String OWN_SUM_BUTTON = "Своя сумма";
     static final String CHANGE_BUTTON = "Изменить размер чаевых";
     static final String CANCEL_BUTTON = "Отмена";
-    static final int MIN_OWN_PERCENT = 15;
     static final int MAX_PERCENT = 100;
 
-    private static final List<List<String>> PERCENT_ROWS = List.of(List.of("5%", "10%", "15%"), List.of(OWN_PERCENT_BUTTON), List.of(CANCEL_BUTTON));
+    private static final List<List<String>> PERCENT_ROWS = List.of(List.of("5%", "10%", "15%"), List.of(OWN_SUM_BUTTON), List.of(CANCEL_BUTTON));
     private static final List<List<String>> CONFIRM_ROWS = List.of(List.of("Да", "Нет"), List.of(CHANGE_BUTTON));
-    private static final List<List<String>> CHECK_ROWS = List.of(List.of(CANCEL_BUTTON));
+    /** A guest who does not remember the check can still write a sum instead. */
+    private static final List<List<String>> CHECK_ROWS = List.of(List.of(OWN_SUM_BUTTON), List.of(CANCEL_BUTTON));
     /** The visit a tip is for: one that ended within a day, or is still going on. */
     private static final Duration RECENT_VISIT = Duration.ofHours(24);
     private static final Duration VISIT_GOING_ON = Duration.ofHours(3);
@@ -58,12 +55,12 @@ public class SmartTipScenario implements FsmScenario {
             "отмена", "отмени", "стоп", "главное меню", "выйти", "назад", "передумал", "передумала", "не надо", "не нужно", "нет");
     private static final Set<String> CHANGE_WORDS = Set.of(
             "изменить размер чаевых", "изменить размер", "изменить", "изменить сумму", "другая сумма", "поменять сумму", "другой размер");
-    private static final String HOW_TO_NAME_THE_SUM = "Напишите ее числом в рублях, например 500. Если передумали, напишите «отмена».";
-    private static final String RUBLES_HINT = "Если удобнее сумма в рублях, напишите её с ₽, например 500 ₽.";
-    private static final String PERCENT_RULE = "Можно выбрать 5%, 10% или 15% кнопкой либо написать свой процент — от 15 до 100. " + RUBLES_HINT;
-    private static final String OWN_PERCENT_ASK = "Напишите процент числом — от 15 до 100, например 20. " + RUBLES_HINT;
+    private static final Set<String> OWN_SUM_WORDS = Set.of("своя сумма", "другая сумма", "ввести сумму", "своя");
     /** Asked right after the guest has paid: no reminder of the check and no arithmetic, the buttons say the rest. */
     private static final String PERCENT_QUESTION = "Сколько чаевых оставить?";
+    private static final String OWN_SUM_ASK = "Напишите сумму чаевых в рублях, например 300.";
+    private static final String CHOICE_HINT = "Выберите 5%, 10% или 15% либо напишите сумму чаевых в рублях, например 300.";
+    private static final String DECLINED = "Хорошо, без чаевых. Спасибо, что были у нас!";
 
     private final FSMStorage fsmStorage;
     private final TipService tipService;
@@ -133,30 +130,24 @@ public class SmartTipScenario implements FsmScenario {
         return askPercent(incoming, draft, List.of("SMART_TIP", "ASK_TIP_PERCENT"));
     }
 
-    /** An answer to the tip question: the check, a percent, the own-percent button or a sum with ₽. */
+    /**
+     * An answer to the tip question: a percent button, the own-sum button, a sum in rubles, or the check when the guest
+     * chose a percent and Butler did not know the check. Without a remembered question (the hour has passed) the
+     * answer is read the same way.
+     */
     private OutgoingMessage answer(IncomingMessage incoming, String text, String normalized) {
         if (wantsToLeave(normalized)) {
             return leave(incoming);
         }
-        GuestPercentText.Reading percent = GuestPercentText.read(text);
-        Optional<TipDraftStorage.Draft> found = drafts.find(incoming.chatId());
-        if (found.isEmpty()) {
-            if (isOwnPercentButton(normalized)) {
-                return askOwnPercent(incoming, TipDraftStorage.Draft.empty());
-            }
-            if (percent.kind() == GuestPercentText.Kind.MARKED) {
-                return choosePercent(incoming, TipDraftStorage.Draft.empty(), percent.percent());
-            }
-            return answerInRubles(incoming, text);
+        TipDraftStorage.Draft draft = drafts.find(incoming.chatId()).orElse(TipDraftStorage.Draft.empty());
+        if (isOwnSumButton(normalized)) {
+            return askOwnSum(incoming, draft);
         }
-        TipDraftStorage.Draft draft = found.get();
+        GuestPercentText.Reading percent = GuestPercentText.read(text);
         if (draft.awaitingCheck()) {
             return answerCheck(incoming, draft, text, percent);
         }
-        if (isOwnPercentButton(normalized)) {
-            return askOwnPercent(incoming, draft);
-        }
-        if (percent.found()) {
+        if (percent.kind() == GuestPercentText.Kind.MARKED) {
             return choosePercent(incoming, draft, percent.percent());
         }
         if (!text.contains("%")) {
@@ -165,20 +156,7 @@ public class SmartTipScenario implements FsmScenario {
                 return chooseRubles(incoming, draft, amount.rubles(), text);
             }
         }
-        return percentHint(incoming, draft);
-    }
-
-    /** The old question, "what sum": a guest without a remembered percent question is read in rubles, as before. */
-    private OutgoingMessage answerInRubles(IncomingMessage incoming, String text) {
-        GuestMoneyText.Reading amount = GuestMoneyText.read(text);
-        if (amount.isAmount()) {
-            return chooseRubles(incoming, TipDraftStorage.Draft.empty(), amount.rubles(), text);
-        }
-        fsmStorage.setState(incoming.chatId(), BotState.TIP_COLLECT_AMOUNT);
-        String question = amount.kind() == GuestMoneyText.Kind.NOT_POSITIVE
-                ? "Сумма чаевых должна быть больше нуля. " + HOW_TO_NAME_THE_SUM
-                : "Не смог понять сумму. " + HOW_TO_NAME_THE_SUM;
-        return reply(incoming, question, BotState.TIP_COLLECT_AMOUNT, List.of("SMART_TIP", "ASK_TIP_AMOUNT"), null);
+        return choiceHint(incoming, draft);
     }
 
     private OutgoingMessage answerCheck(IncomingMessage incoming, TipDraftStorage.Draft draft, String text, GuestPercentText.Reading percent) {
@@ -198,10 +176,10 @@ public class SmartTipScenario implements FsmScenario {
     }
 
     private OutgoingMessage choosePercent(IncomingMessage incoming, TipDraftStorage.Draft draft, int percent) {
-        TipDraftStorage.Draft known = withKnownCheck(draft, incoming.chatId());
         if (!allowed(percent)) {
-            return percentHint(incoming, known);
+            return choiceHint(incoming, draft);
         }
+        TipDraftStorage.Draft known = withKnownCheck(draft, incoming.chatId());
         if (!known.knowsCheck()) {
             return askCheck(incoming, known.askingForCheck(percent), false);
         }
@@ -264,37 +242,26 @@ public class SmartTipScenario implements FsmScenario {
         }
     }
 
+    /** The check is not needed to ask: only a percent the guest picks is counted from it. */
     private OutgoingMessage askPercent(IncomingMessage incoming, TipDraftStorage.Draft draft, List<String> actions) {
-        TipDraftStorage.Draft known = withKnownCheck(draft, incoming.chatId());
-        if (!known.knowsCheck()) {
-            return askCheck(incoming, known.askingForCheck(null), false);
-        }
-        drafts.save(incoming.chatId(), known.choosing());
-        fsmStorage.setState(incoming.chatId(), BotState.TIP_COLLECT_AMOUNT);
-        return reply(incoming, PERCENT_QUESTION, BotState.TIP_COLLECT_AMOUNT, actions, PERCENT_ROWS);
+        return ask(incoming, draft, PERCENT_QUESTION, actions);
     }
 
-    private OutgoingMessage askOwnPercent(IncomingMessage incoming, TipDraftStorage.Draft draft) {
-        TipDraftStorage.Draft known = withKnownCheck(draft, incoming.chatId());
-        if (!known.knowsCheck()) {
-            return askCheck(incoming, known.askingForCheck(null), false);
-        }
-        drafts.save(incoming.chatId(), known.choosing());
-        fsmStorage.setState(incoming.chatId(), BotState.TIP_COLLECT_AMOUNT);
-        return reply(incoming, OWN_PERCENT_ASK, BotState.TIP_COLLECT_AMOUNT, List.of("SMART_TIP", "ASK_OWN_PERCENT"), PERCENT_ROWS);
+    private OutgoingMessage askOwnSum(IncomingMessage incoming, TipDraftStorage.Draft draft) {
+        return ask(incoming, draft, OWN_SUM_ASK, List.of("SMART_TIP", "ASK_OWN_SUM"));
     }
 
-    private OutgoingMessage percentHint(IncomingMessage incoming, TipDraftStorage.Draft draft) {
-        TipDraftStorage.Draft known = withKnownCheck(draft, incoming.chatId());
-        if (!known.knowsCheck()) {
-            return askCheck(incoming, known.askingForCheck(null), false);
-        }
-        drafts.save(incoming.chatId(), known.choosing());
-        fsmStorage.setState(incoming.chatId(), BotState.TIP_COLLECT_AMOUNT);
-        return reply(incoming, PERCENT_RULE, BotState.TIP_COLLECT_AMOUNT, List.of("SMART_TIP", "TIP_PERCENT_HINT"), PERCENT_ROWS);
+    private OutgoingMessage choiceHint(IncomingMessage incoming, TipDraftStorage.Draft draft) {
+        return ask(incoming, draft, CHOICE_HINT, List.of("SMART_TIP", "TIP_CHOICE_HINT"));
     }
 
-    /** @param draft already waiting for the check */
+    private OutgoingMessage ask(IncomingMessage incoming, TipDraftStorage.Draft draft, String text, List<String> actions) {
+        drafts.save(incoming.chatId(), draft.choosing());
+        fsmStorage.setState(incoming.chatId(), BotState.TIP_COLLECT_AMOUNT);
+        return reply(incoming, text, BotState.TIP_COLLECT_AMOUNT, actions, PERCENT_ROWS);
+    }
+
+    /** @param draft already waiting for the check, with the percent the guest chose */
     private OutgoingMessage askCheck(IncomingMessage incoming, TipDraftStorage.Draft draft, boolean again) {
         drafts.save(incoming.chatId(), draft);
         fsmStorage.setState(incoming.chatId(), BotState.TIP_COLLECT_AMOUNT);
@@ -302,7 +269,7 @@ public class SmartTipScenario implements FsmScenario {
                 ? "Не смог понять сумму чека. Напишите её числом, например 2400."
                 : draft.pendingPercent() != null
                 ? "Посчитаю %d%% — подскажите сумму в чеке, например 2400.".formatted(draft.pendingPercent())
-                : "Какая сумма в чеке? Напишите её числом, например 2400, — посчитаю чаевые в процентах.";
+                : "Подскажите сумму в чеке, например 2400.";
         return reply(incoming, question, BotState.TIP_COLLECT_AMOUNT, List.of("SMART_TIP", "ASK_CHECK_AMOUNT"), CHECK_ROWS);
     }
 
@@ -376,7 +343,7 @@ public class SmartTipScenario implements FsmScenario {
             fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
             return OutgoingMessage.of(
                     incoming,
-                    "Хорошо, чаевые #%s отменил. Возвращаюсь в главное меню.".formatted(order.id()),
+                    DECLINED,
                     BotState.READY_FOR_DIALOG.name(),
                     false,
                     false,
@@ -458,9 +425,9 @@ public class SmartTipScenario implements FsmScenario {
         ).withMetadata(metadata);
     }
 
-    /** 5 and 10 from the buttons, or the guest's own share from 15. */
+    /** The buttons give 5, 10 and 15; a percent typed with its sign is taken too, as long as it is a share of the check. */
     static boolean allowed(int percent) {
-        return percent == 5 || percent == 10 || percent >= MIN_OWN_PERCENT && percent <= MAX_PERCENT;
+        return percent >= 1 && percent <= MAX_PERCENT;
     }
 
     /** The share of the check in whole rubles; half a ruble goes up, and a tip is never less than a ruble. */
@@ -493,9 +460,8 @@ public class SmartTipScenario implements FsmScenario {
         return CHANGE_WORDS.contains(words(text));
     }
 
-    private boolean isOwnPercentButton(String text) {
-        String words = words(text);
-        return words.equals(words(normalize(OWN_PERCENT_BUTTON))) || words.equals("свой процент");
+    private boolean isOwnSumButton(String text) {
+        return OWN_SUM_WORDS.contains(words(text));
     }
 
     private static String words(String text) {
