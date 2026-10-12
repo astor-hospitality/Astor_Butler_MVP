@@ -126,6 +126,9 @@ services:
       ASTOR_BUSINESS_LUNCH_ENABLED: ${C3FLEX_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
       # Lunch wishes for the kitchen and the bar + dish composition from the menu file (#165). Off by default.
       ASTOR_LUNCH_WISHES_ENABLED: ${C3FLEX_LUNCH_WISHES_ENABLED:-${ASTOR_LUNCH_WISHES_ENABLED:-false}}
+      # Lunch scoreboard for the staff chat at 16:30 + /табло (#175). Off by default.
+      ASTOR_LUNCH_SCOREBOARD_ENABLED: ${C3FLEX_LUNCH_SCOREBOARD_ENABLED:-${ASTOR_LUNCH_SCOREBOARD_ENABLED:-false}}
+      ASTOR_LUNCH_SCOREBOARD_SEND_AT: ${ASTOR_LUNCH_SCOREBOARD_SEND_AT:-16:30}
       # Shift manager's kill switch (#134): /stop, /start_butler, /status_butler in the staff chat. Off by default.
       ASTOR_KILL_SWITCH_ENABLED: ${C3FLEX_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
       # The guest's own «счёт» in the bot (#153 A2): a card to the staff chat and, with on-bill, the review. Off by default.
@@ -350,6 +353,9 @@ services:
       ASTOR_BUSINESS_LUNCH_ENABLED: ${AERIS_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
       # Lunch wishes for the kitchen and the bar + dish composition from the menu file (#165). Off by default.
       ASTOR_LUNCH_WISHES_ENABLED: ${AERIS_LUNCH_WISHES_ENABLED:-${ASTOR_LUNCH_WISHES_ENABLED:-false}}
+      # Lunch scoreboard for the staff chat at 16:30 + /табло (#175). Off by default.
+      ASTOR_LUNCH_SCOREBOARD_ENABLED: ${AERIS_LUNCH_SCOREBOARD_ENABLED:-${ASTOR_LUNCH_SCOREBOARD_ENABLED:-false}}
+      ASTOR_LUNCH_SCOREBOARD_SEND_AT: ${ASTOR_LUNCH_SCOREBOARD_SEND_AT:-16:30}
       # Shift manager's kill switch (#134): /stop, /start_butler, /status_butler in the staff chat. Off by default.
       ASTOR_KILL_SWITCH_ENABLED: ${AERIS_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
       # The guest's own «счёт» in the bot (#153 A2): a card to the staff chat and, with on-bill, the review. Off by default.

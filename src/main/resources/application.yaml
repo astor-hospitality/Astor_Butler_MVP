@@ -119,6 +119,17 @@ astor:
       # согласовать с кухней»; «состав …» / «что в …» / «аллергены …» is answered from the lunch menu file when the
       # restaurant has filled ingredients in (docs/operations/MENU_COMPOSITION_FOR_BOT.md). Off by default.
       enabled: ${ASTOR_LUNCH_WISHES_ENABLED:false}
+    scoreboard:
+      # «📊 Табло ланча» for the staff (#175): once a lunch day at `send-at` (venue clock, the shift briefing's time zone
+      # and venue) into the staff chat — lunches and guests of the day, the reviews of the lunch visits (count, average,
+      # share of 5★, 👍/👎), the hit-parade of the dishes ordered with the stars of the visits they were part of, the
+      # guests' wishes (#165) without names. The same table on demand: /табло (/scoreboard, «вчера») in the staff,
+      # manager or admin chat. One send per day is kept in Redis (astor:lunch:scoreboard:sent:<date>). Reviews and
+      # dishes come from the bills, so without astor.billing.enabled the table says so. Off by default.
+      enabled: ${ASTOR_LUNCH_SCOREBOARD_ENABLED:false}
+      send-at: ${ASTOR_LUNCH_SCOREBOARD_SEND_AT:16:30}
+      poll-ms: ${ASTOR_LUNCH_SCOREBOARD_POLL_MS:60000}
+      initial-delay-ms: ${ASTOR_LUNCH_SCOREBOARD_INITIAL_DELAY_MS:60000}
   tips:
     personal:
       # Tips to the waiter of the table (#161): the manager assigns a waiter to a table for the shift (/официант) and keeps the

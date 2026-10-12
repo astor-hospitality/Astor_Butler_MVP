@@ -13,6 +13,7 @@ import museon_online.astor_butler.domain.booking.HostessBookingEditService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
 import museon_online.astor_butler.domain.booking.HostessSeatedService;
 import museon_online.astor_butler.domain.entry.StaffHandoffLinkCommandService;
+import museon_online.astor_butler.domain.lunch.scoreboard.LunchScoreboardCommandService;
 import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
 import museon_online.astor_butler.domain.tips.TipsStaffCommandService;
 import museon_online.astor_butler.service.message.IncomingMessage;
@@ -104,6 +105,10 @@ public class TelegramRouter {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private StaffHandoffLinkCommandService staffHandoffLinkCommandService;
 
+    /** «📊 Табло ланча» on demand, /табло in the staff chat (#175): optional for the same reason. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LunchScoreboardCommandService lunchScoreboardCommandService;
+
 
     public void handle(Update update, AbsSender sender) {
         try {
@@ -128,6 +133,10 @@ public class TelegramRouter {
                 return;
             }
             if (tipsStaffCommandService != null && tipsStaffCommandService.handle(incoming)) {
+                return;
+            }
+            // /табло in the staff chat (#175): the lunch scoreboard now, before the hostess boundary consumes the text.
+            if (lunchScoreboardCommandService != null && lunchScoreboardCommandService.handle(incoming)) {
                 return;
             }
             // /ссылка in the staff chat (#128): answered here, before the hostess boundary consumes the text.
