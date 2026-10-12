@@ -35,6 +35,10 @@ public class TableReservationService {
     private final TableReservationNotificationService notificationService;
     private final ExternalReservationProvider externalProvider;
 
+    /** The waiter's guest card at seating (#163): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private GuestCardService guestCardService;
+
     public List<VenueTable> listTables(String venueCode) {
         return repository.findTables(venueCode);
     }
@@ -300,8 +304,27 @@ public class TableReservationService {
         TableReservationOrder seated = requireOrder(id);
         log.info("Table reservation {} seated by {}: table {}, seatedAt {}", id, who, seated.tableCode(), seated.seatedAt());
         notificationService.traceSeated(seated, who);
-        // TODO(#163): the waiter card at seating — table, wishes, allergens — starts here, in the waiter's own chat only.
+        sendGuestCard(seated);
         return seated;
+    }
+
+    /**
+     * The guest card for the waiter (#163) follows the seating, whichever path seated the guest; a card that cannot be
+     * built or sent never undoes the seating. Silent while the feature is off or the service is not wired.
+     */
+    private void sendGuestCard(TableReservationOrder seated) {
+        if (guestCardService == null) {
+            return;
+        }
+        try {
+            guestCardService.onSeated(seated);
+        } catch (RuntimeException e) {
+            log.warn("Guest card was not sent after seating: orderId={}, reason={}", seated.id(), e.toString());
+        }
+    }
+
+    void setGuestCardService(GuestCardService guestCardService) {
+        this.guestCardService = guestCardService;
     }
 
     private TableReservationOrder reject(Long id, boolean cancelInVenueSystem) {

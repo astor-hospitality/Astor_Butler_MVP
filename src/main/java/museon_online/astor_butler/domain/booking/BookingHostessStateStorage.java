@@ -100,6 +100,15 @@ public class BookingHostessStateStorage {
         return orderId != null && Boolean.TRUE.equals(redisTemplate.hasKey(escalatedKey(orderId)));
     }
 
+    /** True the first time only (#163): the caller that gets {@code true} is the one to send the waiter's guest card. */
+    public boolean markGuestCardSent(Long orderId) {
+        if (orderId == null) {
+            return false;
+        }
+        Boolean set = redisTemplate.opsForValue().setIfAbsent(guestCardKey(orderId), Instant.now().toString(), CARD_TTL);
+        return Boolean.TRUE.equals(set);
+    }
+
     /**
      * An open «✏️ Изменить» panel of an order (#150): the staff chat and message it lives in, who opened it, when, and
      * the lines of what was changed through it. It lives for {@code ttl} after the last press; a step that arrives
@@ -200,6 +209,10 @@ public class BookingHostessStateStorage {
 
     private String escalatedKey(Long orderId) {
         return keyPrefix + ":booking:hostess:escalated:" + orderId;
+    }
+
+    private String guestCardKey(Long orderId) {
+        return keyPrefix + ":booking:guest-card:sent:" + orderId;
     }
 
     private static Instant instant(String value) {
