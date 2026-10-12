@@ -230,6 +230,12 @@ astor:
       # system chat gets one line. SEATED holds the table like CONFIRMED, never expires, is never auto-confirmed, may
       # still be edited by the hostess. The same status from Presto is switched on separately: ASTOR_SABY_SEATED_STATES.
       enabled: ${ASTOR_BOOKING_SEATED_ENABLED:false}
+    waiter-guest-card:
+      # Off (default): a seated booking changes nothing for the waiter. On (#163): when a booking becomes SEATED (the
+      # hostess button or Presto) the staff chat gets «🧾 Стол N — гость сел» under the hostess card: today's lunch wish,
+      # what the guest asked the bot to remember, visits so far, favourite dishes from earlier lunch orders, last stars.
+      # Only the guest's own words and orders; no phone, no username; «Аллергены: не указаны» unless the guest wrote them.
+      enabled: ${ASTOR_WAITER_GUEST_CARD_ENABLED:false}
     external-sync:
       # Reads bookings back from the venue's own system (Saby) and confirms/cancels local orders accordingly.
       # Runs only while a provider is enabled and configured; 0 is not supported, set a large value to slow it down.
