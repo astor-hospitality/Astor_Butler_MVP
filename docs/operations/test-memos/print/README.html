@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Памятки по ролям: первый живой тест бизнес-ланча в AERIS, четверг 15.10.2026</title>
+<style>
+@page { size: A4; margin: 10mm 12mm; }
+html { font-size: 9.5pt; }
+body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+       color: #111; max-width: 186mm; margin: 0 auto; padding: 4mm 4mm; line-height: 1.25; }
+h1 { font-size: 1.4em; margin: 0 0 .25em; line-height: 1.2; }
+h2 { font-size: 1.08em; margin: .55em 0 .2em; border-bottom: 1px solid #bbb; padding-bottom: .15em; }
+h3 { font-size: 1em; margin: .8em 0 .2em; }
+p { margin: .25em 0; }
+ul, ol { margin: .15em 0 .35em; padding-left: 1.3em; }
+li { margin: .06em 0; }
+li > ul, li > ol { margin: .1em 0 .1em; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .92em;
+       background: #f1f1f1; padding: 0 .25em; border-radius: 3px; white-space: nowrap; }
+table { border-collapse: collapse; width: 100%; margin: .3em 0 .5em; font-size: .94em; }
+th, td { border: 1px solid #999; padding: .18em .35em; vertical-align: top; text-align: left; }
+th { background: #eee; }
+blockquote { margin: .5em 0; padding: .3em .8em; border-left: 4px solid #999; background: #f7f7f7; }
+hr { border: 0; border-top: 1px solid #bbb; margin: .8em 0; }
+a { color: #0b4f9c; }
+.meta { color: #555; font-size: .9em; margin-bottom: .8em; }
+.nav { font-size: .85em; color: #555; margin-bottom: .6em; }
+@media print { .nav { display: none; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="nav"><a href="MEMO_CASHIER.html">CASHIER</a> · <a href="MEMO_GLASSES_KIRILL.html">GLASSES KIRILL</a> · <a href="MEMO_GUEST_EXTRA.html">GUEST EXTRA</a> · <a href="MEMO_HOSTESS.html">HOSTESS</a> · <a href="MEMO_KITCHEN.html">KITCHEN</a> · <a href="MEMO_MANAGER.html">MANAGER</a> · <a href="MEMO_OBSERVERS.html">OBSERVERS</a> · <a href="MEMO_WAITER.html">WAITER</a> · <a href="README.html">README</a></div>
+<h1>Памятки по ролям: первый живой тест бизнес-ланча в AERIS, четверг 15.10.2026</h1>
+<p>Одна страница на человека. Сверено с <code>main</code> на <code>0046eea</code> (12.10, PR #157–#193) и с режимом, который включён на ВМ 12.10 вечером (<code>enable-rehearsal.sh</code>). Полный план, флаги, таблица результатов и откат — <a href="../BUSINESS_LUNCH_FIRST_TEST.md">BUSINESS_LUNCH_FIRST_TEST.md</a>; программа дня — у Михаила (<code>PROGRAMMA_TESTA_AERIS_15-10</code>). Печатные версии — в <code>print/*.html</code> (собираются <code>python3 docs/operations/test-memos/build_print.py</code>).</p>
+<table><thead><tr><th>Памятка</th><th>Кому</th><th>Что делает в тесте</th></tr></thead><tbody>
+<tr><td><a href="MEMO_HOSTESS.html">MEMO_HOSTESS.md</a></td><td>Дарья, хостес</td><td>карточка заявки → «Да» / «Нет», «✏️ Изменить», «🪑 Гость сел», «Счёт»</td></tr>
+<tr><td><a href="MEMO_MANAGER.html">MEMO_MANAGER.md</a></td><td>Дарья Анатольевна, менеджер смены</td><td><code>/stop</code> и <code>/start_butler</code>, <code>/manual</code>, <code>/официант</code>, <code>/чаевые</code>, <code>/ссылка host</code>, кто что решает</td></tr>
+<tr><td><a href="MEMO_WAITER.html">MEMO_WAITER.md</a></td><td>Даниил, официант стола статистов</td><td>читает карточку и пожелание, вносит заказ в Presto, несёт счёт по карточке «просит счёт», чаевые лично</td></tr>
+<tr><td><a href="MEMO_GLASSES_KIRILL.html">MEMO_GLASSES_KIRILL.md</a></td><td>Кирилл, носитель очков</td><td>вопрос помощнику и поручение голосом; что наушник не скажет</td></tr>
+<tr><td><a href="MEMO_KITCHEN.html">MEMO_KITCHEN.md</a></td><td>Георгий, шеф</td><td>на кухне ничего не меняется; где пожелание гостя; что спросим после ланча</td></tr>
+<tr><td><a href="MEMO_CASHIER.html">MEMO_CASHIER.md</a></td><td>Владислав, касса / Saby</td><td>закрыть заказ в Presto как обычно; что изменится в автомате</td></tr>
+<tr><td><a href="MEMO_GUEST_EXTRA.html">MEMO_GUEST_EXTRA.md</a></td><td>статисты Тариэль (A) и Михаил (B)</td><td>два сценария гостя по шагам, что записывать</td></tr>
+<tr><td><a href="MEMO_OBSERVERS.html">MEMO_OBSERVERS.md</a></td><td>Дима, Рома, Егор</td><td>что смотреть, какие строки таблицы §5 заполнять, pre-flight, откат</td></tr>
+</tbody></table>
+<h2>Режим дня (полуавтомат)</h2>
+<ul>
+<li>Заявку подтверждает <strong>хостес кнопкой «Да»</strong> в рабочей Telegram-группе. В Saby Presto бот <strong>ничего не пишет</strong>: бронь и блюда вносятся руками, как обычно. Автомат с Saby — только вторым прогоном и только по решению Михаила.</li>
+<li>На репетиции 13–14.10 рабочая группа бота = группа команды; на тесте — рабочая группа AERIS (бот добавлен администратором; id группы — от Тариэля Диме). Все карточки, команды и кнопки работают <strong>только из этой группы</strong>; из личного чата с ботом они не работают (бот ответит как гостю).</li>
+<li>Включено: счета и оценка за столом (кнопка «Счёт», звёзды до оплаты), «счёт» от гостя в боте, стоп-кнопка <code>/stop</code>, правка брони «✏️ Изменить», «🪑 Гость сел», шаг «Пожелания к блюдам или напиткам?», ссылка/QR сотрудника (<code>/ссылка</code>), чаевые лично официанту (<code>/официант</code>, <code>/чаевые</code>).</li>
+<li>Выключено: автоподтверждение по таймеру и <code>/manual</code> как режим таймера, утреннее подтверждение, истечение удержания (стол без ответа хостес держится бессрочно), направляющий вопрос, пометка кухне «⏱ Готовить ко времени», «📊 Табло ланча» и <code>/табло</code>, карточка гостя официанту после посадки; в очках — короткий заказ по номерам (#184) и приоритет сообщений (#186): влиты в <code>main</code> 12.10 вечером, по умолчанию выключены, на ВМ образ очков с ними ещё не выложен (уточнить у Михаила).</li>
+</ul>
+<h2>Общие правила для всех</h2>
+<ol>
+<li><strong>Гостю слово «тест» не говорим.</strong> Статисты — обычные гости за обычными столами; для остальных гостей зала ничего не меняется.</li>
+<li><strong>Никаких обещаний от имени бота или ресторана</strong>: про время подачи, замены и «без лука», размер порций, скидки и акции. Все замены согласует кухня; гостю — «уточним на кухне и подтвердим при подаче». Бот обещаний тоже не даёт — он так и пишет.</li>
+<li><strong>Ничего не делаем за гостя в его телефоне</strong> и не просим показать переписку с ботом. Что видит гость — описано в памятках.</li>
+<li><strong>В групповой чат не пишем</strong> телефоны гостей, числовые id, ссылки на чаевые и ключи. Карточки бота телефон гостя показывают, а трассы system-чата повторяют ответы бота гостю (в том числе ссылку на чаевые) — из группы наружу ничего не пересылаем.</li>
+<li><strong>Бот ведёт себя странно</strong> (молчит, шлёт не то, дублирует карточки, гость жалуется) — говорим менеджеру смены (Дарья Анатольевна). Только она пишет в рабочей группе **<code>/stop</code><strong>: бот ставит гостевую автоматику на паузу, присылает сводку открытых заявок, дальше смена идёт руками. Вернуть — </strong><code>/start_butler</code>**. Сами ничего на ВМ не трогаем; технические вопросы — Диме.</li>
+<li><strong>Кнопки на карточке нажимаем один раз</strong> и ждём всплывающего ответа бота. Второе нажатие ничего не ломает: бот ответит «уже подтверждена» / «уже сел» / «вопрос уже задан».</li>
+<li><strong>Время — Екатеринбург</strong>, ланч 12:00–16:00. Заявки на уже прошедшее время бот не примет — это не ошибка.</li>
+<li>Всё, что показалось неудобным, лишним или непонятным, — <strong>записываем</strong> (время, номер заявки <code>#N</code>, скриншот карточки) и отдаём наблюдателям к разбору в 13:30. Это и есть результат теста.</li>
+</ol>
+</body>
+</html>

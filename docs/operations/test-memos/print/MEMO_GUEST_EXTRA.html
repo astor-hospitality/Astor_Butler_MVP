@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Памятка статистам — Тариэль (сценарий A) и Михаил (сценарий B). Тест ланча 15.10</title>
+<style>
+@page { size: A4; margin: 10mm 12mm; }
+html { font-size: 9.5pt; }
+body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+       color: #111; max-width: 186mm; margin: 0 auto; padding: 4mm 4mm; line-height: 1.25; }
+h1 { font-size: 1.4em; margin: 0 0 .25em; line-height: 1.2; }
+h2 { font-size: 1.08em; margin: .55em 0 .2em; border-bottom: 1px solid #bbb; padding-bottom: .15em; }
+h3 { font-size: 1em; margin: .8em 0 .2em; }
+p { margin: .25em 0; }
+ul, ol { margin: .15em 0 .35em; padding-left: 1.3em; }
+li { margin: .06em 0; }
+li > ul, li > ol { margin: .1em 0 .1em; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .92em;
+       background: #f1f1f1; padding: 0 .25em; border-radius: 3px; white-space: nowrap; }
+table { border-collapse: collapse; width: 100%; margin: .3em 0 .5em; font-size: .94em; }
+th, td { border: 1px solid #999; padding: .18em .35em; vertical-align: top; text-align: left; }
+th { background: #eee; }
+blockquote { margin: .5em 0; padding: .3em .8em; border-left: 4px solid #999; background: #f7f7f7; }
+hr { border: 0; border-top: 1px solid #bbb; margin: .8em 0; }
+a { color: #0b4f9c; }
+.meta { color: #555; font-size: .9em; margin-bottom: .8em; }
+.nav { font-size: .85em; color: #555; margin-bottom: .6em; }
+@media print { .nav { display: none; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="nav"><a href="MEMO_CASHIER.html">CASHIER</a> · <a href="MEMO_GLASSES_KIRILL.html">GLASSES KIRILL</a> · <a href="MEMO_GUEST_EXTRA.html">GUEST EXTRA</a> · <a href="MEMO_HOSTESS.html">HOSTESS</a> · <a href="MEMO_KITCHEN.html">KITCHEN</a> · <a href="MEMO_MANAGER.html">MANAGER</a> · <a href="MEMO_OBSERVERS.html">OBSERVERS</a> · <a href="MEMO_WAITER.html">WAITER</a> · <a href="README.html">README</a></div>
+<h1>Памятка статистам — Тариэль (сценарий A) и Михаил (сценарий B). Тест ланча 15.10</h1>
+<p>Вы — обычные гости за реальными столами: заказываете, едите и платите (платит Михаил). Боту пишете <strong>в личном чате</strong>, не в группе. Время — Екатеринбург, слоты 12:00–15:30, дата — сегодня. Персоналу «тест» не говорим. <strong>На каждом шаге записываем</strong> время (чч:мм:сс), номер заявки <code>#N</code>, скриншот ответа бота и всё непонятное или лишнее.</p>
+<h2>Сценарий A — Тариэль: QR на стойке хоста (аккаунт, который боту ещё не писал)</h2>
+<table><thead><tr><th>#</th><th>Вы</th><th>Бот ответит</th></tr></thead><tbody>
+<tr><td>1</td><td>QR на стойке → «Start» → <strong>«Согласиться и поделиться контактом»</strong> (кнопкой)</td><td>«…вы соглашаетесь с политикой…» → «Спасибо, контакт получил.» + «Бизнес-ланч в AERIS…» + меню + «Салаты: что добавить?»</td></tr>
+<tr><td>2</td><td>блюда кнопками: «Нисуаз · 290 ₽», «➡️ Дальше», «Борщ со сметаной · 270 ₽» ×2, далее по разделам; один раз «➖ Убрать последнее»</td><td>«Добавил: …» + «В заказе: … Итого … ₽.»</td></tr>
+<tr><td>3</td><td>на «Пожелания к блюдам или напиткам?» пишете <strong>«без лука»</strong></td><td>«Пожелание записал, передам кухне вместе с заказом — подтвердят при подаче.»</td></tr>
+<tr><td>4</td><td>гостей «2», «Сегодня …», ближайший слот</td><td>сводка «Бизнес-ланч в AERIS / … / Гостей: 2 / Заказ: … / Итого: … ₽» + «Отправляю заявку команде?»</td></tr>
+<tr><td>5</td><td><strong>«✅ Отправить заявку»</strong> — записать <strong>#N и время</strong></td><td>«Готово. Заявку #N на бизнес-ланч передал команде AERIS. Как только хостес ответит, я вернусь с финальным статусом.»</td></tr>
+<tr><td>6</td><td>ждёте «Да» хостес (до 7 минут) — записать время</td><td>«Бронь подтверждена. Ваш стол ждет вас. Заказ: #N, Стол …»</td></tr>
+<tr><td>7</td><td>к столу, называете бронь; хостес жмёт «🪑 Гость сел» — записать время посадки</td><td>ничего (гостю при посадке сообщения нет)</td></tr>
+<tr><td>8</td><td>пишете боту <strong>«что в борще»</strong>, затем «аллергены в цезаре»; обед — записать время подачи напитков и первого блюда</td><td>«Борщ со сметаной: состав в меню бота пока не заполнен — уточнит официант при подаче.» (пока состав не заполнен)</td></tr>
+<tr><td>10</td><td>пишете боту <strong>«счёт»</strong> — записать, когда принесли; второе «счёт» даст «Уже передал — счёт сейчас принесут.»</td><td>«Передал команде, счёт сейчас принесут.» и сразу «Как прошёл обед?» ★…★★★★★</td></tr>
+<tr><td>11</td><td>звёзды (честно) → 👍/👎 → <strong>«Оставить чаевые»</strong></td><td>«Спасибо! Одним словом: понравилось?» → «Красивая благодарность. Какую сумму чаевых хотите оставить?»</td></tr>
+<tr><td>12</td><td>сумма числом → <strong>«да»</strong> текстом</td><td>«Принял сумму чаевых… Получатель: Даниил … Подтверждаете?» → <strong>«Чаевые для Даниил: &lt;ссылка&gt;»</strong> (записать получателя)</td></tr>
+</tbody></table>
+<p>Если после шага 1 бот показал главное меню вместо ланча — напишите «ланч»; если на шаге 10 ответил как на обычный текст — попросите счёт словами. Зафиксировать.</p>
+<h2>Сценарий B — Михаил: напрямую, правка и отмена (аккаунт, который уже писал боту)</h2>
+<table><thead><tr><th>#</th><th>Вы</th><th>Бот ответит</th></tr></thead><tbody>
+<tr><td>1</td><td><code>/start</code> → <strong>«бизнес-ланч сегодня в 13:00 на двоих»</strong></td><td>главное меню (согласие уже дано) → интро + меню + «Салаты: что добавить?»</td></tr>
+<tr><td>2</td><td>2–3 блюда, «➡️ Дальше» до сводки → <strong>«✏️ Изменить»</strong></td><td>«Хорошо, соберем заново.» + «Салаты: что добавить?»</td></tr>
+<tr><td>3</td><td>снова до сводки → <strong>«↩️ Отменить»</strong></td><td>«Хорошо, бизнес-ланч не оформляю. Главное меню оставил под рукой.»</td></tr>
+<tr><td>4</td><td>«ланч» → до сводки → <strong>«✅ Отправить заявку»</strong> — записать <strong>#M</strong></td><td>«Готово. Заявку #M …»</td></tr>
+<tr><td>5</td><td>через минуту: <strong>«Изменить / отменить»</strong> → <strong>«❌ Отменить стол»</strong></td><td>«Готово. Я отменил бронь стола #M и освободил слот.» (хостес видит «Гость отменил бронь стола»)</td></tr>
+<tr><td>6</td><td><strong>повторный вход по ссылке сотрудника</strong> — QR/ссылка от <code>/ссылка daniil &lt;стол&gt;</code></td><td>ланч заново; в карточке хостес — «Привёл(а): Даниил» (проверить)</td></tr>
+<tr><td>7</td><td>заявка → «Да» → «гость сел» → «счёт» → звёзды → чаевые — как в A, шаги 5–12</td><td>то же; записать #, времена</td></tr>
+</tbody></table>
+<p><strong>Не делать:</strong> писать боту в группе; повторять заявку, если «в группе тихо» (сказать наблюдателю); делиться контактом текстом (только кнопкой). Бот молчит дольше минуты — наблюдателю.</p>
+</body>
+</html>

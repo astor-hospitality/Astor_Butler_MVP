@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Памятка наблюдателям — Дима, Рома, Егор. Тест ланча 15.10</title>
+<style>
+@page { size: A4; margin: 10mm 12mm; }
+html { font-size: 9.5pt; }
+body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+       color: #111; max-width: 186mm; margin: 0 auto; padding: 4mm 4mm; line-height: 1.25; }
+h1 { font-size: 1.4em; margin: 0 0 .25em; line-height: 1.2; }
+h2 { font-size: 1.08em; margin: .55em 0 .2em; border-bottom: 1px solid #bbb; padding-bottom: .15em; }
+h3 { font-size: 1em; margin: .8em 0 .2em; }
+p { margin: .25em 0; }
+ul, ol { margin: .15em 0 .35em; padding-left: 1.3em; }
+li { margin: .06em 0; }
+li > ul, li > ol { margin: .1em 0 .1em; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .92em;
+       background: #f1f1f1; padding: 0 .25em; border-radius: 3px; white-space: nowrap; }
+table { border-collapse: collapse; width: 100%; margin: .3em 0 .5em; font-size: .94em; }
+th, td { border: 1px solid #999; padding: .18em .35em; vertical-align: top; text-align: left; }
+th { background: #eee; }
+blockquote { margin: .5em 0; padding: .3em .8em; border-left: 4px solid #999; background: #f7f7f7; }
+hr { border: 0; border-top: 1px solid #bbb; margin: .8em 0; }
+a { color: #0b4f9c; }
+.meta { color: #555; font-size: .9em; margin-bottom: .8em; }
+.nav { font-size: .85em; color: #555; margin-bottom: .6em; }
+@media print { .nav { display: none; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="nav"><a href="MEMO_CASHIER.html">CASHIER</a> · <a href="MEMO_GLASSES_KIRILL.html">GLASSES KIRILL</a> · <a href="MEMO_GUEST_EXTRA.html">GUEST EXTRA</a> · <a href="MEMO_HOSTESS.html">HOSTESS</a> · <a href="MEMO_KITCHEN.html">KITCHEN</a> · <a href="MEMO_MANAGER.html">MANAGER</a> · <a href="MEMO_OBSERVERS.html">OBSERVERS</a> · <a href="MEMO_WAITER.html">WAITER</a> · <a href="README.html">README</a></div>
+<h1>Памятка наблюдателям — Дима, Рома, Егор. Тест ланча 15.10</h1>
+<table><thead><tr><th>Кто</th><th>Смотрит</th><th>Заполняет в §5</th></tr></thead><tbody>
+<tr><td>Дима</td><td>ВМ: pre-flight, логи, Liquibase; system-чат (трассы); откат флагами</td><td>строки «система», коды ошибок</td></tr>
+<tr><td>Рома</td><td>карточки и тексты в группе; секундомер «гость сел → напитки → первое блюдо»; очки Кирилла</td><td>строки «хостес / официант / очки»</td></tr>
+<tr><td>Егор</td><td>вход: QR стойки → бот; Concierge / Mini App (<code>astor-ai.ru/app/</code>, <code>c3ag.ru</code> — что именно проверять, <strong>уточнить</strong> с Егором)</td><td>строки «вход»</td></tr>
+</tbody></table>
+<p>Таблица результатов — <a href="../BUSINESS_LUNCH_FIRST_TEST.md#5-таблица-результатов">BUSINESS_LUNCH_FIRST_TEST.md §5</a>: «кто наблюдал» — роль, не id; <code>#N</code> в последней колонке.</p>
+<h2>1. Pre-flight (среда вечером и 11:15 в четверг) — Дима</h2>
+<p><code>/opt/astor-butler/preflight-test.sh</code> (только чтение; лежит на ВМ рядом с <code>enable-rehearsal.sh</code>, в репозитории его нет). Ожидаем: контейнеры <code>aeris_astor_butler_bot</code>, <code>astor-api-gateway</code>, <code>astor_glasses_api</code>, <code>astor_postgres_test</code>, <code>astor_redis_test</code>, <code>astor-tg-awg</code> — healthy; чаты <code>TELEGRAM_HOSTESS/ADMIN/SYSTEM_CHAT_ID</code> заданы (на тесте — id рабочей группы AERIS от Тариэля; переключение <code>enable-rehearsal.sh &lt;id&gt;</code> запускает Михаил); флаги <code>BILLING</code>, <code>REVIEW_MOMENT=on-bill</code>, <code>GUEST_BILL_REQUEST</code>, <code>KILL_SWITCH</code>, <code>BOOKING_STAFF_EDIT</code>, <code>BOOKING_SEATED</code>, <code>LUNCH_WISHES</code>, <code>STAFF_HANDOFF</code>, <code>TIPS_PERSONAL</code> = true; <code>AUTO_CONFIRM</code>, <code>MORNING_CHECK</code>, <code>HOLD_EXPIRY</code>, <code>GUIDING_QUESTION</code>, <code>PREORDER_MARK</code>, <code>SCOREBOARD</code>, <code>WAITER_GUEST_CARD</code>, <code>SABY_ENABLED</code> = false; tenant чаевых и handoff = <code>astor</code>; данные: <code>daniil/WAITER+tip</code> в справочнике (и <code>shift_open</code> у него — нужен для поручений из очков, <strong>уточнить</strong>), «назначения официантов сегодня» ≥ 1, «миграции 12.10» ≥ 4; Redis <code>PONG</code>, «Butler не на паузе»; очки: <code>staff</code>, <code>tasks</code>, образ <code>astor-glasses:v10</code> или новее (фильтр озвучки); «Ошибки бота за 30 мин: 0»; снаружи <code>https://c3ag.ru/actuator/health</code> и <code>https://astor-ai.ru/app/</code> → 200.</p>
+<p>Руками: превью «Astor Butler Staff Chat» закреплено в группе; <code>/status_butler</code> → «▶️ Butler работает» + сводка; <code>/официант</code> → стол статистов — Даниил; <code>/чаевые</code> → «Даниил … ссылка есть»; <code>/ссылка host</code> выдал QR (распечатан); в <code>Liquibase</code> есть <code>2026-10-12-booking-seated</code>, <code>-tips-personal</code>, <code>-guest-entry-events</code>.</p>
+<h2>2. Что смотреть по ходу</h2>
+<p><strong>System-чат</strong> (на репетиции = группа): на каждое сообщение гостя карточка <code>#dialog_telegram_&lt;chat&gt;</code> с переходом состояний и тегами <code>BUSINESS_LUNCH</code>, <code>LUNCH_ORDER_PLACED</code>, <code>EXTERNAL_ORDER_MANUAL</code>, <code>WAIT_HOSTESS_CONFIRMATION</code>; «Вход гостя …: привёл(а) стойка хоста / Даниил, стол N, бизнес-ланч»; «🪑 Бронь #N: гость сел в ЧЧ:ММ»; «✏️ Бронь #N изменена хостес: …»; <code>AUDIT Butler остановлен …</code> при <code>/stop</code>; «Поручение от …: … Стол N. Для: Даниил» из очков; <code>Astor Glass · …</code> расшифровки — только если включён transcript-relay (<strong>уточнить</strong>). <strong>Admin-чат:</strong> алертов быть не должно (Saby выключен). <strong>Лог:</strong> <code>docker logs --since 30m aeris_astor_butler_bot | grep -E &#x27; ERROR | WARN &#x27;</code>; «карточка не пришла» → <code>Table reservation Telegram notification skipped: … chatConfigured=false</code>.</p>
+<p><strong>Строки §5 сегодня:</strong> 1–5, 4а (пожелание на карточке), 4б (состав — ожидаемый пробел), 5а («Счёт» хостес), 5б («счёт» от гостя), 5в («🪑 Гость сел»), 6–11, 19–21. <strong>Не сегодня:</strong> 4в, 5г, 5д, 12–18 (автомат), 22–25 (таймер), 26 (короткий заказ из очков, #184) — только по решению Михаила. <strong>Добавить строки:</strong> «гость сел → напитки / первое блюдо» (3–5 / 7–10 мин от «🪑 Гость сел»); «наушник не перебил диалог»; «ответ очков ≤ 10 с без цены»; «Привёл(а)» на карточке; «бот ответил на вопросы без официанта».</p>
+<h2>3. Если пошло не так</h2>
+<ol>
+<li>**Сначала менеджер смены <code>/stop</code>** в группе (пауза + сводка); возврат <code>/start_butler</code>. Кнопки на уже присланных карточках работают.</li>
+<li>Бот молчит: на ВМ <code>docker compose … up -d --no-deps aeris-astor-butler-bot</code> (Дима); если после пересоздания <code>/api</code> даёт 502 — <code>docker restart astor-api-gateway</code>.</li>
+<li><strong>Точечный откат — флагами</strong>, без деплоя: <code>/opt/astor-butler/.env.production</code> + <code>up -d --no-deps aeris-astor-butler-bot</code> (на ВМ запускает Михаил; копия <code>.env.production.bak-*</code> рядом). Лишние карточки «просит счёт» — <code>AERIS_GUEST_BILL_REQUEST_ENABLED=false</code>; звёзды за столом мешают — убрать <code>ASTOR_REVIEW_MOMENT</code>; правка / посадка — <code>AERIS_BOOKING_STAFF_EDIT_ENABLED</code> / <code>AERIS_BOOKING_SEATED_ENABLED=false</code>; чаевые лично — <code>AERIS_TIPS_PERSONAL_ENABLED=false</code>; пожелания — <code>AERIS_LUNCH_WISHES_ENABLED=false</code>; ссылка сотрудника — <code>AERIS_STAFF_HANDOFF_ENABLED=false</code>; весь ланч — <code>AERIS_BUSINESS_LUNCH_ENABLED=false</code>. Заявки и счета в базе остаются. Полный список — §6 плана.</li>
+<li>«Да» не работает (пустая всплывашка) — нажали не из того чата: <code>POST /api/bookings/table-reservations/{id}/confirm</code> изнутри ВМ.</li>
+<li>После теста тестовые заявки снимают Михаил или Дима; звёзды статистов — из <code>visit_reviews</code> для кухни. В группу не пишем id, телефоны, ссылки; статистам не подсказываем (только фиксируем); Presto не трогаем; «тест» при гостях зала не произносим.</li>
+</ol>
+</body>
+</html>
