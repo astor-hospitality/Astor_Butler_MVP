@@ -168,6 +168,18 @@ astor:
       exclude-zones: ${ASTOR_BOOKING_AUTO_CONFIRM_EXCLUDE_ZONES:VIP_ZONE}
       check-interval-ms: ${ASTOR_BOOKING_AUTO_CONFIRM_CHECK_INTERVAL_MS:30000}
       initial-delay-ms: ${ASTOR_BOOKING_AUTO_CONFIRM_INITIAL_DELAY_MS:60000}
+    staff-edit:
+      # Off (default): the hostess card carries «Да» / «Нет» (and «Счёт») exactly as before. On (#150): the card gets
+      # «✏️ Изменить», which opens a panel under it in the staff chat — «Стол» (tables free for that slot), «Время»
+      # (slots of that evening), «Гостей» (−1 / +1 / a number). Each press is applied at once with the same checks as
+      # a guest's change (TableReservationService.changeByStaff); the order keeps its status. The guest is told only
+      # about a new time. A booking already in Presto is not rewritten there: the panel asks the hostess to do it.
+      enabled: ${ASTOR_BOOKING_STAFF_EDIT_ENABLED:false}
+      # The panel answers presses this long after the last one; later presses say «истекла» (state in Redis).
+      session-ttl-minutes: ${ASTOR_BOOKING_STAFF_EDIT_SESSION_TTL_MINUTES:10}
+      slot-step-minutes: ${ASTOR_BOOKING_STAFF_EDIT_SLOT_STEP_MINUTES:30}
+      max-party: ${ASTOR_BOOKING_STAFF_EDIT_MAX_PARTY:12}
+      max-slots: ${ASTOR_BOOKING_STAFF_EDIT_MAX_SLOTS:32}
     hold-expiry:
       # Off (default): a request the hostess never answers keeps its table for as long as it takes, as before (#87).
       # On: a request still awaiting the hostess ttl-minutes after the card was sent becomes EXPIRED and its table is
