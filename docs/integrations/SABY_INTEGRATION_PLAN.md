@@ -72,7 +72,7 @@
 - Синхронизация статусов: опрос `order/states` или webhook, если Saby поддерживает его для броней.
 - Маппинг столов Butler на `tableId` Saby вместо `woTable`.
 - Изменение брони через `order/{id}/update`.
-- Пробелы из handoff-документа: истечение удержания (`EXPIRED`), авторизация booking API, обратный канал для Concierge.
+- Пробелы из handoff-документа: истечение удержания (`EXPIRED` — закрыто в #87 за флагом `ASTOR_BOOKING_HOLD_EXPIRY_ENABLED`; заявки с id Saby не истекают, их ведёт Presto), авторизация booking API, обратный канал для Concierge.
 
 ## Что не трогаем
 

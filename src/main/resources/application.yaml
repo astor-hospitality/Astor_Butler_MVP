@@ -174,6 +174,17 @@ astor:
       exclude-zones: ${ASTOR_BOOKING_AUTO_CONFIRM_EXCLUDE_ZONES:VIP_ZONE}
       check-interval-ms: ${ASTOR_BOOKING_AUTO_CONFIRM_CHECK_INTERVAL_MS:30000}
       initial-delay-ms: ${ASTOR_BOOKING_AUTO_CONFIRM_INITIAL_DELAY_MS:60000}
+    hold-expiry:
+      # Off (default): a request the hostess never answers keeps its table for as long as it takes, as before (#87).
+      # On: a request still awaiting the hostess ttl-minutes after the card was sent becomes EXPIRED and its table is
+      # released, so a new request for the same time no longer gets 409; the guest hears «Команда не успела
+      # подтвердить бронь за N минут» and may pick another time, the hostess card is closed with «⏱ Истекло», the
+      # manager chat (telegram.booking.manager-chat-id) gets the card: «Да» takes the table again if it is still free.
+      # Confirmed bookings and requests already in the venue's system (a Saby id on the order) never expire here.
+      enabled: ${ASTOR_BOOKING_HOLD_EXPIRY_ENABLED:false}
+      ttl-minutes: ${ASTOR_BOOKING_HOLD_TTL_MINUTES:15}
+      check-seconds: ${ASTOR_BOOKING_HOLD_EXPIRY_CHECK_SECONDS:60}
+      initial-delay-seconds: ${ASTOR_BOOKING_HOLD_EXPIRY_INITIAL_DELAY_SECONDS:60}
     external-sync:
       # Reads bookings back from the venue's own system (Saby) and confirms/cancels local orders accordingly.
       # Runs only while a provider is enabled and configured; 0 is not supported, set a large value to slow it down.
@@ -227,6 +238,13 @@ astor:
   startup:
     admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}
+  # Public pages the bot links to (#86): the consent step, the AERIS guest card, the startup message and the pinned
+  # admin/system notes. The policy lives on the Astor site; the guest guide and the FSM Viewer are the GitHub Pages of
+  # this repository (docs/), served under the organisation since the move. Change them here, not in code.
+  links:
+    policy: ${ASTOR_LINK_POLICY:https://astor-ai.ru/policy.html}
+    guest-guide: ${ASTOR_LINK_GUEST_GUIDE:https://astor-hospitality.github.io/Astor_Butler_MVP/docs/guest-guide.html}
+    fsm-viewer: ${ASTOR_LINK_FSM_VIEWER:https://astor-hospitality.github.io/Astor_Butler_MVP/docs/FSM_SCENARIOS_VIEWER.html}
   telegram:
     # Voice replies in the Telegram bot: the answer as a voice note (server TTS, SALUTE_TTS_FORMAT=opus) plus a
     # 2–4 line text summary with link buttons and "Подробнее". off (default) changes nothing; on = every reply in a

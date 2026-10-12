@@ -121,6 +121,29 @@ class TableReservationNotificationServiceTest {
     }
 
     @Test
+    void guestHearsTheTeamDidNotMakeItInTimeAndMayPickAnotherTime() {
+        assertThat(service.guestHoldExpiredText(order(), 15))
+                .contains("Команда не успела подтвердить бронь за 15 минут",
+                        "Передаю менеджеру смены", "выберите другое время", "#44", "Бронь стола");
+    }
+
+    @Test
+    void hostessCardIsClosedWithExpiredWithoutThePhone() {
+        String text = service.hostessHoldExpiredText(order(), 15);
+
+        assertThat(text).contains("⏱ Истекло", "15 мин", "#44", "менеджеру");
+        assertThat(text).doesNotContain("+7999");
+    }
+
+    @Test
+    void managerGetsTheExpiredCardWithoutThePhone() {
+        String text = service.managerHoldExpiredText(order(), 15);
+
+        assertThat(text).contains("15 мин без ответа", "удержание истекло", "Заказ:</b> #44", "Наталья", "«Да»", "«Нет»");
+        assertThat(text).doesNotContain("+7999", "Телефон", "Telegram:");
+    }
+
+    @Test
     void hostessCardHasOnlyYesAndNoUnlessTheReviewIsAskedAtTheBill() {
         InlineKeyboardMarkup keyboard = service.approvalKeyboard(44L);
 

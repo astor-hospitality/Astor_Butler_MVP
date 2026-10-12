@@ -576,6 +576,99 @@ class TableReservationServiceTest {
         verify(notificationService, never()).notifyGuestConfirmed(any());
     }
 
+    @Test
+    void expiresAnUnansweredRequestFreesTheTableAndTellsEveryone() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder awaiting = order(10L, table);
+        TableReservationOrder expired = order(10L, table, TableReservationStatus.EXPIRED);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(awaiting), Optional.of(expired));
+        when(repository.expireIfAwaiting(10L)).thenReturn(true);
+
+        TableReservationOrder result = service.expireHold(10L, 15);
+
+        assertThat(result).isEqualTo(expired);
+        verify(repository).expireIfAwaiting(10L);
+        verify(notificationService).notifyHostessHoldExpired(expired, 15);
+        verify(notificationService).notifyManagerHoldExpired(expired, 15);
+        verify(notificationService).notifyGuestHoldExpired(expired, 15);
+        verify(notificationService, never()).notifyGuestRejected(any(), any());
+    }
+
+    @Test
+    void refusesToExpireAConfirmedBookingOrOneTheRestaurantSystemKnows() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(order(10L, table, TableReservationStatus.CONFIRMED)));
+        when(repository.findOrder(11L)).thenReturn(Optional.of(withExternalId(order(11L, table), "saby-1")));
+
+        assertThatThrownBy(() -> service.expireHold(10L, 15))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("can expire");
+        assertThatThrownBy(() -> service.expireHold(11L, 15))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("does not expire");
+        verify(repository, never()).expireIfAwaiting(any());
+        verify(notificationService, never()).notifyGuestHoldExpired(any(), anyInt());
+    }
+
+    @Test
+    void aRequestDecidedBetweenTheQueryAndTheWriteIsNotExpired() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(order(10L, table)));
+        when(repository.expireIfAwaiting(10L)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.expireHold(10L, 15)).isInstanceOf(ApiException.class);
+        verify(notificationService, never()).notifyGuestHoldExpired(any(), anyInt());
+        verify(notificationService, never()).notifyManagerHoldExpired(any(), anyInt());
+        verify(notificationService, never()).notifyHostessHoldExpired(any(), anyInt());
+    }
+
+    @Test
+    void aLateYesTakesTheTableAgainWhileItIsFree() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder expired = order(10L, table, TableReservationStatus.EXPIRED);
+        TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(expired), Optional.of(confirmed));
+        when(repository.hasActiveConflict(1L, expired.requestedStartAt(), expired.requestedEndAt())).thenReturn(false);
+        when(repository.confirmExpired(10L)).thenReturn(true);
+
+        TableReservationOrder result = service.confirm(10L);
+
+        assertThat(result).isEqualTo(confirmed);
+        verify(repository).confirmExpired(10L);
+        verify(repository, never()).confirm(any());
+        verify(notificationService).notifyGuestConfirmed(confirmed);
+        verify(notificationService).notifyHostessConfirmed(confirmed);
+    }
+
+    @Test
+    void aLateYesIsRefusedOnceSomeoneElseHoldsTheTable() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder expired = order(10L, table, TableReservationStatus.EXPIRED);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(expired));
+        when(repository.hasActiveConflict(1L, expired.requestedStartAt(), expired.requestedEndAt())).thenReturn(true);
+
+        assertThat(service.tableStillFree(expired)).isFalse();
+        assertThatThrownBy(() -> service.confirm(10L))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("active hold");
+        verify(repository, never()).confirmExpired(any());
+        verify(notificationService, never()).notifyGuestConfirmed(any());
+    }
+
+    @Test
+    void aLateNoDeclinesTheExpiredRequestWithAlternatives() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder expired = order(10L, table, TableReservationStatus.EXPIRED);
+        TableReservationOrder rejected = order(10L, table, TableReservationStatus.REJECTED);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(expired));
+        when(repository.reject(10L)).thenReturn(rejected);
+
+        TableReservationOrder result = service.reject(10L);
+
+        assertThat(result).isEqualTo(rejected);
+        verify(notificationService).notifyGuestRejected(eq(rejected), any());
+    }
+
     private TableReservationCommand command(String tableCode, Instant start, Instant end, int partySize) {
         return new TableReservationCommand(
                 1773317437L,
