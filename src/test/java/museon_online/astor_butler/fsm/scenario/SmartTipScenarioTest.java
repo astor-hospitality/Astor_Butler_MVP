@@ -93,25 +93,22 @@ class SmartTipScenarioTest {
 
         assertThat(outgoing.nextState()).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
         assertThat(outgoing.actions()).containsExactly("SMART_TIP", "ASK_TIP_PERCENT");
-        assertThat(outgoing.text()).isEqualTo("""
-                Сумма чека — 2400 ₽. Сколько чаевых оставить?
-
-                5% — 120 ₽, если обслуживание было удовлетворительным
-                10% — 240 ₽, за хорошее обслуживание
-                15% и выше — от 360 ₽, если сервис вам очень понравился""");
+        // Right after paying the guest needs no reminder of the check: a short question and the buttons.
+        assertThat(outgoing.text()).isEqualTo("Сколько чаевых оставить?");
         assertThat(outgoing.metadata()).containsEntry("replyKeyboardRows", PERCENT_ROWS);
         verify(fsmStorage).setState(CHAT, BotState.TIP_COLLECT_AMOUNT);
     }
 
     @Test
-    void aBillWithoutTheVenuesSumIsCountedFromTheMenuAndSaysSo() {
+    void aBillWithoutTheVenuesSumIsCountedFromTheMenu() {
         when(bills.billsOf(eq(CHAT), anyInt())).thenReturn(List.of(bill(null, 111_000L, NOW.plus(Duration.ofMinutes(40)), GuestBillStatus.ESTIMATED)));
+        whenDraftsAreCreated();
+        scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
 
-        OutgoingMessage outgoing = scenario.handle(telegram("чаевые"), BotState.READY_FOR_DIALOG, "чаевые");
+        OutgoingMessage outgoing = scenario.handle(telegram("15%"), BotState.TIP_COLLECT_AMOUNT, "15%");
 
-        assertThat(outgoing.text()).startsWith("Сумма заказа по меню — 1110 ₽, предварительно. Сколько чаевых оставить?")
-                // 55,5 → 56 and 166,5 → 167: a half ruble goes up.
-                .contains("5% — 56 ₽", "10% — 111 ₽", "15% и выше — от 167 ₽");
+        // 15% of 1110 ₽ is 166,5 ₽: a half ruble goes up.
+        assertThat(outgoing.text()).contains("Сумма: 167 ₽\n");
     }
 
     @Test
@@ -143,7 +140,7 @@ class SmartTipScenarioTest {
                 Принял сумму чаевых, благодарность #55.
 
                 Получатель: Команда AERIS
-                Сумма: 240 ₽ (10% от 2400 ₽)
+                Сумма: 240 ₽
 
                 Подтверждаете?""");
         assertThat(outgoing.metadata()).containsEntry("replyKeyboardRows", CONFIRM_ROWS);
@@ -163,7 +160,7 @@ class SmartTipScenarioTest {
 
         OutgoingMessage outgoing = scenario.handle(telegram("5%"), BotState.TIP_COLLECT_AMOUNT, "5%");
 
-        assertThat(outgoing.text()).contains("Сумма: 56 ₽ (5% от 1110 ₽)");
+        assertThat(outgoing.text()).contains("Сумма: 56 ₽\n");
     }
 
     @Test
@@ -233,7 +230,7 @@ class SmartTipScenarioTest {
 
         OutgoingMessage outgoing = scenario.handle(telegram("10%"), BotState.TIP_COLLECT_AMOUNT, "10%");
 
-        assertThat(outgoing.text()).contains("Сумма: 240 ₽ (10% от 2400 ₽)");
+        assertThat(outgoing.text()).contains("Сумма: 240 ₽\n");
     }
 
     // --- the check named by the guest ---
@@ -245,12 +242,12 @@ class SmartTipScenarioTest {
         OutgoingMessage percents = scenario.handle(telegram("2400"), BotState.TIP_COLLECT_AMOUNT, "2400");
 
         assertThat(percents.actions()).containsExactly("SMART_TIP", "ASK_TIP_PERCENT");
-        assertThat(percents.text()).startsWith("Сумма чека — 2400 ₽. Сколько чаевых оставить?");
+        assertThat(percents.text()).isEqualTo("Сколько чаевых оставить?");
 
         whenDraftsAreCreated();
         OutgoingMessage outgoing = scenario.handle(telegram("15%"), BotState.TIP_COLLECT_AMOUNT, "15%");
 
-        assertThat(outgoing.text()).contains("Сумма: 360 ₽ (15% от 2400 ₽)");
+        assertThat(outgoing.text()).contains("Сумма: 360 ₽\n");
     }
 
     @Test
@@ -264,7 +261,7 @@ class SmartTipScenarioTest {
         OutgoingMessage outgoing = scenario.handle(telegram("2400 рублей"), BotState.TIP_COLLECT_AMOUNT, "2400 рублей");
 
         assertThat(outgoing.nextState()).isEqualTo(BotState.TIP_CONFIRMATION.name());
-        assertThat(outgoing.text()).contains("Сумма: 240 ₽ (10% от 2400 ₽)");
+        assertThat(outgoing.text()).contains("Сумма: 240 ₽\n");
     }
 
     @Test
@@ -307,7 +304,7 @@ class SmartTipScenarioTest {
 
         assertThat(change.nextState()).isEqualTo(BotState.TIP_COLLECT_AMOUNT.name());
         assertThat(change.actions()).containsExactly("SMART_TIP", "TIP_CHANGE_REQUESTED");
-        assertThat(change.text()).startsWith("Хорошо, выберем другой размер.\n\nСумма чека — 2400 ₽. Сколько чаевых оставить?");
+        assertThat(change.text()).isEqualTo("Сколько чаевых оставить?");
         assertThat(change.metadata()).containsEntry("replyKeyboardRows", PERCENT_ROWS);
         verify(fsmStorage).setState(CHAT, BotState.TIP_COLLECT_AMOUNT);
 
@@ -315,7 +312,7 @@ class SmartTipScenarioTest {
                 .thenAnswer(call -> tipOrder(TipOrderStatus.AWAITING_GUEST_CONFIRMATION, call.getArgument(1)));
         OutgoingMessage outgoing = scenario.handle(telegram("15%"), BotState.TIP_COLLECT_AMOUNT, "15%");
 
-        assertThat(outgoing.text()).contains("благодарность #55", "Сумма: 360 ₽ (15% от 2400 ₽)");
+        assertThat(outgoing.text()).contains("благодарность #55", "Сумма: 360 ₽\n");
         verify(tipService).changeDraftAmount(55L, 36_000L, "15% от 2400 ₽");
         verify(tipService, times(1)).createDraft(any());
     }
@@ -475,7 +472,7 @@ class SmartTipScenarioTest {
                 scenario.handle(telegram("да"), BotState.TIP_CONFIRMATION, "да").text(),
                 scenario.handle(telegram("нет"), BotState.TIP_CONFIRMATION, "нет").text());
 
-        assertThat(everything.toLowerCase()).doesNotContain("draft", "слой", "invoice", "stars", "уточняется", "estimate", "null");
+        assertThat(everything.toLowerCase()).doesNotContain("draft", "слой", "invoice", "stars", "уточняется", "estimate", "null", "% от");
         assertThat(everything).contains("Оплата чаевых через бота пока не подключена, поэтому деньги не списаны.");
     }
 
