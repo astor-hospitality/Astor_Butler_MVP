@@ -52,6 +52,30 @@ class SabyReservationStateSyncTest {
     }
 
     @Test
+    void aConfiguredSeatedCodeReachesTheDomainAndNothingIsSeatedWithoutIt() {
+        for (var expected : new Object[][] {
+                {"50/1002, 60", "{\"state\": 50, \"productState\": 1002}", ExternalBookingState.SEATED, "SABY_STATE_50"},
+                {"50/1002, 60", "{\"state\": 60}", ExternalBookingState.SEATED, "SABY_STATE_60"},
+                {"50/1002, 60", "{\"state\": 50, \"productState\": 1001}", ExternalBookingState.CONFIRMED, "SABY_STATE_50"},
+                {"50/1002, 60", "{\"state\": 220, \"productState\": 1002}", ExternalBookingState.CANCELLED, "SABY_STATE_220"},
+                {"", "{\"state\": 50, \"productState\": 1002}", ExternalBookingState.CONFIRMED, "SABY_STATE_50"},
+        }) {
+            SabyReservationProperties properties = configured();
+            properties.setSeatedStates((String) expected[0]);
+            Fixture fixture = fixture(properties);
+            expectAuth(fixture.server());
+            fixture.server().expect(once(), requestTo(STATE_URL)).andExpect(method(HttpMethod.GET))
+                    .andRespond(withSuccess((String) expected[1], MediaType.APPLICATION_JSON));
+
+            ExternalBookingSnapshot snapshot = fixture.provider().fetchReservationState(EXTERNAL_ID);
+
+            assertThat(snapshot.state()).as(expected[0] + " / " + expected[1]).isEqualTo(expected[2]);
+            assertThat(snapshot.status()).isEqualTo(expected[3]);
+            fixture.server().verify();
+        }
+    }
+
+    @Test
     void thePayStateRidesAlongForBilling() {
         for (var expected : new Object[][] {
                 {"{\"state\": 20, \"payState\": 200}", BillPayState.PAID},
@@ -100,6 +124,10 @@ class SabyReservationStateSyncTest {
     }
 
     private static Fixture fixture() {
+        return fixture(configured());
+    }
+
+    private static SabyReservationProperties configured() {
         SabyReservationProperties properties = new SabyReservationProperties();
         properties.setEnabled(true);
         properties.setBaseUrl("https://api.saby.test");
@@ -108,7 +136,7 @@ class SabyReservationStateSyncTest {
         properties.setAppSecret("secret");
         properties.setSecretKey("service-key");
         properties.setPointId("206");
-        return fixture(properties);
+        return properties;
     }
 
     private static Fixture fixture(SabyReservationProperties properties) {

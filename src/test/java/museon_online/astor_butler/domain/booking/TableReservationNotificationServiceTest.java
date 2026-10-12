@@ -2,6 +2,7 @@ package museon_online.astor_butler.domain.booking;
 
 import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
+import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import org.junit.jupiter.api.Test;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -13,7 +14,9 @@ import java.util.Map;
 import static museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TableReservationNotificationServiceTest {
@@ -208,6 +211,57 @@ class TableReservationNotificationServiceTest {
     }
 
     @Test
+    void confirmedCardOffersSeatedOnlyWhenTheFlagIsOnAndNeverTheAwaitingOrManagerCard() {
+        assertThat(service.billKeyboard(44L)).isNull();
+        assertThat(service.seatedCardKeyboard(44L)).isNull();
+
+        service.setSeatedEnabled(true);
+
+        assertThat(service.approvalKeyboard(44L).getKeyboard()).hasSize(1);
+        assertThat(service.managerDecisionKeyboard(44L).getKeyboard()).hasSize(1);
+        assertThat(service.billKeyboard(44L).getKeyboard()).hasSize(1);
+        assertThat(service.billKeyboard(44L).getKeyboard().getFirst()).extracting(InlineKeyboardButton::getText, InlineKeyboardButton::getCallbackData)
+                .containsExactly(tuple("🪑 Гость сел", HostessSeatedService.CALLBACK_PREFIX + "44"));
+        assertThat(service.seatedCardKeyboard(44L)).as("the button is gone once the guest sat down").isNull();
+
+        service.setReviewMoment("on-bill");
+        service.setStaffEditEnabled(true);
+        assertThat(service.billKeyboard(44L).getKeyboard()).extracting(row -> row.getFirst().getCallbackData())
+                .containsExactly("table_booking:seated:44", "table_booking:bill:44", "table_booking:edit:44");
+        assertThat(service.seatedCardKeyboard(44L).getKeyboard()).extracting(row -> row.getFirst().getCallbackData())
+                .containsExactly("table_booking:bill:44", "table_booking:edit:44");
+        assertThat(service.approvalKeyboard(44L).getKeyboard()).extracting(row -> row.getFirst().getText())
+                .containsExactly("Да", "Счёт", "✏️ Изменить");
+    }
+
+    @Test
+    void theSeatedLineTheVenueNoteAndTheTraceCarryTheVenueTimeAndNoPhone() {
+        TableReservationOrder seated = seated(order(), Instant.parse("2026-10-07T09:32:00Z"));
+
+        assertThat(TableReservationNotificationService.seatedLine(seated, "@dasha")).isEqualTo("🪑 Гость сел 14:32 — @dasha");
+        assertThat(TableReservationNotificationService.seatedLine(seated, null)).isEqualTo("🪑 Гость сел 14:32");
+        assertThat(service.hostessSeatedByVenueText(seated))
+                .contains("Гость сел", "14:32", "#44", "Стол 5 (5)", "гостей: 2", "Presto")
+                .doesNotContain("+7999");
+        assertThat(service.seatedTraceText(seated, "@dasha"))
+                .contains("#44", "14:32", "Стол 5 (5)", "@dasha")
+                .doesNotContain("+7999");
+        assertThat(TableReservationNotificationService.seatedLine(order(), null)).isEqualTo("🪑 Гость сел —");
+    }
+
+    @Test
+    void theTraceGoesToTheSystemChatOnlyWhenThereIsOne() {
+        TableReservationOrder seated = seated(order(), Instant.parse("2026-10-07T09:32:00Z"));
+        service.traceSeated(seated, "@dasha");
+
+        TelegramSystemNotifier systemNotifier = mock(TelegramSystemNotifier.class);
+        service.setSystemNotifier(systemNotifier);
+        service.traceSeated(seated, "@dasha");
+
+        verify(systemNotifier).sendSystemNotice(argThat(text -> text.contains("#44") && text.contains("14:32") && text.contains("@dasha")));
+    }
+
+    @Test
     void guestIsToldTheNewTimeAndWhetherTheTableStayed() {
         TableReservationOrder before = order();
         TableReservationOrder moved = new TableReservationOrder(44L, before.chatId(), before.telegramUserId(), null, 5L, "5", "Table 5",
@@ -222,6 +276,14 @@ class TableReservationNotificationServiceTest {
                 null, null, TableReservationStatus.CONFIRMED, "TELEGRAM", moved.requestedStartAt(), moved.requestedEndAt(), 2,
                 "Наталья", "+79990000000", null, 876857557L, null, null, null, before.createdAt(), before.updatedAt());
         assertThat(service.guestMovedByStaffText(reseated, before)).contains("стол теперь Стол 7 (7)");
+    }
+
+    private static TableReservationOrder seated(TableReservationOrder order, Instant seatedAt) {
+        return new TableReservationOrder(order.id(), order.chatId(), order.telegramUserId(), order.userId(), order.tableId(), order.tableCode(),
+                order.tableDisplayName(), order.preferredZone(), order.seatingPreference(), TableReservationStatus.SEATED, order.source(),
+                order.requestedStartAt(), order.requestedEndAt(), order.partySize(), order.guestName(), order.guestPhone(), order.guestComment(),
+                order.managerTelegramId(), order.managerUserId(), order.hostessChatId(), order.sbisExternalId(), order.createdAt(),
+                order.updatedAt(), seatedAt);
     }
 
     private ExternalReservationResult result(boolean created, String status, String externalId) {

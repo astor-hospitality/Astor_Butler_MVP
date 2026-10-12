@@ -127,7 +127,9 @@ public class HostessSeatedService {
         if (bot == null) {
             return;
         }
-        String chatId = pressed.getChatId() == null ? hostessChatId : pressed.getChatId().toString();
+        String chatId = pressed.getChat() == null || pressed.getChat().getId() == null
+                ? hostessChatId
+                : pressed.getChat().getId().toString();
         String line = TableReservationNotificationService.seatedLine(order, who);
         String text = pressed.getText();
         try {

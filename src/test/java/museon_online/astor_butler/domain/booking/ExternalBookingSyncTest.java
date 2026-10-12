@@ -122,6 +122,72 @@ class ExternalBookingSyncTest {
     }
 
     @Test
+    void seatedInTheVenueSystemSeatsAConfirmedOrderOnceAndTheHostessHears() {
+        TableReservationOrder confirmed = order(20L, TableReservationStatus.CONFIRMED, "ext-20");
+        TableReservationOrder seated = seated(20L, "ext-20");
+        when(repository.findActiveOrdersWithExternalId(anyInt())).thenReturn(List.of(confirmed));
+        when(repository.findOrder(20L)).thenReturn(Optional.of(confirmed), Optional.of(confirmed), Optional.of(seated));
+        when(repository.seatIfConfirmed(20L)).thenReturn(true);
+        when(externalProvider.fetchReservationState("ext-20")).thenReturn(snapshot("ext-20", ExternalBookingState.SEATED, "SABY_STATE_50"));
+
+        ExternalBookingSync.Report report = sync.run();
+
+        assertThat(report.seated()).isEqualTo(1);
+        assertThat(report.confirmed()).isZero();
+        verify(repository).seatIfConfirmed(20L);
+        verify(repository, never()).confirm(any());
+        verify(notificationService).notifyHostessSeatedByVenue(seated);
+        verify(notificationService).traceSeated(seated, "Presto");
+        verify(notificationService, never()).notifyGuestConfirmed(any());
+        verify(billingSync).onVenueSnapshot(eq("SABY"), eq("ext-20"), eq(ExternalBookingState.SEATED), any());
+    }
+
+    @Test
+    void seatedInTheVenueSystemConfirmsAnAwaitingOrderFirstOneStepAtATime() {
+        TableReservationOrder awaiting = order(21L, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, "ext-21");
+        TableReservationOrder confirmed = order(21L, TableReservationStatus.CONFIRMED, "ext-21");
+        when(repository.findActiveOrdersWithExternalId(anyInt())).thenReturn(List.of(awaiting));
+        when(repository.findOrder(21L)).thenReturn(Optional.of(awaiting));
+        when(repository.confirm(21L)).thenReturn(confirmed);
+        when(externalProvider.fetchReservationState("ext-21")).thenReturn(snapshot("ext-21", ExternalBookingState.SEATED, "SABY_STATE_50"));
+
+        ExternalBookingSync.Report report = sync.run();
+
+        assertThat(report.confirmed()).isEqualTo(1);
+        assertThat(report.seated()).isZero();
+        verify(repository).confirm(21L);
+        verify(repository, never()).seatIfConfirmed(any());
+        verify(notificationService).notifyGuestConfirmed(confirmed);
+    }
+
+    @Test
+    void anOrderAlreadySeatedIsLeftAloneAndStillFollowsACancellation() {
+        TableReservationOrder seated = seated(22L, "ext-22");
+        TableReservationOrder seatedToo = seated(23L, "ext-23");
+        TableReservationOrder cancelled = order(23L, TableReservationStatus.CANCELLED, "ext-23");
+        when(repository.findActiveOrdersWithExternalId(anyInt())).thenReturn(List.of(seated, seatedToo));
+        when(externalProvider.fetchReservationState("ext-22")).thenReturn(snapshot("ext-22", ExternalBookingState.SEATED, "SABY_STATE_50"));
+        when(externalProvider.fetchReservationState("ext-23")).thenReturn(snapshot("ext-23", ExternalBookingState.CANCELLED, "SABY_STATE_220"));
+        when(repository.findOrder(23L)).thenReturn(Optional.of(seatedToo));
+        when(repository.cancel(23L)).thenReturn(cancelled);
+        when(repository.findAlternativeTables(any(), any(), any(), anyInt(), any(), any())).thenReturn(List.of());
+
+        ExternalBookingSync.Report report = sync.run();
+
+        assertThat(report.seated()).isZero();
+        assertThat(report.cancelled()).isEqualTo(1);
+        verify(repository, never()).seatIfConfirmed(any());
+        verify(repository).cancel(23L);
+        verify(notificationService).notifyGuestRejected(eq(cancelled), any());
+
+        // Presto still says «confirmed» about a guest Butler already seated: nothing moves back.
+        when(repository.findActiveOrdersWithExternalId(anyInt())).thenReturn(List.of(seated));
+        when(externalProvider.fetchReservationState("ext-22")).thenReturn(snapshot("ext-22", ExternalBookingState.CONFIRMED, "SABY_STATE_20"));
+        assertThat(sync.run().confirmed()).isZero();
+        verify(repository, never()).confirm(any());
+    }
+
+    @Test
     void alreadyConfirmedOrderIsNotConfirmedTwice() {
         TableReservationOrder confirmed = order(16L, TableReservationStatus.CONFIRMED, "ext-16");
         when(repository.findActiveOrdersWithExternalId(anyInt())).thenReturn(List.of(confirmed));
@@ -179,6 +245,13 @@ class ExternalBookingSyncTest {
 
     private static ExternalBookingSnapshot snapshot(String externalId, ExternalBookingState state, String status) {
         return new ExternalBookingSnapshot("SABY", externalId, state, status, Map.of());
+    }
+
+    private static TableReservationOrder seated(Long id, String externalId) {
+        Instant start = Instant.parse("2026-10-07T14:00:00Z");
+        return new TableReservationOrder(id, 1773317437L, 1773317437L, null, 4L, "4", "Стол 4", "WINDOW", null,
+                TableReservationStatus.SEATED, "TELEGRAM", start, start.plusSeconds(7200), 2, "Иван", "+79990000000", null,
+                876857557L, null, null, externalId, start, start, start.plusSeconds(300));
     }
 
     private static TableReservationOrder order(Long id, TableReservationStatus status, String externalId) {

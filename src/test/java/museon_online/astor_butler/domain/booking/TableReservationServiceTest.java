@@ -576,6 +576,120 @@ class TableReservationServiceTest {
         verify(notificationService, never()).notifyGuestConfirmed(any());
     }
 
+    // ---- #151: the guest sat down ----
+
+    @Test
+    void theHostessSeatsAConfirmedBookingAndTheTraceIsWrittenOnce() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
+        TableReservationOrder seated = seated(order(10L, table, TableReservationStatus.SEATED));
+        when(repository.findOrder(10L)).thenReturn(Optional.of(confirmed), Optional.of(seated));
+        when(repository.seatIfConfirmed(10L)).thenReturn(true);
+
+        TableReservationOrder result = service.seatByStaff(10L, "@dasha");
+
+        assertThat(result).isEqualTo(seated);
+        verify(repository).seatIfConfirmed(10L);
+        verify(notificationService).traceSeated(seated, "@dasha");
+        verify(notificationService, never()).notifyHostessSeatedByVenue(any());
+        verify(notificationService, never()).notifyGuestConfirmed(any());
+    }
+
+    @Test
+    void seatingTwiceOrLosingTheRaceIsNotAnError() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
+        TableReservationOrder seated = seated(order(10L, table, TableReservationStatus.SEATED));
+
+        when(repository.findOrder(10L)).thenReturn(Optional.of(seated));
+        assertThat(service.seatByStaff(10L, "@dasha")).isEqualTo(seated);
+        verify(repository, never()).seatIfConfirmed(any());
+
+        // Presto stamped it between the read and the write: that stamp stands, nothing is traced twice.
+        when(repository.findOrder(11L)).thenReturn(Optional.of(withId(confirmed, 11L)), Optional.of(withId(seated, 11L)));
+        when(repository.seatIfConfirmed(11L)).thenReturn(false);
+        assertThat(service.seatByStaff(11L, "@dasha").status()).isEqualTo(TableReservationStatus.SEATED);
+        verify(notificationService, never()).traceSeated(any(), any());
+    }
+
+    @Test
+    void onlyAConfirmedBookingCanBeSeatedAndASeatedOneIsNeitherConfirmedNorExpired() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        for (TableReservationStatus status : List.of(TableReservationStatus.AWAITING_MANAGER_CONFIRMATION,
+                TableReservationStatus.REJECTED, TableReservationStatus.CANCELLED, TableReservationStatus.EXPIRED)) {
+            when(repository.findOrder(10L)).thenReturn(Optional.of(order(10L, table, status)));
+            assertThatThrownBy(() -> service.seatByStaff(10L, "@dasha")).as(status.name())
+                    .isInstanceOf(ApiException.class)
+                    .hasMessage("Only confirmed reservations can be seated");
+        }
+        verify(repository, never()).seatIfConfirmed(any());
+
+        when(repository.findOrder(10L)).thenReturn(Optional.of(seated(order(10L, table, TableReservationStatus.SEATED))));
+        assertThatThrownBy(() -> service.confirmAutomatically(10L, 7)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.expireHold(10L, 15)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.confirm(10L)).isInstanceOf(ApiException.class);
+        verify(repository, never()).confirm(any());
+        verify(repository, never()).expireIfAwaiting(any());
+    }
+
+    @Test
+    void theVenueSeatsAConfirmedBookingAndTheHostessHearsOnce() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
+        TableReservationOrder seated = seated(order(10L, table, TableReservationStatus.SEATED));
+        when(repository.findOrder(10L)).thenReturn(Optional.of(confirmed), Optional.of(confirmed), Optional.of(seated), Optional.of(seated));
+        when(repository.seatIfConfirmed(10L)).thenReturn(true);
+
+        assertThat(service.seatFromVenue(10L)).isEqualTo(seated);
+        assertThat(service.seatFromVenue(10L)).isEqualTo(seated);
+
+        verify(repository, org.mockito.Mockito.times(1)).seatIfConfirmed(10L);
+        verify(notificationService, org.mockito.Mockito.times(1)).notifyHostessSeatedByVenue(seated);
+        verify(notificationService, org.mockito.Mockito.times(1)).traceSeated(seated, "Presto");
+
+        // Awaiting: the sync confirms first on its own read; this call changes nothing.
+        when(repository.findOrder(12L)).thenReturn(Optional.of(order(12L, table)));
+        assertThat(service.seatFromVenue(12L).status()).isEqualTo(TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+        verify(repository, never()).seatIfConfirmed(12L);
+    }
+
+    @Test
+    void aSeatedGuestIsStillInTheWayOfASecondBookingAndMayStillBeMovedOrCancelled() {
+        VenueTable table5 = table(5L, "5", 4, true, true);
+        VenueTable table7 = table(7L, "7", 4, true, true);
+        TableReservationOrder seated = seated(order(12L, table5, TableReservationStatus.SEATED));
+        when(repository.findActiveOrdersByChatId(1773317437L, "AERIS")).thenReturn(List.of(seated));
+        assertThat(service.findOverlappingReservation(1773317437L, "AERIS", seated.requestedStartAt(), seated.requestedEndAt()))
+                .contains(seated);
+
+        when(repository.findOrder(12L)).thenReturn(Optional.of(seated));
+        when(repository.findTableByCode("AERIS", "7")).thenReturn(Optional.of(table7));
+        when(repository.hasActiveConflict(7L, seated.requestedStartAt(), seated.requestedEndAt(), 12L)).thenReturn(false);
+        TableReservationOrder moved = seated(order(12L, table7, TableReservationStatus.SEATED));
+        when(repository.changeReservationByStaff(eq(12L), any(TableReservationChangeCommand.class), eq(table7))).thenReturn(moved);
+        assertThat(service.changeByStaff(12L, new TableReservationChangeCommand("AERIS", "7", null, null, null, null, null, null), "@dasha"))
+                .isEqualTo(moved);
+
+        when(repository.cancel(12L)).thenReturn(order(12L, table5, TableReservationStatus.CANCELLED));
+        assertThat(service.cancelByGuest(12L).status()).isEqualTo(TableReservationStatus.CANCELLED);
+        verify(notificationService).notifyHostessGuestCancelled(any());
+    }
+
+    private static TableReservationOrder seated(TableReservationOrder order) {
+        return new TableReservationOrder(order.id(), order.chatId(), order.telegramUserId(), order.userId(), order.tableId(), order.tableCode(),
+                order.tableDisplayName(), order.preferredZone(), order.seatingPreference(), order.status(), order.source(), order.requestedStartAt(),
+                order.requestedEndAt(), order.partySize(), order.guestName(), order.guestPhone(), order.guestComment(), order.managerTelegramId(),
+                order.managerUserId(), order.hostessChatId(), order.sbisExternalId(), order.createdAt(), order.updatedAt(),
+                Instant.parse("2026-06-06T17:05:00Z"));
+    }
+
+    private static TableReservationOrder withId(TableReservationOrder order, Long id) {
+        return new TableReservationOrder(id, order.chatId(), order.telegramUserId(), order.userId(), order.tableId(), order.tableCode(),
+                order.tableDisplayName(), order.preferredZone(), order.seatingPreference(), order.status(), order.source(), order.requestedStartAt(),
+                order.requestedEndAt(), order.partySize(), order.guestName(), order.guestPhone(), order.guestComment(), order.managerTelegramId(),
+                order.managerUserId(), order.hostessChatId(), order.sbisExternalId(), order.createdAt(), order.updatedAt(), order.seatedAt());
+    }
+
     // ---- #150: the hostess changes the booking from its card ----
 
     @Test

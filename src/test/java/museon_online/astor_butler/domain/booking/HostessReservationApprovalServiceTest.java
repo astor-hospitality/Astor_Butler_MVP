@@ -95,6 +95,16 @@ class HostessReservationApprovalServiceTest {
     }
 
     @Test
+    void aYesOrNoOnASeatedBookingOnlySaysTheGuestIsAtTheTable() {
+        when(reservations.getReservation(7L)).thenReturn(order(7L, TableReservationStatus.SEATED, null));
+
+        assertThat(service.handleCallback("table_booking:confirm:7", 500L).answerText()).isEqualTo("Бронь #7 уже подтверждена, гость за столом");
+        assertThat(service.handleCallback("table_booking:reject:7", 600L).answerText()).isEqualTo("Бронь #7 уже подтверждена, гость за столом");
+        verify(reservations, never()).confirm(any());
+        verify(reservations, never()).reject(any());
+    }
+
+    @Test
     void otherChatsAndOtherCallbacksAreNotHandled() {
         assertThat(service.handleCallback("table_booking:confirm:7", 501L).handled()).isFalse();
         assertThat(service.handleCallback("something:else", 500L).handled()).isFalse();

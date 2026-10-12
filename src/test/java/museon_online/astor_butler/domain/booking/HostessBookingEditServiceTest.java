@@ -359,6 +359,18 @@ class HostessBookingEditServiceTest {
     }
 
     @Test
+    void aSeatedGuestMayStillBeMovedFromTheCard() throws Exception {
+        when(reservations.getReservation(44L)).thenReturn(order(44L, table5, TableReservationStatus.SEATED, 2, START, END, null));
+        when(storage.editSession(44L)).thenReturn(Optional.empty());
+
+        var result = service.handleCallback("table_booking:edit:44", 500L, 100, "@dasha");
+
+        assertThat(result.answerText()).isEqualTo("Правка брони #44 открыта");
+        assertThat(sentPanel().getText()).contains("Статус: гость сел");
+        verify(storage).startEditSession(eq(44L), any(), eq(TTL));
+    }
+
+    @Test
     void aBookingThatIsNoLongerActiveCannotBeEdited() throws Exception {
         when(reservations.getReservation(44L)).thenReturn(order(44L, table5, TableReservationStatus.CANCELLED, 2, START, END, null));
 
