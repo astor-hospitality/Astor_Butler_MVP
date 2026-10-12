@@ -77,6 +77,9 @@ public class HostessReservationApprovalService {
         if (current.status() == TableReservationStatus.REJECTED) {
             return CallbackResult.handled("Бронь #" + orderId + " уже отменена");
         }
+        if (current.status() == TableReservationStatus.EXPIRED) {
+            return decideExpired(action, current);
+        }
 
         if ("confirm".equals(action)) {
             if (confirmedByVenueSystem(current)) {
@@ -90,6 +93,26 @@ public class HostessReservationApprovalService {
         TableReservationOrder rejected = tableReservationService.reject(orderId);
         notificationService.notifyHostessRejected(rejected);
         return CallbackResult.handled("Бронь #" + orderId + " отменена");
+    }
+
+    /**
+     * The hold ran out (#87) and the card went to the manager: «Да» takes the table again if it is still free and
+     * confirms the booking to the guest, «Нет» is the polite no with alternatives. The table is checked here first,
+     * so a taken table is an answer on the button and not an exception inside the transaction.
+     */
+    private CallbackResult decideExpired(String action, TableReservationOrder current) {
+        Long orderId = current.id();
+        if (!"confirm".equals(action)) {
+            TableReservationOrder rejected = tableReservationService.reject(orderId);
+            notificationService.notifyHostessRejected(rejected);
+            return CallbackResult.handled("Бронь #" + orderId + " отменена");
+        }
+        if (!tableReservationService.tableStillFree(current)) {
+            return CallbackResult.handled("Бронь #" + orderId + ": стол уже занят на это время, гостю предложено выбрать другое");
+        }
+        TableReservationOrder confirmed = tableReservationService.confirm(orderId);
+        notificationService.notifyHostessAcknowledged(confirmed);
+        return CallbackResult.handled("Бронь #" + orderId + " подтверждена, стол снова удержан");
     }
 
     /** The venue's system holds this booking and is the one to confirm it; Butler only follows. */

@@ -462,6 +462,71 @@ public class TableReservationRepository {
         return findOrder(id).orElseThrow();
     }
 
+    /**
+     * The hostess never answered within the TTL (#87): the request becomes EXPIRED and its table is released, so a
+     * new request for the same time no longer gets 409. True only for the caller that made the change: a request
+     * decided meanwhile (or expired by another instance) is left as it is and false comes back.
+     */
+    public boolean expireIfAwaiting(Long id) {
+        int changed = jdbcTemplate.update("""
+                UPDATE table_reservation_orders
+                SET status = 'EXPIRED',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                  AND status = 'AWAITING_MANAGER_CONFIRMATION'
+                """,
+                id
+        );
+        if (changed == 0) {
+            return false;
+        }
+        jdbcTemplate.update("""
+                UPDATE table_reservation_holds
+                SET status = 'RELEASED',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE order_id = ?
+                  AND status = 'HELD'
+                """,
+                id
+        );
+        return true;
+    }
+
+    /**
+     * The manager said «Да» to an expired request (#87): the order is CONFIRMED and takes its table again with a
+     * fresh CONFIRMED hold for the requested time. The caller checks that the table is still free; here the status
+     * guards against a second «Да». False when the order is not EXPIRED any more.
+     */
+    public boolean confirmExpired(Long id) {
+        int changed = jdbcTemplate.update("""
+                UPDATE table_reservation_orders
+                SET status = 'CONFIRMED',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                  AND status = 'EXPIRED'
+                """,
+                id
+        );
+        if (changed == 0) {
+            return false;
+        }
+        jdbcTemplate.update("""
+                INSERT INTO table_reservation_holds (
+                    table_id, order_id, status, start_at, end_at, expires_at, created_at, updated_at
+                )
+                SELECT table_id, id, 'CONFIRMED', requested_start_at, requested_end_at, NULL,
+                       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                FROM table_reservation_orders
+                WHERE id = ?
+                  AND table_id IS NOT NULL
+                  AND requested_start_at IS NOT NULL
+                  AND requested_end_at IS NOT NULL
+                """,
+                id
+        );
+        return true;
+    }
+
     public TableReservationOrder cancel(Long id) {
         jdbcTemplate.update("""
                 UPDATE table_reservation_orders

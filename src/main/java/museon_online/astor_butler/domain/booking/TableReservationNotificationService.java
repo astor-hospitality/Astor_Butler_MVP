@@ -62,6 +62,10 @@ public class TableReservationNotificationService {
     @Value("${astor.review.moment:after-close}")
     private String reviewMoment = "after-close";
 
+    /** With the hold expiry on (#87) the card is remembered too, so «⏱ Истекло» can close it later. */
+    @Value("${astor.booking.hold-expiry.enabled:false}")
+    private boolean holdExpiryEnabled;
+
     /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
@@ -75,9 +79,31 @@ public class TableReservationNotificationService {
                 approvalKeyboard(order.id()),
                 "hostess-approval-request"
         );
-        if (sent != null && decision != null && decision != Decision.OFF) {
+        if (sent != null && ((decision != null && decision != Decision.OFF) || holdExpiryEnabled)) {
             rememberHostessCard(order, chatId, sent);
         }
+    }
+
+    /** The hold ran out (#87): the card loses its buttons and a note under it says «⏱ Истекло». */
+    public void notifyHostessHoldExpired(TableReservationOrder order, int afterMinutes) {
+        Optional<BookingHostessStateStorage.CardRef> card = hostessCard(order);
+        card.ifPresent(ref -> replaceButtons(ref, null));
+        send(hostessChatId(order), hostessHoldExpiredText(order, afterMinutes), null,
+                card.map(BookingHostessStateStorage.CardRef::messageId).orElse(null), "hostess-hold-expired");
+    }
+
+    /** The same card the manager gets from the timer (#148), minus the phone: «Да» takes the table again, «Нет» declines. */
+    public void notifyManagerHoldExpired(TableReservationOrder order, int afterMinutes) {
+        send(managerChatId(order), managerHoldExpiredText(order, afterMinutes), managerDecisionKeyboard(order.id()),
+                "manager-hold-expired");
+    }
+
+    /** «Команда не успела подтвердить бронь за N минут»: the guest may wait for the manager or pick another time. */
+    public void notifyGuestHoldExpired(TableReservationOrder order, int afterMinutes) {
+        if (order.chatId() == null) {
+            return;
+        }
+        send(order.chatId().toString(), guestHoldExpiredText(order, afterMinutes), guestMainMenuKeyboard(), "guest-hold-expired");
     }
 
     /** The card nobody answered confirmed itself: its buttons go, a note under it says so. */
@@ -382,6 +408,70 @@ public class TableReservationNotificationService {
                 formatTimeRange(order),
                 order.partySize()
         );
+    }
+
+    String hostessHoldExpiredText(TableReservationOrder order, int afterMinutes) {
+        return """
+                <b>⏱ Истекло</b> — %d мин без ответа.
+                Заявка #%s: стол освобождён, гостю предложено выбрать другое время, карточка передана менеджеру.
+                """.formatted(afterMinutes, order.id());
+    }
+
+    /** No phone and no chat ids here: the manager decides by the request, the bot talks to the guest. */
+    String managerHoldExpiredText(TableReservationOrder order, int afterMinutes) {
+        return """
+                <b>⏱ %d мин без ответа — удержание истекло</b>
+                Хостес не ответила на заявку #%s: стол освобождён, гостю предложено выбрать другое время. Решение за вами: «Да» снова займёт стол, если он ещё свободен, и подтвердит бронь гостю; «Нет» — вежливый отказ с альтернативой.
+
+                <b>Заказ:</b> #%s
+                <b>Гость:</b> %s
+                <b>Стол:</b> %s
+                <b>Дата:</b> %s
+                <b>Время:</b> %s
+                <b>Гостей:</b> %s
+                <b>Зона/пожелание:</b> %s
+
+                <b>Исходный запрос гостя</b>
+                <blockquote>%s</blockquote>
+                """.formatted(
+                afterMinutes,
+                order.id(),
+                order.id(),
+                escape(blank(order.guestName(), "гость из Telegram")),
+                escape(tableName(order)),
+                formatDate(order.requestedStartAt()),
+                formatTimeRange(order),
+                order.partySize(),
+                escape(seatingPreference(order)),
+                escape(blank(order.guestComment(), "нет"))
+        );
+    }
+
+    String guestHoldExpiredText(TableReservationOrder order, int afterMinutes) {
+        return """
+                <b>Команда не успела подтвердить бронь за %d минут.</b>
+
+                Передаю менеджеру смены — вам ответят, или выберите другое время.
+
+                <b>Заказ:</b> #%s
+                <b>Стол:</b> %s
+                <b>Дата:</b> %s
+                <b>Время:</b> %s
+                <b>Гостей:</b> %s
+
+                Чтобы выбрать другое время, нажмите «Бронь стола» или просто напишите, когда вам удобно.
+                """.formatted(
+                afterMinutes,
+                order.id(),
+                escape(tableName(order)),
+                formatDate(order.requestedStartAt()),
+                formatTimeRange(order),
+                order.partySize()
+        );
+    }
+
+    void setHoldExpiryEnabled(boolean holdExpiryEnabled) {
+        this.holdExpiryEnabled = holdExpiryEnabled;
     }
 
     private String escalationReason(TableReservationOrder order, Decision decision) {
