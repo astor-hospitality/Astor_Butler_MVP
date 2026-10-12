@@ -83,7 +83,8 @@ public final class InternalApiGuardFilter extends OncePerRequestFilter {
             "/api/admin/staff/**",             // staff portal: own JWT chain, StaffPortalConfiguration (@Order(1))
             "/api/admin/staff-tasks/**",       // staff portal: same chain
             "/api/internal/glasses/**",        // glasses relay: own X-Astor-Relay-Token (GlassesTranscriptController,
-                                               // GlassesStaffTaskController); the runtime cannot send a second token
+                                               // GlassesStaffTaskController, GlassesLunchDishesController); the runtime
+                                               // cannot send a second token
             "/actuator/health",                // compose / edge liveness
             "/actuator/health/**",
             "/actuator/prometheus"             // Prometheus 2.x scrape via api-gateway; cannot send custom headers

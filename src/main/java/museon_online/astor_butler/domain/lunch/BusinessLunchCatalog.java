@@ -75,6 +75,7 @@ public class BusinessLunchCatalog {
         }
         Set<String> courseCodes = new HashSet<>();
         Set<String> dishCodes = new HashSet<>();
+        Set<Integer> dishNumbers = new HashSet<>();
         if (offer.courses().isEmpty()) {
             problems.add("courses are missing");
         }
@@ -96,6 +97,10 @@ public class BusinessLunchCatalog {
                 // Without sets the guest pays per dish, so a dish without a price cannot be ordered.
                 if (offer.aLaCarte() && dish.priceRub() == null) {
                     problems.add("a dish needs a price when there are no sets: " + dish.code());
+                }
+                // A spoken number (#184) names exactly one dish: two dishes under «14» would be a guess at the table.
+                if (dish.number() != null && (dish.number() <= 0 || !dishNumbers.add(dish.number()))) {
+                    problems.add("dish number must be positive and unique: " + dish.code());
                 }
             }
         }

@@ -124,6 +124,49 @@ class BusinessLunchCatalogTest {
         assertThat(aeris.courses().stream().flatMap(course -> course.dishes().stream())).noneMatch(BusinessLunchOffer.Dish::describesComposition);
     }
 
+    /** #184: a dish may carry the number a waiter says aloud; it is optional, positive and unique within the offer. */
+    @Test
+    void aDishMayCarryASpokenNumberWhichIsUniqueAndPositive() throws IOException {
+        BusinessLunchOffer offer = read("""
+                {"venueCode": "X", "days": ["MONDAY"], "from": "12:00", "to": "16:00",
+                 "courses": [{"code": "SOUP", "title": "Суп", "dishes": [
+                   {"code": "A", "title": "Суп А", "priceRub": 100, "number": 14},
+                   {"code": "B", "title": "Суп Б", "priceRub": 100}
+                 ]}, {"code": "MAIN", "title": "Горячее", "dishes": [
+                   {"code": "C", "title": "Котлеты", "priceRub": 300, "number": 3}
+                 ]}], "sets": []}
+                """);
+
+        assertThat(offer.dish("A").orElseThrow().number()).isEqualTo(14);
+        assertThat(offer.dish("A").orElseThrow().numbered()).isTrue();
+        assertThat(offer.dish("B").orElseThrow().number()).isNull();
+        assertThat(offer.dish("B").orElseThrow().numbered()).isFalse();
+        assertThat(offer.dishByNumber(14).map(BusinessLunchOffer.Dish::code)).contains("A");
+        assertThat(offer.dishByNumber(1)).isEmpty();
+        assertThat(offer.numberedDishes()).extracting(BusinessLunchOffer.Dish::code).containsExactly("C", "A");
+
+        assertThatThrownBy(() -> read("""
+                {"venueCode": "X", "days": ["MONDAY"], "from": "12:00", "to": "16:00",
+                 "courses": [{"code": "SOUP", "title": "Суп", "dishes": [
+                   {"code": "A", "title": "Суп А", "priceRub": 100, "number": 14},
+                   {"code": "B", "title": "Суп Б", "priceRub": 100, "number": 14},
+                   {"code": "C", "title": "Суп В", "priceRub": 100, "number": 0}
+                 ]}], "sets": []}
+                """))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dish number must be positive and unique: B")
+                .hasMessageContaining("dish number must be positive and unique: C");
+
+        // The shipped AERIS file carries no numbers yet: the technologist assigns them (MENU_COMPOSITION_FOR_BOT.md, #174).
+        BusinessLunchOffer aeris = new BusinessLunchCatalog(objectMapper).find("AERIS").orElseThrow();
+        assertThat(aeris.numberedDishes()).isEmpty();
+        // The fixture does, in number order, and a number survives the composition fields.
+        BusinessLunchOffer carte = BusinessLunchFixtures.aLaCarte();
+        assertThat(carte.numberedDishes()).extracting(BusinessLunchOffer.Dish::number).containsExactly(1, 2, 11, 31, 32);
+        assertThat(carte.dish("BORSCHT").orElseThrow().withNumber(null).number()).isNull();
+        assertThat(carte.dish("BORSCHT").orElseThrow().ingredients()).isNotBlank();
+    }
+
     @Test
     void checksFindNothingWrongWithTheFixtures() {
         assertThat(BusinessLunchCatalog.problems(BusinessLunchFixtures.fullMenu())).isEmpty();

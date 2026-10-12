@@ -21,6 +21,8 @@ public class GlassesAssistService implements AutoCloseable {
     private final GlassesSpeech speech;
     private final GlassesTranscriptRelay relay;
     private final GlassesVoiceTasks tasks;
+    // A short order by dish numbers (#184): recognised without a model, becomes a task for the table's waiter.
+    private final GlassesShortOrders orders;
     // What the earpiece may say: the answer without swearing and sums; the text itself stays complete.
     private final GlassesSpeechFilter filter;
     private final GlassesReplyCache replies = new GlassesReplyCache();
@@ -50,7 +52,8 @@ public class GlassesAssistService implements AutoCloseable {
 
     @Autowired
     public GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, GlassesSpeech speech,
-                                GlassesTranscriptRelay relay, GlassesVoiceTasks tasks, GlassesSpeechFilter filter,
+                                GlassesTranscriptRelay relay, GlassesVoiceTasks tasks, GlassesShortOrders orders,
+                                GlassesSpeechFilter filter,
                                 @Value("${astor.glasses.text-enabled:false}") boolean textEnabled,
                                 @Value("${astor.glasses.timeout-ms:10000}") long timeoutMs) {
         this.gateway = gateway;
@@ -59,6 +62,7 @@ public class GlassesAssistService implements AutoCloseable {
         this.speech = speech;
         this.relay = relay;
         this.tasks = tasks;
+        this.orders = orders;
         this.filter = filter;
         this.textEnabled = textEnabled;
         this.timeoutMs = Math.max(1, Math.min(timeoutMs, 45000));
@@ -98,6 +102,18 @@ public class GlassesAssistService implements AutoCloseable {
     GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesTranscriptRelay relay, GlassesVoiceTasks tasks,
                          GlassesSpeechFilter filter, boolean enabled, long timeoutMs) {
         this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, tasks, filter, enabled, timeoutMs);
+    }
+
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesTranscriptRelay relay, GlassesVoiceTasks tasks,
+                         GlassesShortOrders orders, GlassesSpeechFilter filter, boolean enabled, long timeoutMs) {
+        this(gateway, voice, GlassesS3Storage.disabled(), GlassesSpeech.disabled(), relay, tasks, orders, filter, enabled, timeoutMs);
+    }
+
+    /** The wiring without short orders: everything before #184, for the tests and the callers that do not need them. */
+    GlassesAssistService(ModelGateway gateway, GlassesVoice voice, GlassesS3Storage storage, GlassesSpeech speech,
+                         GlassesTranscriptRelay relay, GlassesVoiceTasks tasks, GlassesSpeechFilter filter,
+                         boolean textEnabled, long timeoutMs) {
+        this(gateway, voice, storage, speech, relay, tasks, GlassesShortOrders.disabled(), filter, textEnabled, timeoutMs);
     }
 
     public GlassesAssistService(ModelGateway gateway, boolean enabled, long timeoutMs) {
@@ -230,6 +246,12 @@ public class GlassesAssistService implements AutoCloseable {
             String answer = replies.find(scope, id, signature);
             // A repeat of a task request answers with the same confirmation and the same receipt, no new task.
             GlassesVoiceTasks.Receipt task = answer == null ? null : tasks.receipt(scope, id);
+            // A short order is confirmed in its own words, which name nobody: spoken as they are, names on or off.
+            boolean order = false;
+            if (answer != null && task == null) {
+                task = orders.receipt(scope, id);
+                order = task != null;
+            }
             // What the staff member actually asked, for the system chat: the typed text, or what the
             // recorder heard. Empty when the answer came from the cache and no new question was spoken.
             String question = kind.equals("audio") ? "" : text;
@@ -240,7 +262,12 @@ public class GlassesAssistService implements AutoCloseable {
                 switch (kind) {
                     case "audio" -> {
                         question = voice.transcribe(media);
-                        if (tasks.isTask(intent, question)) {
+                        if (orders.isOrder(intent, question)) {
+                            var outcome = orders.create(scope, id, question);
+                            task = outcome.task();
+                            answer = outcome.text();
+                            order = true;
+                        } else if (tasks.isTask(intent, question)) {
                             task = tasks.create(scope, id, question);
                             answer = GlassesVoiceTasks.confirmation(task);
                         } else {
@@ -250,7 +277,12 @@ public class GlassesAssistService implements AutoCloseable {
                     case "image" -> answer = image((photoContext == null ? "" : photoContext.prompt()) + text,
                             Base64.getEncoder().encodeToString(media), context);
                     default -> {
-                        if (tasks.isTask(intent, text)) {
+                        if (orders.isOrder(intent, text)) {
+                            var outcome = orders.create(scope, id, text);
+                            task = outcome.task();
+                            answer = outcome.text();
+                            order = true;
+                        } else if (tasks.isTask(intent, text)) {
                             task = tasks.create(scope, id, text);
                             answer = GlassesVoiceTasks.confirmation(task);
                         } else {
@@ -269,7 +301,7 @@ public class GlassesAssistService implements AutoCloseable {
             // words that gave it and the confirmation the wearer heard.
             relay.sendLater(scope, id, kind, question, answer, photoContext, kind.equals("image") ? media : null);
             // The earpiece hears the filtered answer; a task confirmation is rebuilt without names when so configured.
-            String spoken = filter.spoken(task == null || filter.speakNames() ? answer : GlassesVoiceTasks.confirmation(task, false));
+            String spoken = filter.spoken(order || task == null || filter.speakNames() ? answer : GlassesVoiceTasks.confirmation(task, false));
             return new Outcome(answer, spoken, task);
         }, kind.equals("image"), cancelled);
     }
@@ -344,8 +376,9 @@ public class GlassesAssistService implements AutoCloseable {
             cancelled.set(true);
             future.cancel(true);
             if (e.getCause() instanceof GlassesFailure failure) {
-                // Butler refusing a task says nothing about the model: text stays ready.
-                if (failure.status >= 500 && !GlassesStaffTaskRelay.FAILURE_CODE.equals(failure.code)) clearReadiness(image);
+                // Butler refusing a task or an order says nothing about the model: text stays ready.
+                if (failure.status >= 500 && !GlassesStaffTaskRelay.FAILURE_CODE.equals(failure.code)
+                        && !GlassesShortOrders.FAILURE_CODE.equals(failure.code)) clearReadiness(image);
                 throw failure;
             }
             clearReadiness(image);
