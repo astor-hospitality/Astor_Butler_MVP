@@ -59,7 +59,7 @@
 @property(nonatomic,strong) UIStackView *gestureRows;
 @property(nonatomic,strong) NSDictionary<NSNumber *,NSNumber *> *gestureMapping;
 @property(nonatomic,strong) NSDictionary *gestureNames;
-@property(nonatomic,strong) NSString *lastAnswer, *sessionToken;
+@property(nonatomic,strong) NSString *lastAnswer, *lastSpoken, *sessionToken; // lastSpoken: the server's pronounceText — the answer without swearing and sums — read instead of lastAnswer
 @property(nonatomic,strong) NSArray<MPRemoteCommand *> *remoteCommands;
 @property(nonatomic,strong) NSMutableArray *remoteTargets;
 @property(nonatomic,assign) NSUInteger bindingGeneration;
@@ -208,7 +208,7 @@
 }
 - (void)changeTab { [self.view endEditing:YES];for(NSUInteger i=0;i<self.pages.count;i++)self.pages[i].hidden=i!=self.tabs.selectedSegmentIndex; }
 - (void)saveEndpoint { [NSUserDefaults.standardUserDefaults setObject:self.endpoint.text?:@"" forKey:@"backendURL"];[self.view endEditing:YES];[self log:@"Адрес сохранён. Готовность сервера проверяется реальным запросом."]; }
-- (void)repeatAnswer {if(self.lastAnswer.length)[self speakAnswer:self.lastAnswer];else [self speakAnswer:@"Ответов Butler пока нет. Портал задач ещё не подключён."];}
+- (void)repeatAnswer {if(self.lastAnswer.length)[self speakAnswer:self.lastSpoken.length?self.lastSpoken:self.lastAnswer];else [self speakAnswer:@"Ответов Butler пока нет. Портал задач ещё не подключён."];}
 - (BOOL)lunchIsBusy {return self.callActive || self.audioInterruptionActive || self.busy || self.waitingPhoto || self.recorder || self.startingVoice || self.music || self.dock.busy;}
 - (void)refreshLunch {
     BOOL active=self.lunch.active;
@@ -228,7 +228,7 @@
     if([self lunchIsBusy]){[self log:@"Дождитесь записи или запроса перед подсказкой."];return;}
     [self.answerAudio stop];self.answerAudio=nil;[self.speaker stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
     NSString *brief=self.pocketMode?self.lunch.compactBrief:self.lunch.brief;
-    self.lastAnswer=brief;self.answerLabel.text=brief;[self log:@"Шаг подачи озвучен и показан на экране."];[self speakAnswer:brief];
+    self.lastAnswer=brief;self.lastSpoken=nil;self.answerLabel.text=brief;[self log:@"Шаг подачи озвучен и показан на экране."];[self speakAnswer:brief];
 }
 - (void)lunchBrief {if([self lunchIsBusy])return;if(!self.lunch.active){[self clearPendingPhoto];[self.lunch start];}[self refreshLunch];[self readLunchBrief];}
 - (void)lunchNext {if([self lunchIsBusy])return;if(![self.lunch advance]){[self log:@"Сначала получите подтверждение сохранения фото этого шага."];return;}[self clearPendingPhoto];[self refreshLunch];[self readLunchBrief];}
@@ -241,7 +241,7 @@
 }
 - (void)lunchStop {
     [self cancelAgent];[self.lunch stop];
-    [self refreshLunch];self.lastAnswer=nil;self.answerLabel.text=@"Подача завершена.";[self log:@"Подача завершена. Голос и фото остановлены."];
+    [self refreshLunch];self.lastAnswer=nil;self.lastSpoken=nil;self.answerLabel.text=@"Подача завершена.";[self log:@"Подача завершена. Голос и фото остановлены."];
 }
 - (void)remoteBrief {
     NSTimeInterval now=NSDate.timeIntervalSinceReferenceDate;if(now-self.lastBriefCommand<.8)return;self.lastBriefCommand=now;
@@ -929,13 +929,14 @@
         NSDictionary *reply=data.length<=3*1024*1024?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;NSString *answer=[reply isKindOfClass:NSDictionary.class]?reply[@"text"]:nil;
         if(!AstorAssistReplyMatches(reply,requestId)){[self log:@"Ответ не соответствует запросу или согласованному контракту."];return;}
         if(context){if(![self.lunch acceptPhotoReceipt:reply[@"photoReceipt"] context:context requestId:requestId]){[self log:@"Нет подтверждения сохранения фото для этого шага. Переход остаётся закрыт."];return;}[self clearPendingPhoto];[self refreshLunch];[self log:[NSString stringWithFormat:@"Фото текущего шага сохранено сервером. Всего шагов с фото: %lu.",(unsigned long)self.lunch.photoCount]];}
-        self.lastAnswer=answer;self.answerLabel.text=answer;self.statusLabel.text=@"Butler ответил"; // Assistant content stays in memory, outside diagnostics.
+        NSString *spoken=([reply[@"pronounceText"] isKindOfClass:NSString.class] && [reply[@"pronounceText"] length])?reply[@"pronounceText"]:answer; // What the earpiece may say (no swearing, no sums); the screen shows the full answer.
+        self.lastAnswer=answer;self.lastSpoken=spoken;self.answerLabel.text=answer;self.statusLabel.text=@"Butler ответил"; // Assistant content stays in memory, outside diagnostics.
         NSString *encoded=reply[@"audioBase64"],*mime=reply[@"audioMimeType"],*gender=reply[@"audioVoiceGender"];
         if([encoded isKindOfClass:NSString.class] && encoded.length && encoded.length<=((2*1024*1024+2)/3)*4 && [gender isEqual:@"male"] && ([mime isEqual:@"audio/mpeg"] || [mime isEqual:@"audio/mp4"])){
             NSData *speech=[[NSData alloc]initWithBase64EncodedString:encoded options:0];
             if(speech.length && speech.length<=2*1024*1024){[self playBackendSpeech:speech];return;}
         }
-        [self speakAnswer:answer];
+        [self speakAnswer:spoken];
     });}];[self.request resume];
 }
 /* One sentence for a failed request, in the staff member's words: what is wrong and what to do.

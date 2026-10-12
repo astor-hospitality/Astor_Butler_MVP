@@ -107,7 +107,7 @@ public class GlassesController {
                 kind = "audio";
                 var outcome = service.respondAudio(scope, requestId, text, media, photoContext, intent);
                 record(scope, photoContext, requestId, kind, outcome.text(), null, started);
-                return success(requestId, outcome.text(), null, outcome.task());
+                return success(requestId, outcome.text(), outcome.spoken(), null, outcome.task());
             }
             if (image != null) {
                 if (!"image/jpeg".equals(imageMime)) throw malformed();
@@ -116,13 +116,13 @@ public class GlassesController {
                 kind = "image";
                 String answer = service.assistImage(scope, requestId, text, media, photoContext);
                 record(scope, photoContext, requestId, kind, answer, null, started);
-                return success(requestId, answer, photoContext);
+                return success(requestId, answer, service.spoken(answer), photoContext, null);
             }
             if (text.isBlank()) throw malformed();
             kind = "text";
             var outcome = service.respond(scope, requestId, text, photoContext, intent);
             record(scope, photoContext, requestId, kind, outcome.text(), null, started);
-            return success(requestId, outcome.text(), null, outcome.task());
+            return success(requestId, outcome.text(), outcome.spoken(), null, outcome.task());
         } catch (GlassesFailure e) {
             if (kind != null) record(scope, photoContext, requestId, kind, null, e.code, started);
             return error(requestId, e);
@@ -143,29 +143,31 @@ public class GlassesController {
         }
     }
 
-    private ResponseEntity<?> success(String requestId, String answer, GlassesPhotoContext photoContext) {
-        return success(requestId, answer, photoContext, null);
-    }
-
-    private ResponseEntity<?> success(String requestId, String answer, GlassesPhotoContext photoContext,
+    private ResponseEntity<?> success(String requestId, String answer, String spoken, GlassesPhotoContext photoContext,
                                       GlassesVoiceTasks.Receipt task) {
-        // Astor's own voice when the server has one; otherwise the phone reads the text itself.
+        // Astor's own voice when the server has one; otherwise the phone reads pronounceText itself.
+        // Both say the filtered line: the earpiece never gets what the screen may show.
         byte[] audio = null;
         try {
-            audio = service.speak(answer);
+            audio = service.speak(spoken);
         } catch (RuntimeException ignored) {
             // A busy or failing voice never changes the answer.
         }
         return ResponseEntity.ok().header("Cache-Control", "no-store")
-                .body(new AssistResponse(requestId, answer, service.capabilities(), photoContext == null ? null
+                .body(new AssistResponse(requestId, answer, spoken, service.capabilities(), photoContext == null ? null
                         : new PhotoReceipt(requestId, photoContext, service.archivesEnabled()),
                         audio == null ? null : Base64.getEncoder().encodeToString(audio),
                         audio == null ? null : service.audioMimeType(), audio == null ? null : service.voiceGender(),
                         task));
     }
 
-    /** {@code task} is present only when the request was a task and Butler recorded it. */
-    public record AssistResponse(String requestId, String text, GlassesAssistService.Capabilities capabilities,
+    /**
+     * {@code text} is the full answer for the screen; {@code pronounceText} is what the earpiece may say (no
+     * swearing, no sums; see {@link GlassesSpeechFilter}) and what {@code audioBase64} contains. {@code task} is
+     * present only when the request was a task and Butler recorded it.
+     */
+    public record AssistResponse(String requestId, String text, String pronounceText,
+                                 GlassesAssistService.Capabilities capabilities,
                                  PhotoReceipt photoReceipt, String audioBase64, String audioMimeType,
                                  String audioVoiceGender, GlassesVoiceTasks.Receipt task) { }
     public record PhotoReceipt(String requestId, GlassesPhotoContext context, boolean archived) { }
