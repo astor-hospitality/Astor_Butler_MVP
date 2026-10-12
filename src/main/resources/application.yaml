@@ -113,6 +113,12 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+    wishes:
+      # Wishes for the kitchen and the bar (#165): one optional question after the dishes («Пожелания к блюдам или
+      # напиткам?»), the guest's words reach the hostess card and the Saby booking comment as «Пожелание гостя: … —
+      # согласовать с кухней»; «состав …» / «что в …» / «аллергены …» is answered from the lunch menu file when the
+      # restaurant has filled ingredients in (docs/operations/MENU_COMPOSITION_FOR_BOT.md). Off by default.
+      enabled: ${ASTOR_LUNCH_WISHES_ENABLED:false}
   tips:
     personal:
       # Tips to the waiter of the table (#161): the manager assigns a waiter to a table for the shift (/официант) and keeps the

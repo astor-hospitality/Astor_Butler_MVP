@@ -36,10 +36,32 @@ public record BusinessLunchOffer(
     public record Course(String code, String title, List<Dish> dishes) {
     }
 
-    /** {@code portion} is how the menu states the size: "170 г", "500 мл". */
-    public record Dish(String code, String title, Integer priceRub, String portion) {
+    /**
+     * {@code portion} is how the menu states the size: "170 г", "500 мл".
+     * <p>{@code ingredients}, {@code allergens} and {@code canBeWithout} are what the restaurant fills in so that the bot can
+     * answer «состав …», «что в …» and «аллергены …» (#165, {@code docs/operations/MENU_COMPOSITION_FOR_BOT.md}). All three
+     * are optional and empty until the restaurant writes them; the bot never makes them up.
+     */
+    public record Dish(String code, String title, Integer priceRub, String portion, String ingredients, String allergens, List<String> canBeWithout) {
+        public Dish {
+            canBeWithout = canBeWithout == null ? List.of() : List.copyOf(canBeWithout);
+        }
+
         public Dish(String code, String title) {
             this(code, title, null, null);
+        }
+
+        public Dish(String code, String title, Integer priceRub, String portion) {
+            this(code, title, priceRub, portion, null, null, null);
+        }
+
+        /** Whether the restaurant has written anything about what is in the dish. */
+        public boolean describesComposition() {
+            return hasText(ingredients) || hasText(allergens) || !canBeWithout.isEmpty();
+        }
+
+        private static boolean hasText(String value) {
+            return value != null && !value.isBlank();
         }
     }
 

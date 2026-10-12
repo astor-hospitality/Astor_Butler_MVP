@@ -24,6 +24,7 @@ import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -33,11 +34,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Business lunch: a guest, usually sent by the Concierge, picks a set and its dishes, says how many come and when,
  * reads the summary and sends it. The result is a held table with a card for the hostess and an order for the venue's
  * own system. Every step is an FSM state; nothing is placed without the guest's "да", and nothing is called confirmed here.
+ * <p>With {@code astor.business-lunch.wishes.enabled} (#165) one more question follows the dishes — «Пожелания к блюдам или
+ * напиткам?» — and the guest's words go to the hostess card and the Saby comment as a wish to agree with the kitchen; and
+ * «состав …» / «что в …» / «аллергены …» about a lunch dish is answered from the menu file, at any step or from the main menu.
  */
 @Component
 @RequiredArgsConstructor
@@ -58,8 +63,22 @@ public class BusinessLunchScenario implements FsmScenario {
     private static final Set<String> YES = Set.of("да", "ок", "окей", "верно", "все верно", "подтверждаю", "согласен", "согласна");
     private static final Set<String> EXIT = Set.of("отмена", "стоп", "главное меню", "выйти", "не надо", "не нужно", "передумал", "передумала", "нет");
     private static final String VENUE_WORD = "Состав и стоимость на день подтвердит команда.";
-    private static final int WISH_LIMIT = 200;
+    private static final int WISH_LIMIT = BusinessLunchService.WISH_LIMIT;
     private static final int CORRECTION_WORDS = 4;
+    // The question about the dishes and drinks (#165). «Нет» here is an answer, not the way out of the lunch.
+    private static final String NO_WISH_BUTTON = "Нет";
+    private static final Set<String> NO_WISH = Set.of("нет", "нет спасибо", "не надо", "не нужно", "ничего", "пропустить", "дальше", "далее",
+            "готово", "без пожеланий", "нет пожеланий", "все ок", "все хорошо", "все устраивает");
+    private static final String WISH_QUESTION = "Пожелания к блюдам или напиткам? Например: без лука, соус отдельно, лимонад кислее. Или «нет».";
+    private static final String WISH_NOTED = "Пожелание записал, передам кухне вместе с заказом — подтвердят при подаче.";
+    private static final String WISH_RELAYED = "Передал пожелание кухне, подтвердят при подаче.";
+    // «состав борща», «что в нисуазе», «из чего котлеты», «аллергены в цезаре», «есть ли орехи в медовике».
+    private static final Pattern COMPOSITION_QUESTION = Pattern.compile(
+            "^(состав|что в |что во |что входит|что внутри|что там|из чего|какие аллергены|аллергены|есть ли )");
+    private static final Set<String> QUESTION_WORDS = Set.of("что", "входит", "состав", "составе", "чего", "внутри", "там", "есть", "аллергены",
+            "аллерген", "аллергенов", "какие", "какой", "блюде", "блюдо", "блюда", "напитке", "напиток", "этом", "это", "скажите", "подскажите",
+            "пожалуйста", "можно", "узнать", "расскажите", "ингредиенты", "входят");
+    private static final int COMPOSITION_ANSWERS = 3;
 
     private final FSMStorage fsmStorage;
     private final BusinessLunchDraftStorage draftStorage;
@@ -75,6 +94,10 @@ public class BusinessLunchScenario implements FsmScenario {
 
     @Value("${astor.business-lunch.default-venue-code:AERIS}")
     private String defaultVenueCode = "AERIS";
+
+    /** #165: the question about wishes after the dishes and the answers about what is in a dish. Off by default. */
+    @Value("${astor.business-lunch.wishes.enabled:false}")
+    private boolean wishesEnabled = false;
 
     @Value("${telegram.admin.chat-id:}")
     private String adminChatId;
@@ -102,7 +125,7 @@ public class BusinessLunchScenario implements FsmScenario {
             return false;
         }
         BotState state = canonical(currentState);
-        return owns(state) || isIdle(state) && asksForLunch(normalized);
+        return owns(state) || isIdle(state) && (asksForLunch(normalized) || asksAboutALunchDish(normalized));
     }
 
     @Override
@@ -114,7 +137,8 @@ public class BusinessLunchScenario implements FsmScenario {
         BotState state = canonical(currentState);
         Optional<Draft> stored = draftStorage.find(incoming.chatId());
         if (!owns(state) || stored.isEmpty()) {
-            return begin(incoming, heardAtOnce(text), "");
+            Optional<OutgoingMessage> aboutADish = answerAboutADish(incoming, text);
+            return aboutADish.isPresent() ? aboutADish.get() : begin(incoming, heardAtOnce(text), "");
         }
         String normalized = normalize(text);
         Draft draft = stored.get();
@@ -122,14 +146,26 @@ public class BusinessLunchScenario implements FsmScenario {
         if (offer.isEmpty()) {
             return unavailable(incoming);
         }
-        // "Нет" to "what from the salads?" skips the salads; anywhere else it leaves the lunch.
+        // "Нет" to "what from the salads?" skips the salads, "нет" to "any wishes?" means none; anywhere else it leaves the lunch.
         boolean skipsCourse = state == BotState.BUSINESS_LUNCH_CHOOSE_DISH && offer.get().aLaCarte() && isNext(normalized);
-        if (isExit(normalized) && !skipsCourse) {
+        boolean noWish = state == BotState.BUSINESS_LUNCH_COLLECT_WISHES && isNoWish(normalized);
+        if (isExit(normalized) && !skipsCourse && !noWish) {
             return leave(incoming);
+        }
+        // «Что в борще?» at any step: the answer, then the step's question again, with nothing changed in the order.
+        if (wishesEnabled && asksComposition(normalized)) {
+            List<BusinessLunchOffer.Dish> asked = dishesNamed(offer.get(), normalized);
+            if (!asked.isEmpty()) {
+                return advance(incoming, offer.get(), draft, composition(asked, normalized));
+            }
+            if (state != BotState.BUSINESS_LUNCH_COLLECT_WISHES) {
+                return advance(incoming, offer.get(), draft, "Не понял, про какое блюдо спросить. Напишите, например: «состав борща».");
+            }
         }
         return switch (state) {
             case BUSINESS_LUNCH_CHOOSE_SET -> onSet(incoming, offer.get(), draft, normalized);
             case BUSINESS_LUNCH_CHOOSE_DISH -> onDish(incoming, offer.get(), draft, normalized);
+            case BUSINESS_LUNCH_COLLECT_WISHES -> onWishes(incoming, offer.get(), draft, text);
             case BUSINESS_LUNCH_COLLECT_PARTY_SIZE -> onPartySize(incoming, offer.get(), draft, text);
             case BUSINESS_LUNCH_COLLECT_DATE -> onDate(incoming, offer.get(), draft, text);
             case BUSINESS_LUNCH_COLLECT_TIME -> onTime(incoming, offer.get(), draft, text);
@@ -142,6 +178,7 @@ public class BusinessLunchScenario implements FsmScenario {
         return switch (canonical(state)) {
             case BUSINESS_LUNCH_CHOOSE_SET,
                  BUSINESS_LUNCH_CHOOSE_DISH,
+                 BUSINESS_LUNCH_COLLECT_WISHES,
                  BUSINESS_LUNCH_COLLECT_PARTY_SIZE,
                  BUSINESS_LUNCH_COLLECT_DATE,
                  BUSINESS_LUNCH_COLLECT_TIME,
@@ -191,7 +228,7 @@ public class BusinessLunchScenario implements FsmScenario {
         }
         Draft clean = withOnlyChoices(offer.get(), sanitized(offer.get(), draft));
         // The summary carries the same note about the venue's word, so the opening line leaves it out when the summary follows at once.
-        boolean summaryNext = dishesChosen(offer.get(), clean) && clean.partySize() != null && clean.date() != null && clean.time() != null;
+        boolean summaryNext = dishesChosen(offer.get(), clean) && !wishesPending(clean) && clean.partySize() != null && clean.date() != null && clean.time() != null;
         String opening = intro(offer.get()) + (needsVenueWord(offer.get()) && !summaryNext ? " " + VENUE_WORD : "");
         if (offer.get().aLaCarte() && clean.dishCodes().isEmpty()) {
             opening = opening + "\n\n" + menu(offer.get());
@@ -232,6 +269,9 @@ public class BusinessLunchScenario implements FsmScenario {
                 String question = offer.slotTitle(set, slot) + ": что выбираете?";
                 return ask(incoming, BotState.BUSINESS_LUNCH_CHOOSE_DISH, join(lead, question), rows(titles(offer.dishesFor(set, slot)), 1), "ASK_LUNCH_DISH");
             }
+        }
+        if (wishesPending(draft)) {
+            return ask(incoming, BotState.BUSINESS_LUNCH_COLLECT_WISHES, join(lead, WISH_QUESTION), List.of(List.of(NO_WISH_BUTTON)), "ASK_LUNCH_WISHES");
         }
         if (draft.partySize() == null) {
             return ask(incoming, BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE, join(lead, "На сколько гостей накрыть?"), rows(List.of("1", "2", "3", "4"), 4), "ASK_PARTY_SIZE");
@@ -316,6 +356,29 @@ public class BusinessLunchScenario implements FsmScenario {
         return advance(incoming, offer, draft.withDish(slot, dishes.get(picked).code()), "");
     }
 
+    /**
+     * The one wish for the whole order, in the guest's words: «без лука», «соус отдельно», «лимонад кислее». Nothing is
+     * classified and nothing is promised; the kitchen agrees to it at the table. «Нет» records that there is none.
+     */
+    private OutgoingMessage onWishes(IncomingMessage incoming, BusinessLunchOffer offer, Draft draft, String text) {
+        String normalized = normalize(text);
+        if (isNoWish(normalized)) {
+            return advance(incoming, offer, draft.withWishes(""), "");
+        }
+        if (offer.aLaCarte() && isRemoval(normalized)) {
+            return removePortion(incoming, offer, draft, normalized);
+        }
+        String wish = oneLine(text);
+        if (wish.isBlank()) {
+            return advance(incoming, offer, draft, "");
+        }
+        if (wish.length() <= WISH_LIMIT) {
+            return advance(incoming, offer, draft.withWishes(wish), WISH_NOTED);
+        }
+        return advance(incoming, offer, draft.withWishes(wish.substring(0, WISH_LIMIT).stripTrailing()),
+                "Пожелание длинное, записал первые %s символов. ".formatted(WISH_LIMIT) + WISH_NOTED);
+    }
+
     private OutgoingMessage onPartySize(IncomingMessage incoming, BusinessLunchOffer offer, Draft draft, String text) {
         Integer guests = heard(text, BotState.TABLE_BOOKING_COLLECT_PARTY_SIZE).partySize();
         if (guests == null) {
@@ -363,11 +426,11 @@ public class BusinessLunchScenario implements FsmScenario {
         if (offer.aLaCarte() && isRemoval(normalized)) {
             return removePortion(incoming, offer, draft, normalized);
         }
-        String wish = text == null ? "" : text.trim();
+        String wish = oneLine(text);
         // A short reply such as "лучше в 14:30" corrects the summary. A longer one is a wish for the team and is not searched
         // for numbers: "один гость не ест лук" must not turn the party into one guest.
         if (normalized.split(" ").length > CORRECTION_WORDS) {
-            return advance(incoming, offer, draft.withComment(wish.length() > WISH_LIMIT ? wish.substring(0, WISH_LIMIT) : wish), "Пожелание записал.");
+            return advance(incoming, offer, withWish(draft, wish), "Пожелание записал.");
         }
         TableBookingDraftStorage.Draft said = heard(text, BotState.TABLE_BOOKING_INTENT);
         Draft corrected = draft;
@@ -391,7 +454,13 @@ public class BusinessLunchScenario implements FsmScenario {
         if (!corrected.equals(draft)) {
             return advance(incoming, offer, corrected, "Поправил.");
         }
-        return advance(incoming, offer, draft.withComment(wish.length() > WISH_LIMIT ? wish.substring(0, WISH_LIMIT) : wish), "Пожелание записал.");
+        return advance(incoming, offer, withWish(draft, wish), "Пожелание записал.");
+    }
+
+    /** A wish typed at the summary: with the wishes question on it replaces the answer to that question, otherwise it is the free comment. */
+    private Draft withWish(Draft draft, String wish) {
+        String kept = wish.length() > WISH_LIMIT ? wish.substring(0, WISH_LIMIT).stripTrailing() : wish;
+        return wishesEnabled ? draft.withWishes(kept) : draft.withComment(kept);
     }
 
     private OutgoingMessage place(IncomingMessage incoming, BusinessLunchOffer offer, Draft draft) {
@@ -410,7 +479,8 @@ public class BusinessLunchScenario implements FsmScenario {
                     guestPhone(incoming),
                     draft.comment(),
                     draft.source(),
-                    draft.conciergeRequestId()
+                    draft.conciergeRequestId(),
+                    hasWishes(draft) ? draft.wishes() : null
             ));
         } catch (ApiException e) {
             log.warn("Business lunch was not placed: chatId={}, reason={}", incoming.chatId(), e.getMessage());
@@ -447,7 +517,7 @@ public class BusinessLunchScenario implements FsmScenario {
                 Готово. Заявку #%s на бизнес-ланч передал команде %s. Как только хостес ответит, я вернусь с финальным статусом.
 
                 %s
-                """.formatted(orderId, venueName(offer), summary(offer, draft)).strip(),
+                """.formatted(orderId, venueName(offer), summary(offer, draft) + (hasWishes(draft) ? "\n\n" + WISH_RELAYED : "")).strip(),
                 BotState.READY_FOR_DIALOG.name(),
                 false,
                 false,
@@ -477,7 +547,7 @@ public class BusinessLunchScenario implements FsmScenario {
                 %s не принял заказ. Внесите его вручную.
 
                 Заявка #%s · %s в %s · гостей: %s
-                %s
+                %s%s
                 Статус: %s
                 """.formatted(
                 html(external.providerId()),
@@ -486,8 +556,35 @@ public class BusinessLunchScenario implements FsmScenario {
                 draft.time().format(TIME_TEXT),
                 draft.partySize(),
                 html(offer.aLaCarte() ? orderLine(offer, draft) : "Комбо: " + offer.set(draft.setCode()).map(BusinessLunchOffer.LunchSet::title).orElse(draft.setCode())),
+                hasWishes(draft) ? "\n" + html(BusinessLunchService.wishLine(draft.wishes())) : "",
                 html(external.status())
         ));
+    }
+
+    /**
+     * «Состав борща» asked from the main menu: the answer from the lunch menu file, and the guest stays where they were —
+     * no lunch is started for a question. Empty when the question is not about a lunch dish the bot knows.
+     */
+    private Optional<OutgoingMessage> answerAboutADish(IncomingMessage incoming, String text) {
+        String normalized = normalize(text);
+        if (!asksAboutALunchDish(normalized)) {
+            return Optional.empty();
+        }
+        BusinessLunchOffer offer = catalog.find(defaultVenueCode).orElseThrow();
+        String answer = composition(dishesNamed(offer, normalized), normalized)
+                + "\n\nЕсли захотите заказать бизнес-ланч, напишите «ланч».";
+        fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+        return Optional.of(OutgoingMessage.of(
+                incoming,
+                answer,
+                BotState.READY_FOR_DIALOG.name(),
+                false,
+                false,
+                false,
+                false,
+                AdminAlert.none(),
+                List.of("BUSINESS_LUNCH", "LUNCH_DISH_COMPOSITION", "RETURN_MAIN_MENU")
+        ).withMetadata(Map.of("scenario", id())));
     }
 
     private OutgoingMessage leave(IncomingMessage incoming) {
@@ -570,9 +667,10 @@ public class BusinessLunchScenario implements FsmScenario {
         if (offer.aLaCarte()) {
             List<String> order = draft.dishCodes().stream().filter(code -> code != null && offer.dish(code).isPresent()).toList();
             Integer step = draft.courseStep() == null ? null : Math.max(0, Math.min(draft.courseStep(), offer.courses().size()));
-            return new Draft(draft.venueCode(), null, order, step, guests, day, time, draft.comment(), draft.source(), draft.conciergeRequestId());
+            return new Draft(draft.venueCode(), null, order, step, guests, day, time, draft.comment(), draft.source(), draft.conciergeRequestId(), draft.wishes());
         }
-        return new Draft(draft.venueCode(), set.map(BusinessLunchOffer.LunchSet::code).orElse(null), dishes, null, guests, day, time, draft.comment(), draft.source(), draft.conciergeRequestId());
+        return new Draft(draft.venueCode(), set.map(BusinessLunchOffer.LunchSet::code).orElse(null), dishes, null, guests, day, time, draft.comment(),
+                draft.source(), draft.conciergeRequestId(), draft.wishes());
     }
 
     private Optional<BusinessLunchOffer.LunchSet> setByRef(BusinessLunchOffer offer, String ref) {
@@ -694,6 +792,9 @@ public class BusinessLunchScenario implements FsmScenario {
                     .map(code -> offer.dish(code).map(BusinessLunchOffer.Dish::title).orElse(code))
                     .toList()));
         }
+        if (hasWishes(draft)) {
+            lines.add("Пожелание: " + draft.wishes());
+        }
         if (draft.comment() != null && !draft.comment().isBlank()) {
             lines.add("Пожелание: " + draft.comment());
         }
@@ -701,6 +802,77 @@ public class BusinessLunchScenario implements FsmScenario {
             lines.add(VENUE_WORD);
         }
         return String.join("\n", lines);
+    }
+
+    /** What the menu file says is in the dishes the guest named; one line per dish, nothing made up. */
+    private String composition(List<BusinessLunchOffer.Dish> dishes, String normalized) {
+        boolean aboutAllergens = normalized.contains("аллерген");
+        List<String> lines = new ArrayList<>();
+        for (BusinessLunchOffer.Dish dish : dishes) {
+            if (!dish.describesComposition()) {
+                lines.add("«" + dish.title() + "»: состав в меню бота пока не заполнен — уточнит официант при подаче.");
+                continue;
+            }
+            List<String> parts = new ArrayList<>();
+            if (dish.ingredients() != null && !dish.ingredients().isBlank()) {
+                parts.add("состав — " + dish.ingredients().trim() + ".");
+            }
+            if (dish.allergens() != null && !dish.allergens().isBlank()) {
+                parts.add("Аллергены: " + dish.allergens().trim() + ".");
+            } else if (aboutAllergens) {
+                parts.add("Аллергены в меню не указаны — уточнит официант.");
+            }
+            if (!dish.canBeWithout().isEmpty()) {
+                parts.add("Можно попросить без: " + String.join(", ", dish.canBeWithout()) + " — согласуем с кухней.");
+            }
+            lines.add("«" + dish.title() + "»: " + String.join(" ", parts));
+        }
+        return String.join("\n", lines);
+    }
+
+    /**
+     * The lunch dishes a question names: «что в борще» finds «Борщ со сметаной», «состав лимонада» finds every lemonade.
+     * A word of the question and a word of the title are the same when they share a stem; the dishes with the most words
+     * in common win, at most {@link #COMPOSITION_ANSWERS} of them.
+     */
+    private List<BusinessLunchOffer.Dish> dishesNamed(BusinessLunchOffer offer, String normalized) {
+        List<String> asked = Arrays.stream(words(normalized).split(" "))
+                .filter(word -> word.length() >= 3 && !QUESTION_WORDS.contains(word))
+                .toList();
+        if (asked.isEmpty()) {
+            return List.of();
+        }
+        Map<BusinessLunchOffer.Dish, Integer> scores = new LinkedHashMap<>();
+        for (BusinessLunchOffer.Course course : offer.courses()) {
+            for (BusinessLunchOffer.Dish dish : course.dishes()) {
+                int score = (int) Arrays.stream(words(normalize(dish.title())).split(" "))
+                        .filter(word -> word.length() >= 3)
+                        .filter(word -> asked.stream().anyMatch(said -> sameStem(said, word)))
+                        .count();
+                if (score > 0) {
+                    scores.put(dish, score);
+                }
+            }
+        }
+        int best = scores.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+        return scores.entrySet().stream()
+                .filter(entry -> entry.getValue() == best)
+                .map(Map.Entry::getKey)
+                .limit(COMPOSITION_ANSWERS)
+                .toList();
+    }
+
+    /** «борще» and «борщ», «цезаре» and «цезарь»: the same word in another case. */
+    private static boolean sameStem(String said, String titleWord) {
+        if (said.equals(titleWord)) {
+            return true;
+        }
+        int common = 0;
+        int shorter = Math.min(said.length(), titleWord.length());
+        while (common < shorter && said.charAt(common) == titleWord.charAt(common)) {
+            common++;
+        }
+        return common >= 3 && common >= shorter - 2;
     }
 
     /** The whole lunch menu, the way the printed one reads: courses, dishes, portion and price. */
@@ -774,6 +946,40 @@ public class BusinessLunchScenario implements FsmScenario {
 
     private boolean asksForLunch(String normalized) {
         return normalized.contains("ланч") || normalized.contains("lunch");
+    }
+
+    /** A question about what is in a dish: only the form of the sentence, not yet whether the dish is known. */
+    private boolean asksComposition(String normalized) {
+        String words = words(normalized);
+        if (words.contains("ланч") || words.contains("заказ") || words.contains("меню") || words.contains("комбо")) {
+            return false;
+        }
+        return COMPOSITION_QUESTION.matcher(words).find();
+    }
+
+    /** From the main menu the question is taken only when it names a dish of the default venue's lunch. */
+    private boolean asksAboutALunchDish(String normalized) {
+        if (!wishesEnabled || !asksComposition(normalized)) {
+            return false;
+        }
+        return catalog.find(defaultVenueCode).map(offer -> !dishesNamed(offer, normalized).isEmpty()).orElse(false);
+    }
+
+    private boolean wishesPending(Draft draft) {
+        return wishesEnabled && draft.wishes() == null;
+    }
+
+    private boolean hasWishes(Draft draft) {
+        return draft.wishes() != null && !draft.wishes().isBlank();
+    }
+
+    private boolean isNoWish(String normalized) {
+        return NO_WISH.contains(words(normalized));
+    }
+
+    /** The guest's text as one line: the card and the Saby comment have no room for paragraphs. */
+    private String oneLine(String text) {
+        return text == null ? "" : text.replaceAll("\\s+", " ").trim();
     }
 
     private boolean isYes(String normalized) {
