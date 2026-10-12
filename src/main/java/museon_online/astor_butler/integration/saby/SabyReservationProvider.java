@@ -13,6 +13,8 @@ import museon_online.astor_butler.domain.booking.external.ExternalBookingState;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationProvider;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
+import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.stereotype.Component;
 
@@ -54,9 +56,17 @@ public class SabyReservationProvider implements ExternalReservationProvider {
             .maximumSize(10_000)
             .build();
 
+    /** The kitchen's «готовить ко времени» line of a lunch (#164), refreshed when the lunch moves. Optional so the constructor stays. */
+    @Autowired(required = false)
+    private LunchPreorderMark preorderMark;
+
     public SabyReservationProvider(SabyReservationProperties properties, RestTemplateBuilder restTemplateBuilder) {
         this.properties = properties;
         this.client = new SabyApiClient(properties, restTemplateBuilder);
+    }
+
+    void setPreorderMark(LunchPreorderMark preorderMark) {
+        this.preorderMark = preorderMark;
     }
 
     @Override
@@ -282,8 +292,10 @@ public class SabyReservationProvider implements ExternalReservationProvider {
             customer.set("phone", changes.path("customer").get("phone"));
             String oldComment = snapshot.path("comment").asText("");
             String newComment = changes.path("comment").asText();
-            update.put("comment", oldComment.isBlank() || oldComment.equals(newComment)
-                    ? newComment : oldComment + " · Изменение Butler: " + newComment);
+            String comment = oldComment.isBlank() || oldComment.equals(newComment)
+                    ? newComment : oldComment + " · Изменение Butler: " + newComment;
+            // A moved lunch keeps its «готовить ко времени» line first, with the new time (#164); any other comment is as before.
+            update.put("comment", preorderMark == null ? comment : preorderMark.refresh(comment, command.requestedStartAt(), command.partySize()));
             // Preserve the restaurant's table, hall, dishes and other order fields.
             // A changed Butler table remains a seating request for the hostess, not a Saby table id.
             client.put(ORDER_PATH + externalReservationId + "/update", update);

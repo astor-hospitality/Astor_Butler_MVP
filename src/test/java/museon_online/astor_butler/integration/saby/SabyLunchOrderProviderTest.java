@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOrder;
 import museon_online.astor_butler.domain.lunch.ExternalLunchOrderProvider;
+import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.http.HttpMethod;
@@ -211,6 +212,90 @@ class SabyLunchOrderProviderTest {
         assertThat(result.accepted()).isFalse();
         assertThat(result.status()).isEqualTo("EXISTING_DISHES_REQUIRE_REVIEW");
         fixture.server().verify();
+    }
+
+    /** #164: with the mark on, the kitchen's line opens the booking comment, the marker and the wish keep their places. */
+    @Test
+    void theKitchenMarkOpensTheBookingCommentWhenItIsOn() {
+        SabyReservationProperties properties = writable();
+        properties.setPriceListId("4");
+        Fixture fixture = fixture(properties);
+        fixture.provider().setPreorderMark(new LunchPreorderMark(true, 10));
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andRespond(withSuccess("{\"nomenclatures\": [{\"id\": 31, \"name\": \"Борщ со сметаной\", \"cost\": 270}]}", MediaType.APPLICATION_JSON));
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.nomenclatures[0].id").value(31))
+                // 13:00 in Yekaterinburg less 10 minutes; two guests, as the booking says.
+                .andExpect(jsonPath("$.comment").value("ПРЕДЗАКАЗ: готовить ко времени 12:50, гостей 2 · Hostess note · Astor Butler #77 · Пожелание гостя: без лука — согласовать с кухней"))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider()
+                .submit(order(BOOKING_ID, List.of(dish("Борщ со сметаной", 2)), "без лука"), "astor-lunch-77");
+
+        assertThat(result.accepted()).isTrue();
+        fixture.server().verify();
+    }
+
+    /** #164: the flag off leaves the comment exactly as before, whether the bean is there or not. */
+    @Test
+    void theKitchenMarkIsAbsentWhileItIsOff() {
+        SabyReservationProperties properties = writable();
+        properties.setPriceListId("4");
+        Fixture fixture = fixture(properties);
+        fixture.provider().setPreorderMark(new LunchPreorderMark(false, 10));
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andRespond(withSuccess("{\"nomenclatures\": [{\"id\": 31, \"name\": \"Борщ со сметаной\", \"cost\": 270}]}", MediaType.APPLICATION_JSON));
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.comment").value("Hostess note · Astor Butler #77"))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        assertThat(fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-77").accepted()).isTrue();
+        fixture.server().verify();
+    }
+
+    /** #164: the line is first; when the comment is too long the hostess line is cut, the marker and what follows it never are. */
+    @Test
+    void theKitchenMarkWinsOverTheHostessLineAndNeverOverTheMarker() {
+        ObjectMapper mapper = new ObjectMapper();
+        String line = "ПРЕДЗАКАЗ: готовить ко времени 13:00, гостей 2";
+
+        ObjectNode fits = mapper.createObjectNode().put("comment", "Hostess note · Пожелание: Бизнес-ланч · Astor Butler #77");
+        SabyLunchOrderProvider.withPreorderMark(fits, line);
+        assertThat(fits.get("comment").asText()).isEqualTo(line + " · Hostess note · Пожелание: Бизнес-ланч · Astor Butler #77");
+
+        ObjectNode empty = mapper.createObjectNode();
+        SabyLunchOrderProvider.withPreorderMark(empty, line);
+        assertThat(empty.get("comment").asText()).isEqualTo(line);
+
+        ObjectNode twice = mapper.createObjectNode().put("comment", line + " · Hostess note · Astor Butler #77");
+        SabyLunchOrderProvider.withPreorderMark(twice, line);
+        assertThat(twice.get("comment").asText()).isEqualTo(line + " · Hostess note · Astor Butler #77");
+
+        ObjectNode none = mapper.createObjectNode().put("comment", "Hostess note · Astor Butler #77");
+        SabyLunchOrderProvider.withPreorderMark(none, " ");
+        assertThat(none.get("comment").asText()).isEqualTo("Hostess note · Astor Butler #77");
+
+        String longHostessLine = "Бизнес-ланч: " + "Борщ со сметаной × 2, ".repeat(14).trim();
+        ObjectNode cut = mapper.createObjectNode().put("comment", longHostessLine + " · Astor Butler #77 · Пожелание гостя: без лука — согласовать с кухней");
+        SabyLunchOrderProvider.withPreorderMark(cut, line);
+        String comment = cut.get("comment").asText();
+        assertThat(comment).startsWith(line + " · Бизнес-ланч: Борщ со сметаной × 2")
+                .contains("… · Astor Butler #77 · Пожелание гостя: без лука — согласовать с кухней")
+                .hasSizeLessThanOrEqualTo(SabyOrderPayload.MAX_GUEST_COMMENT);
+
+        ObjectNode noRoom = mapper.createObjectNode().put("comment", "x".repeat(60) + " · Astor Butler #77 · " + "y".repeat(SabyOrderPayload.MAX_GUEST_COMMENT - 70));
+        SabyLunchOrderProvider.withPreorderMark(noRoom, line);
+        assertThat(noRoom.get("comment").asText()).isEqualTo(line + " · Astor Butler #77 · " + "y".repeat(SabyOrderPayload.MAX_GUEST_COMMENT - 70));
+
+        ObjectNode noMarker = mapper.createObjectNode().put("comment", "z".repeat(SabyOrderPayload.MAX_GUEST_COMMENT));
+        SabyLunchOrderProvider.withPreorderMark(noMarker, line);
+        assertThat(noMarker.get("comment").asText()).startsWith(line + " · zzz").endsWith("…").hasSize(SabyOrderPayload.MAX_GUEST_COMMENT);
     }
 
     private static void expectBooking(MockRestServiceServer server, String dishes) {

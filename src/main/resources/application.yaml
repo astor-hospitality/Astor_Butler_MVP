@@ -119,6 +119,14 @@ astor:
       # согласовать с кухней»; «состав …» / «что в …» / «аллергены …» is answered from the lunch menu file when the
       # restaurant has filled ingredients in (docs/operations/MENU_COMPOSITION_FOR_BOT.md). Off by default.
       enabled: ${ASTOR_LUNCH_WISHES_ENABLED:false}
+    preorder-mark:
+      # The kitchen's mark on a lunch pre-order (#164, chef interview 12.10): with the flag on, every lunch order that
+      # carries dishes gets one line «ПРЕДЗАКАЗ: готовить ко времени HH:MM, гостей N» at the start of the Saby booking
+      # comment (first on the Presto ticket, before the hostess line and the wish; the «Astor Butler #N» marker stays) and
+      # a bold line «⏱ Готовить ко времени HH:MM» on the hostess card (also without Saby). HH:MM is the lunch start the
+      # guest chose less lead-minutes, venue time (Asia/Yekaterinburg). No Saby course or state calls. Off by default.
+      enabled: ${ASTOR_LUNCH_PREORDER_MARK_ENABLED:false}
+      lead-minutes: ${ASTOR_LUNCH_PREORDER_LEAD_MINUTES:0}
   tips:
     personal:
       # Tips to the waiter of the table (#161): the manager assigns a waiter to a table for the shift (/официант) and keeps the

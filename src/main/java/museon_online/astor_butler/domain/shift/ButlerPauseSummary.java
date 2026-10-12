@@ -27,7 +27,13 @@ public record ButlerPauseSummary(
     /** One booking as the shift reads it: when, who, where, how many. */
     public record Booking(Long id, String when, String guestName, String table, int partySize, boolean lunch) { }
 
-    public record Lunch(Long id, String time, String guestName, String table, int partySize, String status, String composition) { }
+    /** @param readyAt the kitchen's «готовить к» time of the lunch (#164); {@code null} while the pre-order mark is off */
+    public record Lunch(Long id, String time, String guestName, String table, int partySize, String status, String composition, String readyAt) {
+        /** The shape before #164, for callers that know nothing about the kitchen's time. */
+        public Lunch(Long id, String time, String guestName, String table, int partySize, String status, String composition) {
+            this(id, time, guestName, table, partySize, status, composition, null);
+        }
+    }
 
     /** {@code issued}: Presto holds the order, no link yet; {@code linkSent}: the guest has the payment page. */
     public record Bills(int estimated, int issued, int linkSent, int paid) {

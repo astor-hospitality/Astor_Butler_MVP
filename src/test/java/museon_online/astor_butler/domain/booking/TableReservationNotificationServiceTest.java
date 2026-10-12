@@ -4,6 +4,8 @@ import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import museon_online.astor_butler.domain.entry.GuestEntryService;
+import museon_online.astor_butler.domain.lunch.BusinessLunchService;
+import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
 import org.junit.jupiter.api.Test;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -309,6 +311,34 @@ class TableReservationNotificationServiceTest {
 
         when(entries.responsibleFor(1773317437L)).thenReturn(Optional.of(GuestEntryService.HOST_STAND_NAME));
         assertThat(service.handoffLine(order())).contains("Привёл(а):</b> стойка хоста");
+    }
+
+    /** #164: no bean or the flag off — exactly the old card, lunch or not. */
+    @Test
+    void hostessCardIsUnchangedWhileTheKitchenMarkIsOff() {
+        assertThat(service.preorderLine(lunch(order()))).isEmpty();
+
+        service.setPreorderMark(new LunchPreorderMark(false, 10));
+        assertThat(service.preorderLine(lunch(order()))).isEmpty();
+        assertThat(service.preorderLine(order())).isEmpty();
+    }
+
+    /** #164: one bold line with the kitchen's time on a lunch card, venue time, the lead taken off; never on an ordinary booking. */
+    @Test
+    void hostessCardOfALunchCarriesTheKitchenTimeWhenTheMarkIsOn() {
+        service.setPreorderMark(new LunchPreorderMark(true, 10));
+
+        assertThat(service.preorderLine(lunch(order()))).isEqualTo("\n<b>⏱ Готовить ко времени 12:50</b>\n");
+        assertThat(service.preorderLine(order())).isEmpty();
+        assertThat(service.preorderLine(null)).isEmpty();
+    }
+
+    private static TableReservationOrder lunch(TableReservationOrder order) {
+        return new TableReservationOrder(order.id(), order.chatId(), order.telegramUserId(), order.userId(), order.tableId(), order.tableCode(),
+                order.tableDisplayName(), order.preferredZone(), BusinessLunchService.SEATING_LABEL, order.status(), order.source(),
+                order.requestedStartAt(), order.requestedEndAt(), order.partySize(), order.guestName(), order.guestPhone(),
+                "Бизнес-ланч: 2 × «Сет 1», 450 ₽. Суп дня, Салат.", order.managerTelegramId(), order.managerUserId(), order.hostessChatId(),
+                order.sbisExternalId(), order.createdAt(), order.updatedAt());
     }
 
     private ExternalReservationResult result(boolean created, String status, String externalId) {

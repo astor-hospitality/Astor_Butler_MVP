@@ -9,6 +9,7 @@ import museon_online.astor_butler.domain.booking.external.ExternalReservationSta
 import museon_online.astor_butler.domain.lunch.BusinessLunchOrder;
 import museon_online.astor_butler.domain.lunch.BusinessLunchService;
 import museon_online.astor_butler.domain.lunch.ExternalLunchOrderProvider;
+import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.stereotype.Component;
@@ -43,6 +44,10 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
     private final SabyApiClient client;
     private final SabyMenuCatalog catalog;
 
+    /** The kitchen's «готовить ко времени» line (#164). Optional so the constructors and their tests stay as they are. */
+    @Autowired(required = false)
+    private LunchPreorderMark preorderMark;
+
     @Autowired
     public SabyLunchOrderProvider(SabyReservationProperties properties, RestTemplateBuilder restTemplateBuilder) {
         this(properties, new SabyApiClient(properties, restTemplateBuilder));
@@ -52,6 +57,10 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
         this.properties = properties;
         this.client = client;
         this.catalog = new SabyMenuCatalog(properties, client);
+    }
+
+    void setPreorderMark(LunchPreorderMark preorderMark) {
+        this.preorderMark = preorderMark;
     }
 
     @Override
@@ -137,6 +146,9 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
             }
             ObjectNode update = snapshot.deepCopy();
             update.set("nomenclatures", new ObjectMapper().valueToTree(nomenclatures));
+            if (preorderMark != null) {
+                preorderMark.sabyLine(order.startAt(), order.guests()).ifPresent(line -> withPreorderMark(update, line));
+            }
             withWishes(update, order.wishes());
             client.put(SabyReservationProvider.ORDER_PATH + bookingId + "/update", update);
         } catch (SabyApiException exception) {
@@ -172,6 +184,52 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
             wish = wish.substring(0, room - 1).stripTrailing() + "…";
         }
         update.put("comment", lead + BusinessLunchService.wishLine(wish));
+    }
+
+    /**
+     * «ПРЕДЗАКАЗ: готовить ко времени 13:00, гостей 2» (#164) opens the booking comment — before the hostess line and the
+     * wish — so the kitchen reads it first on the Presto ticket. Within {@link SabyOrderPayload#MAX_GUEST_COMMENT} the free
+     * hostess line gives way to it; the Butler marker, and whatever follows the marker, never does. Written once: a comment
+     * that already carries the line is left alone.
+     */
+    static void withPreorderMark(ObjectNode update, String line) {
+        if (line == null || line.isBlank()) {
+            return;
+        }
+        String existing = update.path("comment").asText("").strip();
+        if (existing.contains(LunchPreorderMark.PREFIX)) {
+            return;
+        }
+        if (existing.isEmpty()) {
+            update.put("comment", line);
+            return;
+        }
+        String joined = line + LunchPreorderMark.SEPARATOR + existing;
+        if (joined.length() <= SabyOrderPayload.MAX_GUEST_COMMENT) {
+            update.put("comment", joined);
+            return;
+        }
+        int marker = existing.indexOf(SabyOrderPayload.BUTLER_MARKER);
+        String head = withoutTrailingSeparator(marker < 0 ? existing : existing.substring(0, marker));
+        String tail = marker < 0 ? "" : existing.substring(marker);
+        int room = SabyOrderPayload.MAX_GUEST_COMMENT - line.length() - LunchPreorderMark.SEPARATOR.length()
+                - (tail.isEmpty() ? 0 : LunchPreorderMark.SEPARATOR.length() + tail.length());
+        List<String> parts = new ArrayList<>();
+        parts.add(line);
+        if (!head.isEmpty() && room >= MIN_WISH_ROOM) {
+            parts.add(head.length() <= room ? head : head.substring(0, room - 1).stripTrailing() + "…");
+        } else if (!head.isEmpty()) {
+            log.info("Saby comment has no room for the hostess line next to the pre-order mark; the hostess card carries it");
+        }
+        if (!tail.isEmpty()) {
+            parts.add(tail);
+        }
+        update.put("comment", String.join(LunchPreorderMark.SEPARATOR, parts));
+    }
+
+    private static String withoutTrailingSeparator(String text) {
+        String trimmed = text.strip();
+        return trimmed.endsWith("·") ? trimmed.substring(0, trimmed.length() - 1).strip() : trimmed;
     }
 
     private static String failureStatus(SabyApiException exception) {
