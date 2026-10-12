@@ -130,6 +130,9 @@ public class TableReservationService {
     @Transactional
     public TableReservationOrder confirm(Long id) {
         TableReservationOrder current = requireOrder(id);
+        if (current.status() == TableReservationStatus.EXPIRED) {
+            return confirmAfterExpiry(current);
+        }
         if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
             throw conflict("Only awaiting manager confirmation reservations can be confirmed", current.tableCode());
         }
@@ -138,6 +141,58 @@ public class TableReservationService {
         notificationService.notifyHostessConfirmed(confirmed);
         notificationService.notifyGuestConfirmed(confirmed);
         return confirmed;
+    }
+
+    /**
+     * The manager said «Да» to a request whose hold ran out (#87): the table is taken again for the requested time,
+     * if nothing else holds it meanwhile, and the guest gets the order as after an ordinary «Да».
+     */
+    private TableReservationOrder confirmAfterExpiry(TableReservationOrder current) {
+        if (!tableStillFree(current)) {
+            throw conflict("Table already has an active hold for this time window", current.tableCode());
+        }
+        if (!repository.confirmExpired(current.id())) {
+            throw conflict("Only awaiting manager confirmation reservations can be confirmed", current.tableCode());
+        }
+        TableReservationOrder confirmed = requireOrder(current.id());
+        notificationService.notifyHostessConfirmed(confirmed);
+        notificationService.notifyGuestConfirmed(confirmed);
+        return confirmed;
+    }
+
+    /** Whether an expired request could take its table again right now: nothing else holds it for that time. */
+    public boolean tableStillFree(TableReservationOrder order) {
+        return order != null
+                && order.tableId() != null
+                && order.requestedStartAt() != null
+                && order.requestedEndAt() != null
+                && !repository.hasActiveConflict(order.tableId(), order.requestedStartAt(), order.requestedEndAt());
+    }
+
+    /**
+     * Nobody answered the hostess card within the TTL (#87): the request is EXPIRED, its table is free again, the
+     * guest is told and offered another time, the hostess card is closed, the manager gets the card to decide late.
+     * A request decided meanwhile, or one the venue's own system already knows, is left alone (conflict), which the
+     * clock treats as nothing to do.
+     */
+    @Transactional
+    public TableReservationOrder expireHold(Long id, int afterMinutes) {
+        TableReservationOrder current = requireOrder(id);
+        if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
+            throw conflict("Only awaiting manager confirmation reservations can expire", current.tableCode());
+        }
+        if (hasExternalId(current)) {
+            throw conflict("A reservation known to the restaurant system does not expire", current.tableCode());
+        }
+        if (!repository.expireIfAwaiting(id)) {
+            throw conflict("Only awaiting manager confirmation reservations can expire", current.tableCode());
+        }
+
+        TableReservationOrder expired = requireOrder(id);
+        notificationService.notifyHostessHoldExpired(expired, afterMinutes);
+        notificationService.notifyManagerHoldExpired(expired, afterMinutes);
+        notificationService.notifyGuestHoldExpired(expired, afterMinutes);
+        return expired;
     }
 
     /**
@@ -200,7 +255,9 @@ public class TableReservationService {
 
     private TableReservationOrder reject(Long id, boolean cancelInVenueSystem) {
         TableReservationOrder current = requireOrder(id);
-        if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
+        // An expired request (#87) may still be declined late: the guest then hears the polite no with alternatives.
+        if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
+                && current.status() != TableReservationStatus.EXPIRED) {
             throw conflict("Only awaiting manager confirmation reservations can be rejected", current.tableCode());
         }
 

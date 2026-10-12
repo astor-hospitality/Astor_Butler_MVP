@@ -1,5 +1,6 @@
 package museon_online.astor_butler.fsm.scenario;
 
+import museon_online.astor_butler.config.AstorLinksProperties;
 import museon_online.astor_butler.domain.consent.ConsentVaultService;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
@@ -33,11 +34,13 @@ class FirstTouchScenarioTest {
     @Mock
     private ChangeCancelDraftStorage changeCancelDraftStorage;
 
+    private final AstorLinksProperties links = new AstorLinksProperties();
+
     private FirstTouchScenario scenario;
 
     @BeforeEach
     void setUp() {
-        scenario = new FirstTouchScenario(fsmStorage, consentVaultService, tableBookingDraftStorage, changeCancelDraftStorage);
+        scenario = new FirstTouchScenario(fsmStorage, consentVaultService, tableBookingDraftStorage, changeCancelDraftStorage, links);
     }
 
     @Test
@@ -50,11 +53,24 @@ class FirstTouchScenarioTest {
         assertThat(outgoing.requestContact()).isTrue();
         assertThat(outgoing.html()).isTrue();
         assertThat(outgoing.text()).contains("Согласиться и поделиться контактом");
+        assertThat(outgoing.text()).contains("<a href=\"" + links.getPolicy() + "\">политикой обработки персональных данных</a>");
         assertThat(outgoing.actions()).containsExactly("SAFE_RESTART", "REQUEST_CONTACT", "CONSENT_REQUIRED");
         verify(fsmStorage).clear(incoming.chatId());
         verify(fsmStorage).setState(421441838L, BotState.CONSENT_REQUIRED);
         verify(tableBookingDraftStorage).clear(incoming.chatId());
         verify(changeCancelDraftStorage).clear(incoming.chatId());
+    }
+
+    @Test
+    void consentMessageLinksTheConfiguredPolicy() {
+        links.setPolicy("https://example.test/policy.html");
+        IncomingMessage incoming = telegram("/start", null);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.UNKNOWN, "/start");
+
+        assertThat(outgoing.text())
+                .contains("<a href=\"https://example.test/policy.html\">политикой обработки персональных данных</a>")
+                .doesNotContain("michaelwelly.github.io");
     }
 
     @Test

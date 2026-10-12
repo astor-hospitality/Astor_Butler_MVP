@@ -2,6 +2,7 @@ package museon_online.astor_butler.telegram.adapter;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.config.AstorLinksProperties;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.core.event.InboundEvent;
 import museon_online.astor_butler.fsm.core.idempotency.IdempotencyGuard;
@@ -69,6 +70,7 @@ public class TelegramRouter {
     private final HostessBillRequestService hostessBillRequestService;
     private final HostessBookingEditService hostessBookingEditService;
     private final TelegramVoiceReplyService voiceReplyService;
+    private final AstorLinksProperties links;
 
     @Value("${telegram.ui.preview-enabled:true}")
     private boolean previewEnabled;
@@ -602,7 +604,7 @@ public class TelegramRouter {
         return null;
     }
 
-    private String previewText() {
+    String previewText() {
         return """
                 <b><a href="https://aeris.bar/">AERIS</a> · Astor Butler</b>
 
@@ -614,8 +616,8 @@ public class TelegramRouter {
                 <i>сабраж</i>
                 <i>расскажи про AERIS</i>
 
-                <a href="https://michaelwelly.github.io/Astor_Butler_MVP/docs/guest-guide.html">Короткая инструкция гостя</a>
-                """;
+                <a href="%s">Короткая инструкция гостя</a>
+                """.formatted(links.getGuestGuide());
     }
 
     private <T extends Serializable> T execute(AbsSender sender, BotApiMethod<T> method) {

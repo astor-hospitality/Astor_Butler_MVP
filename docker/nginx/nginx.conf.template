@@ -37,20 +37,20 @@ http {
     limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
     limit_req_zone $binary_remote_addr zone=swagger_limit:10m rate=3r/s;
 
-    upstream astor_backend {
-        least_conn;
-        server ${ASTOR_BACKEND_UPSTREAM} max_fails=3 fail_timeout=10s;
-        keepalive 32;
-
-        # Production target shape:
-        # server astor-app-1:8088 max_fails=3 fail_timeout=10s;
-        # server astor-app-2:8088 max_fails=3 fail_timeout=10s;
-        # server astor-app-3:8088 max_fails=3 fail_timeout=10s;
-    }
-
     server {
         listen 8080;
         server_name _;
+
+        # Docker's embedded DNS. valid=10s overrides its TTL, so a recreated bot container (new IP)
+        # is picked up within 10 s without restarting the gateway (#122). nginx never reads /etc/hosts:
+        # entrypoint.sh renders names that exist only there (extra_hosts, host.docker.internal) as an address.
+        resolver 127.0.0.11 valid=10s ipv6=off;
+
+        # A variable target makes nginx resolve the name per request instead of once at startup
+        # (a static `upstream {}` block is resolved only when the config is loaded). No URI part, so the
+        # original request URI is forwarded unchanged, exactly as before. Several instances = several
+        # A records behind one name (docker compose --scale); nginx rotates between them.
+        set $astor_backend http://${ASTOR_BACKEND_UPSTREAM};
 
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -76,12 +76,12 @@ http {
 
         location /swagger-ui/ {
             limit_req zone=swagger_limit burst=10 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /v3/api-docs {
             limit_req zone=swagger_limit burst=10 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         # Public Butler API: the same allow-list as the edge (infra/cloudru/edge/c3ag.caddy,
@@ -90,49 +90,49 @@ http {
         # anonymous callers get 404, so the gateway is not a second public door when it is published directly.
         location = /api/messages {
             limit_req zone=api_limit burst=30 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /api/astor/ {
             limit_req zone=api_limit burst=30 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /api/chat/ {
             limit_req zone=api_limit burst=30 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /api/glasses/ {
             limit_req zone=api_limit burst=30 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /api/staff/ {
             limit_req zone=api_limit burst=30 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /api/admin/staff {
             limit_req zone=api_limit burst=30 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /api/auth/ {
             limit_req zone=api_limit burst=30 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location = /actuator/health {
             limit_req zone=api_limit burst=20 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         # Prometheus 2.x (docker/prometheus/prometheus.yml) scrapes through this gateway and cannot add headers;
         # the edge never forwards /actuator/*, so this stays reachable from the docker network only.
         location = /actuator/prometheus {
             limit_req zone=api_limit burst=20 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /actuator/ {
@@ -140,7 +140,7 @@ http {
                 return 404;
             }
             limit_req zone=api_limit burst=20 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /api/ {
@@ -148,17 +148,17 @@ http {
                 return 404;
             }
             limit_req zone=api_limit burst=30 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location /auth/ {
             limit_req zone=api_limit burst=20 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
 
         location / {
             limit_req zone=api_limit burst=20 nodelay;
-            proxy_pass http://astor_backend;
+            proxy_pass $astor_backend;
         }
     }
 }

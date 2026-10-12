@@ -1,6 +1,7 @@
 package museon_online.astor_butler.fsm.scenario;
 
 import lombok.RequiredArgsConstructor;
+import museon_online.astor_butler.config.AstorLinksProperties;
 import museon_online.astor_butler.domain.consent.ConsentVaultService;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
@@ -16,12 +17,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FirstTouchScenario implements FsmScenario {
 
-    private static final String POLICY_URL = "https://michaelwelly.github.io/Astor_Butler_MVP/docs/policy.html";
-
     private final FSMStorage fsmStorage;
     private final ConsentVaultService consentVaultService;
     private final TableBookingDraftStorage tableBookingDraftStorage;
     private final ChangeCancelDraftStorage changeCancelDraftStorage;
+    private final AstorLinksProperties links;
 
     public String id() {
         return "FIRST_TOUCH";
@@ -85,7 +85,7 @@ public class FirstTouchScenario implements FsmScenario {
 
         fsmStorage.setState(incoming.chatId(), BotState.CONSENT_REQUIRED);
         String response = "Нажимая кнопку \"Согласиться и поделиться контактом\", вы соглашаетесь с "
-                + "<a href=\"" + POLICY_URL + "\">политикой обработки персональных данных</a>.";
+                + "<a href=\"" + links.getPolicy() + "\">политикой обработки персональных данных</a>.";
 
         return OutgoingMessage.of(
                 incoming,

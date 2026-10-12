@@ -1,5 +1,6 @@
 package museon_online.astor_butler.fsm.scenario;
 
+import museon_online.astor_butler.config.AstorLinksProperties;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
@@ -85,7 +86,7 @@ class TableBookingSummaryRoutingTest {
         when(businessLunchScenario.continueAfterFirstTouch(any(), any())).thenAnswer(invocation -> invocation.getArgument(1));
         router = new ScenarioRouter(
                 fsmStorage,
-                new FirstTouchScenario(fsmStorage, consentVaultService, draftStorage, mock(ChangeCancelDraftStorage.class)),
+                new FirstTouchScenario(fsmStorage, consentVaultService, draftStorage, mock(ChangeCancelDraftStorage.class), new AstorLinksProperties()),
                 businessLunchScenario,
                 booking,
                 eventBookingScenario,
