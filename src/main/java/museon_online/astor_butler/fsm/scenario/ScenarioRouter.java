@@ -2,6 +2,7 @@ package museon_online.astor_butler.fsm.scenario;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.domain.entry.GuestEntryService;
 import museon_online.astor_butler.domain.semantic.IntentExampleRepository;
 import museon_online.astor_butler.domain.shift.ButlerPauseGate;
 import museon_online.astor_butler.fsm.core.BotState;
@@ -54,9 +55,17 @@ public class ScenarioRouter {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ButlerPauseGate butlerPauseGate;
 
+    /** Who brought the guest in (#128): written on a /start with a staff parameter, before consent. Optional for the same reason. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private GuestEntryService guestEntryService;
+
     public OutgoingMessage route(IncomingMessage incoming, BotState currentState, String text) {
         // A guest the Concierge sent for a business lunch may still have to give consent: the lunch waits and then goes on.
         businessLunchScenario.rememberHandoff(incoming, text);
+        // A /start with a staff parameter (#128) is written down once here, whichever scenario answers it next.
+        if (guestEntryService != null) {
+            guestEntryService.rememberStart(incoming, text);
+        }
         if (firstTouchScenario.supports(incoming, currentState, text)) {
             OutgoingMessage firstTouch = firstTouchScenario.handle(incoming, currentState, text);
             // Consent works while Butler is paused, but the lunch the guest came for is not started behind the manager's back.
@@ -154,6 +163,10 @@ public class ScenarioRouter {
 
     void setButlerPauseGate(ButlerPauseGate butlerPauseGate) {
         this.butlerPauseGate = butlerPauseGate;
+    }
+
+    void setGuestEntryService(GuestEntryService guestEntryService) {
+        this.guestEntryService = guestEntryService;
     }
 
     private Map<String, Object> understandingContext(IncomingMessage incoming) {

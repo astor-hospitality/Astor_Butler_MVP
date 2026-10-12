@@ -27,8 +27,37 @@ public record BusinessLunchOrder(
         String source,
         String conciergeRequestId,
         /** The booking id in the venue's own system when Butler already wrote the reservation there; otherwise null. */
-        String externalReservationId
+        String externalReservationId,
+        /**
+         * The guest's wish for the kitchen or the bar in the guest's own words («без лука, лимонад кислее»; #165), one per
+         * order, at most {@code BusinessLunchService.WISH_LIMIT} characters. Null when none was given. Every wish is to be
+         * agreed with the kitchen; nothing here promises it.
+         */
+        String wishes
 ) {
+    public BusinessLunchOrder(
+            String venueCode,
+            Long tableReservationId,
+            String tableCode,
+            Instant startAt,
+            Instant endAt,
+            int guests,
+            String setCode,
+            String setTitle,
+            Integer setPriceRub,
+            List<Item> dishes,
+            Integer totalRub,
+            String guestName,
+            String guestPhone,
+            String comment,
+            String source,
+            String conciergeRequestId,
+            String externalReservationId
+    ) {
+        this(venueCode, tableReservationId, tableCode, startAt, endAt, guests, setCode, setTitle, setPriceRub, dishes, totalRub,
+                guestName, guestPhone, comment, source, conciergeRequestId, externalReservationId, null);
+    }
+
     public record Item(String courseCode, String dishCode, String dishTitle, int quantity, Integer priceRub) {
     }
 }

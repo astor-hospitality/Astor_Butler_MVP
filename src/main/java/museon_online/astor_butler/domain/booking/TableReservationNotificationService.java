@@ -6,6 +6,7 @@ import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.billing.ReviewMoment;
 import museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
+import museon_online.astor_butler.domain.entry.GuestEntryService;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
@@ -79,6 +80,10 @@ public class TableReservationNotificationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private TelegramSystemNotifier systemNotifier;
 
+    /** Who brought the guest in (#128): one line on the card while the feature is on. Optional so the constructor stays. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private GuestEntryService guestEntryService;
+
     /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
@@ -88,7 +93,7 @@ public class TableReservationNotificationService {
         String chatId = hostessChatId(order);
         Message sent = send(
                 chatId,
-                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync) + modeLine(order, decision),
+                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync) + handoffLine(order) + modeLine(order, decision),
                 approvalKeyboard(order.id()),
                 "hostess-approval-request"
         );
@@ -679,6 +684,20 @@ public class TableReservationNotificationService {
                     "бронь не записалась в Presto. Внесите её вручную.";
         };
         return "\n<b>Saby:</b> " + instruction + "\n";
+    }
+
+    /** «Привёл(а): Анна» (#128) when the guest came in through a staff link within the session window; empty otherwise. */
+    String handoffLine(TableReservationOrder order) {
+        if (guestEntryService == null || order == null || order.chatId() == null) {
+            return "";
+        }
+        return guestEntryService.responsibleFor(order.chatId())
+                .map(name -> "\n<b>Привёл(а):</b> " + escape(name) + "\n")
+                .orElse("");
+    }
+
+    void setGuestEntryService(GuestEntryService guestEntryService) {
+        this.guestEntryService = guestEntryService;
     }
 
     private String hostessText(TableReservationOrder order) {

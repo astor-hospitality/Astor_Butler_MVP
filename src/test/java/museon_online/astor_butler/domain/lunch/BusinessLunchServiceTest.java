@@ -91,6 +91,30 @@ class BusinessLunchServiceTest {
         verify(tableReservationService, never()).attachExternalId(anyLong(), anyString());
     }
 
+    /** #165: the wish for the kitchen is one line on the hostess card, marked as something to agree, and a field of the order. */
+    @Test
+    void theWishForTheKitchenIsOnTheHostessCardAndInTheOrder() {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-501", ""));
+        BusinessLunchService service = service(List.of(saby));
+        when(tableReservationService.createReservation(any())).thenReturn(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2));
+        BusinessLunchService.Request request = new BusinessLunchService.Request(CHAT, CHAT, offer, "STARTER_MAIN", List.of("BROTH", "PASTA"), 2,
+                TODAY.plusDays(1), LocalTime.of(13, 0), "Наталья", "+7 912 345-67-89", null, "DIRECT", null, " без лука, лимонад кислее ");
+
+        BusinessLunchService.Placement placement = service.place(request);
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestComment()).isEqualTo(
+                "Бизнес-ланч: 2 × «Салат или суп + горячее», 650 ₽. Куриный бульон, Паста с томатами. Пожелание гостя: без лука, лимонад кислее — согласовать с кухней.");
+        assertThat(placement.order().wishes()).isEqualTo("без лука, лимонад кислее");
+        assertThat(saby.order.wishes()).isEqualTo("без лука, лимонад кислее");
+        assertThat(BusinessLunchService.wishLine("соус отдельно")).isEqualTo("Пожелание гостя: соус отдельно — согласовать с кухней");
+
+        // Without a wish the card reads as before and the order carries none.
+        when(tableReservationService.createReservation(any())).thenReturn(BusinessLunchFixtures.reservation(78, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2));
+        assertThat(service.place(request("DIRECT", null)).order().wishes()).isNull();
+    }
+
     @Test
     void handsTheStructuredOrderToTheExternalSystemAndKeepsItsNumber() {
         FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-501", ""));

@@ -3,6 +3,7 @@ package museon_online.astor_butler.domain.booking;
 import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
+import museon_online.astor_butler.domain.entry.GuestEntryService;
 import org.junit.jupiter.api.Test;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -10,6 +11,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKe
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -284,6 +286,29 @@ class TableReservationNotificationServiceTest {
                 order.requestedStartAt(), order.requestedEndAt(), order.partySize(), order.guestName(), order.guestPhone(), order.guestComment(),
                 order.managerTelegramId(), order.managerUserId(), order.hostessChatId(), order.sbisExternalId(), order.createdAt(),
                 order.updatedAt(), seatedAt);
+    }
+
+    @Test
+    void hostessCardIsUnchangedWhileTheStaffHandoffIsOffOrNobodyBroughtTheGuest() {
+        // No bean: exactly the old card.
+        assertThat(service.handoffLine(order())).isEmpty();
+
+        GuestEntryService entries = mock(GuestEntryService.class);
+        when(entries.responsibleFor(1773317437L)).thenReturn(Optional.empty());
+        service.setGuestEntryService(entries);
+        assertThat(service.handoffLine(order())).isEmpty();
+    }
+
+    @Test
+    void hostessCardNamesWhoBroughtTheGuestIn() {
+        GuestEntryService entries = mock(GuestEntryService.class);
+        when(entries.responsibleFor(1773317437L)).thenReturn(Optional.of("Анна <A&B>"));
+        service.setGuestEntryService(entries);
+
+        assertThat(service.handoffLine(order())).isEqualTo("\n<b>Привёл(а):</b> Анна &lt;A&amp;B&gt;\n");
+
+        when(entries.responsibleFor(1773317437L)).thenReturn(Optional.of(GuestEntryService.HOST_STAND_NAME));
+        assertThat(service.handoffLine(order())).contains("Привёл(а):</b> стойка хоста");
     }
 
     private ExternalReservationResult result(boolean created, String status, String externalId) {
