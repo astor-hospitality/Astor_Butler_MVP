@@ -239,7 +239,7 @@ public class HostessBookingEditService {
                 DEFAULT_VENUE_CODE, tableCode, null, null, null, null, null, null);
         try {
             TableReservationOrder changed = reservations.changeByStaff(order.id(), command, staffRef);
-            String summary = "стол " + shortTableLabel(order) + " → " + shortTableLabel(changed);
+            String summary = "стол " + order.tableCode() + " → " + changed.tableCode();
             return applied(changed, session, summary, "Гостю не сообщаем.", staffRef);
         } catch (ApiException e) {
             return showTables(order, session, humanError(e, tableCode));

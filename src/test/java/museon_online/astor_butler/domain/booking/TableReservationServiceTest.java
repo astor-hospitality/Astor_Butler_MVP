@@ -576,6 +576,164 @@ class TableReservationServiceTest {
         verify(notificationService, never()).notifyGuestConfirmed(any());
     }
 
+    // ---- #150: the hostess changes the booking from its card ----
+
+    @Test
+    void theHostessMovesTheBookingToAnotherTableWithoutReopeningItOrTellingTheGuest() {
+        VenueTable table5 = table(5L, "5", 4, true, true);
+        VenueTable table7 = table(7L, "7", 4, true, true);
+        TableReservationOrder current = order(12L, table5, TableReservationStatus.CONFIRMED);
+        TableReservationOrder changed = order(12L, table7, TableReservationStatus.CONFIRMED);
+        TableReservationChangeCommand command = new TableReservationChangeCommand("AERIS", "7", null, null, null, null, null, null);
+
+        when(repository.findOrder(12L)).thenReturn(Optional.of(current));
+        when(repository.findTableByCode("AERIS", "7")).thenReturn(Optional.of(table7));
+        when(repository.hasActiveConflict(7L, current.requestedStartAt(), current.requestedEndAt(), 12L)).thenReturn(false);
+        when(repository.changeReservationByStaff(eq(12L), any(TableReservationChangeCommand.class), eq(table7))).thenReturn(changed);
+
+        TableReservationOrder result = service.changeByStaff(12L, command, "@dasha");
+
+        var sent = forClass(TableReservationChangeCommand.class);
+        assertThat(result).isEqualTo(changed);
+        assertThat(result.status()).isEqualTo(TableReservationStatus.CONFIRMED);
+        verify(repository).changeReservationByStaff(eq(12L), sent.capture(), eq(table7));
+        assertThat(sent.getValue().tableCode()).isEqualTo("7");
+        assertThat(sent.getValue().partySize()).isEqualTo(current.partySize());
+        assertThat(sent.getValue().requestedStartAt()).isEqualTo(current.requestedStartAt());
+        verify(repository, never()).changeReservation(any(), any(), any());
+        verify(notificationService, never()).notifyGuestMovedByStaff(any(), any());
+        verify(notificationService, never()).notifyHostessApprovalRequest(any(), any());
+        verify(externalProvider, never()).reserve(any(), any());
+        verify(externalProvider, never()).updateReservation(any(), any(), any());
+    }
+
+    @Test
+    void theHostessMovesTheTimeAndTheGuestIsToldOnce() {
+        VenueTable table5 = table(5L, "5", 4, true, true);
+        TableReservationOrder current = order(12L, table5, TableReservationStatus.CONFIRMED);
+        Instant newStart = Instant.parse("2026-06-06T17:30:00Z");
+        Instant newEnd = Instant.parse("2026-06-06T19:30:00Z");
+        TableReservationOrder changed = withWindow(order(12L, table5, TableReservationStatus.CONFIRMED), newStart, newEnd);
+        TableReservationChangeCommand command = new TableReservationChangeCommand("AERIS", "5", null, null, newStart, newEnd, null, null);
+
+        when(repository.findOrder(12L)).thenReturn(Optional.of(current));
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table5));
+        when(repository.hasActiveConflict(5L, newStart, newEnd, 12L)).thenReturn(false);
+        when(repository.changeReservationByStaff(eq(12L), any(TableReservationChangeCommand.class), eq(table5))).thenReturn(changed);
+
+        service.changeByStaff(12L, command, "@dasha");
+
+        verify(notificationService).notifyGuestMovedByStaff(changed, current);
+        verify(notificationService, never()).notifyHostessApprovalRequest(any(), any());
+        verify(externalProvider, never()).updateReservation(any(), any(), any());
+    }
+
+    @Test
+    void aPartySizeChangeByTheHostessIsSilentForTheGuestAndStaysOnTheTable() {
+        VenueTable table5 = table(5L, "5", 4, true, true);
+        TableReservationOrder current = order(12L, table5, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+        TableReservationOrder changed = withParty(current, 4);
+        TableReservationChangeCommand command = new TableReservationChangeCommand("AERIS", "5", null, null, null, null, 4, null);
+
+        when(repository.findOrder(12L)).thenReturn(Optional.of(current));
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table5));
+        when(repository.hasActiveConflict(5L, current.requestedStartAt(), current.requestedEndAt(), 12L)).thenReturn(false);
+        when(repository.changeReservationByStaff(eq(12L), any(TableReservationChangeCommand.class), eq(table5))).thenReturn(changed);
+
+        TableReservationOrder result = service.changeByStaff(12L, command, "@dasha");
+
+        assertThat(result.partySize()).isEqualTo(4);
+        assertThat(result.status()).isEqualTo(TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+        verify(notificationService, never()).notifyGuestMovedByStaff(any(), any());
+    }
+
+    /** Whatever refuses a guest's change refuses the hostess's change too, with the same reason. */
+    @Test
+    void theHostessChangeIsRefusedForExactlyWhatRefusesAGuestChange() {
+        VenueTable table5 = table(5L, "5", 4, true, true);
+        VenueTable small = table(7L, "7", 2, true, true);
+        VenueTable table6 = table(6L, "6", 4, true, true);
+        TableReservationOrder current = order(12L, table5, TableReservationStatus.CONFIRMED);
+        Instant start = current.requestedStartAt();
+        Instant end = current.requestedEndAt();
+        when(repository.findOrder(12L)).thenReturn(Optional.of(current));
+        when(repository.findOrder(13L)).thenReturn(Optional.of(order(13L, table5, TableReservationStatus.CANCELLED)));
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table5));
+        when(repository.findTableByCode("AERIS", "7")).thenReturn(Optional.of(small));
+        when(repository.findTableByCode("AERIS", "6")).thenReturn(Optional.of(table6));
+        when(repository.findTables("AERIS")).thenReturn(List.of(table5, table6, small));
+
+        record Refusal(String name, Long orderId, TableReservationChangeCommand command, Runnable arrange, String reason) {
+        }
+        List<Refusal> refusals = List.of(
+                new Refusal("capacity", 12L, new TableReservationChangeCommand("AERIS", "7", null, null, null, null, 3, null),
+                        () -> { }, "Table capacity is lower than requested party size"),
+                new Refusal("local hold", 12L, new TableReservationChangeCommand("AERIS", "6", null, null, null, null, null, null),
+                        () -> when(repository.hasActiveConflict(6L, start, end, 12L)).thenReturn(true),
+                        "Table already has an active hold for this time window"),
+                new Refusal("busy in Presto", 12L, new TableReservationChangeCommand("AERIS", "7", null, null, null, null, 2, null),
+                        () -> when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("AVAILABLE", "5", "6")),
+                        "Table is busy in the restaurant booking system"),
+                new Refusal("window", 12L, new TableReservationChangeCommand("AERIS", "5", null, null, end, start, null, null),
+                        () -> { }, "requestedEndAt must be after requestedStartAt"),
+                new Refusal("party size", 12L, new TableReservationChangeCommand("AERIS", "5", null, null, null, null, 0, null),
+                        () -> { }, "partySize must be positive"),
+                new Refusal("not active", 13L, new TableReservationChangeCommand("AERIS", "5", null, null, null, null, 3, null),
+                        () -> { }, "Only active table reservations can be changed")
+        );
+        for (Refusal refusal : refusals) {
+            refusal.arrange().run();
+            assertThatThrownBy(() -> service.changeByGuest(refusal.orderId(), refusal.command()))
+                    .as("guest: " + refusal.name())
+                    .isInstanceOf(ApiException.class)
+                    .hasMessage(refusal.reason());
+            assertThatThrownBy(() -> service.changeByStaff(refusal.orderId(), refusal.command(), "@dasha"))
+                    .as("staff: " + refusal.name())
+                    .isInstanceOf(ApiException.class)
+                    .hasMessage(refusal.reason());
+        }
+        verify(repository, never()).changeReservation(any(), any(), any());
+        verify(repository, never()).changeReservationByStaff(any(), any(), any());
+        verify(notificationService, never()).notifyGuestMovedByStaff(any(), any());
+    }
+
+    @Test
+    void tablesFreeForTheBookingLeaveOutWhatPrestoHoldsButKeepItsOwnTable() {
+        VenueTable table5 = table(5L, "5", 4, true, true);
+        VenueTable table6 = table(6L, "6", 4, true, true);
+        VenueTable table7 = table(7L, "7", 4, true, true);
+        TableReservationOrder current = order(12L, table5, TableReservationStatus.CONFIRMED);
+        when(repository.findTables("AERIS")).thenReturn(List.of(table5, table6, table7));
+        when(repository.findAlternativeTables("AERIS", current.requestedStartAt(), current.requestedEndAt(), 3, null, 12L))
+                .thenReturn(List.of(table5, table6, table7));
+
+        // Presto offers only table 6: 5 is taken there (by someone, as far as Butler knows) and so is 7.
+        when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("AVAILABLE", "6"));
+        assertThat(service.tablesFreeFor(current)).containsExactly(table6);
+
+        // The same booking is in Presto: table 5 is busy there because of this very booking, so it stays on offer.
+        assertThat(service.tablesFreeFor(withExternalId(current, "saby-1"))).containsExactly(table5, table6);
+
+        // Presto switched off: the local holds decide.
+        when(externalProvider.checkAvailability(any()))
+                .thenReturn(ExternalAvailabilityResult.unavailableBecauseUnconfigured("SABY", List.of()));
+        assertThat(service.tablesFreeFor(current)).containsExactly(table5, table6, table7);
+    }
+
+    private TableReservationOrder withWindow(TableReservationOrder order, Instant start, Instant end) {
+        return new TableReservationOrder(order.id(), order.chatId(), order.telegramUserId(), order.userId(), order.tableId(), order.tableCode(),
+                order.tableDisplayName(), order.preferredZone(), order.seatingPreference(), order.status(), order.source(), start, end,
+                order.partySize(), order.guestName(), order.guestPhone(), order.guestComment(), order.managerTelegramId(), order.managerUserId(),
+                order.hostessChatId(), order.sbisExternalId(), order.createdAt(), order.updatedAt());
+    }
+
+    private TableReservationOrder withParty(TableReservationOrder order, int partySize) {
+        return new TableReservationOrder(order.id(), order.chatId(), order.telegramUserId(), order.userId(), order.tableId(), order.tableCode(),
+                order.tableDisplayName(), order.preferredZone(), order.seatingPreference(), order.status(), order.source(), order.requestedStartAt(),
+                order.requestedEndAt(), partySize, order.guestName(), order.guestPhone(), order.guestComment(), order.managerTelegramId(),
+                order.managerUserId(), order.hostessChatId(), order.sbisExternalId(), order.createdAt(), order.updatedAt());
+    }
+
     private TableReservationCommand command(String tableCode, Instant start, Instant end, int partySize) {
         return new TableReservationCommand(
                 1773317437L,
