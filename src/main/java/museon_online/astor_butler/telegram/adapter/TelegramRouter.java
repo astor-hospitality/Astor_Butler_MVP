@@ -9,6 +9,7 @@ import museon_online.astor_butler.fsm.core.idempotency.IdempotencyGuard;
 import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.BookingMorningCheckService;
+import museon_online.astor_butler.domain.booking.HostessBookingEditService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
 import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
 import museon_online.astor_butler.service.message.IncomingMessage;
@@ -68,6 +69,7 @@ public class TelegramRouter {
     private final VisitReviewService visitReviewService;
     private final BookingMorningCheckService morningCheckService;
     private final HostessBillRequestService hostessBillRequestService;
+    private final HostessBookingEditService hostessBookingEditService;
     private final TelegramVoiceReplyService voiceReplyService;
     private final AstorLinksProperties links;
 
@@ -190,6 +192,25 @@ public class TelegramRouter {
                 IncomingMessage asTyped = typedByGuest(callbackQuery, chatId, morning.guestText());
                 send(asTyped, messageGatewayService.handle(asTyped), sender);
             }
+            return true;
+        }
+
+        // «✏️ Изменить» on the hostess card and the steps of its panel (#150): the message id tells the card from the panel.
+        User presser = callbackQuery.getFrom();
+        HostessBookingEditService.CallbackResult edit = hostessBookingEditService.handleCallback(
+                callbackQuery.getData(),
+                chatId,
+                callbackQuery.getMessage() == null ? null : callbackQuery.getMessage().getMessageId(),
+                HostessBookingEditService.staffRef(
+                        presser == null ? null : presser.getUserName(),
+                        presser == null ? null : presser.getFirstName(),
+                        presser == null ? null : presser.getId()));
+        if (edit.handled()) {
+            execute(sender, AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackQuery.getId())
+                    .text(edit.answerText())
+                    .showAlert(false)
+                    .build());
             return true;
         }
 

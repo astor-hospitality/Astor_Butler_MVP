@@ -584,6 +584,52 @@ public class TableReservationRepository {
         return findOrder(id).orElseThrow();
     }
 
+    /**
+     * The hostess changed table, time or party size (#150): the order keeps its status — a confirmed booking stays
+     * confirmed, one awaiting her answer keeps waiting — and its hold follows the new table and window with the same
+     * standing. Wishes and the guest's comment are not hers to rewrite, so they are left as they are.
+     */
+    public TableReservationOrder changeReservationByStaff(Long id, TableReservationChangeCommand command, VenueTable table) {
+        jdbcTemplate.update("""
+                UPDATE table_reservation_orders
+                SET table_id = ?,
+                    requested_start_at = ?,
+                    requested_end_at = ?,
+                    party_size = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                table.id(),
+                timestamp(command.requestedStartAt()),
+                timestamp(command.requestedEndAt()),
+                command.partySize(),
+                id
+        );
+        boolean confirmed = findOrder(id).map(order -> order.status() == TableReservationStatus.CONFIRMED).orElse(false);
+        jdbcTemplate.update("""
+                UPDATE table_reservation_holds
+                SET status = 'RELEASED',
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE order_id = ?
+                  AND status IN ('HELD', 'CONFIRMED')
+                """,
+                id
+        );
+        createHold(id, table.id(), command.requestedStartAt(), command.requestedEndAt());
+        if (confirmed) {
+            jdbcTemplate.update("""
+                    UPDATE table_reservation_holds
+                    SET status = 'CONFIRMED',
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE order_id = ?
+                      AND status = 'HELD'
+                    """,
+                    id
+            );
+        }
+        return findOrder(id).orElseThrow();
+    }
+
     private void createHold(Long orderId, Long tableId, Instant startAt, Instant endAt) {
         jdbcTemplate.update("""
                 INSERT INTO table_reservation_holds (

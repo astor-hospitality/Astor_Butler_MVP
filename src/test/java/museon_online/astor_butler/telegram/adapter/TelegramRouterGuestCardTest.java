@@ -4,6 +4,7 @@ import museon_online.astor_butler.config.AstorLinksProperties;
 import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.BookingMorningCheckService;
+import museon_online.astor_butler.domain.booking.HostessBookingEditService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
 import museon_online.astor_butler.fsm.core.idempotency.IdempotencyGuard;
 import museon_online.astor_butler.service.message.MessageGatewayService;
@@ -45,6 +46,7 @@ class TelegramRouterGuestCardTest {
                 mock(VisitReviewService.class),
                 mock(BookingMorningCheckService.class),
                 mock(HostessBillRequestService.class),
+                mock(HostessBookingEditService.class),
                 mock(TelegramVoiceReplyService.class),
                 links
         );

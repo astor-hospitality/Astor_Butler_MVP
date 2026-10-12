@@ -28,6 +28,8 @@ public class TableReservationService {
     /** The restaurant's system now holds the changed data of the local order. */
     static final String EXTERNAL_CHANGE_SYNCED = "EXTERNAL_CHANGE_SYNCED";
     private static final String EXTERNALLY_BUSY = "Table is busy in the restaurant booking system";
+    /** The orders carry no venue of their own; everything in this service books AERIS, as the change command does. */
+    private static final String DEFAULT_VENUE_CODE = "AERIS";
 
     private final TableReservationRepository repository;
     private final TableReservationNotificationService notificationService;
@@ -288,10 +290,97 @@ public class TableReservationService {
     @Transactional
     public TableReservationOrder changeByGuest(Long id, TableReservationChangeCommand command) {
         TableReservationOrder current = requireOrder(id);
-        if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
-                && current.status() != TableReservationStatus.CONFIRMED) {
+        if (!canBeChanged(current)) {
             throw conflict("Only active table reservations can be changed", current.tableCode());
         }
+        ValidatedChange change = validateChange(current, command);
+        TableReservationChangeCommand resolved = change.command();
+        VenueTable table = change.table();
+
+        TableReservationOrder changed = repository.changeReservation(current.id(), resolved, table);
+        // A booking already in the restaurant's system is rewritten there; one that never got there is created now.
+        ExternalReservationResult sync = hasExternalId(changed)
+                ? updateExternally(changed, resolved.venueCode())
+                : reserveExternally(changed, resolved.venueCode());
+        changed = rememberExternalId(changed, sync);
+        notificationService.notifyHostessApprovalRequest(changed, sync);
+        return changed;
+    }
+
+    /**
+     * The hostess moves the booking — another table, another time, more or fewer chairs (#150) — with the same checks a
+     * guest's change passes: window, party size, capacity, local holds, the restaurant's own occupancy. The order keeps
+     * its status (she is the one who confirms), nothing is reopened. The guest hears about it only when the time
+     * changed; a new table or a changed party size is her business. The restaurant's system is not rewritten here:
+     * a booking that is already in Presto is hers to update there, and the panel says so.
+     *
+     * @param staffRef who pressed the buttons, for the log and the system chat
+     */
+    @Transactional
+    public TableReservationOrder changeByStaff(Long id, TableReservationChangeCommand command, String staffRef) {
+        TableReservationOrder current = requireOrder(id);
+        if (!canBeChanged(current)) {
+            throw conflict("Only active table reservations can be changed", current.tableCode());
+        }
+        ValidatedChange change = validateChange(current, command);
+
+        TableReservationOrder changed = repository.changeReservationByStaff(current.id(), change.command(), change.table());
+        log.info("Table reservation {} changed by staff {}: {}", id, staffRef, describeChange(current, changed));
+        if (timeChanged(current, changed)) {
+            notificationService.notifyGuestMovedByStaff(changed, current);
+        }
+        return changed;
+    }
+
+    /**
+     * Tables the hostess may move this booking to at its current time and party size: free locally (the booking's own
+     * hold left out, so its table is among them) and not busy in the restaurant's system, unless it is this booking
+     * that holds the table there.
+     */
+    public List<VenueTable> tablesFreeFor(TableReservationOrder order) {
+        if (order == null || order.requestedStartAt() == null || order.requestedEndAt() == null || order.partySize() == null) {
+            return List.of();
+        }
+        ExternalTableOccupancy external = externalOccupancy(
+                DEFAULT_VENUE_CODE, order.requestedStartAt(), order.requestedEndAt(), order.partySize());
+        return repository.findAlternativeTables(
+                        DEFAULT_VENUE_CODE,
+                        order.requestedStartAt(),
+                        order.requestedEndAt(),
+                        order.partySize(),
+                        null,
+                        order.id()
+                )
+                .stream()
+                .filter(table -> heldExternallyByThisOrder(order, table) || !external.blocks(table.tableCode()))
+                .toList();
+    }
+
+    /** Which changes a guest or the hostess may still make: a refused, cancelled or expired request holds nothing. */
+    private static boolean canBeChanged(TableReservationOrder order) {
+        return order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
+                || order.status() == TableReservationStatus.CONFIRMED;
+    }
+
+    static boolean timeChanged(TableReservationOrder before, TableReservationOrder after) {
+        return !java.util.Objects.equals(before.requestedStartAt(), after.requestedStartAt())
+                || !java.util.Objects.equals(before.requestedEndAt(), after.requestedEndAt());
+    }
+
+    private static String describeChange(TableReservationOrder before, TableReservationOrder after) {
+        return "table " + before.tableCode() + " -> " + after.tableCode()
+                + ", window " + before.requestedStartAt() + "/" + before.requestedEndAt()
+                + " -> " + after.requestedStartAt() + "/" + after.requestedEndAt()
+                + ", party " + before.partySize() + " -> " + after.partySize()
+                + ", status " + after.status();
+    }
+
+    /** A change that passed every check: the filled-in command and the table it lands on. */
+    private record ValidatedChange(TableReservationChangeCommand command, VenueTable table) {
+    }
+
+    /** The checks every change passes, whoever asks for it: window, party size, capacity, holds, the venue's occupancy. */
+    private ValidatedChange validateChange(TableReservationOrder current, TableReservationChangeCommand command) {
         TableReservationChangeCommand resolved = normalizeChangeCommand(current, command);
         validateWindow(resolved.requestedStartAt(), resolved.requestedEndAt());
         validatePartySize(resolved.partySize());
@@ -311,15 +400,7 @@ public class TableReservationService {
         if (!heldExternallyByThisOrder(current, table) && external.blocks(table.tableCode())) {
             throw conflict(EXTERNALLY_BUSY, table.tableCode());
         }
-
-        TableReservationOrder changed = repository.changeReservation(current.id(), resolved, table);
-        // A booking already in the restaurant's system is rewritten there; one that never got there is created now.
-        ExternalReservationResult sync = hasExternalId(changed)
-                ? updateExternally(changed, resolved.venueCode())
-                : reserveExternally(changed, resolved.venueCode());
-        changed = rememberExternalId(changed, sync);
-        notificationService.notifyHostessApprovalRequest(changed, sync);
-        return changed;
+        return new ValidatedChange(resolved, table);
     }
 
     private TableReservationOrder requireOrder(Long id) {
