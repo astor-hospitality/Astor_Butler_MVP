@@ -94,6 +94,21 @@ public class GuestBillRepository {
         return result.stream().findFirst();
     }
 
+    /** The newest bill of any kind for a reservation; there is one bill per kind, and today one kind. */
+    public Optional<GuestBill> findByReservation(Long tableReservationId) {
+        List<GuestBill> result = jdbcTemplate.query("""
+                SELECT *
+                FROM guest_bills
+                WHERE table_reservation_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                billMapper(),
+                tableReservationId
+        );
+        return result.stream().findFirst();
+    }
+
     public Optional<GuestBill> findByExternalOrder(String externalProvider, String externalOrderId) {
         List<GuestBill> result = jdbcTemplate.query("""
                 SELECT *

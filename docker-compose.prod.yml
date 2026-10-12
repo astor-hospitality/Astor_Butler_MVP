@@ -124,6 +124,9 @@ services:
       ASTOR_BOOKING_MORNING_CHECK_ENABLED: ${AERIS_BOOKING_MORNING_CHECK_ENABLED:-${ASTOR_BOOKING_MORNING_CHECK_ENABLED:-false}}
       ASTOR_BOOKING_MORNING_CHECK_TIME: ${ASTOR_BOOKING_MORNING_CHECK_TIME:-10:30}
       ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES: ${ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES:-90}
+      # after-close (default): the review after the venue closes the order / by the clock. on-bill: at the bill — with
+      # the payment link, or by the hostess «Счёт» button on the reservation card. docs/integrations/SABY_BILLING.md §8
+      ASTOR_REVIEW_MOMENT: ${ASTOR_REVIEW_MOMENT:-after-close}
       TELEGRAM_BOT_ENABLED: ${TELEGRAM_BOT_ENABLED:-true}
       TELEGRAM_GET_UPDATES_TIMEOUT_SECONDS: ${TELEGRAM_GET_UPDATES_TIMEOUT_SECONDS:-20}
       TELEGRAM_UI_CLEANUP_ENABLED: ${TELEGRAM_UI_CLEANUP_ENABLED:-false}

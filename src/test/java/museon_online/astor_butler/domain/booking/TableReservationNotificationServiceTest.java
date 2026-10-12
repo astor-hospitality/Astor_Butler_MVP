@@ -1,13 +1,17 @@
 package museon_online.astor_butler.domain.booking;
 
+import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import org.junit.jupiter.api.Test;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 class TableReservationNotificationServiceTest {
 
@@ -54,6 +58,35 @@ class TableReservationNotificationServiceTest {
         assertThat(service.externalSyncLine(
                 order(), result(false, TableReservationService.EXTERNAL_CHANGE_NOT_SYNCED, "saby-1")))
                 .contains("изменение не попало в Presto");
+    }
+
+    @Test
+    void hostessCardHasOnlyYesAndNoUnlessTheReviewIsAskedAtTheBill() {
+        InlineKeyboardMarkup keyboard = service.approvalKeyboard(44L);
+
+        assertThat(keyboard.getKeyboard()).hasSize(1);
+        assertThat(keyboard.getKeyboard().getFirst()).extracting(InlineKeyboardButton::getText, InlineKeyboardButton::getCallbackData)
+                .containsExactly(tuple("Да", "table_booking:confirm:44"), tuple("Нет", "table_booking:reject:44"));
+        assertThat(service.billKeyboard(44L)).isNull();
+
+        service.setReviewMoment("something-unknown");
+        assertThat(service.approvalKeyboard(44L).getKeyboard()).hasSize(1);
+        assertThat(service.billKeyboard(44L)).isNull();
+    }
+
+    @Test
+    void hostessCardOffersTheBillButtonWhenTheReviewIsAskedAtTheBill() {
+        service.setReviewMoment("on-bill");
+
+        InlineKeyboardMarkup keyboard = service.approvalKeyboard(44L);
+
+        assertThat(keyboard.getKeyboard()).hasSize(2);
+        assertThat(keyboard.getKeyboard().getFirst()).extracting(InlineKeyboardButton::getText).containsExactly("Да", "Нет");
+        assertThat(keyboard.getKeyboard().get(1)).extracting(InlineKeyboardButton::getText, InlineKeyboardButton::getCallbackData)
+                .containsExactly(tuple("Счёт", HostessBillRequestService.CALLBACK_PREFIX + "44"));
+        assertThat(service.billKeyboard(44L).getKeyboard()).hasSize(1);
+        assertThat(service.billKeyboard(44L).getKeyboard().getFirst()).extracting(InlineKeyboardButton::getCallbackData)
+                .containsExactly("table_booking:bill:44");
     }
 
     private ExternalReservationResult result(boolean created, String status, String externalId) {

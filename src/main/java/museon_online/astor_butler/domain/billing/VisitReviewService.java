@@ -15,8 +15,9 @@ import java.util.regex.Pattern;
 
 /**
  * Asks the guest how the visit went, once per bill, and keeps the answer: stars, a thumb, and whether they asked
- * to leave a tip. The question goes out when the venue closes the order, or after the visit ends by the clock.
- * Words from the guest are not collected here; the feedback scenario does that.
+ * to leave a tip. The question goes out when the venue closes the order, or after the visit ends by the clock; with
+ * {@code astor.review.moment=on-bill} it goes out earlier, at the bill (payment link or the hostess «Счёт» button),
+ * and the close stays as the safety net. Words from the guest are not collected here; the feedback scenario does that.
  */
 @Service
 @Slf4j
@@ -53,7 +54,17 @@ public class VisitReviewService {
     }
 
     /** Asks the guest, unless they were asked for this bill already or the bill is cancelled. */
-    public synchronized Optional<VisitReview> prompt(GuestBill bill) {
+    public Optional<VisitReview> prompt(GuestBill bill) {
+        return prompt(bill, null);
+    }
+
+    /**
+     * The same question, with a note in the journal about what triggered it before the order was closed:
+     * the payment link or the hostess. Whoever asks first, the guest is asked once.
+     *
+     * @param trigger journal detail such as {@code trigger=payment-link}; null for the close and the clock, as before
+     */
+    public synchronized Optional<VisitReview> prompt(GuestBill bill, String trigger) {
         if (bill == null || bill.chatId() == null || bill.status() == GuestBillStatus.CANCELLED) {
             return Optional.empty();
         }
@@ -65,7 +76,7 @@ public class VisitReviewService {
             return Optional.empty();
         }
         VisitReview review = reviews.open(bill.id(), bill.chatId());
-        bills.reviewNoted(bill.id(), BillOperationType.REVIEW_PROMPTED, null);
+        bills.reviewNoted(bill.id(), BillOperationType.REVIEW_PROMPTED, trigger);
         return Optional.of(review);
     }
 

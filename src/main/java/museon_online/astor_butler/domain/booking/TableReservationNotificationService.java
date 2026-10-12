@@ -2,6 +2,8 @@ package museon_online.astor_butler.domain.booking;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.domain.billing.HostessBillRequestService;
+import museon_online.astor_butler.domain.billing.ReviewMoment;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
@@ -18,6 +20,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -49,6 +52,10 @@ public class TableReservationNotificationService {
     @Value("${telegram.booking.hostess-chat-id:}")
     private String defaultHostessChatId;
 
+    /** {@code astor.review.moment}: with {@code on-bill} the hostess card carries «Счёт», which asks the guest how it went. */
+    @Value("${astor.review.moment:after-close}")
+    private String reviewMoment = "after-close";
+
     /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
@@ -70,7 +77,7 @@ public class TableReservationNotificationService {
 
     public void notifyHostessConfirmed(TableReservationOrder order) {
         String chatId = hostessChatId(order);
-        send(chatId, hostessText(order), null, "hostess");
+        send(chatId, hostessText(order), billKeyboard(order.id()), "hostess");
     }
 
     public void notifyHostessAcknowledged(TableReservationOrder order) {
@@ -346,19 +353,45 @@ public class TableReservationNotificationService {
         );
     }
 
-    private InlineKeyboardMarkup approvalKeyboard(Long orderId) {
-        return InlineKeyboardMarkup.builder()
-                .keyboard(List.of(List.of(
-                        InlineKeyboardButton.builder()
-                                .text("Да")
-                                .callbackData("table_booking:confirm:" + orderId)
-                                .build(),
-                        InlineKeyboardButton.builder()
-                                .text("Нет")
-                                .callbackData("table_booking:reject:" + orderId)
-                                .build()
-                )))
+    InlineKeyboardMarkup approvalKeyboard(Long orderId) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(
+                InlineKeyboardButton.builder()
+                        .text("Да")
+                        .callbackData("table_booking:confirm:" + orderId)
+                        .build(),
+                InlineKeyboardButton.builder()
+                        .text("Нет")
+                        .callbackData("table_booking:reject:" + orderId)
+                        .build()
+        ));
+        if (reviewAtTheBill()) {
+            rows.add(List.of(billButton(orderId)));
+        }
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    /** «Счёт» under the confirmed card, or nothing: the card stays as it was unless the review is asked at the bill. */
+    InlineKeyboardMarkup billKeyboard(Long orderId) {
+        if (!reviewAtTheBill()) {
+            return null;
+        }
+        return InlineKeyboardMarkup.builder().keyboard(List.of(List.of(billButton(orderId)))).build();
+    }
+
+    private InlineKeyboardButton billButton(Long orderId) {
+        return InlineKeyboardButton.builder()
+                .text("Счёт")
+                .callbackData(HostessBillRequestService.callbackData(orderId))
                 .build();
+    }
+
+    private boolean reviewAtTheBill() {
+        return ReviewMoment.parse(reviewMoment) == ReviewMoment.ON_BILL;
+    }
+
+    void setReviewMoment(String reviewMoment) {
+        this.reviewMoment = reviewMoment;
     }
 
     private ReplyKeyboardMarkup guestMainMenuKeyboard() {

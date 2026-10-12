@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.core.event.InboundEvent;
 import museon_online.astor_butler.fsm.core.idempotency.IdempotencyGuard;
+import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.BookingMorningCheckService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
@@ -64,6 +65,7 @@ public class TelegramRouter {
     private final TelegramMediaSender telegramMediaSender;
     private final VisitReviewService visitReviewService;
     private final BookingMorningCheckService morningCheckService;
+    private final HostessBillRequestService hostessBillRequestService;
     private final TelegramVoiceReplyService voiceReplyService;
 
     @Value("${telegram.ui.preview-enabled:true}")
@@ -177,6 +179,16 @@ public class TelegramRouter {
                 IncomingMessage asTyped = typedByGuest(callbackQuery, chatId, morning.guestText());
                 send(asTyped, messageGatewayService.handle(asTyped), sender);
             }
+            return true;
+        }
+
+        HostessBillRequestService.CallbackResult billRequest = hostessBillRequestService.handleCallback(callbackQuery.getData(), chatId);
+        if (billRequest.handled()) {
+            execute(sender, AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackQuery.getId())
+                    .text(billRequest.answerText())
+                    .showAlert(false)
+                    .build());
             return true;
         }
 
