@@ -11,10 +11,10 @@ public final class GuestBillIntent {
 
     /**
      * The words the waiter and the hostess named: «счёт» / «счет» (so also «можно счёт»), «чек», «посчитайте»,
-     * «рассчитайте», «оплатить», «закрыть стол». Matched on the lower-cased text with «ё» folded to «е».
+     * «рассчитайте», «закрыть стол» («оплатить» намеренно не триггер: «как оплатить бронь?» — вопрос, не просьба о счёте). Matched on the lower-cased text with «ё» folded to «е».
      */
     static final Pattern BILL_WORDS = Pattern.compile(
-            "\\b(?:счет|чек|посчитайте|рассчитайте|оплатить|закрыть\\s+стол)\\b",
+            "\\b(?:счет|чек|посчитайте|рассчитайте|закрыть\\s+стол)\\b",
             Pattern.UNICODE_CHARACTER_CLASS);
 
     private GuestBillIntent() {
