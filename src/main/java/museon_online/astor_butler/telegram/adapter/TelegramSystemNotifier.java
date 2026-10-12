@@ -119,6 +119,29 @@ public class TelegramSystemNotifier {
         }
     }
 
+    /**
+     * The hostess changed a booking from its card (#150): one line in the system chat with who, which order and what
+     * changed, so the change is traceable next to the dialogue traces. Plain text, bounded fields.
+     */
+    public boolean sendBookingStaffChange(String staff, Long orderId, String summary) {
+        if (!telegramEnabled || !notificationsEnabled || systemChatId == null || systemChatId.isBlank()) {
+            return false;
+        }
+        TelegramBot telegramBot = telegramBotProvider.getIfAvailable();
+        if (telegramBot == null) {
+            return false;
+        }
+        String text = "✏️ Бронь #" + text(orderId) + " изменена хостес: " + bounded(blank(summary), 1000)
+                + ". Кто: " + bounded(blank(staff), 120);
+        try {
+            sendGlassesText(telegramBot, text);
+            return true;
+        } catch (Exception e) {
+            log.warn("Telegram booking staff change trace failed: {}", e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
     private void sendGlassesText(TelegramBot bot, String text) throws Exception {
         while (!text.isEmpty()) {
             String chunk = bounded(text, 4096);

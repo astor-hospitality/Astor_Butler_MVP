@@ -62,6 +62,10 @@ public class TableReservationNotificationService {
     @Value("${astor.review.moment:after-close}")
     private String reviewMoment = "after-close";
 
+    /** {@code astor.booking.staff-edit.enabled} (#150): with it on, the hostess card carries «✏️ Изменить». */
+    @Value("${astor.booking.staff-edit.enabled:false}")
+    private boolean staffEditEnabled = false;
+
     /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
@@ -182,6 +186,35 @@ public class TableReservationNotificationService {
             return;
         }
         send(order.chatId().toString(), guestCancelledText(order), guestMainMenuKeyboard(), "guest-cancelled");
+    }
+
+    /** The hostess moved the booking to another time (#150): the guest hears the new time and whether the table stayed. */
+    public void notifyGuestMovedByStaff(TableReservationOrder changed, TableReservationOrder before) {
+        if (changed.chatId() == null) {
+            return;
+        }
+        send(changed.chatId().toString(), guestMovedByStaffText(changed, before), guestMainMenuKeyboard(), "guest-moved-by-staff");
+    }
+
+    String guestMovedByStaffText(TableReservationOrder changed, TableReservationOrder before) {
+        boolean sameTable = before == null || before.tableCode() == null
+                || before.tableCode().equalsIgnoreCase(changed.tableCode());
+        String table = sameTable
+                ? "стол тот же — " + escape(tableName(changed))
+                : "стол теперь " + escape(tableName(changed));
+        return """
+                <b>Бронь #%s перенесена</b>
+
+                Хостес перенесла вашу бронь на %s, %s; %s, гостей: %s.
+
+                Если это время не подходит, просто напишите сюда или нажмите «Изменить / отменить» в меню.
+                """.formatted(
+                changed.id(),
+                formatDate(changed.requestedStartAt()),
+                formatTimeRange(changed),
+                table,
+                changed.partySize()
+        );
     }
 
     private Message send(String chatId, String text, ReplyKeyboard keyboard, String target) {
@@ -604,15 +637,28 @@ public class TableReservationNotificationService {
         if (reviewAtTheBill()) {
             rows.add(List.of(billButton(orderId)));
         }
+        if (staffEditEnabled) {
+            rows.add(List.of(editButton(orderId)));
+        }
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
-    /** «Счёт» under the confirmed card, or nothing: the card stays as it was unless the review is asked at the bill. */
+    /**
+     * «Счёт» and/or «✏️ Изменить» under the confirmed card, or nothing: the card stays as it was unless the review is
+     * asked at the bill or the hostess may edit bookings.
+     */
     InlineKeyboardMarkup billKeyboard(Long orderId) {
-        if (!reviewAtTheBill()) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        if (reviewAtTheBill()) {
+            rows.add(List.of(billButton(orderId)));
+        }
+        if (staffEditEnabled) {
+            rows.add(List.of(editButton(orderId)));
+        }
+        if (rows.isEmpty()) {
             return null;
         }
-        return InlineKeyboardMarkup.builder().keyboard(List.of(List.of(billButton(orderId)))).build();
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
     }
 
     private InlineKeyboardButton billButton(Long orderId) {
@@ -622,12 +668,23 @@ public class TableReservationNotificationService {
                 .build();
     }
 
+    private InlineKeyboardButton editButton(Long orderId) {
+        return InlineKeyboardButton.builder()
+                .text("✏️ Изменить")
+                .callbackData(HostessBookingEditService.callbackData(orderId))
+                .build();
+    }
+
     private boolean reviewAtTheBill() {
         return ReviewMoment.parse(reviewMoment) == ReviewMoment.ON_BILL;
     }
 
     void setReviewMoment(String reviewMoment) {
         this.reviewMoment = reviewMoment;
+    }
+
+    void setStaffEditEnabled(boolean staffEditEnabled) {
+        this.staffEditEnabled = staffEditEnabled;
     }
 
     private ReplyKeyboardMarkup guestMainMenuKeyboard() {
@@ -660,7 +717,8 @@ public class TableReservationNotificationService {
                 : order.hostessChatId();
     }
 
-    private String tableName(TableReservationOrder order) {
+    /** «Стол 5 (5)», «Стол VIP 13 (13)» or «не выбран», as every card names the table. */
+    static String tableName(TableReservationOrder order) {
         if (order.tableCode() == null) {
             return "не выбран";
         }
@@ -670,7 +728,17 @@ public class TableReservationNotificationService {
         return humanTableDisplayName(order.tableDisplayName()) + " (" + order.tableCode() + ")";
     }
 
-    private String humanTableDisplayName(String displayName) {
+    static String tableName(VenueTable table) {
+        if (table == null || table.tableCode() == null) {
+            return "не выбран";
+        }
+        if (table.displayName() == null || table.displayName().isBlank()) {
+            return "Стол " + table.tableCode();
+        }
+        return humanTableDisplayName(table.displayName()) + " (" + table.tableCode() + ")";
+    }
+
+    static String humanTableDisplayName(String displayName) {
         String value = displayName == null ? "" : displayName.trim();
         if (value.startsWith("Table ")) {
             return "Стол " + value.substring("Table ".length());

@@ -100,6 +100,96 @@ public class BookingHostessStateStorage {
         return orderId != null && Boolean.TRUE.equals(redisTemplate.hasKey(escalatedKey(orderId)));
     }
 
+    /**
+     * An open «✏️ Изменить» panel of an order (#150): the staff chat and message it lives in, who opened it, when, and
+     * the lines of what was changed through it. It lives for {@code ttl} after the last press; a step that arrives
+     * later finds nothing and tells the hostess to open the panel again.
+     */
+    public record EditSession(String chatId, Integer messageId, String startedBy, Instant startedAt, String log) {
+
+        /** The change lines so far, oldest first; empty when nothing was changed yet. */
+        public java.util.List<String> logLines() {
+            return log == null || log.isBlank() ? java.util.List.of() : java.util.List.of(log.split("\n"));
+        }
+    }
+
+    public void startEditSession(Long orderId, EditSession session, Duration ttl) {
+        if (orderId == null || session == null) {
+            return;
+        }
+        Map<Object, Object> entries = new LinkedHashMap<>();
+        entries.put("chatId", nullToBlank(session.chatId()));
+        entries.put("messageId", session.messageId() == null ? "" : session.messageId().toString());
+        entries.put("startedBy", nullToBlank(session.startedBy()));
+        entries.put("startedAt", session.startedAt() == null ? "" : session.startedAt().toString());
+        entries.put("log", nullToBlank(session.log()));
+        String key = editKey(orderId);
+        redisTemplate.delete(key);
+        redisTemplate.opsForHash().putAll(key, entries);
+        redisTemplate.expire(key, ttl);
+    }
+
+    public Optional<EditSession> editSession(Long orderId) {
+        if (orderId == null) {
+            return Optional.empty();
+        }
+        Map<Object, Object> entries = redisTemplate.opsForHash().entries(editKey(orderId));
+        if (entries == null || entries.isEmpty()) {
+            return Optional.empty();
+        }
+        Integer messageId;
+        try {
+            messageId = Integer.valueOf(text(entries.get("messageId")));
+        } catch (NumberFormatException e) {
+            log.debug("Edit session has no readable message id: orderId={}", orderId);
+            return Optional.empty();
+        }
+        return Optional.of(new EditSession(
+                blankToNull(text(entries.get("chatId"))),
+                messageId,
+                blankToNull(text(entries.get("startedBy"))),
+                instant(text(entries.get("startedAt"))),
+                text(entries.get("log"))
+        ));
+    }
+
+    /** Every press keeps the panel alive for another {@code ttl}; a panel that already expired is not revived. */
+    public boolean touchEditSession(Long orderId, Duration ttl) {
+        if (orderId == null) {
+            return false;
+        }
+        String key = editKey(orderId);
+        if (!Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+            return false;
+        }
+        return Boolean.TRUE.equals(redisTemplate.expire(key, ttl));
+    }
+
+    /** Adds a line to what was changed through the panel; silently nothing when the panel already expired. */
+    public void appendEditLog(Long orderId, String line, Duration ttl) {
+        if (orderId == null || line == null || line.isBlank()) {
+            return;
+        }
+        String key = editKey(orderId);
+        if (!Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+            return;
+        }
+        String current = text(redisTemplate.opsForHash().get(key, "log"));
+        redisTemplate.opsForHash().put(key, "log", current.isBlank() ? line.trim() : current + "\n" + line.trim());
+        redisTemplate.expire(key, ttl);
+    }
+
+    public void endEditSession(Long orderId) {
+        if (orderId == null) {
+            return;
+        }
+        redisTemplate.delete(editKey(orderId));
+    }
+
+    private String editKey(Long orderId) {
+        return keyPrefix + ":booking:hostess:edit:" + orderId;
+    }
+
     private String manualModeKey() {
         return keyPrefix + ":booking:hostess:manual-mode";
     }
