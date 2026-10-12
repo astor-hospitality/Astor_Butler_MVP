@@ -190,6 +190,52 @@ class SmartTipScenarioTest {
         assertThat(everything).contains("Оплата чаевых через бота пока не подключена, поэтому деньги не списаны.");
     }
 
+    @Test
+    void aPersonalRecipientGetsOnlyTheWaitersNameAndLinkAfterYes() {
+        IncomingMessage incoming = telegram("да");
+        when(tipService.confirmLatestDraft(incoming.chatId())).thenReturn(personalTipOrder(TipOrderStatus.AWAITING_PAYMENT));
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TIP_CONFIRMATION, incoming.text());
+
+        assertThat(outgoing.text()).isEqualTo("Чаевые для Даниил: https://example.test/tip/daniil");
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(outgoing.actions()).containsExactly("SMART_TIP", "TIP_DRAFT_CONFIRMED", "RETURN_MAIN_MENU");
+        assertThat(outgoing.metadata()).containsEntry("paymentBoundary", "SBP_LINK_PERSONAL").containsEntry("tipOrderId", 55L);
+    }
+
+    @Test
+    void thePersonalRecipientIsNamedAtTheConfirmationQuestionWithoutTheLink() {
+        IncomingMessage incoming = telegram("500");
+        when(tipService.createDraft(any(TipOrderCommand.class))).thenReturn(personalTipOrder(TipOrderStatus.AWAITING_GUEST_CONFIRMATION));
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.TIP_COLLECT_AMOUNT, incoming.text());
+
+        assertThat(outgoing.text()).contains("Получатель: Даниил").contains("Подтверждаете?").doesNotContain("https://");
+    }
+
+    /** The waiter of the table (#161): no staff profile, the link known at draft time. */
+    private TipOrder personalTipOrder(TipOrderStatus status) {
+        return new TipOrder(
+                55L,
+                1773317437L,
+                1773317437L,
+                null,
+                "AERIS",
+                null,
+                "Даниил",
+                status,
+                "TELEGRAM",
+                100_000L,
+                "RUB",
+                "Наталья Поединенко",
+                "500",
+                "https://example.test/tip/daniil",
+                null,
+                Instant.parse("2026-06-15T10:00:00Z"),
+                Instant.parse("2026-06-15T10:00:00Z")
+        );
+    }
+
     private IncomingMessage telegram(String text) {
         return IncomingMessage.telegram(
                 1773317437L,

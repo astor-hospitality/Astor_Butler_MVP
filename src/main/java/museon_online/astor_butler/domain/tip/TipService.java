@@ -78,7 +78,8 @@ public class TipService {
         );
     }
 
-    void setRecipientResolver(TipRecipientResolver recipientResolver) {
+    /** For tests and manual wiring: Spring sets the field itself. */
+    public void setRecipientResolver(TipRecipientResolver recipientResolver) {
         this.recipientResolver = recipientResolver;
     }
 
