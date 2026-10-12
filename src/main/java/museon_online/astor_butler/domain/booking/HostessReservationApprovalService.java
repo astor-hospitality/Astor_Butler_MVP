@@ -74,6 +74,9 @@ public class HostessReservationApprovalService {
         if (current.status() == TableReservationStatus.CONFIRMED) {
             return CallbackResult.handled("Бронь #" + orderId + " уже подтверждена");
         }
+        if (current.status() == TableReservationStatus.SEATED) {
+            return CallbackResult.handled("Бронь #" + orderId + " уже подтверждена, гость за столом");
+        }
         if (current.status() == TableReservationStatus.REJECTED) {
             return CallbackResult.handled("Бронь #" + orderId + " уже отменена");
         }

@@ -1,5 +1,6 @@
 package museon_online.astor_butler.domain.shift;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.format.DateTimeFormatter;
@@ -9,6 +10,13 @@ import java.util.Locale;
 @Component
 public class ShiftBriefingFormatter {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("d MMMM, EEEE", Locale.of("ru"));
+
+    /**
+     * With «гость сел» on (#151) the evening says who came and who did not; without it every booking would read as
+     * «не пришёл», so the line is left out.
+     */
+    @Value("${astor.booking.seated.enabled:false}")
+    private boolean seatedEnabled;
 
     public String format(ShiftBriefing briefing) {
         var text = new StringBuilder();
@@ -28,6 +36,7 @@ public class ShiftBriefingFormatter {
                     if (slot.guestName() != null && !slot.guestName().isBlank()) text.append(" · ").append(escape(slot.guestName()));
                     if (slot.businessLunch()) text.append(" · ланч");
                     if ("AWAITING_MANAGER_CONFIRMATION".equals(slot.status())) text.append(" · <i>ждёт подтверждения</i>");
+                    if ("SEATED".equals(slot.status())) text.append(" · <i>гость сел</i>");
                     if (slot.comment() != null && !slot.comment().isBlank()) text.append("\n    ").append(escape(slot.comment()));
                     text.append('\n');
                 }
@@ -46,6 +55,13 @@ public class ShiftBriefingFormatter {
             text.append("\nБроней: ").append(briefing.slots().size()).append(", гостей: ").append(briefing.guests());
             if (briefing.cancelled() > 0) text.append(", отменено: ").append(briefing.cancelled());
             text.append('\n');
+            if (seatedEnabled) {
+                long seated = briefing.slots().stream().filter(slot -> "SEATED".equals(slot.status())).count();
+                long noShow = briefing.slots().stream().filter(slot -> "CONFIRMED".equals(slot.status())).count();
+                if (seated + noShow > 0) {
+                    text.append("Сели: ").append(seated).append(", не пришли: ").append(noShow).append('\n');
+                }
+            }
             var bills = briefing.bills();
             if (bills.opened() > 0) {
                 text.append("Счета: ").append(bills.opened()).append(", оплачено ").append(bills.paid())
@@ -72,6 +88,10 @@ public class ShiftBriefingFormatter {
         }
         text.append("\nСводка по данным Butler. Решения за сменой.");
         return text.toString();
+    }
+
+    void setSeatedEnabled(boolean seatedEnabled) {
+        this.seatedEnabled = seatedEnabled;
     }
 
     private static String ending(int party) {

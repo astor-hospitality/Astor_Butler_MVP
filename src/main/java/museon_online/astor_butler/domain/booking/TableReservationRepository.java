@@ -296,7 +296,7 @@ public class TableReservationRepository {
                 FROM table_reservation_orders tro
                 LEFT JOIN venue_tables vt ON vt.id = tro.table_id
                 WHERE tro.chat_id = ?
-                  AND tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED')
+                  AND tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED', 'SEATED')
                 ORDER BY tro.created_at DESC
                 """,
                 orderMapper(),
@@ -312,7 +312,7 @@ public class TableReservationRepository {
                 JOIN venue_tables vt ON vt.id = tro.table_id
                 WHERE tro.chat_id = ?
                   AND vt.venue_code = ?
-                  AND tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED')
+                  AND tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED', 'SEATED')
                 ORDER BY tro.requested_start_at
                 """,
                 orderMapper(),
@@ -321,7 +321,6 @@ public class TableReservationRepository {
         );
     }
 
-    /** Orders still alive locally that were also written to the venue's own system, oldest change first. */
     /** Every order whose visit starts inside the window, for the shift briefing. Newest status wins; no guest phone is needed by the caller. */
     public List<TableReservationOrder> findOrdersStartingBetween(String venueCode, Instant from, Instant to, int limit) {
         return jdbcTemplate.query("""
@@ -342,6 +341,7 @@ public class TableReservationRepository {
         );
     }
 
+    /** Orders still alive locally (awaiting, confirmed or seated) that were also written to the venue's own system. */
     public List<TableReservationOrder> findActiveOrdersWithExternalId(int limit) {
         return findActiveOrdersWithExternalIdAfter(0L, limit);
     }
@@ -351,7 +351,7 @@ public class TableReservationRepository {
                 SELECT tro.*, vt.table_code, vt.display_name AS table_display_name
                 FROM table_reservation_orders tro
                 LEFT JOIN venue_tables vt ON vt.id = tro.table_id
-                WHERE tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED')
+                WHERE tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED', 'SEATED')
                   AND tro.sbis_external_id IS NOT NULL
                   AND tro.sbis_external_id <> ''
                   AND tro.id > ?
@@ -527,6 +527,25 @@ public class TableReservationRepository {
         return true;
     }
 
+    /**
+     * The guest sat down (#151): a CONFIRMED order becomes SEATED and remembers when. The hold is left as it is — a
+     * seated guest holds the table exactly as a confirmed one did. True only for the caller that made the change;
+     * an order that is not CONFIRMED any more (seated meanwhile by the button or by Presto, cancelled, ...) is left
+     * alone and false comes back, so two presses or a press and a Saby read never stamp twice.
+     */
+    public boolean seatIfConfirmed(Long id) {
+        return jdbcTemplate.update("""
+                UPDATE table_reservation_orders
+                SET status = 'SEATED',
+                    seated_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                  AND status = 'CONFIRMED'
+                """,
+                id
+        ) == 1;
+    }
+
     public TableReservationOrder cancel(Long id) {
         jdbcTemplate.update("""
                 UPDATE table_reservation_orders
@@ -605,7 +624,9 @@ public class TableReservationRepository {
                 command.partySize(),
                 id
         );
-        boolean confirmed = findOrder(id).map(order -> order.status() == TableReservationStatus.CONFIRMED).orElse(false);
+        boolean confirmed = findOrder(id)
+                .map(order -> order.status() == TableReservationStatus.CONFIRMED || order.status() == TableReservationStatus.SEATED)
+                .orElse(false);
         jdbcTemplate.update("""
                 UPDATE table_reservation_holds
                 SET status = 'RELEASED',
@@ -689,7 +710,8 @@ public class TableReservationRepository {
                 rs.getString("hostess_chat_id"),
                 rs.getString("sbis_external_id"),
                 instant(rs, "created_at"),
-                instant(rs, "updated_at")
+                instant(rs, "updated_at"),
+                instant(rs, "seated_at")
         );
     }
 

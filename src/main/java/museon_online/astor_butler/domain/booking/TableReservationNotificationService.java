@@ -7,6 +7,7 @@ import museon_online.astor_butler.domain.billing.ReviewMoment;
 import museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
+import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
@@ -69,6 +70,14 @@ public class TableReservationNotificationService {
     /** With the hold expiry on (#87) the card is remembered too, so «⏱ Истекло» can close it later. */
     @Value("${astor.booking.hold-expiry.enabled:false}")
     private boolean holdExpiryEnabled;
+
+    /** {@code astor.booking.seated.enabled} (#151): with it on, the confirmed card carries «🪑 Гость сел». */
+    @Value("${astor.booking.seated.enabled:false}")
+    private boolean seatedEnabled = false;
+
+    /** The system chat for the «гость сел» trace line (#151): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private TelegramSystemNotifier systemNotifier;
 
     /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
@@ -186,6 +195,45 @@ public class TableReservationNotificationService {
                 formatTimeRange(order),
                 escape(blank(order.guestPhone(), "не указан"))
         ), null, "hostess-guest-cancelled");
+    }
+
+    /**
+     * Presto says the guest is at the table (#151): one short line in the hostess chat, under the remembered card
+     * when there is one. The button path edits the pressed card instead, so nothing is said twice.
+     */
+    public void notifyHostessSeatedByVenue(TableReservationOrder order) {
+        Optional<BookingHostessStateStorage.CardRef> card = hostessCard(order);
+        send(hostessChatId(order), hostessSeatedByVenueText(order), null,
+                card.map(BookingHostessStateStorage.CardRef::messageId).orElse(null), "hostess-seated-venue");
+    }
+
+    /** «🪑 Бронь #N: гость сел в 14:32 …» in the system chat, next to the dialogue traces; silent without that chat. */
+    public void traceSeated(TableReservationOrder order, String who) {
+        if (systemNotifier == null) {
+            return;
+        }
+        try {
+            systemNotifier.sendSystemNotice(seatedTraceText(order, who));
+        } catch (RuntimeException e) {
+            log.debug("Seated trace was not sent to the system chat: orderId={}, reason={}", order.id(), e.toString());
+        }
+    }
+
+    String hostessSeatedByVenueText(TableReservationOrder order) {
+        return """
+                🪑 <b>Гость сел</b> %s — бронь #%s, %s, гостей: %s. Источник: Presto.
+                """.formatted(formatTime(order.seatedAt()), order.id(), escape(tableName(order)), order.partySize());
+    }
+
+    String seatedTraceText(TableReservationOrder order, String who) {
+        return "🪑 Бронь #" + order.id() + ": гость сел в " + formatTime(order.seatedAt()) + " — " + tableName(order)
+                + ", гостей: " + order.partySize() + ". Отметил(а): " + blank(who, "неизвестно");
+    }
+
+    /** «🪑 Гость сел 14:32», the line the button adds to the pressed card (#151). */
+    static String seatedLine(TableReservationOrder order, String who) {
+        String line = "🪑 Гость сел " + formatTime(order.seatedAt());
+        return who == null || who.isBlank() ? line : line + " — " + who;
     }
 
     public void notifyGuestConfirmed(TableReservationOrder order) {
@@ -734,11 +782,23 @@ public class TableReservationNotificationService {
     }
 
     /**
-     * «Счёт» and/or «✏️ Изменить» under the confirmed card, or nothing: the card stays as it was unless the review is
-     * asked at the bill or the hostess may edit bookings.
+     * «🪑 Гость сел», «Счёт» and/or «✏️ Изменить» under the confirmed card, or nothing: the card stays as it was unless
+     * the guest's seating is marked here (#151), the review is asked at the bill or the hostess may edit bookings.
      */
     InlineKeyboardMarkup billKeyboard(Long orderId) {
+        return confirmedCardKeyboard(orderId, seatedEnabled);
+    }
+
+    /** The same card once the guest sat down: «🪑 Гость сел» is gone, «Счёт» and «✏️ Изменить» stay. */
+    public InlineKeyboardMarkup seatedCardKeyboard(Long orderId) {
+        return confirmedCardKeyboard(orderId, false);
+    }
+
+    private InlineKeyboardMarkup confirmedCardKeyboard(Long orderId, boolean withSeated) {
         List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        if (withSeated) {
+            rows.add(List.of(seatedButton(orderId)));
+        }
         if (reviewAtTheBill()) {
             rows.add(List.of(billButton(orderId)));
         }
@@ -749,6 +809,13 @@ public class TableReservationNotificationService {
             return null;
         }
         return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    private InlineKeyboardButton seatedButton(Long orderId) {
+        return InlineKeyboardButton.builder()
+                .text("🪑 Гость сел")
+                .callbackData(HostessSeatedService.callbackData(orderId))
+                .build();
     }
 
     private InlineKeyboardButton billButton(Long orderId) {
@@ -775,6 +842,14 @@ public class TableReservationNotificationService {
 
     void setStaffEditEnabled(boolean staffEditEnabled) {
         this.staffEditEnabled = staffEditEnabled;
+    }
+
+    void setSeatedEnabled(boolean seatedEnabled) {
+        this.seatedEnabled = seatedEnabled;
+    }
+
+    void setSystemNotifier(TelegramSystemNotifier systemNotifier) {
+        this.systemNotifier = systemNotifier;
     }
 
     private ReplyKeyboardMarkup guestMainMenuKeyboard() {
@@ -883,6 +958,9 @@ public class TableReservationNotificationService {
         if (status == TableReservationStatus.CONFIRMED) {
             return "подтверждена";
         }
+        if (status == TableReservationStatus.SEATED) {
+            return "гость сел";
+        }
         if (status == TableReservationStatus.REJECTED) {
             return "отклонена";
         }
@@ -895,6 +973,10 @@ public class TableReservationNotificationService {
 
     private String formatDate(java.time.Instant instant) {
         return instant == null ? "не указана" : DATE.format(instant);
+    }
+
+    private static String formatTime(java.time.Instant instant) {
+        return instant == null ? "—" : TIME.format(instant);
     }
 
     private String formatTimeRange(TableReservationOrder order) {

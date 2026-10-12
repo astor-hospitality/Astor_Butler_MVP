@@ -75,7 +75,8 @@ public class ButlerPauseSummaryService {
         List<ButlerPauseSummary.Lunch> lunches = new ArrayList<>();
         for (TableReservationOrder order : reservations.findOrdersStartingBetween(venue, from, to, LIMIT)) {
             boolean open = order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
-                    || order.status() == TableReservationStatus.CONFIRMED;
+                    || order.status() == TableReservationStatus.CONFIRMED
+                    || order.status() == TableReservationStatus.SEATED;
             if (!open) {
                 continue;
             }
@@ -94,7 +95,7 @@ public class ButlerPauseSummaryService {
             if (lunch && order.requestedStartAt().isBefore(tomorrow)) {
                 lunches.add(new ButlerPauseSummary.Lunch(order.id(),
                         TIME.format(LocalDateTime.ofInstant(order.requestedStartAt(), zone)), name(order), table(order),
-                        party(order), presto ? "в Presto" : order.status() == TableReservationStatus.CONFIRMED ? "подтверждён" : "ждёт хостес",
+                        party(order), presto ? "в Presto" : lunchStatus(order.status()),
                         composition(order)));
             }
         }
@@ -288,6 +289,14 @@ public class ButlerPauseSummaryService {
             case "IN_PROGRESS" -> "в работе";
             case "HELP_REQUESTED" -> "нужна помощь";
             default -> status == null ? "" : status.toLowerCase();
+        };
+    }
+
+    private static String lunchStatus(TableReservationStatus status) {
+        return switch (status) {
+            case AWAITING_MANAGER_CONFIRMATION -> "ждёт хостес";
+            case SEATED -> "гость сел";
+            default -> "подтверждён";
         };
     }
 

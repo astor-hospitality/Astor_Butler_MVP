@@ -617,9 +617,9 @@ public class HostessBookingEditService {
 
     // ---- helpers ----
 
+    /** Awaiting, confirmed or seated (#151): the hostess may still move a guest who is already at the table. */
     private static boolean editable(TableReservationOrder order) {
-        return order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
-                || order.status() == TableReservationStatus.CONFIRMED;
+        return TableReservationService.holdsATable(order);
     }
 
     private static boolean hasExternalId(TableReservationOrder order) {
@@ -695,6 +695,7 @@ public class HostessBookingEditService {
         return switch (status) {
             case AWAITING_MANAGER_CONFIRMATION -> "ожидает решения хостес";
             case CONFIRMED -> "подтверждена";
+            case SEATED -> "гость сел";
             case REJECTED -> "отклонена";
             case CANCELLED -> "отменена";
             case EXPIRED -> "истекла";
