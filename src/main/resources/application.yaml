@@ -173,6 +173,10 @@ astor:
     payment-prompt-delay-ms: ${ASTOR_BILLING_PAYMENT_PROMPT_DELAY_MS:30000}
     review-delay-minutes: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:60}
     review-lookback-hours: ${ASTOR_BILLING_REVIEW_LOOKBACK_HOURS:24}
+  tip:
+    # Butler never takes the tip. STAFF_CARD: after the guest's "Да" the waiters get a card in the hostess chat and
+    # mark it "Чаевые получены". SBP_LINK: the guest gets the recipient's staff_profiles.sbp_link; no link, the card.
+    mode: ${ASTOR_TIP_MODE:STAFF_CARD}
   startup:
     admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}

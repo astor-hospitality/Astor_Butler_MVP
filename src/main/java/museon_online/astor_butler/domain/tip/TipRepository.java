@@ -140,6 +140,19 @@ public class TipRepository {
         return findOrder(id).orElseThrow();
     }
 
+    public TipOrder updateSbpUrl(Long id, String sbpUrl) {
+        jdbcTemplate.update("""
+                UPDATE tip_orders
+                SET sbp_url = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                blankToNull(sbpUrl),
+                id
+        );
+        return findOrder(id).orElseThrow();
+    }
+
     public TipOrder updateStatus(Long id, TipOrderStatus status) {
         jdbcTemplate.update("""
                 UPDATE tip_orders

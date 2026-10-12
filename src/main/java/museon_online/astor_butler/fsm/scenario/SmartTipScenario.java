@@ -5,6 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.billing.GuestBill;
 import museon_online.astor_butler.domain.billing.GuestBillService;
 import museon_online.astor_butler.domain.billing.GuestBillStatus;
+import museon_online.astor_butler.domain.tip.TipGuest;
+import museon_online.astor_butler.domain.tip.TipHandoffService;
+import museon_online.astor_butler.domain.tip.TipMoney;
 import museon_online.astor_butler.domain.tip.TipOrder;
 import museon_online.astor_butler.domain.tip.TipOrderCommand;
 import museon_online.astor_butler.domain.tip.TipService;
@@ -67,6 +70,7 @@ public class SmartTipScenario implements FsmScenario {
     private final TipDraftStorage drafts;
     private final GuestBillService bills;
     private final BookingTimeProvider timeProvider;
+    private final TipHandoffService handoff;
 
     @Override
     public String id() {
@@ -313,16 +317,11 @@ public class SmartTipScenario implements FsmScenario {
             TipOrder order = tipService.confirmLatestDraft(incoming.chatId());
             drafts.clear(incoming.chatId());
             fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+            // Butler takes no money: the waiters come with a QR, or the guest gets the recipient's SBP link.
+            TipHandoffService.Handoff next = handoff.afterConfirmed(order, tipGuest(incoming));
             return OutgoingMessage.of(
                     incoming,
-                    """
-                            Зафиксировал благодарность #%s и перевел ее в ожидание оплаты.
-
-                            Получатель: %s
-                            Сумма: %s ₽
-
-                            Оплата чаевых через бота пока не подключена, поэтому деньги не списаны. Я вернул вас в главное меню.
-                            """.formatted(order.id(), staffName(order), rubles(order.amountMinor())),
+                    next.guestText(),
                     BotState.READY_FOR_DIALOG.name(),
                     false,
                     false,
@@ -334,7 +333,7 @@ public class SmartTipScenario implements FsmScenario {
                     "scenario", id(),
                     "tipOrderId", order.id(),
                     "tipOrderStatus", order.status().name(),
-                    "paymentBoundary", "SBP_OR_TELEGRAM_STARS_NEXT"
+                    "tipHandoff", next.way()
             ));
         }
         if (isRejectIntent(text)) {
@@ -435,16 +434,8 @@ public class SmartTipScenario implements FsmScenario {
         return Math.max(1L, (checkMinor * percent + 5_000L) / 10_000L);
     }
 
-    /** Whole rubles of a sum in kopecks; thousands are set apart from five digits up, as Russian text does. */
     static String money(long minor) {
-        return groupedRubles(minor / 100L);
-    }
-
-    private static String groupedRubles(long rubles) {
-        if (rubles < 10_000L) {
-            return Long.toString(rubles);
-        }
-        return String.format(Locale.ROOT, "%,d", rubles).replace(',', ' ');
+        return TipMoney.rubles(minor);
     }
 
     private static boolean positive(Long value) {
@@ -499,6 +490,15 @@ public class SmartTipScenario implements FsmScenario {
             return "Команда AERIS";
         }
         return order.staffDisplayName();
+    }
+
+    /** The waiters' card shows the name and the username apart, so a guest without a name is not "@x (@x)". */
+    private TipGuest tipGuest(IncomingMessage incoming) {
+        String firstName = incoming.firstName() == null ? "" : incoming.firstName().trim();
+        String lastName = incoming.lastName() == null ? "" : incoming.lastName().trim();
+        String fullName = (firstName + " " + lastName).trim();
+        String username = incoming.username() == null ? "" : incoming.username().trim();
+        return new TipGuest(incoming.chatId(), fullName.isEmpty() ? null : fullName, username.isEmpty() ? null : username);
     }
 
     private String displayName(IncomingMessage incoming) {

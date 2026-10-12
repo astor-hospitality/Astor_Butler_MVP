@@ -5,6 +5,8 @@ import museon_online.astor_butler.domain.billing.GuestBill;
 import museon_online.astor_butler.domain.billing.GuestBillKind;
 import museon_online.astor_butler.domain.billing.GuestBillService;
 import museon_online.astor_butler.domain.billing.GuestBillStatus;
+import museon_online.astor_butler.domain.tip.TipGuest;
+import museon_online.astor_butler.domain.tip.TipHandoffService;
 import museon_online.astor_butler.domain.tip.TipOrder;
 import museon_online.astor_butler.domain.tip.TipOrderCommand;
 import museon_online.astor_butler.domain.tip.TipOrderStatus;
@@ -60,13 +62,16 @@ class SmartTipScenarioTest {
     @Mock
     private GuestBillService bills;
 
+    @Mock
+    private TipHandoffService handoff;
+
     private final Map<Long, TipDraftStorage.Draft> drafts = new HashMap<>();
     private SmartTipScenario scenario;
 
     @BeforeEach
     void setUp() {
         scenario = new SmartTipScenario(fsmStorage, tipService, new InMemoryDrafts(), bills,
-                new BookingTimeProvider(Clock.fixed(NOW, BookingTimeProvider.VENUE_ZONE)));
+                new BookingTimeProvider(Clock.fixed(NOW, BookingTimeProvider.VENUE_ZONE)), handoff);
     }
 
     // --- the question: three shares of the check, or a sum of the guest's own ---
@@ -363,14 +368,18 @@ class SmartTipScenarioTest {
         drafts.put(CHAT, TipDraftStorage.Draft.empty().withCheck(240_000L, TipDraftStorage.CheckSource.GUEST, null).withOrder(55L));
         IncomingMessage incoming = telegram("да");
         when(tipService.confirmLatestDraft(incoming.chatId())).thenReturn(confirmedTipOrder());
+        whenHandedToTheStaff();
 
         OutgoingMessage outgoing = scenario.handle(incoming, BotState.TIP_CONFIRMATION, incoming.text());
 
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(outgoing.actions()).containsExactly("SMART_TIP", "TIP_DRAFT_CONFIRMED", "RETURN_MAIN_MENU");
-        assertThat(outgoing.text()).contains("благодарность #55", "ожидание оплаты", "1000 ₽");
+        // What happens next is the handoff's: a card for the waiters, or the SBP link in the automatic mode.
+        assertThat(outgoing.text()).isEqualTo("Спасибо! Передал команде — официант подойдёт с QR.");
         assertThat(outgoing.metadata()).containsEntry("tipOrderId", 55L);
         assertThat(outgoing.metadata()).containsEntry("tipOrderStatus", "AWAITING_PAYMENT");
+        assertThat(outgoing.metadata()).containsEntry("tipHandoff", "STAFF_CARD");
+        verify(handoff).afterConfirmed(confirmedTipOrder(), new TipGuest(CHAT, "Наталья Поединенко", "Poedinenko"));
         verify(tipService).confirmLatestDraft(incoming.chatId());
         verify(fsmStorage).setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
         assertThat(drafts).doesNotContainKey(CHAT);
@@ -448,6 +457,7 @@ class SmartTipScenarioTest {
     @Test
     void theGuestIsNotShownInternalWords() {
         whenDraftsAreCreated();
+        whenHandedToTheStaff();
         when(tipService.confirmLatestDraft(any())).thenReturn(confirmedTipOrder());
         when(tipService.cancelLatestDraft(any())).thenReturn(cancelledTipOrder());
         String everything = String.join("\n",
@@ -461,7 +471,12 @@ class SmartTipScenarioTest {
                 scenario.handle(telegram("нет"), BotState.TIP_CONFIRMATION, "нет").text());
 
         assertThat(everything.toLowerCase()).doesNotContain("draft", "слой", "invoice", "stars", "уточняется", "estimate", "null", "% от");
-        assertThat(everything).contains("Оплата чаевых через бота пока не подключена, поэтому деньги не списаны.");
+        assertThat(everything).contains("Спасибо! Передал команде — официант подойдёт с QR.");
+    }
+
+    private void whenHandedToTheStaff() {
+        when(handoff.afterConfirmed(any(), any()))
+                .thenReturn(new TipHandoffService.Handoff("Спасибо! Передал команде — официант подойдёт с QR.", "STAFF_CARD"));
     }
 
     private void choosingPercentsOf(long checkMinor) {
