@@ -1,7 +1,7 @@
 # Опросник № 4. Официант AERIS — ответы
 
 Дата: 12.10.2026, ~12:55–13:20 мск. Официант: Даниил Агванович (официант AERIS; роль в боте — `WAITER`; в анкете команды из
-[AERIS_MANAGER_INTERVIEW_1_ANSWERS.md](AERIS_MANAGER_INTERVIEW_1_ANSWERS.md) §4 его нет, `staff_id` не заведён). Помогал: Михаил Романович.
+[AERIS_MANAGER_INTERVIEW_1_ANSWERS.md](AERIS_MANAGER_INTERVIEW_1_ANSWERS.md) §4 его нет; `staff_id` `daniil` (WAITER) заведён в `astor_staff_members` на ВМ 12.10). Помогал: Михаил Романович.
 Вопросы — из [AERIS_WAITER_INTERVIEW_4.md](AERIS_WAITER_INTERVIEW_4.md). Первые два интервью — менеджер смены 10.10
 ([AERIS_MANAGER_INTERVIEW_1_ANSWERS.md](AERIS_MANAGER_INTERVIEW_1_ANSWERS.md)) и хостес 12.10 ([AERIS_HOSTESS_INTERVIEW_2_ANSWERS.md](AERIS_HOSTESS_INTERVIEW_2_ANSWERS.md));
 их разбор — [GUEST_JOURNEY_FEATURES_FROM_INTERVIEWS.md](../product/GUEST_JOURNEY_FEATURES_FROM_INTERVIEWS.md). План теста, который эти ответы
@@ -146,7 +146,7 @@
 | 22 | что значит «тест прошёл плохо» |
 | 23 | что должно быть выключено на тесте |
 | 24 | что ещё хотел бы от системы |
-| — | `staff_id` официанта: в анкете команды (интервью № 1 §4) его нет |
+| — | `staff_id` официанта: в анкете команды (интервью № 1 §4) его нет; `daniil` (WAITER) заведён на ВМ 12.10 |
 
 ## Открытые вопросы
 
