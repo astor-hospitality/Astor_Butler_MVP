@@ -13,6 +13,7 @@ import museon_online.astor_butler.domain.booking.HostessBookingEditService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
 import museon_online.astor_butler.domain.entry.StaffHandoffLinkCommandService;
 import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
+import museon_online.astor_butler.domain.tips.TipsStaffCommandService;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.MessageGatewayService;
 import museon_online.astor_butler.service.message.OutgoingMessage;
@@ -90,6 +91,10 @@ public class TelegramRouter {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ButlerPauseCommandService butlerPauseCommandService;
 
+    /** The manager's /официант and /чаевые (#161): optional for the same reason. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private TipsStaffCommandService tipsStaffCommandService;
+
     /** The staff member's personal guest link, /ссылка (#128): optional for the same reason. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private StaffHandoffLinkCommandService staffHandoffLinkCommandService;
@@ -115,6 +120,9 @@ public class TelegramRouter {
             log.info("📨 [TG] Incoming message from {}: {}", incoming.chatId(), incoming.text());
             // Before the hostess boundary: it consumes every text in the staff chat, /stop included.
             if (butlerPauseCommandService != null && butlerPauseCommandService.handle(incoming)) {
+                return;
+            }
+            if (tipsStaffCommandService != null && tipsStaffCommandService.handle(incoming)) {
                 return;
             }
             // /ссылка in the staff chat (#128): answered here, before the hostess boundary consumes the text.

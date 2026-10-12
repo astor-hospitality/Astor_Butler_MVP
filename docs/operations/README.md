@@ -26,6 +26,8 @@ Key files:
 - [AERIS_MANAGER_INTERVIEW_3.md](AERIS_MANAGER_INTERVIEW_3.md) — опросник № 3, второй круг с менеджером зала по фичам гостевого пути.
 - [AERIS_WAITER_INTERVIEW_4.md](AERIS_WAITER_INTERVIEW_4.md) — опросник № 4 для официанта (вопросы).
 - `AERIS_WAITER_INTERVIEW_4_ANSWERS.md` - ответы официанта AERIS 12.10.2026 (опросник № 4: смена, заказ и кухня, поручения и наушник, счёт и чаевые, вход гостя, тест); план фич — `docs/product/WAITER_FEATURES_PLAN.md`, issues #160–#165.
+- [AERIS_CHEF_INTERVIEW_5.md](AERIS_CHEF_INTERVIEW_5.md) — опросник № 5 для шеф-повара (вопросы).
+- `AERIS_CHEF_INTERVIEW_5_ANSWERS.md` - ответы шеф-повара AERIS 12.10.2026 (опросник № 5: кухня в ланч, предзаказ от бота, меню и аллергены, поручения и кухня, гость и кухня, тест); план фич — `docs/product/KITCHEN_FEATURES_PLAN.md`, issues #173–#175.
 - `AERIS_SYSTEM_ANALYSIS_TESTS.md`
 - `LOAD_TESTING.md`
 - `TEAM_DELIVERY_WORKFLOW.md`

@@ -1304,4 +1304,64 @@ class MessageGatewayServiceTest {
                 )
         );
     }
+
+    @Test
+    void guidingQuestionIsAppendedToAScenarioReplyWhenTheFlagIsOn() {
+        IncomingMessage incoming = telegram("завтра");
+        when(fsmStorage.getState(incoming.chatId())).thenReturn(BotState.TABLE_BOOKING_COLLECT_DATE);
+        OutgoingMessage step = OutgoingMessage.of(incoming, "Записал: завтра.", BotState.TABLE_BOOKING_COLLECT_TIME.name(),
+                false, false, false, false, AdminAlert.none(), java.util.List.of("TABLE_BOOKING_ASK_TIME"));
+        when(tableBookingScenario.supports(eq(incoming), eq(BotState.TABLE_BOOKING_COLLECT_DATE), any())).thenReturn(true);
+        when(tableBookingScenario.handle(eq(incoming), eq(BotState.TABLE_BOOKING_COLLECT_DATE), any())).thenReturn(step);
+        java.util.Map<Long, String> remembered = new java.util.HashMap<>();
+        museon_online.astor_butler.fsm.reply.GuidingQuestionMemory memory = new museon_online.astor_butler.fsm.reply.GuidingQuestionMemory() {
+            @Override
+            public java.util.Optional<String> last(Long chatId) {
+                return java.util.Optional.ofNullable(remembered.get(chatId));
+            }
+
+            @Override
+            public void remember(Long chatId, String question) {
+                remembered.put(chatId, question);
+            }
+
+            @Override
+            public void forget(Long chatId) {
+                remembered.remove(chatId);
+            }
+        };
+        ReflectionTestUtils.setField(service, "guidingQuestionAppender", new museon_online.astor_butler.fsm.reply.GuidingQuestionAppender(
+                new museon_online.astor_butler.fsm.reply.GuidingQuestionPolicy(), memory, true));
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.text()).isEqualTo("Записал: завтра.\n\nНа какое время?");
+        assertThat(outgoing.nextState()).isEqualTo(BotState.TABLE_BOOKING_COLLECT_TIME.name());
+        assertThat(outgoing.actions()).containsExactly("TABLE_BOOKING_ASK_TIME");
+        assertThat(outgoing.metadata()).containsEntry("guidingQuestion", "На какое время?");
+        assertThat(memory.last(incoming.chatId())).contains("На какое время?");
+    }
+
+    @Test
+    void guidingQuestionFlagOffLeavesTheScenarioReplyUntouched() {
+        IncomingMessage incoming = telegram("завтра");
+        when(fsmStorage.getState(incoming.chatId())).thenReturn(BotState.TABLE_BOOKING_COLLECT_DATE);
+        OutgoingMessage step = OutgoingMessage.of(incoming, "Записал: завтра.", BotState.TABLE_BOOKING_COLLECT_TIME.name(),
+                false, false, false, false, AdminAlert.none(), java.util.List.of("TABLE_BOOKING_ASK_TIME"));
+        when(tableBookingScenario.supports(eq(incoming), eq(BotState.TABLE_BOOKING_COLLECT_DATE), any())).thenReturn(true);
+        when(tableBookingScenario.handle(eq(incoming), eq(BotState.TABLE_BOOKING_COLLECT_DATE), any())).thenReturn(step);
+        museon_online.astor_butler.fsm.reply.GuidingQuestionMemory memory =
+                org.mockito.Mockito.mock(museon_online.astor_butler.fsm.reply.GuidingQuestionMemory.class);
+
+        OutgoingMessage withoutBean = service.handle(incoming);
+        ReflectionTestUtils.setField(service, "guidingQuestionAppender", new museon_online.astor_butler.fsm.reply.GuidingQuestionAppender(
+                new museon_online.astor_butler.fsm.reply.GuidingQuestionPolicy(), memory, false));
+        OutgoingMessage flagOff = service.handle(incoming);
+
+        assertThat(withoutBean.text()).isEqualTo("Записал: завтра.");
+        assertThat(flagOff.text()).isEqualTo("Записал: завтра.");
+        assertThat(flagOff.metadata()).doesNotContainKey("guidingQuestion");
+        assertThat(flagOff.metadata()).isEqualTo(withoutBean.metadata());
+        org.mockito.Mockito.verifyNoInteractions(memory);
+    }
 }

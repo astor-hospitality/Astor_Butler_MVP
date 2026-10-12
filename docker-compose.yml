@@ -342,6 +342,9 @@ services:
       ASTOR_BUSINESS_LUNCH_ENABLED: ${AERIS_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
       # Shift manager's kill switch (#134): /stop, /start_butler, /status_butler in the staff chat. Off by default.
       ASTOR_KILL_SWITCH_ENABLED: ${AERIS_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
+      # Tips to the waiter of the table (#161): /официант and /чаевые in the staff chat, the recipient by table. Off by default.
+      ASTOR_TIPS_PERSONAL_ENABLED: ${AERIS_TIPS_PERSONAL_ENABLED:-${ASTOR_TIPS_PERSONAL_ENABLED:-false}}
+      ASTOR_TIPS_PERSONAL_TENANT: ${ASTOR_TIPS_PERSONAL_TENANT:-AERIS}
       # Staff member's personal guest link / QR and the entry log (#128): /ссылка in the staff chat, «Привёл(а)» on the hostess card. Off by default.
       ASTOR_STAFF_HANDOFF_ENABLED: ${AERIS_STAFF_HANDOFF_ENABLED:-${ASTOR_STAFF_HANDOFF_ENABLED:-false}}
       ASTOR_STAFF_HANDOFF_TENANT: ${AERIS_STAFF_HANDOFF_TENANT:-${ASTOR_STAFF_HANDOFF_TENANT:-}}
