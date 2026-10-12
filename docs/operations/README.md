@@ -20,6 +20,8 @@ Key files:
 - `BUSINESS_LUNCH_FIRST_TEST.md` - первый живой тест бизнес-ланча в AERIS: полуавтомат (хостес) и автомат (Saby), состав команды и статистов, pre-flight, таблица результатов, откат флагами.
 - `SABY_STAFF_MEMO_DASHA.md` - Памятка для Дарьи (менеджер зала AERIS): что должно существовать в Saby (СБИС Presto) для автомата ланча, как персонал работает в Presto во время теста, таблица людей для справочника Astor. Бот сотрудников Saby не использует.
 - `AERIS_MANAGER_INTERVIEW_1.md` - Опросник № 1 для менеджера смены AERIS (Discovery перед первым тестом ланча: процесс, роли, аккаунты команды, Saby, риски).
+- `AERIS_MANAGER_INTERVIEW_1_ANSWERS.md` - ответы менеджера смены AERIS 10.10.2026, что меняет план теста, issues #127–#135.
+- `AERIS_HOSTESS_INTERVIEW_2_ANSWERS.md` - ответы хостес AERIS 12.10.2026 (опросник № 2: рабочий день, брони, карточка, Saby, зал, вход гостя, тест, отзывы); разбор по этапам гостевого пути — `docs/product/GUEST_JOURNEY_FEATURES_FROM_INTERVIEWS.md`, issues #147–#154.
 - `AERIS_SYSTEM_ANALYSIS_TESTS.md`
 - `LOAD_TESTING.md`
 - `TEAM_DELIVERY_WORKFLOW.md`
