@@ -22,6 +22,8 @@ Key files:
 - `AERIS_MANAGER_INTERVIEW_1.md` - Опросник № 1 для менеджера смены AERIS (Discovery перед первым тестом ланча: процесс, роли, аккаунты команды, Saby, риски).
 - `AERIS_MANAGER_INTERVIEW_1_ANSWERS.md` - ответы менеджера смены AERIS 10.10.2026, что меняет план теста, issues #127–#135.
 - `AERIS_HOSTESS_INTERVIEW_2_ANSWERS.md` - ответы хостес AERIS 12.10.2026 (опросник № 2: рабочий день, брони, карточка, Saby, зал, вход гостя, тест, отзывы); разбор по этапам гостевого пути — `docs/product/GUEST_JOURNEY_FEATURES_FROM_INTERVIEWS.md`, issues #147–#154.
+- [AERIS_HOSTESS_INTERVIEW_2.md](AERIS_HOSTESS_INTERVIEW_2.md) — опросник № 2 для хостес (вопросы).
+- [AERIS_MANAGER_INTERVIEW_3.md](AERIS_MANAGER_INTERVIEW_3.md) — опросник № 3, второй круг с менеджером зала по фичам гостевого пути.
 - `AERIS_SYSTEM_ANALYSIS_TESTS.md`
 - `LOAD_TESTING.md`
 - `TEAM_DELIVERY_WORKFLOW.md`
