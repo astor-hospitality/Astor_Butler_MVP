@@ -2,6 +2,7 @@ package museon_online.astor_butler.telegram.adapter;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.config.AstorLinksProperties;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,9 +25,9 @@ public class OperationalChatPreviewNotifier {
     private static final String STAFF_GUIDE_URL = "https://app.notion.com/p/381a7c019f1981b08ca4ed4146e630e4";
     private static final String ADMIN_GUIDE_URL = "https://app.notion.com/p/381a7c019f1981988530d1464d567af4";
     private static final String SYSTEM_GUIDE_URL = "https://app.notion.com/p/382a7c019f198148b78aef491ceee4f6";
-    private static final String FSM_VIEWER_URL = "https://michaelwelly.github.io/Astor_Butler_MVP/docs/FSM_SCENARIOS_VIEWER.html";
 
     private final ObjectProvider<TelegramBot> telegramBotProvider;
+    private final AstorLinksProperties links;
 
     @Value("${telegram.bot.enabled:false}")
     private boolean telegramEnabled;
@@ -102,7 +103,7 @@ public class OperationalChatPreviewNotifier {
         }
     }
 
-    private String adminPreview() {
+    String adminPreview() {
         return """
                 <b>Astor Butler Admin Chat</b>
                 Центр ручного контроля, fallback, manager help и анализа сценариев.
@@ -120,7 +121,7 @@ public class OperationalChatPreviewNotifier {
                 <a href="%s">Инструкция администратора</a>
                 <a href="%s">FSM Viewer</a>
                 <a href="%s">База знаний</a>
-                """.formatted(ADMIN_GUIDE_URL, FSM_VIEWER_URL, KNOWLEDGE_BASE_URL);
+                """.formatted(ADMIN_GUIDE_URL, links.getFsmViewer(), KNOWLEDGE_BASE_URL);
     }
 
     private String staffPreview() {
@@ -142,7 +143,7 @@ public class OperationalChatPreviewNotifier {
                 """.formatted(STAFF_GUIDE_URL, KNOWLEDGE_BASE_URL);
     }
 
-    private String systemPreview() {
+    String systemPreview() {
         return """
                 <b>Astor Butler System Chat</b>
                 Служебный канал наблюдаемости: dialog trace, startup, FSM transitions, action tags, Kafka/outbox и correlation ids.
@@ -162,7 +163,7 @@ public class OperationalChatPreviewNotifier {
                 <a href="%s">Инструкция System Chat</a>
                 <a href="%s">FSM Viewer</a>
                 <a href="%s">База знаний</a>
-                """.formatted(SYSTEM_GUIDE_URL, FSM_VIEWER_URL, KNOWLEDGE_BASE_URL);
+                """.formatted(SYSTEM_GUIDE_URL, links.getFsmViewer(), KNOWLEDGE_BASE_URL);
     }
 
     private record PreviewCard(String kind, String text) {

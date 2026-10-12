@@ -8,13 +8,11 @@ services:
       ASTOR_BACKEND_UPSTREAM: ${ASTOR_BACKEND_UPSTREAM:-host.docker.internal:8088}
     volumes:
       - ./docker/nginx/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
-    command: >
-      sh -c "host=$${ASTOR_BACKEND_UPSTREAM%:*};
-      if [ \"$$host\" != \"host.docker.internal\" ]; then
-      until getent hosts \"$$host\" >/dev/null 2>&1; do sleep 1; done;
-      fi;
-      envsubst '$$ASTOR_BACKEND_UPSTREAM' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf &&
-      nginx -g 'daemon off;'"
+      - ./docker/nginx/entrypoint.sh:/etc/nginx/astor-entrypoint.sh:ro
+    # Renders the template (envsubst, only $ASTOR_BACKEND_UPSTREAM) and starts nginx. The upstream name is
+    # resolved by nginx at request time (resolver + variable in the template), so a recreated bot container
+    # is picked up without restarting the gateway (#122). Check: docker/nginx/validate.sh
+    command: ["sh", "/etc/nginx/astor-entrypoint.sh"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:

@@ -24,6 +24,8 @@ Key files:
 - `AERIS_HOSTESS_INTERVIEW_2_ANSWERS.md` - ответы хостес AERIS 12.10.2026 (опросник № 2: рабочий день, брони, карточка, Saby, зал, вход гостя, тест, отзывы); разбор по этапам гостевого пути — `docs/product/GUEST_JOURNEY_FEATURES_FROM_INTERVIEWS.md`, issues #147–#154.
 - [AERIS_HOSTESS_INTERVIEW_2.md](AERIS_HOSTESS_INTERVIEW_2.md) — опросник № 2 для хостес (вопросы).
 - [AERIS_MANAGER_INTERVIEW_3.md](AERIS_MANAGER_INTERVIEW_3.md) — опросник № 3, второй круг с менеджером зала по фичам гостевого пути.
+- [AERIS_WAITER_INTERVIEW_4.md](AERIS_WAITER_INTERVIEW_4.md) — опросник № 4 для официанта (вопросы).
+- `AERIS_WAITER_INTERVIEW_4_ANSWERS.md` - ответы официанта AERIS 12.10.2026 (опросник № 4: смена, заказ и кухня, поручения и наушник, счёт и чаевые, вход гостя, тест); план фич — `docs/product/WAITER_FEATURES_PLAN.md`, issues #160–#165.
 - `AERIS_SYSTEM_ANALYSIS_TESTS.md`
 - `LOAD_TESTING.md`
 - `TEAM_DELIVERY_WORKFLOW.md`

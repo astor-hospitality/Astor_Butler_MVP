@@ -48,6 +48,8 @@ Butler  config/SecurityConfig.java       anyRequest().permitAll(), CSRF выкл
 
 Тот же allow-list явными `location`: `/api/messages`, `/api/astor/`, `/api/chat/`, `/api/glasses/`, `/api/staff/`, `/api/admin/staff`, `/api/auth/`, `/actuator/health`, `/actuator/prometheus`. Остальное под `/api/` и `/actuator/` проксируется только при наличии заголовка `X-Astor-Internal-Token` (значение проверяет бот), иначе `404`. Так gateway не становится второй публичной дверью там, где он опубликован на host-порт (`docker-compose.prod.yml`).
 
+С #122 все `proxy_pass` идут через переменную `$astor_backend` (`set` на уровне `server`, `resolver 127.0.0.11 valid=10s`): nginx переразрешает имя бота на запросе, а не один раз при старте, и пересоздание контейнера бота не требует перезапуска шлюза. URI-части у `proxy_pass` нет, поэтому путь запроса уходит боту без изменений; набор `location` и правило «без `X-Astor-Internal-Token` → 404» не менялись (`docker/nginx/validate.sh` проверяет, что каждый `proxy_pass` идёт через переменную и ни одна `$переменная` nginx не съедена envsubst).
+
 ### 2.3. Edge Caddy: `infra/cloudru/edge/c3ag.caddy`
 
 Вместо `@backend path /api/* …` — явный allow-list:

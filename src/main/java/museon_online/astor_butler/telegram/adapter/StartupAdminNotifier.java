@@ -2,6 +2,7 @@ package museon_online.astor_butler.telegram.adapter;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.config.AstorLinksProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -18,6 +19,7 @@ public class StartupAdminNotifier {
 
     private final TelegramAdminNotifier telegramAdminNotifier;
     private final Environment environment;
+    private final AstorLinksProperties links;
 
     @Value("${astor.startup.admin-notification-enabled:true}")
     private boolean enabled;
@@ -52,7 +54,7 @@ public class StartupAdminNotifier {
                 Kafka admin stream: watching
 
                 <b>Инструкции</b>
-                Guest: https://michaelwelly.github.io/Astor_Butler_MVP/docs/guest-guide.html
+                Guest: %s
                 Knowledge Base: https://auspicious-kryptops-863.notion.site/Astor-Butler-380a7c019f1980d78b68d8bc659c609b?source=copy_link
                 Staff Chat: https://app.notion.com/p/381a7c019f1981b08ca4ed4146e630e4
                 Admin Chat: https://app.notion.com/p/381a7c019f1981988530d1464d567af4
@@ -64,6 +66,7 @@ public class StartupAdminNotifier {
                 html(appName),
                 html(profiles),
                 html(port),
+                html(links.getGuestGuide()),
                 html(Instant.now().toString())
         );
     }
