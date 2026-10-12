@@ -39,7 +39,7 @@ public final class GlassesPilotApplication {
     @Configuration
     @EnableWebMvc
     @Import({GlassesController.class, GlassesMediaController.class, GlassesSessionEventsController.class, GlassesReportController.class,
-            GlassesMessagesController.class, GlassesSpeechController.class, GlassesReportAuth.class, GlassesSpeech.class,
+            GlassesMessagesController.class, GlassesMessagePriority.class, GlassesSpeechController.class, GlassesReportAuth.class, GlassesSpeech.class,
             GlassesSpeechFilter.class, GlassesTranscriptRelay.class, GlassesStaffTaskRelay.class, GlassesVoiceTasks.class,
             GlassesSessionJournal.class, GlassesAccess.class, GlassesAssistService.class, GlassesVoice.class, GlassesS3Storage.class, AstorWebRelay.class})
     public static class Config {
