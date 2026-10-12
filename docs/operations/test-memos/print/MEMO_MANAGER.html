@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Памятка менеджера смены — Дарья Анатольевна. Тест ланча 15.10</title>
+<style>
+@page { size: A4; margin: 10mm 12mm; }
+html { font-size: 9.5pt; }
+body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+       color: #111; max-width: 186mm; margin: 0 auto; padding: 4mm 4mm; line-height: 1.25; }
+h1 { font-size: 1.4em; margin: 0 0 .25em; line-height: 1.2; }
+h2 { font-size: 1.08em; margin: .55em 0 .2em; border-bottom: 1px solid #bbb; padding-bottom: .15em; }
+h3 { font-size: 1em; margin: .8em 0 .2em; }
+p { margin: .25em 0; }
+ul, ol { margin: .15em 0 .35em; padding-left: 1.3em; }
+li { margin: .06em 0; }
+li > ul, li > ol { margin: .1em 0 .1em; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .92em;
+       background: #f1f1f1; padding: 0 .25em; border-radius: 3px; white-space: nowrap; }
+table { border-collapse: collapse; width: 100%; margin: .3em 0 .5em; font-size: .94em; }
+th, td { border: 1px solid #999; padding: .18em .35em; vertical-align: top; text-align: left; }
+th { background: #eee; }
+blockquote { margin: .5em 0; padding: .3em .8em; border-left: 4px solid #999; background: #f7f7f7; }
+hr { border: 0; border-top: 1px solid #bbb; margin: .8em 0; }
+a { color: #0b4f9c; }
+.meta { color: #555; font-size: .9em; margin-bottom: .8em; }
+.nav { font-size: .85em; color: #555; margin-bottom: .6em; }
+@media print { .nav { display: none; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="nav"><a href="MEMO_CASHIER.html">CASHIER</a> · <a href="MEMO_GLASSES_KIRILL.html">GLASSES KIRILL</a> · <a href="MEMO_GUEST_EXTRA.html">GUEST EXTRA</a> · <a href="MEMO_HOSTESS.html">HOSTESS</a> · <a href="MEMO_KITCHEN.html">KITCHEN</a> · <a href="MEMO_MANAGER.html">MANAGER</a> · <a href="MEMO_OBSERVERS.html">OBSERVERS</a> · <a href="MEMO_WAITER.html">WAITER</a> · <a href="README.html">README</a></div>
+<h1>Памятка менеджера смены — Дарья Анатольевна. Тест ланча 15.10</h1>
+<p>Вы ведёте смену как обычно и держите «стоп-кран». Все команды пишутся <strong>в рабочей Telegram-группе</strong> (бот — администратор); из личного чата с ботом они не работают. Регистр не важен, можно с именем бота (<code>/stop@…</code>).</p>
+<h2>1. Стоп и возврат бота</h2>
+<table><thead><tr><th>Команда</th><th>Что делает</th><th>Ответ бота</th></tr></thead><tbody>
+<tr><td>**<code>/stop</code>** (<code>/стоп</code>)</td><td>пауза гостевой автоматики + <strong>сводка открытых статусов</strong>: заявки (ждут хостес / подтверждены), ланчи сегодня с составом, счета, поручения; без телефонов</td><td>«⏸ Butler остановлен. Остановил(а): …» + сводка</td></tr>
+<tr><td>**<code>/start_butler</code>** (<code>/go</code>)</td><td>снимает паузу</td><td>«▶️ Butler снова работает…»</td></tr>
+<tr><td>**<code>/status_butler</code>**</td><td>работает или стоит + та же сводка; ничего не меняет</td><td>«▶️ Butler работает…» / «⏸ Butler остановлен …»</td></tr>
+</tbody></table>
+<p>На паузе гость с бронью, изменением, ланчем или счётом получает «Сейчас заявки принимает команда вручную — передаю ваше сообщение, с вами свяжутся», а его текст приходит в группу карточкой <strong>«✋ Butler на паузе — сообщение гостя»</strong> — дальше ведёте его руками. Меню, ответы на вопросы, согласие и «позвать менеджера» работают; кнопки на уже присланных карточках — тоже. Повтор команды ничего не ломает. Пауза переживает перезапуск — вернуть бота только <code>/start_butler</code>. **Когда жать <code>/stop</code>:** бот шлёт гостям не то, дублирует карточки, гость жалуется, или вы решили вести смену руками. Сначала <code>/stop</code>, потом сообщение Диме и Михаилу.</p>
+<h2>2. Команды на смену (до 12:00)</h2>
+<table><thead><tr><th>Команда</th><th>Зачем</th><th>Ответ бота</th></tr></thead><tbody>
+<tr><td>**<code>/официант &lt;стол&gt; Даниил</code>**</td><td>официант стола статистов на <strong>сегодня</strong> (действует один день); <code>/официант 1-6 Даниил</code> — диапазон, <code>/официант 5 -</code> — снять, <code>/официант</code> — список</td><td>«Стол 5 на 15.10 — Даниил (daniil).»</td></tr>
+<tr><td>**<code>/чаевые daniil &lt;https://…&gt; [заметка]</code>**</td><td>ссылка Даниила для чаевых (СБП на физлицо); по программе вносит Михаил, доступна и вам. Бот ссылку <strong>не повторяет</strong> — своё сообщение после ответа удалите; <code>/чаевые</code> — у кого ссылка есть / нет</td><td>«Ссылка для чаевых: Даниил (daniil) — сохранена. … Гость увидит её после «да» на чаевых за столом этого официанта.»</td></tr>
+<tr><td>**<code>/ссылка host</code>**</td><td>ссылка и QR для <strong>стойки хоста</strong> (печать — Дима до четверга); <code>/ссылка daniil 5</code> — личная ссылка сотрудника: в карточке хостес будет «Привёл(а): Даниил» (отметка в журнале, не бонус)</td><td>фото QR + «🔗 Ссылка для гостя — …»</td></tr>
+</tbody></table>
+<p>Чаевые уходят <strong>лично официанту</strong>, только если есть все три: бронь гостя на сегодня со столом, назначение <code>/официант</code> на этот стол и ссылка <code>/чаевые</code>. Иначе получатель — «Команда AERIS», как раньше.</p>
+<h2>3. Сегодня выключено</h2>
+<ul>
+<li>**<code>/manual on|off</code>** — ручной режим «перегружены» для таймера автоподтверждения. Таймер выключен: бот ответит с пометкой «⚠️ Автоподтверждение сейчас выключено в настройках … режим сохранён и вступит в силу после включения». Нужен, только если Михаил включит таймер на прогон 2 — тогда заявка без ответа через 7 минут уходит карточкой «⏱ 7 минут без ответа …» в чат менеджера (сейчас это личный чат Михаила с ботом — уточнить).</li>
+<li>**<code>/табло</code>** — табло оценок выключено, бот промолчит. Истечение удержания стола тоже выключено: заявка без ответа держит стол до «Да» / «Нет» хостес.</li>
+</ul>
+<h2>4. Кто что решает</h2>
+<p>«Да» / «Нет», правка, «Гость сел», «Счёт» на карточке — хостес Дарья (вы дублируете, если её нет у телефона: «Да»/«Нет» работают и у вас). Заказ в Presto, счёт на стол, «без лука» с кухней — Даниил. Закрыть заказ в Presto, терминал — Владислав. <code>/stop</code>, назначения, слово «стоп» всему тесту — вы. Флаги на сервере, второй прогон (автомат с Saby), перезапуск бота — Михаил и Дима: вы им пишете, сами ничего не трогаете.</p>
+<p>Гостям слово «тест» не произносим; ничего не обещаем от имени бота (время, замены, порции, скидки). Если бот сломался — гость обслуживается как обычный, без объяснений про бота. Карточки с телефонами из группы наружу не пересылаем.</p>
+</body>
+</html>

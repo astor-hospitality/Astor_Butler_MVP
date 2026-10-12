@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Памятка кассе — Владислав. Тест ланча 15.10</title>
+<style>
+@page { size: A4; margin: 10mm 12mm; }
+html { font-size: 9.5pt; }
+body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+       color: #111; max-width: 186mm; margin: 0 auto; padding: 4mm 4mm; line-height: 1.25; }
+h1 { font-size: 1.4em; margin: 0 0 .25em; line-height: 1.2; }
+h2 { font-size: 1.08em; margin: .55em 0 .2em; border-bottom: 1px solid #bbb; padding-bottom: .15em; }
+h3 { font-size: 1em; margin: .8em 0 .2em; }
+p { margin: .25em 0; }
+ul, ol { margin: .15em 0 .35em; padding-left: 1.3em; }
+li { margin: .06em 0; }
+li > ul, li > ol { margin: .1em 0 .1em; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .92em;
+       background: #f1f1f1; padding: 0 .25em; border-radius: 3px; white-space: nowrap; }
+table { border-collapse: collapse; width: 100%; margin: .3em 0 .5em; font-size: .94em; }
+th, td { border: 1px solid #999; padding: .18em .35em; vertical-align: top; text-align: left; }
+th { background: #eee; }
+blockquote { margin: .5em 0; padding: .3em .8em; border-left: 4px solid #999; background: #f7f7f7; }
+hr { border: 0; border-top: 1px solid #bbb; margin: .8em 0; }
+a { color: #0b4f9c; }
+.meta { color: #555; font-size: .9em; margin-bottom: .8em; }
+.nav { font-size: .85em; color: #555; margin-bottom: .6em; }
+@media print { .nav { display: none; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="nav"><a href="MEMO_CASHIER.html">CASHIER</a> · <a href="MEMO_GLASSES_KIRILL.html">GLASSES KIRILL</a> · <a href="MEMO_GUEST_EXTRA.html">GUEST EXTRA</a> · <a href="MEMO_HOSTESS.html">HOSTESS</a> · <a href="MEMO_KITCHEN.html">KITCHEN</a> · <a href="MEMO_MANAGER.html">MANAGER</a> · <a href="MEMO_OBSERVERS.html">OBSERVERS</a> · <a href="MEMO_WAITER.html">WAITER</a> · <a href="README.html">README</a></div>
+<h1>Памятка кассе — Владислав. Тест ланча 15.10</h1>
+<p>По итогу встречи 10.10 у кассы Saby — Владислав (в ответе на вопрос 30 назван Кирилл — переподтвердить перед стартом).</p>
+<h2>1. Сегодня: полуавтомат — касса работает как обычно</h2>
+<ul>
+<li>Бот <strong>в Presto ничего не пишет</strong>: брони и блюда статистов вносят хостес и официант руками. Закрываете заказ в Presto как всегда.</li>
+<li>Оплата — терминал (QR или карта), как всегда. Бот деньги не принимает, QR или ссылку на оплату гостю <strong>не присылает</strong>. Если на терминале нет QR — карта или наличные, как обычно; запасного пути через бота в этом прогоне нет.</li>
+<li>Счёт делится по потребности, как сейчас.</li>
+</ul>
+<h2>2. Что увидите в рабочей Telegram-группе</h2>
+<table><thead><tr><th>Карточка</th><th>Что значит</th><th>Что делаете</th></tr></thead><tbody>
+<tr><td>«💳 Стол N просит счёт (гость написал в боте)» — «Принесите счёт к столу. Гостю ответил, что счёт сейчас будет.»</td><td>гость попросил счёт в боте</td><td>счёт на стол N готовите как обычно; несёт официант; нажимать нечего</td></tr>
+<tr><td>хостес нажала «Счёт» на карточке брони</td><td>гость попросил счёт словами; гостю ушёл вопрос об оценке</td><td>то же</td></tr>
+</tbody></table>
+<h2>3. Чаевые</h2>
+<p>После звёзд бот предлагает гостю «Оставить чаевые». Гость называет сумму, подтверждает «да» и получает <strong>«Чаевые для Даниил: &lt;ссылка&gt;»</strong> — личную ссылку СБП официанта стола. Через кассу и терминал это не проходит; QR и телефон для чаевых работают как и раньше. Чаевые «бару» через бота сегодня не проверяем (получатель по умолчанию — «Команда AERIS»).</p>
+<h2>4. Если Михаил включит второй прогон — автомат с Saby (только с ключами Saby, не раньше 14:00)</h2>
+<p>Тогда бот начнёт <strong>писать в Presto</strong>, и ваша часть меняется:</p>
+<ol>
+<li><strong>Бронь</strong> появляется в Presto сама: без стола, с комментарием «… Astor Butler #N», с именем и телефоном гостя; к ней прикрепляются позиции ланча. Хостес сажает её на стол и принимает в Presto; через 1–2 минуты гость получает «Бронь подтверждена».</li>
+<li><strong>Проверить у кассы</strong> (с Димой): появились ли позиции ланча у брони, печатает ли Presto их на кухню в этот момент, виден ли комментарий брони на чеке, можно ли поставить блюда на курс. Записать — это главный вопрос прогона.</li>
+<li><strong>Ссылка на оплату</strong>: если в Presto включены эквайринг и онлайн-оплата, бот пришлёт гостю «Счёт по вашему заказу … Предварительно: … ₽ … Платёж принимает ресторан, мы только передаём ссылку» и кнопку <strong>«Оплатить»</strong> (ссылка ресторана; сумма бота предварительная, к оплате — сумма Presto). Это и есть запасной путь, когда у терминала нет QR. Гость платит — бот напишет «Оплата получена». Если ссылки нет — оплата на терминале, как обычно.</li>
+<li><strong>Закрытие</strong>: после визита закрываете заказ в Presto («Завершить»). Звёзды гость уже поставил за столом — второй раз бот не спросит.</li>
+<li>Если в группу пришло «SABY не принял заказ … Статус: …» — заявку не трогать; ланч вносится в Presto руками по карточке.</li>
+<li>Тестовые брони помечены «Astor Butler #…»; снимают их в Presto после теста Михаил или Дима; тестовая оплата возвращается по договорённости. Во время теста ничего в Presto не удалять и второй заказ под блюда не создавать.</li>
+</ol>
+<h2>5. Не делаем</h2>
+<p>Гостям слово «тест» не произносим; ничего не обещаем от имени бота. Бот ведёт себя странно — менеджеру смены (Дарья Анатольевна), она пишет <code>/stop</code>.</p>
+</body>
+</html>

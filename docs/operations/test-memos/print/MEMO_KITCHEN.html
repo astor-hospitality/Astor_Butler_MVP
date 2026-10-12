@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Памятка кухне — Георгий. Тест ланча 15.10</title>
+<style>
+@page { size: A4; margin: 10mm 12mm; }
+html { font-size: 9.5pt; }
+body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+       color: #111; max-width: 186mm; margin: 0 auto; padding: 4mm 4mm; line-height: 1.25; }
+h1 { font-size: 1.4em; margin: 0 0 .25em; line-height: 1.2; }
+h2 { font-size: 1.08em; margin: .55em 0 .2em; border-bottom: 1px solid #bbb; padding-bottom: .15em; }
+h3 { font-size: 1em; margin: .8em 0 .2em; }
+p { margin: .25em 0; }
+ul, ol { margin: .15em 0 .35em; padding-left: 1.3em; }
+li { margin: .06em 0; }
+li > ul, li > ol { margin: .1em 0 .1em; }
+code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .92em;
+       background: #f1f1f1; padding: 0 .25em; border-radius: 3px; white-space: nowrap; }
+table { border-collapse: collapse; width: 100%; margin: .3em 0 .5em; font-size: .94em; }
+th, td { border: 1px solid #999; padding: .18em .35em; vertical-align: top; text-align: left; }
+th { background: #eee; }
+blockquote { margin: .5em 0; padding: .3em .8em; border-left: 4px solid #999; background: #f7f7f7; }
+hr { border: 0; border-top: 1px solid #bbb; margin: .8em 0; }
+a { color: #0b4f9c; }
+.meta { color: #555; font-size: .9em; margin-bottom: .8em; }
+.nav { font-size: .85em; color: #555; margin-bottom: .6em; }
+@media print { .nav { display: none; } a { color: inherit; text-decoration: none; } }
+</style>
+</head>
+<body>
+<div class="nav"><a href="MEMO_CASHIER.html">CASHIER</a> · <a href="MEMO_GLASSES_KIRILL.html">GLASSES KIRILL</a> · <a href="MEMO_GUEST_EXTRA.html">GUEST EXTRA</a> · <a href="MEMO_HOSTESS.html">HOSTESS</a> · <a href="MEMO_KITCHEN.html">KITCHEN</a> · <a href="MEMO_MANAGER.html">MANAGER</a> · <a href="MEMO_OBSERVERS.html">OBSERVERS</a> · <a href="MEMO_WAITER.html">WAITER</a> · <a href="README.html">README</a></div>
+<h1>Памятка кухне — Георгий. Тест ланча 15.10</h1>
+<p><strong>На кухне ничего не меняется.</strong> Заказы приходят из Presto как обычно, их вносит официант со слов гостя. Наушника, экрана, карточек и чек-листов на кухне нет и в этот день не появится. Двое гостей за реальными столами закажут ланч через бота в Telegram — для кухни это два обычных стола.</p>
+<h2>1. Пожелание гостя</h2>
+<p>Гость может написать боту пожелание («без лука», «соус отдельно»). Бот <strong>ничего не обещает</strong>: отвечает «передам кухне, подтвердят при подаче». Куда оно доходит сегодня:</p>
+<table><thead><tr><th>Где</th><th>Как выглядит</th></tr></thead><tbody>
+<tr><td>карточка заявки в рабочей Telegram-группе (видит хостес, официант, менеджер)</td><td>строка «Пожелание гостя: без лука — согласовать с кухней»</td></tr>
+<tr><td>вам</td><td>официант Даниил говорит на раздаче, как сейчас</td></tr>
+<tr><td>комментарий брони в Presto</td><td><strong>только в автоматическом режиме</strong> (бот пишет в Presto) — сегодня его нет</td></tr>
+</tbody></table>
+<p>Все замены решает кухня. Если «без лука» нельзя — говорите официанту, он скажет гостю при подаче.</p>
+<h2>2. Чего сегодня нет</h2>
+<ul>
+<li>Пометки <strong>«⏱ Готовить ко времени ЧЧ:ММ» / «ПРЕДЗАКАЗ»</strong> — выключена на этот тест. Ничего не печатается до посадки: бот в Presto не пишет, заказ пробивает официант после того, как гость сел. Готовить — по факту, как всегда.</li>
+<li>Стоп-лист бот не знает: утром, как обычно, стоп-лист и ланч дня — менеджеру. Названия 17 блюд ланча в боте — как в меню (Нисуаз, Цезарь с цыплёнком, Борщ со сметаной, Куриный бульон с домашней лапшой, Треска с соусом тартар, Куриные котлеты с картофельным пюре, Бефстроганов с картофельным пюре, Медовик, напитки).</li>
+<li>Состав и аллергены блюд в боте пока не заполнены: на «что в борще» он отвечает «уточнит официант при подаче». Заполняет технолог по инструкции <code>docs/operations/MENU_COMPOSITION_FOR_BOT.md</code> — после этого бот будет отвечать сам.</li>
+</ul>
+<h2>3. Время</h2>
+<p>С момента, когда хостес отметит «гость сел», наблюдатели засекают время до напитков и до первого блюда (ориентир из интервью: напитки 3–5 минут, первое блюдо 7–10). Это измерение, не норматив, и ничего менять в работе не надо.</p>
+<h2>4. Что спросим после ланча (13:30)</h2>
+<ol>
+<li>Дошло ли пожелание гостя вовремя и в понятном виде; было ли что-то неожиданное от этих двух столов.</li>
+<li>Оценки гостей: оба гостя ставят звёзды в боте за столом, до оплаты. Сегодня их принесём вам руками («два визита, средняя, сколько 5★»). Табло <strong>«📊 Табло ланча»</strong> — оценки, хит-парад блюд и пожелания за день в 16:30 — на этот тест выключено, включим после.</li>
+<li>Что должно быть на табло, чтобы оно было полезно кухне.</li>
+</ol>
+<p>Если что-то идёт не так — менеджеру смены (Дарья Анатольевна). Гостям слово «тест» не произносим.</p>
+</body>
+</html>

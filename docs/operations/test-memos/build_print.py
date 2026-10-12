@@ -19,21 +19,21 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE / "print"
 
 CSS = """
-@page { size: A4; margin: 14mm 16mm; }
-html { font-size: 11.5pt; }
+@page { size: A4; margin: 10mm 12mm; }
+html { font-size: 9.5pt; }
 body { font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-       color: #111; max-width: 180mm; margin: 0 auto; padding: 8mm 6mm; line-height: 1.35; }
-h1 { font-size: 1.55em; margin: 0 0 .3em; line-height: 1.2; }
-h2 { font-size: 1.15em; margin: 1em 0 .3em; border-bottom: 1px solid #bbb; padding-bottom: .15em; }
+       color: #111; max-width: 186mm; margin: 0 auto; padding: 4mm 4mm; line-height: 1.25; }
+h1 { font-size: 1.4em; margin: 0 0 .25em; line-height: 1.2; }
+h2 { font-size: 1.08em; margin: .55em 0 .2em; border-bottom: 1px solid #bbb; padding-bottom: .15em; }
 h3 { font-size: 1em; margin: .8em 0 .2em; }
-p { margin: .35em 0; }
-ul, ol { margin: .25em 0 .5em; padding-left: 1.4em; }
-li { margin: .12em 0; }
+p { margin: .25em 0; }
+ul, ol { margin: .15em 0 .35em; padding-left: 1.3em; }
+li { margin: .06em 0; }
 li > ul, li > ol { margin: .1em 0 .1em; }
 code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .92em;
        background: #f1f1f1; padding: 0 .25em; border-radius: 3px; white-space: nowrap; }
-table { border-collapse: collapse; width: 100%; margin: .4em 0 .7em; font-size: .95em; }
-th, td { border: 1px solid #999; padding: .25em .45em; vertical-align: top; text-align: left; }
+table { border-collapse: collapse; width: 100%; margin: .3em 0 .5em; font-size: .94em; }
+th, td { border: 1px solid #999; padding: .18em .35em; vertical-align: top; text-align: left; }
 th { background: #eee; }
 blockquote { margin: .5em 0; padding: .3em .8em; border-left: 4px solid #999; background: #f7f7f7; }
 hr { border: 0; border-top: 1px solid #bbb; margin: .8em 0; }
