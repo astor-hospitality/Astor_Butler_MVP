@@ -1,5 +1,6 @@
 package museon_online.astor_butler.telegram.adapter;
 
+import museon_online.astor_butler.config.AstorLinksProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
 
@@ -14,7 +15,7 @@ class StartupAdminNotifierTest {
                 .withProperty("server.port", "8088");
         environment.setActiveProfiles("local");
 
-        StartupAdminNotifier notifier = new StartupAdminNotifier(null, environment);
+        StartupAdminNotifier notifier = new StartupAdminNotifier(null, environment, new AstorLinksProperties());
 
         String message = notifier.buildMessage();
 
@@ -24,8 +25,22 @@ class StartupAdminNotifierTest {
         assertThat(message).contains("Profile: local");
         assertThat(message).contains("Backend: localhost:8088");
         assertThat(message).contains("Kafka admin stream: watching");
-        assertThat(message).contains("guest-guide.html");
+        assertThat(message).contains("Guest: https://astor-hospitality.github.io/Astor_Butler_MVP/docs/guest-guide.html");
+        assertThat(message).doesNotContain("michaelwelly.github.io");
         assertThat(message).contains("Staff Chat:");
+    }
+
+    @Test
+    void guestGuideLinkComesFromConfiguration() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty("spring.application.name", "astor-butler")
+                .withProperty("server.port", "8088");
+        AstorLinksProperties links = new AstorLinksProperties();
+        links.setGuestGuide("https://example.test/guest.html");
+
+        StartupAdminNotifier notifier = new StartupAdminNotifier(null, environment, links);
+
+        assertThat(notifier.buildMessage()).contains("Guest: https://example.test/guest.html");
     }
 
     @Test
@@ -34,7 +49,7 @@ class StartupAdminNotifierTest {
                 .withProperty("spring.application.name", "astor<&butler")
                 .withProperty("server.port", "8088");
 
-        StartupAdminNotifier notifier = new StartupAdminNotifier(null, environment);
+        StartupAdminNotifier notifier = new StartupAdminNotifier(null, environment, new AstorLinksProperties());
 
         String message = notifier.buildMessage();
 
