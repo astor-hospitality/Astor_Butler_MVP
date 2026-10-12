@@ -64,12 +64,21 @@ public class GlassesStaffTaskRelay {
 
     /** Asks Butler to create the task; the request id is the event id, so a retry creates nothing twice. */
     GlassesVoiceTasks.Receipt create(GlassesAccess.Scope scope, String requestId, GlassesVoiceTasks.Draft draft) {
+        return create(scope, requestId, draft, null);
+    }
+
+    /**
+     * The same with a kind of request: {@code null} for a spoken task, {@code "order"} for a short order by dish
+     * numbers (#184) — Butler then assigns the table's waiter of the day instead of looking for a name in the draft.
+     */
+    GlassesVoiceTasks.Receipt create(GlassesAccess.Scope scope, String requestId, GlassesVoiceTasks.Draft draft, String kind) {
         if (!configured()) throw refused();
         try {
             var body = new LinkedHashMap<String, Object>();
             body.put("requestId", requestId);
             body.put("tenant", scope.tenant());
             body.put("staff", scope.staff());
+            if (kind != null) body.put("kind", kind);
             var fields = new LinkedHashMap<String, Object>();
             fields.put("assignee", draft.assignee());
             fields.put("tableCode", draft.tableCode());

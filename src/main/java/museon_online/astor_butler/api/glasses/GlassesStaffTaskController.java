@@ -11,6 +11,9 @@ import museon_online.astor_butler.api.glasses.tasks.StaffScope;
 import museon_online.astor_butler.api.glasses.tasks.StaffTask;
 import museon_online.astor_butler.api.glasses.tasks.StaffTaskFailure;
 import museon_online.astor_butler.api.glasses.tasks.StaffTaskService;
+import museon_online.astor_butler.domain.tips.TipStaffMember;
+import museon_online.astor_butler.domain.tips.TipsPersonalProperties;
+import museon_online.astor_butler.domain.tips.TipsPersonalRepository;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -41,6 +46,11 @@ import java.util.UUID;
  * event id: a repeated request answers with the task it already created and notifies nobody twice.
  *
  * Tasks are off unless `astor.staff.tasks-enabled` (or the portal) is on; then this answers 503.
+ *
+ * A short order by dish numbers (#184, {@code kind: "order"}) comes through the same door: the draft already holds
+ * the title «Стол 12: Борщ ×1 (голосовой заказ)» and the spoken phrase, and the assignee is the table's waiter of
+ * the day ({@code table_waiter_assignments}, #179) when there is one on an open shift — otherwise, as with any
+ * task nobody was named for, it stays with the wearer. Nothing is written to Saby/Presto here.
  */
 @RestController
 public class GlassesStaffTaskController {
@@ -49,24 +59,48 @@ public class GlassesStaffTaskController {
     static final String SOURCE = "Astor Glass";
     /** Stored when no table was spoken: the rules require a table code, the words may not have one. */
     static final String NO_TABLE = "-";
-    private static final Set<String> FIELDS = Set.of("requestId", "tenant", "staff", "draft");
+    /** {@code kind} of the request: a spoken task (default) or a short order by dish numbers. */
+    static final String KIND_TASK = "task";
+    static final String KIND_ORDER = "order";
+    private static final Set<String> FIELDS = Set.of("requestId", "tenant", "staff", "draft", "kind");
     private static final Set<String> DRAFT_FIELDS = Set.of("assignee", "tableCode", "title", "instruction", "priority");
     private final ObjectProvider<StaffPortalService> portal;
     private final TelegramSystemNotifier notifier;
     private final String token;
     private final StaffScope.Role role;
     private final ObjectMapper mapper;
+    // The waiter of a table for the day (#179), for a short order; absent in a context without the tips directory.
+    private final ObjectProvider<TipsPersonalRepository> waiters;
+    private final ObjectProvider<TipsPersonalProperties> tips;
+    private final Clock clock;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public GlassesStaffTaskController(ObjectProvider<StaffPortalService> portal, TelegramSystemNotifier notifier,
                                       @Value("${astor.glasses.relay-token:}") String token,
                                       @Value("${astor.staff.glasses-role:MANAGER}") String role,
-                                      ObjectMapper mapper) {
+                                      ObjectMapper mapper, ObjectProvider<TipsPersonalRepository> waiters,
+                                      ObjectProvider<TipsPersonalProperties> tips) {
+        this(portal, notifier, token, role, mapper, waiters, tips, Clock.systemUTC());
+    }
+
+    GlassesStaffTaskController(ObjectProvider<StaffPortalService> portal, TelegramSystemNotifier notifier, String token,
+                               String role, ObjectMapper mapper, ObjectProvider<TipsPersonalRepository> waiters,
+                               ObjectProvider<TipsPersonalProperties> tips, Clock clock) {
         this.portal = portal;
         this.notifier = notifier;
         this.token = token;
         this.role = role(role);
         this.mapper = mapper.copy().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
                 .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+        this.waiters = waiters;
+        this.tips = tips;
+        this.clock = clock;
+    }
+
+    /** Spoken tasks only, no table-waiter directory: how the controller was wired before #184. */
+    GlassesStaffTaskController(ObjectProvider<StaffPortalService> portal, TelegramSystemNotifier notifier, String token,
+                               String role, ObjectMapper mapper) {
+        this(portal, notifier, token, role, mapper, null, null, Clock.systemUTC());
     }
 
     static StaffScope.Role role(String value) {
@@ -102,6 +136,7 @@ public class GlassesStaffTaskController {
             String requestId = uuid(text(body, "requestId"));
             String tenant = required(text(body, "tenant"), 80);
             String staff = required(text(body, "staff"), 128);
+            String kind = kind(text(body, "kind"));
             JsonNode draft = body.get("draft");
             if (draft == null || !draft.isObject()) throw failure(400, "MALFORMED_REQUEST");
             only(draft, DRAFT_FIELDS);
@@ -116,7 +151,8 @@ public class GlassesStaffTaskController {
             Optional<StaffTask> replayed = service.replay(tenant, requestId);
             if (replayed.isPresent()) return ok(created(replayed.get(), staff, members));
 
-            StaffPortalService.Member assignee = StaffAssignees.resolve(members, spokenAssignee);
+            StaffPortalService.Member assignee = KIND_ORDER.equals(kind) ? waiterOfTable(tenant, tableCode, members)
+                    : StaffAssignees.resolve(members, spokenAssignee);
             String assigneeId = assignee == null ? staff : assignee.staffId();
             StaffScope scope = new StaffScope(tenant, staff, role);
             StaffTask task = service.create(scope, requestId, new StaffTaskService.Draft(SOURCE,
@@ -136,6 +172,36 @@ public class GlassesStaffTaskController {
         } catch (Exception e) {
             return error(400, "MALFORMED_REQUEST");
         }
+    }
+
+    /**
+     * The table's waiter of the day for a short order: assigned through {@code /официант} (#179), still active, and
+     * on an open shift — the task rules refuse anyone else, and a refused order is worse than one on the wearer.
+     */
+    private StaffPortalService.Member waiterOfTable(String tenant, String tableCode, List<StaffPortalService.Member> members) {
+        if (tableCode == null || waiters == null) return null;
+        TipsPersonalRepository directory = waiters.getIfAvailable();
+        if (directory == null) return null;
+        TipsPersonalProperties properties = tips == null ? null : tips.getIfAvailable();
+        LocalDate today = LocalDate.now(properties == null ? clock : clock.withZone(properties.zone()));
+        Optional<TipStaffMember> waiter;
+        try {
+            waiter = directory.waiterOfTable(tenant, tableCode, today);
+        } catch (RuntimeException e) {
+            log.warn("Glasses order: the table's waiter could not be read: {}", e.getClass().getSimpleName());
+            return null;
+        }
+        if (waiter.isEmpty()) return null;
+        String staffId = waiter.get().staffId();
+        return members.stream().filter(member -> staffId.equals(member.staffId()) && member.active()
+                && "OPEN".equalsIgnoreCase(member.shift())).findFirst().orElse(null);
+    }
+
+    private static String kind(String value) {
+        if (value == null) return KIND_TASK;
+        String kind = value.strip().toLowerCase(Locale.ROOT);
+        if (!kind.equals(KIND_TASK) && !kind.equals(KIND_ORDER)) throw failure(400, "MALFORMED_REQUEST");
+        return kind;
     }
 
     private Created created(StaffTask task, String wearer, List<StaffPortalService.Member> members) {

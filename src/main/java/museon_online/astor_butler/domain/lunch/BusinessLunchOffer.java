@@ -41,8 +41,12 @@ public record BusinessLunchOffer(
      * <p>{@code ingredients}, {@code allergens} and {@code canBeWithout} are what the restaurant fills in so that the bot can
      * answer «состав …», «что в …» and «аллергены …» (#165, {@code docs/operations/MENU_COMPOSITION_FOR_BOT.md}). All three
      * are optional and empty until the restaurant writes them; the bot never makes them up.
+     * <p>{@code number} is the short number a waiter says aloud through the glasses — «забить 14 на 12» (#184). Optional:
+     * the technologist assigns it once per dish and keeps it stable across menu versions (#174); a dish without a number
+     * cannot be ordered by voice. Numbers are unique within the offer ({@link BusinessLunchCatalog#problems}).
      */
-    public record Dish(String code, String title, Integer priceRub, String portion, String ingredients, String allergens, List<String> canBeWithout) {
+    public record Dish(String code, String title, Integer priceRub, String portion, String ingredients, String allergens,
+                       List<String> canBeWithout, Integer number) {
         public Dish {
             canBeWithout = canBeWithout == null ? List.of() : List.copyOf(canBeWithout);
         }
@@ -53,6 +57,20 @@ public record BusinessLunchOffer(
 
         public Dish(String code, String title, Integer priceRub, String portion) {
             this(code, title, priceRub, portion, null, null, null);
+        }
+
+        public Dish(String code, String title, Integer priceRub, String portion, String ingredients, String allergens, List<String> canBeWithout) {
+            this(code, title, priceRub, portion, ingredients, allergens, canBeWithout, null);
+        }
+
+        /** The same dish under a spoken number; {@code null} removes it. */
+        public Dish withNumber(Integer number) {
+            return new Dish(code, title, priceRub, portion, ingredients, allergens, canBeWithout, number);
+        }
+
+        /** Whether the dish may be ordered by its number through the glasses. */
+        public boolean numbered() {
+            return number != null;
         }
 
         /** Whether the restaurant has written anything about what is in the dish. */
@@ -95,6 +113,17 @@ public record BusinessLunchOffer(
 
     public Optional<Dish> dish(String code) {
         return courses.stream().flatMap(course -> course.dishes().stream()).filter(dish -> dish.code().equals(code)).findFirst();
+    }
+
+    /** The dish the waiter means by its spoken number (#184), if the technologist gave it one. */
+    public Optional<Dish> dishByNumber(int number) {
+        return numberedDishes().stream().filter(dish -> dish.number() == number).findFirst();
+    }
+
+    /** Every dish with a spoken number, in number order: the printed cheat sheet «номер — блюдо» for the waiters. */
+    public List<Dish> numberedDishes() {
+        return courses.stream().flatMap(course -> course.dishes().stream()).filter(Dish::numbered)
+                .sorted(java.util.Comparator.comparingInt(Dish::number)).toList();
     }
 
     public Optional<Course> courseOf(String dishCode) {

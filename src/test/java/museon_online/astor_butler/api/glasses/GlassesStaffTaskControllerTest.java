@@ -7,6 +7,9 @@ import museon_online.astor_butler.api.glasses.tasks.StaffScope;
 import museon_online.astor_butler.api.glasses.tasks.StaffTask;
 import museon_online.astor_butler.api.glasses.tasks.StaffTaskFailure;
 import museon_online.astor_butler.api.glasses.tasks.StaffTaskService;
+import museon_online.astor_butler.domain.tips.TipStaffMember;
+import museon_online.astor_butler.domain.tips.TipsPersonalProperties;
+import museon_online.astor_butler.domain.tips.TipsPersonalRepository;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -14,6 +17,10 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -200,6 +207,118 @@ class GlassesStaffTaskControllerTest {
         assertThatThrownBy(() -> controller(portal, TOKEN, "boss")).isInstanceOf(IllegalArgumentException.class);
         // A role in the body is an unknown field, not an escalation.
         assertThat(controller.create(request(payload(Map.of("role", "MANAGER"), Map.of()), TOKEN)).getStatusCode().value()).isEqualTo(400);
+    }
+
+    /* ---------- a short order by dish numbers (#184) ---------- */
+
+    private final TipsPersonalRepository waiters = mock(TipsPersonalRepository.class);
+    // 20:30 UTC on the 12th is already the 13th in Yekaterinburg, the venue's shift day.
+    private static final Clock EVENING = Clock.fixed(Instant.parse("2026-10-12T20:30:00Z"), ZoneOffset.UTC);
+    private static final LocalDate SHIFT_DAY = LocalDate.of(2026, 10, 13);
+
+    @SuppressWarnings("unchecked")
+    private GlassesStaffTaskController orderController(TipsPersonalRepository directory) {
+        ObjectProvider<StaffPortalService> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(portal);
+        ObjectProvider<TipsPersonalRepository> waiterProvider = mock(ObjectProvider.class);
+        when(waiterProvider.getIfAvailable()).thenReturn(directory);
+        ObjectProvider<TipsPersonalProperties> tipsProvider = mock(ObjectProvider.class);
+        when(tipsProvider.getIfAvailable()).thenReturn(new TipsPersonalProperties());
+        return new GlassesStaffTaskController(provider, notifier, TOKEN, "MANAGER", mapper, waiterProvider, tipsProvider, EVENING);
+    }
+
+    private String order() throws Exception {
+        var draft = new LinkedHashMap<String, Object>();
+        draft.put("assignee", null);
+        draft.put("tableCode", "12");
+        draft.put("title", "Стол 12: Борщ со сметаной ×1 (голосовой заказ)");
+        draft.put("instruction", "забить 14 на 12");
+        draft.put("priority", "NORMAL");
+        var body = new LinkedHashMap<String, Object>();
+        body.put("requestId", ID);
+        body.put("tenant", "AERIS");
+        body.put("staff", "manager-1");
+        body.put("kind", "order");
+        body.put("draft", draft);
+        return mapper.writeValueAsString(body);
+    }
+
+    private static StaffTask orderTask(String assignee) {
+        return new StaffTask("task-9", "AERIS", "Astor Glass", "12", "Стол 12: Борщ со сметаной ×1 (голосовой заказ)",
+                "забить 14 на 12", List.of(new StaffTask.Stage("done", "Выполнить", false, false, 0)), StaffTask.Priority.NORMAL,
+                null, assignee, StaffTask.Status.ASSIGNED, 1, null, null);
+    }
+
+    @Test void aShortOrderGoesToTheTablesWaiterOfTheDay() throws Exception {
+        ready();
+        when(waiters.waiterOfTable("AERIS", "12", SHIFT_DAY))
+                .thenReturn(Optional.of(new TipStaffMember("anna", "Анна", "WAITER", true, true, null, null)));
+        when(portal.create(eq(WEARER), eq(ID), any())).thenReturn(orderTask("anna"));
+
+        var result = orderController(waiters).create(request(order(), TOKEN));
+
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        var created = (GlassesStaffTaskController.Created) result.getBody();
+        assertThat(created.assigneeStaffId()).isEqualTo("anna");
+        assertThat(created.assignee()).isEqualTo("Анна");
+        assertThat(created.self()).isFalse();
+        assertThat(created.tableCode()).isEqualTo("12");
+        var draft = ArgumentCaptor.forClass(StaffTaskService.Draft.class);
+        verify(portal, times(1)).create(eq(WEARER), eq(ID), draft.capture());
+        assertThat(draft.getValue().assigneeStaffId()).isEqualTo("anna");
+        assertThat(draft.getValue().title()).isEqualTo("Стол 12: Борщ со сметаной ×1 (голосовой заказ)");
+        assertThat(draft.getValue().instruction()).isEqualTo("забить 14 на 12");
+        assertThat(draft.getValue().tableCode()).isEqualTo("12");
+        assertThat(draft.getValue().priority()).isEqualTo(StaffTask.Priority.NORMAL);
+        verify(waiters).waiterOfTable("AERIS", "12", SHIFT_DAY);
+        verify(notifier).sendGlassesTask("Марина Менеджер", "Стол 12: Борщ со сметаной ×1 (голосовой заказ)", "забить 14 на 12", "12", "Анна");
+    }
+
+    @Test void withoutAWaiterForTheTableTheOrderStaysWithTheWearer() throws Exception {
+        // No assignment today, an assigned waiter off shift, a directory that fails, no directory at all: the wearer.
+        var offShift = Optional.of(new TipStaffMember("ilya", "Илья", "WAITER", true, false, null, null));
+        var unknown = Optional.of(new TipStaffMember("sergey", "Сергей", "WAITER", true, true, null, null));
+        for (var answer : new Object[]{Optional.empty(), offShift, unknown, "fails", "none"}) {
+            reset(portal, notifier, waiters);
+            ready();
+            when(portal.create(eq(WEARER), eq(ID), any())).thenReturn(orderTask("manager-1"));
+            GlassesStaffTaskController controller;
+            if ("fails".equals(answer)) {
+                when(waiters.waiterOfTable(any(), any(), any())).thenThrow(new org.springframework.dao.DataAccessResourceFailureException("db"));
+                controller = orderController(waiters);
+            } else if ("none".equals(answer)) {
+                controller = orderController(null);
+            } else {
+                @SuppressWarnings("unchecked") var waiter = (Optional<TipStaffMember>) answer;
+                when(waiters.waiterOfTable("AERIS", "12", SHIFT_DAY)).thenReturn(waiter);
+                controller = orderController(waiters);
+            }
+            var result = controller.create(request(order(), TOKEN));
+            assertThat(result.getStatusCode().value()).as(String.valueOf(answer)).isEqualTo(200);
+            var created = (GlassesStaffTaskController.Created) result.getBody();
+            assertThat(created.self()).as(String.valueOf(answer)).isTrue();
+            assertThat(created.assigneeStaffId()).isEqualTo("manager-1");
+            var draft = ArgumentCaptor.forClass(StaffTaskService.Draft.class);
+            verify(portal).create(eq(WEARER), eq(ID), draft.capture());
+            assertThat(draft.getValue().assigneeStaffId()).isEqualTo("manager-1");
+        }
+    }
+
+    @Test void theKindIsTaskByDefaultAndAnythingElseIsMalformed() throws Exception {
+        ready();
+        when(portal.create(eq(WEARER), eq(ID), any())).thenReturn(task("anna", "5"));
+        // A spoken task with an explicit kind resolves the assignee by name, as before; the directory is not asked.
+        var result = orderController(waiters).create(request(payload(Map.of("kind", "task"), Map.of()), TOKEN));
+        assertThat(result.getStatusCode().value()).isEqualTo(200);
+        verifyNoInteractions(waiters);
+        assertThat(orderController(waiters).create(request(payload(Map.of("kind", "delivery"), Map.of()), TOKEN)).getStatusCode().value()).isEqualTo(400);
+        // The controller wired without the directory (the pre-#184 constructor) still takes an order: it stays with the wearer.
+        reset(portal, notifier);
+        ready();
+        when(portal.create(eq(WEARER), eq(ID), any())).thenReturn(orderTask("manager-1"));
+        var legacy = controller.create(request(order(), TOKEN));
+        assertThat(legacy.getStatusCode().value()).isEqualTo(200);
+        assertThat(((GlassesStaffTaskController.Created) legacy.getBody()).self()).isTrue();
     }
 
     @Test void refusesMalformedPayloadsBeforeTouchingTheRules() throws Exception {

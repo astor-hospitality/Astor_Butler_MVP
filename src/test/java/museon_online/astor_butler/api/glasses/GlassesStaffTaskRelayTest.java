@@ -83,6 +83,34 @@ class GlassesStaffTaskRelayTest {
         assertThat(json.path("draft").path("priority").asText()).isEqualTo("NORMAL");
     }
 
+    /** #184: a short order travels through the same relay with {@code kind: "order"}; a spoken task sends no kind. */
+    @Test void aShortOrderCarriesItsKindAndASpokenTaskDoesNot() throws Exception {
+        var ok = response(200, "{\"taskId\":\"task-3\",\"title\":\"Стол 12: Борщ со сметаной ×1 (голосовой заказ)\","
+                + "\"assignee\":\"Анна\",\"assigneeStaffId\":\"anna\",\"self\":false,\"instruction\":\"забить 14 на 12\","
+                + "\"tableCode\":\"12\",\"priority\":\"NORMAL\",\"status\":\"ASSIGNED\"}");
+        whenSent().thenReturn(ok);
+        var relay = new GlassesStaffTaskRelay(client, true, TOKEN);
+        var order = new GlassesVoiceTasks.Draft(null, "12", "Стол 12: Борщ со сметаной ×1 (голосовой заказ)", "забить 14 на 12", "NORMAL");
+
+        var receipt = relay.create(scope, ID, order, "order");
+
+        assertThat(receipt.taskId()).isEqualTo("task-3");
+        assertThat(receipt.assignee()).isEqualTo("Анна");
+        var captor = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
+        verify(client).send(captor.capture(), any());
+        var json = mapper.readTree(body(captor.getValue()));
+        assertThat(json.path("kind").asText()).isEqualTo("order");
+        assertThat(json.path("draft").path("assignee").isNull()).isTrue();
+        assertThat(json.path("draft").path("tableCode").asText()).isEqualTo("12");
+        assertThat(json.path("draft").path("instruction").asText()).isEqualTo("забить 14 на 12");
+
+        reset(client);
+        whenSent().thenReturn(ok);
+        relay.create(scope, ID, draft);
+        verify(client).send(captor.capture(), any());
+        assertThat(mapper.readTree(body(captor.getValue())).has("kind")).as("a spoken task sends no kind").isFalse();
+    }
+
     @Test void aSelfAssignedReceiptHasNoAssigneeName() throws Exception {
         var ok = response(200, "{\"taskId\":\"task-2\",\"title\":\"Принести воду\",\"assignee\":null,"
                 + "\"assigneeStaffId\":\"manager-1\",\"self\":true,\"instruction\":\"Принести воду\",\"tableCode\":null,"
