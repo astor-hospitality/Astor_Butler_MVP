@@ -1,5 +1,6 @@
 package museon_online.astor_butler.fsm.scenario;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import museon_online.astor_butler.api.common.ApiException;
 import museon_online.astor_butler.api.common.ErrorCode;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
@@ -795,6 +796,41 @@ class BusinessLunchScenarioTest {
         OutgoingMessage wish = say("борщ без сметаны");
         assertThat(wish.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
         assertThat(drafts.get(CHAT).wishes()).isEqualTo("борщ без сметаны");
+    }
+
+    /** The draft lives in Redis as JSON: one written before the wishes question existed still reads, and the question is then asked. */
+    @Test
+    void aDraftSavedBeforeTheWishesQuestionStillReadsAndIsAskedIt() throws Exception {
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        String before = """
+                {"venueCode":"SIMPLE","setCode":"SALAD_SOUP","dishCodes":["SALAD_OF_THE_DAY","SOUP_OF_THE_DAY"],"courseStep":null,
+                 "partySize":2,"date":"2026-10-06","time":"13:00:00","comment":null,"source":"CONCIERGE","conciergeRequestId":null}
+                """;
+        BusinessLunchDraftStorage.Draft old = mapper.readValue(before, BusinessLunchDraftStorage.Draft.class);
+        assertThat(old.wishes()).isNull();
+        assertThat(old.dishCodes()).containsExactly("SALAD_OF_THE_DAY", "SOUP_OF_THE_DAY");
+
+        BusinessLunchDraftStorage.Draft answered = old.withWishes("без лука");
+        BusinessLunchDraftStorage.Draft reread = mapper.readValue(mapper.writeValueAsString(answered), BusinessLunchDraftStorage.Draft.class);
+        assertThat(reread).isEqualTo(answered);
+        assertThat(reread.wishes()).isEqualTo("без лука");
+
+        // Switched on while the guest is still answering the questions: the wish is asked before the summary.
+        ReflectionTestUtils.setField(scenario, "wishesEnabled", true);
+        drafts.put(CHAT, old.withTime(null));
+        states.put(CHAT, BotState.BUSINESS_LUNCH_COLLECT_TIME);
+        OutgoingMessage asked = say("13:00");
+        assertThat(asked.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_WISHES.name());
+        verify(tableReservationService, never()).createReservation(any());
+
+        // Switched on while the guest already reads the summary: «да» sends the order as it is, nobody is sent back to a new question.
+        drafts.put(CHAT, old);
+        states.put(CHAT, BotState.BUSINESS_LUNCH_CONFIRMATION);
+        OutgoingMessage placed = say("да");
+        assertThat(placed.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestComment()).doesNotContain("Пожелание");
     }
 
     private OutgoingMessage say(String text) {
