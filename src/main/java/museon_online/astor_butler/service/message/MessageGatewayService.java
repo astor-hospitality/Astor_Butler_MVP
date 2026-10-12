@@ -58,6 +58,10 @@ public class MessageGatewayService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.web.WebModelBudget webModelBudget;
 
+    /** The guest's own «счёт» (#153 A2, {@code ASTOR_GUEST_BILL_REQUEST_ENABLED}); optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.billing.GuestBillRequestService guestBillRequestService;
+
     public OutgoingMessage handle(IncomingMessage incoming) {
         if (incoming == null || incoming.chatId() == null) {
             throw new IllegalArgumentException("Incoming message must contain chatId for current MVP flow");
@@ -157,6 +161,14 @@ public class MessageGatewayService {
 
         if (!isVoiceMessage(incoming) || !text.isBlank()) {
             voiceTranscriptionRetryService.reset(incoming.chatId());
+        }
+
+        // «Счёт» from a guest with a visit today goes to the team before any scenario or model sees the words (#153 A2).
+        if (guestBillRequestService != null) {
+            OutgoingMessage billRequest = guestBillRequestService.handle(incoming, currentState, text).orElse(null);
+            if (billRequest != null) {
+                return finish(incoming, currentState, billRequest);
+            }
         }
 
         OutgoingMessage routed = scenarioRouter.route(incoming, currentState, text);
