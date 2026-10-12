@@ -385,6 +385,15 @@ astor:
       enabled: ${ASTOR_SCENARIO_REPLY_LLM_ENABLED:false}
       max-rag-chars: ${ASTOR_SCENARIO_REPLY_MAX_RAG_CHARS:900}
       timeout-ms: ${ASTOR_SCENARIO_REPLY_LLM_TIMEOUT_MS:6500}
+  dialogue:
+    guiding-question:
+      # A guiding question at the end of a scenario reply (#101): the deterministic table in GuidingQuestionPolicy
+      # (scenario + state/step -> question) adds e.g. "На какую дату?" while a booking slot is missing, nothing once the
+      # scenario is finished, never when the reply already ends with "?" and never the same question twice in a row
+      # (last question per chat in Redis, short TTL). Off by default: replies are byte-identical. Table and rules:
+      # docs/product/GUIDING_QUESTION.md.
+      enabled: ${ASTOR_GUIDING_QUESTION_ENABLED:false}
+      memory-ttl-seconds: ${ASTOR_GUIDING_QUESTION_MEMORY_TTL_SECONDS:1800}
   understanding:
     llm:
       enabled: ${ASTOR_UNDERSTANDING_LLM_ENABLED:false}
