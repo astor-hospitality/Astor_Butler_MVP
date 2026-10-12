@@ -193,6 +193,32 @@ class FirstTouchScenarioTest {
         assertThat(scenario.supports(incoming, BotState.UNKNOWN, "Привет")).isFalse();
     }
 
+    @Test
+    void withTheStaffHandoffOnThePlainStaffLinkIsAStartForAGuestWhoAlreadyConsented() {
+        scenario.setStaffHandoffEnabled(true);
+        when(consentVaultService.hasGrantedPrivacyPolicy(284069847L)).thenReturn(true);
+        IncomingMessage incoming = telegram("/start h_anna_t5", null);
+
+        assertThat(scenario.supports(incoming, BotState.READY_FOR_DIALOG, "/start h_anna_t5")).isTrue();
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, "/start h_anna_t5");
+
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(outgoing.actions()).contains("SAFE_RESTART", "OPEN_MENU");
+        verify(fsmStorage).clear(incoming.chatId());
+        verify(tableBookingDraftStorage).clear(incoming.chatId());
+    }
+
+    @Test
+    void withTheStaffHandoffOffTheStaffLinksAreNotStartsExactlyAsBefore() {
+        // The default: /start h_… and the lunch link are not the first touch for a guest who is already in the dialogue.
+        assertThat(scenario.supports(telegram("/start h_anna_t5", null), BotState.READY_FOR_DIALOG, "/start h_anna_t5")).isFalse();
+        assertThat(scenario.supports(telegram("/start lunch_aeris_hanna", null), BotState.READY_FOR_DIALOG, "/start lunch_aeris_hanna")).isFalse();
+        scenario.setStaffHandoffEnabled(true);
+        // The lunch link stays with the lunch scenario even with the flag on.
+        assertThat(scenario.supports(telegram("/start lunch_aeris_hanna", null), BotState.READY_FOR_DIALOG, "/start lunch_aeris_hanna")).isFalse();
+        verifyNoInteractions(fsmStorage, consentVaultService);
+    }
+
     private IncomingMessage telegram(String text, String phone) {
         return IncomingMessage.telegram(
                 421441838L,
