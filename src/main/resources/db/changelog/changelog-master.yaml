@@ -85,4 +85,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-12-tips-personal.yaml
   - include:
       file: db/changelog/2026-10-12-booking-seated.yaml
+  - include:
       file: db/changelog/2026-10-12-guest-entry-events.yaml
