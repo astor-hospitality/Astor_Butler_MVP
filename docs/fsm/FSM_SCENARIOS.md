@@ -853,6 +853,36 @@ flowchart TD
 - гость всегда видит сумму и адресата до подтверждения;
 - чаевые не смешиваются с бронью, но могут быть предложены после завершенного события.
 
+## Оценка визита (VisitReview): точки входа
+
+Оценка визита живёт вне состояний FSM, как кнопки хостес: гость отвечает inline-кнопками (`visit_review:*`) из любого состояния,
+а «Оставить чаевые» отвечает как слово «чаевые» и ведёт в `SmartTipScenario`. Последовательность одна для всех точек входа:
+звёзды ★…★★★★★ → «понравилось?» 👍/👎 → «Оставить чаевые». Вопрос задаётся **один раз на визит** (одна строка `visit_reviews`
+на счёт `guest_bills`), какая бы точка входа ни сработала первой; остальные молчат. Код: `domain/billing/VisitReviewService`.
+
+```mermaid
+flowchart TD
+    Close["Presto закрыл заказ<br/>BillingSync, state 200"] --> Prompt
+    Clock["Таймер после конца ланча<br/>ASTOR_BILLING_REVIEW_DELAY_MINUTES"] --> Prompt
+    Link["Ссылка «Оплатить»<br/>GuestBillPaymentPrompter<br/>только on-bill"] --> Prompt
+    Hostess["Хостес: «Счёт» на карточке брони<br/>HostessBillRequestService<br/>только on-bill"] --> Prompt
+    Prompt{"VisitReviewService.prompt<br/>уже спрашивали?"}
+    Prompt -- "да" --> Silent["Ничего"]
+    Prompt -- "нет" --> Stars["«Как прошёл обед?» ★…★★★★★"]
+    Stars --> Thumb["👍 / 👎"]
+    Thumb --> Tip["«Оставить чаевые» → SmartTipScenario"]
+```
+
+| Точка входа | Когда | Режим `ASTOR_REVIEW_MOMENT` | Код |
+| --- | --- | --- | --- |
+| Закрытие заказа в Presto | опрос видит `state` 200 / `productState` 1999 | оба (в `on-bill` — страховка) | `BillingSync.onVenueSnapshot` |
+| Таймер | через `ASTOR_BILLING_REVIEW_DELAY_MINUTES` после конца ланча, не старше `ASTOR_BILLING_REVIEW_LOOKBACK_HOURS` | оба (страховка) | `VisitReviewService.promptDueVisits` |
+| Ссылка «Оплатить» (автомат) | вместе со ссылкой на оплату: сначала звёзды, затем ссылка | только `on-bill` | `GuestBillPaymentPrompter`, журнал `REVIEW_PROMPTED trigger=payment-link` |
+| Кнопка «Счёт» у хостес (полуавтомат и автомат) | хостес нажимает «Счёт» на карточке брони в staff-чате, когда гость попросил счёт; только из hostess-чата | только `on-bill` (кнопка появляется на карточке в этом режиме) | `HostessBillRequestService`, колбэк `table_booking:bill:<id>`, журнал `trigger=hostess` |
+
+Режим: `ASTOR_REVIEW_MOMENT=after-close` (по умолчанию, как было) или `on-bill` — вопрос до оплаты, пока гость за столом
+(интервью с хостес 12.10, вопрос 32; #153). Гостевого «попросить счёт» в боте пока нет.
+
 ## HiddenHeartScenario
 
 Сценарий социального вклада из Legacy `charity/*`: анонимный донат, поддержка проекта, благотворительность.

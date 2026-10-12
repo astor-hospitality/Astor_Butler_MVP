@@ -2,6 +2,8 @@ package museon_online.astor_butler.domain.booking;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.domain.billing.HostessBillRequestService;
+import museon_online.astor_butler.domain.billing.ReviewMoment;
 import museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
@@ -21,6 +23,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -55,6 +58,10 @@ public class TableReservationNotificationService {
     @Value("${telegram.booking.hostess-chat-id:}")
     private String defaultHostessChatId;
 
+    /** {@code astor.review.moment}: with {@code on-bill} the hostess card carries «Счёт», which asks the guest how it went. */
+    @Value("${astor.review.moment:after-close}")
+    private String reviewMoment = "after-close";
+
     /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
@@ -76,7 +83,8 @@ public class TableReservationNotificationService {
     /** The card nobody answered confirmed itself: its buttons go, a note under it says so. */
     public void notifyHostessAutoConfirmed(TableReservationOrder order, int afterMinutes) {
         Optional<BookingHostessStateStorage.CardRef> card = hostessCard(order);
-        card.ifPresent(this::removeButtons);
+        // «Да» / «Нет» go; «Счёт» stays when the review is asked at the bill, as under a card the hostess confirmed.
+        card.ifPresent(ref -> replaceButtons(ref, billKeyboard(order.id())));
         send(hostessChatId(order), hostessAutoConfirmedText(order, afterMinutes), null,
                 card.map(BookingHostessStateStorage.CardRef::messageId).orElse(null), "hostess-auto-confirmed");
     }
@@ -89,7 +97,7 @@ public class TableReservationNotificationService {
     }
 
     public void notifyManagerEscalation(TableReservationOrder order, Decision decision, int afterMinutes) {
-        send(managerChatId(order), managerEscalationText(order, decision, afterMinutes), approvalKeyboard(order.id()),
+        send(managerChatId(order), managerEscalationText(order, decision, afterMinutes), managerDecisionKeyboard(order.id()),
                 "manager-escalation");
     }
 
@@ -113,7 +121,7 @@ public class TableReservationNotificationService {
 
     public void notifyHostessConfirmed(TableReservationOrder order) {
         String chatId = hostessChatId(order);
-        send(chatId, hostessText(order), null, "hostess");
+        send(chatId, hostessText(order), billKeyboard(order.id()), "hostess");
     }
 
     public void notifyHostessAcknowledged(TableReservationOrder order) {
@@ -215,8 +223,8 @@ public class TableReservationNotificationService {
         }
     }
 
-    /** Takes the "Да" / "Нет" buttons off a card that is decided; an old or deleted card is simply left as it is. */
-    private void removeButtons(BookingHostessStateStorage.CardRef card) {
+    /** Swaps the buttons of a decided card for the given ones (none when null); an old or deleted card is left as it is. */
+    private void replaceButtons(BookingHostessStateStorage.CardRef card, InlineKeyboardMarkup keyboard) {
         if (!telegramEnabled || !notificationsEnabled || card == null) {
             return;
         }
@@ -228,12 +236,19 @@ public class TableReservationNotificationService {
             telegramBot.execute(EditMessageReplyMarkup.builder()
                     .chatId(card.chatId())
                     .messageId(card.messageId())
-                    .replyMarkup(null)
+                    .replyMarkup(keyboard)
                     .build());
         } catch (Exception e) {
-            log.debug("Hostess card buttons were not removed: chatId={}, messageId={}, reason={}",
+            log.debug("Hostess card buttons were not replaced: chatId={}, messageId={}, reason={}",
                     card.chatId(), card.messageId(), e.getMessage());
         }
+    }
+
+    /** The manager only decides: «Счёт» belongs to the hostess chat, where its callback is handled. */
+    InlineKeyboardMarkup managerDecisionKeyboard(Long orderId) {
+        return InlineKeyboardMarkup.builder()
+                .keyboard(List.of(approvalKeyboard(orderId).getKeyboard().getFirst()))
+                .build();
     }
 
     /** Null when the policy cannot be asked right now: the card then reads exactly as before. */
@@ -574,19 +589,45 @@ public class TableReservationNotificationService {
         );
     }
 
-    private InlineKeyboardMarkup approvalKeyboard(Long orderId) {
-        return InlineKeyboardMarkup.builder()
-                .keyboard(List.of(List.of(
-                        InlineKeyboardButton.builder()
-                                .text("Да")
-                                .callbackData("table_booking:confirm:" + orderId)
-                                .build(),
-                        InlineKeyboardButton.builder()
-                                .text("Нет")
-                                .callbackData("table_booking:reject:" + orderId)
-                                .build()
-                )))
+    InlineKeyboardMarkup approvalKeyboard(Long orderId) {
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        rows.add(List.of(
+                InlineKeyboardButton.builder()
+                        .text("Да")
+                        .callbackData("table_booking:confirm:" + orderId)
+                        .build(),
+                InlineKeyboardButton.builder()
+                        .text("Нет")
+                        .callbackData("table_booking:reject:" + orderId)
+                        .build()
+        ));
+        if (reviewAtTheBill()) {
+            rows.add(List.of(billButton(orderId)));
+        }
+        return InlineKeyboardMarkup.builder().keyboard(rows).build();
+    }
+
+    /** «Счёт» under the confirmed card, or nothing: the card stays as it was unless the review is asked at the bill. */
+    InlineKeyboardMarkup billKeyboard(Long orderId) {
+        if (!reviewAtTheBill()) {
+            return null;
+        }
+        return InlineKeyboardMarkup.builder().keyboard(List.of(List.of(billButton(orderId)))).build();
+    }
+
+    private InlineKeyboardButton billButton(Long orderId) {
+        return InlineKeyboardButton.builder()
+                .text("Счёт")
+                .callbackData(HostessBillRequestService.callbackData(orderId))
                 .build();
+    }
+
+    private boolean reviewAtTheBill() {
+        return ReviewMoment.parse(reviewMoment) == ReviewMoment.ON_BILL;
+    }
+
+    void setReviewMoment(String reviewMoment) {
+        this.reviewMoment = reviewMoment;
     }
 
     private ReplyKeyboardMarkup guestMainMenuKeyboard() {

@@ -199,6 +199,12 @@ astor:
     payment-prompt-delay-ms: ${ASTOR_BILLING_PAYMENT_PROMPT_DELAY_MS:30000}
     review-delay-minutes: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:60}
     review-lookback-hours: ${ASTOR_BILLING_REVIEW_LOOKBACK_HOURS:24}
+  review:
+    # When the guest is asked how it went (stars, then 👍/👎, then tips). after-close (default): when the venue closes
+    # the order, or by the clock after the visit, as before. on-bill: at the bill, while the guest is still at the table:
+    # with the payment link in the automatic path (stars first, link right after), by the hostess «Счёт» button on the
+    # reservation card in the semi-automatic one. Asked once per visit either way; the close stays as the safety net.
+    moment: ${ASTOR_REVIEW_MOMENT:after-close}
   startup:
     admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}

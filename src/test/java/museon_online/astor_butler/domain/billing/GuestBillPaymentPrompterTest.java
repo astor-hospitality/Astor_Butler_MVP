@@ -3,6 +3,7 @@ package museon_online.astor_butler.domain.billing;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.booking.external.ExternalBookingState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -12,9 +13,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -31,18 +34,21 @@ class GuestBillPaymentPrompterTest {
     private static final Instant NOW = Instant.parse("2026-10-06T07:00:00Z");
 
     private final BillingProperties properties = new BillingProperties();
+    private final ReviewProperties reviewProperties = new ReviewProperties();
     private final TableReservationRepository reservations = mock(TableReservationRepository.class);
     private final ExternalPaymentProvider provider = mock(ExternalPaymentProvider.class);
     private final GuestBillNotifier notifier = mock(GuestBillNotifier.class);
     private final MutableClock clock = new MutableClock(NOW);
     private GuestBillService bills;
+    private VisitReviewService reviews;
     private GuestBillPaymentPrompter prompter;
 
     @BeforeEach
     void setUp() {
         JdbcTemplate jdbc = BillingTestDatabase.create();
         bills = new GuestBillService(new GuestBillRepository(jdbc), new BillOperationRepository(jdbc));
-        prompter = new GuestBillPaymentPrompter(properties, bills, reservations, List.of(provider), notifier, clock);
+        reviews = new VisitReviewService(properties, bills, new VisitReviewRepository(jdbc), notifier, clock);
+        prompter = new GuestBillPaymentPrompter(properties, reviewProperties, bills, reservations, List.of(provider), notifier, reviews, clock);
         properties.setEnabled(true);
         when(provider.providerId()).thenReturn("SABY");
         when(provider.enabled()).thenReturn(true);
@@ -136,6 +142,73 @@ class GuestBillPaymentPrompterTest {
         assertThat(prompter.run().sent()).isZero();
         assertThat(prompter.run().sent()).isEqualTo(1);
         verify(provider).paymentLink("order-51");
+    }
+
+    @Test
+    void byDefaultTheLinkMomentAsksNothing() {
+        GuestBill bill = issued(77L);
+        reservation(77L, TableReservationStatus.CONFIRMED);
+        when(provider.paymentLink("order-1")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/1", null)));
+
+        assertThat(prompter.run()).isEqualTo(new GuestBillPaymentPrompter.Report(1, 1, 0, 0));
+
+        verify(notifier, never()).reviewPrompt(any());
+        assertThat(reviews.reviewOf(bill.id())).isEmpty();
+        assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type).containsExactly(
+                BillOperationType.ESTIMATE_CREATED, BillOperationType.ISSUED_TO_VENUE, BillOperationType.PAYMENT_LINK_ISSUED);
+    }
+
+    @Test
+    void onBillAsksHowItWentBeforeTheLinkAndNotAgainWhenTheOrderCloses() {
+        reviewProperties.setMoment(ReviewMoment.ON_BILL);
+        when(notifier.reviewPrompt(any())).thenReturn(true);
+        GuestBill bill = issued(77L);
+        reservation(77L, TableReservationStatus.CONFIRMED);
+        when(provider.paymentLink("order-1")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/1", null)));
+
+        assertThat(prompter.run()).isEqualTo(new GuestBillPaymentPrompter.Report(1, 1, 0, 0));
+
+        var order = org.mockito.Mockito.inOrder(notifier);
+        order.verify(notifier).reviewPrompt(any());
+        order.verify(notifier).paymentLink(any(), eq("https://pay.test/1"));
+        assertThat(reviews.reviewOf(bill.id())).isPresent();
+        assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type, BillOperation::details).containsExactly(
+                tuple(BillOperationType.ESTIMATE_CREATED, "estimate=54000"),
+                tuple(BillOperationType.ISSUED_TO_VENUE, "provider=SABY"),
+                tuple(BillOperationType.REVIEW_PROMPTED, "trigger=payment-link"),
+                tuple(BillOperationType.PAYMENT_LINK_ISSUED, "provider=SABY"));
+
+        BillingSync sync = new BillingSync(properties, bills, notifier, reviews);
+        sync.onVenueSnapshot("SABY", "order-1", ExternalBookingState.COMPLETED, Map.of(BillingSync.PAY_STATE_KEY, BillPayState.PAID));
+        clock.advance(Duration.ofHours(4));
+        assertThat(reviews.promptDueVisits()).isZero();
+        assertThat(prompter.run()).isEqualTo(GuestBillPaymentPrompter.Report.NOTHING);
+        verify(notifier, times(1)).reviewPrompt(any());
+    }
+
+    @Test
+    void onBillTheLinkStillGoesWhenTheQuestionCouldNotBeDelivered() {
+        reviewProperties.setMoment(ReviewMoment.ON_BILL);
+        when(notifier.reviewPrompt(any())).thenReturn(false);
+        GuestBill bill = issued(77L);
+        reservation(77L, TableReservationStatus.CONFIRMED);
+        when(provider.paymentLink("order-1")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/1", null)));
+
+        assertThat(prompter.run()).isEqualTo(new GuestBillPaymentPrompter.Report(1, 1, 0, 0));
+
+        assertThat(bills.find(bill.id()).orElseThrow().paymentLinkSentAt()).isNotNull();
+        assertThat(reviews.reviewOf(bill.id())).isEmpty();
+    }
+
+    @Test
+    void onBillAsksNothingWhileTheVenueHasNoPage() {
+        reviewProperties.setMoment(ReviewMoment.ON_BILL);
+        issued(77L);
+        reservation(77L, TableReservationStatus.CONFIRMED);
+        when(provider.paymentLink("order-1")).thenReturn(Optional.empty());
+
+        assertThat(prompter.run()).isEqualTo(new GuestBillPaymentPrompter.Report(1, 0, 0, 1));
+        verify(notifier, never()).reviewPrompt(any());
     }
 
     private GuestBill issued(long reservationId) {
