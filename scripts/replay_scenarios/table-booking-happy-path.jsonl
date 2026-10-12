@@ -4,4 +4,5 @@
 {"name":"party-size","text":"На троих","expectNextState":"TABLE_BOOKING_WAIT_TABLE_SELECTION","expectTextContains":["план зала","стол"]}
 {"name":"select-table","text":"подбери сам","expectNextState":"TABLE_BOOKING_COLLECT_DATE","expectTextContains":["место","день"]}
 {"name":"select-date","text":"Завтра","expectNextState":"TABLE_BOOKING_COLLECT_TIME","expectTextContains":["Во сколько"]}
-{"name":"select-time","text":"19:00","expectNextState":"READY_FOR_DIALOG","expectTextContains":["Заявку #","подтверждение"],"expectActions":["RESERVATION_CREATED","WAIT_HOSTESS_CONFIRMATION","RETURN_MAIN_MENU"]}
+{"name":"select-time","text":"19:00","expectNextState":"TABLE_BOOKING_CONFIRMATION","expectTextContains":["Проверьте","Стол: подберем свободный","в 19:00","Гостей: 3"],"expectActions":["ASK_BOOKING_CONFIRMATION"]}
+{"name":"send-request","text":"✅ Отправить заявку","expectNextState":"READY_FOR_DIALOG","expectTextContains":["Заявку #","подтверждение"],"expectActions":["RESERVATION_CREATED","WAIT_HOSTESS_CONFIRMATION","RETURN_MAIN_MENU"]}

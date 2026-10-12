@@ -44,7 +44,12 @@ public class TableBookingStepRegistry {
         return draft != null
                 && (hasText(draft.tableCode())
                 || hasText(draft.preferredZone())
-                || containsAny(normalize(draft.seatingPreference()), "выбери сам", "подбери сам", "любой", "на твой выбор", "где удобно", "на ваше усмотрение"));
+                || leavesTheChoiceToUs(draft.seatingPreference()));
+    }
+
+    /** "Подбери сам" and the like: the guest chose no table and no zone and left the choice to the team. */
+    public boolean leavesTheChoiceToUs(String seatingPreference) {
+        return containsAny(normalize(seatingPreference), "выбери сам", "подбери сам", "любой", "на твой выбор", "где удобно", "на ваше усмотрение");
     }
 
     public boolean hasSeatingPreferenceDecision(TableBookingDraftStorage.Draft draft) {

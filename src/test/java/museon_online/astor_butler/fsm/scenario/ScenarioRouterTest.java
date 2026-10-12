@@ -225,6 +225,47 @@ class ScenarioRouterTest {
     }
 
     @Test
+    void aReplyToTheBookingSummaryIsNotOfferedToAnotherScenario() {
+        // A wish for the team may name a birthday. Read as an intent it would open an event request in the middle of the summary.
+        BotState summary = BotState.valueOf("TABLE_BOOKING_CONFIRMATION");
+        IncomingMessage incoming = telegram("у нас день рождения, можно свечи?");
+        UnderstoodInput understood = new UnderstoodInput(incoming.text(), incoming.text(), InputIntent.EVENT_BOOKING, 0.86,
+                Map.of(), List.of(InputIntent.EVENT_BOOKING), false, null);
+        OutgoingMessage again = OutgoingMessage.of(incoming, "Пожелание записал.", summary.name(),
+                false, false, false, false, AdminAlert.none(), List.of("ASK_BOOKING_CONFIRMATION"));
+        when(firstTouchScenario.supports(incoming, summary, incoming.text())).thenReturn(false);
+        when(inputUnderstandingService.understand(eq(incoming.text()), eq(summary), any())).thenReturn(understood);
+        when(tableBookingScenario.handle(incoming, summary, understood.routeText(), understood)).thenReturn(again);
+
+        OutgoingMessage outgoing = router.route(incoming, summary, incoming.text());
+
+        assertThat(outgoing.nextState()).isEqualTo(summary.name());
+        assertThat(outgoing.actions()).containsExactly("ASK_BOOKING_CONFIRMATION");
+        assertThat(outgoing.metadata()).containsEntry("understandingIntent", "EVENT_BOOKING");
+        verify(eventBookingScenario, never()).supports(any(), any(), anyString(), any());
+        verify(eventBookingScenario, never()).handle(any(), any(), anyString(), any());
+    }
+
+    @Test
+    void aCallForTheTeamAtTheBookingSummaryIsStillACallForTheTeam() {
+        BotState summary = BotState.valueOf("TABLE_BOOKING_CONFIRMATION");
+        IncomingMessage incoming = telegram("менеджер");
+        UnderstoodInput understood = new UnderstoodInput(incoming.text(), incoming.text(), InputIntent.MANAGER_HELP, 0.86,
+                Map.of(), List.of(InputIntent.MANAGER_HELP), false, null);
+        OutgoingMessage team = OutgoingMessage.of(incoming, "Передал команде.", BotState.READY_FOR_DIALOG.name(),
+                false, false, false, false, AdminAlert.none(), List.of("MANAGER_HELP"));
+        when(firstTouchScenario.supports(incoming, summary, incoming.text())).thenReturn(false);
+        when(inputUnderstandingService.understand(eq(incoming.text()), eq(summary), any())).thenReturn(understood);
+        when(managerHelpScenario.supports(incoming, summary, understood.routeText(), understood)).thenReturn(true);
+        when(managerHelpScenario.handle(incoming, summary, understood.routeText(), understood)).thenReturn(team);
+
+        OutgoingMessage outgoing = router.route(incoming, summary, incoming.text());
+
+        assertThat(outgoing.actions()).containsExactly("MANAGER_HELP");
+        verify(tableBookingScenario, never()).handle(any(), any(), anyString(), any());
+    }
+
+    @Test
     void aLunchFromTheConciergeIsKeptThroughConsentAndResumedByTheLunchScenario() {
         IncomingMessage incoming = telegram("/start lunch_aeris");
         OutgoingMessage consent = OutgoingMessage.of(incoming, "Нажимая кнопку...", BotState.CONSENT_REQUIRED.name(),
