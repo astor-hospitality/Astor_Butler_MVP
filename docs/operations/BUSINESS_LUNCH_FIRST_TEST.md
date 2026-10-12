@@ -387,6 +387,7 @@ VM `astor-aeris-vm` (Cloud.ru), стек из `/opt/astor-butler/current` (`main
 - [ ] `TELEGRAM_PROXY_TYPE/HOST/PORT` — egress в Telegram через `astor-tg-awg` жив (`curl` на `api.telegram.org` из контейнера бота).
 - [ ] `actuator/health` → `UP`; `logs --since 1h | grep -c ' ERROR '` = 0; в логе есть `Liquibase` без ошибок и строки про обе billing-миграции.
 - [ ] Redis жив (черновик ланча живёт в Redis; без него сценарий не продолжится после контакта).
+- [ ] `ASTOR_BOOKING_MORNING_CHECK_ENABLED` — оставить `false` на тест (брони на сегодня, звонок хостес как обычно); если включать, то `ASTOR_BOOKING_MORNING_CHECK_TIME=10:30`, `ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES=90` и в логе `Liquibase` строка про `2026-10-12-booking-morning-check` (#149).
 - [ ] Известная дыра: `SMART_SOLUTION_OPS_CHAT_ID` не задан (`=0`). На AERIS-бота **не влияет** — переменная читается только профилем
       `smart-solution` (`docker-compose.prod.yml:275`); если этот профиль не поднят, оставить как есть до отдельного решения.
 - [ ] Оценка за столом (строки 5а и 19 в §5): `ASTOR_BILLING_ENABLED=true` (счёт на каждый ланч, Saby не нужен) и `ASTOR_REVIEW_MOMENT=on-bill`
