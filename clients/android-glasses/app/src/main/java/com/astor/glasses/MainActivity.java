@@ -65,6 +65,8 @@ public final class MainActivity extends Activity {
 
     private boolean busy;
     private String lastAnswer;
+    // The line the earpiece may say: the server's pronounceText, or the answer when there is none.
+    private String lastSpoken;
     // A training photo that reached the phone but not yet the server: it can be re-sent without a new capture.
     private byte[] pendingJpeg;
     private LunchGuide.PhotoContext pendingContext, captureContext;
@@ -318,10 +320,11 @@ public final class MainActivity extends Activity {
                 log("Фото текущего учебного шага сохранено сервером. Всего шагов с фото: " + lunch.photoCount() + ".");
             }
             lastAnswer = text1;
+            lastSpoken = Assist.spoken(reply, text1);
             answer.setText(text1);
             refresh();
             byte[] prepared = Assist.speech(reply);
-            if (prepared == null || !play(prepared)) speak(text1);
+            if (prepared == null || !play(prepared)) speak(lastSpoken);
         });
     }
 
@@ -361,7 +364,7 @@ public final class MainActivity extends Activity {
 
     private void repeatAnswer() {
         if (lastAnswer == null) log("Ответов пока нет.");
-        else speak(lastAnswer);
+        else speak(lastSpoken == null ? lastAnswer : lastSpoken);
     }
 
     private void speak(String text) {
