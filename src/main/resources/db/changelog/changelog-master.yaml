@@ -79,3 +79,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-10-max-channel.yaml
   - include:
       file: db/changelog/2026-10-11-staff-task-evidence.yaml
+  - include:
+      file: db/changelog/2026-10-12-booking-morning-check.yaml

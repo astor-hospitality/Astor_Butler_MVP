@@ -6,6 +6,7 @@ import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.core.event.InboundEvent;
 import museon_online.astor_butler.fsm.core.idempotency.IdempotencyGuard;
 import museon_online.astor_butler.domain.billing.VisitReviewService;
+import museon_online.astor_butler.domain.booking.BookingMorningCheckService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.MessageGatewayService;
@@ -62,6 +63,7 @@ public class TelegramRouter {
     private final HostessReservationApprovalService hostessReservationApprovalService;
     private final TelegramMediaSender telegramMediaSender;
     private final VisitReviewService visitReviewService;
+    private final BookingMorningCheckService morningCheckService;
     private final TelegramVoiceReplyService voiceReplyService;
 
     @Value("${telegram.ui.preview-enabled:true}")
@@ -158,6 +160,21 @@ public class TelegramRouter {
             if (review.guestText() != null) {
                 // The button stands for words the guest could have typed; the bot answers them the usual way.
                 IncomingMessage asTyped = typedByGuest(callbackQuery, chatId, review.guestText());
+                send(asTyped, messageGatewayService.handle(asTyped), sender);
+            }
+            return true;
+        }
+
+        BookingMorningCheckService.CallbackResult morning = morningCheckService.handleCallback(callbackQuery.getData(), chatId);
+        if (morning.handled()) {
+            execute(sender, AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackQuery.getId())
+                    .text(morning.answerText())
+                    .showAlert(false)
+                    .build());
+            if (morning.guestText() != null) {
+                // «Перенести» and «Отменить» stand for the words of the change-and-cancel dialogue; it answers as usual.
+                IncomingMessage asTyped = typedByGuest(callbackQuery, chatId, morning.guestText());
                 send(asTyped, messageGatewayService.handle(asTyped), sender);
             }
             return true;

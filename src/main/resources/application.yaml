@@ -161,6 +161,19 @@ astor:
       # Runs only while a provider is enabled and configured; 0 is not supported, set a large value to slow it down.
       fixed-delay-ms: ${ASTOR_EXTERNAL_SYNC_DELAY_MS:60000}
       initial-delay-ms: ${ASTOR_EXTERNAL_SYNC_INITIAL_DELAY_MS:90000}
+    morning-check:
+      # Morning reconfirmation on the day of the visit (#149): once the venue clock passes `time`, every Telegram guest
+      # with a CONFIRMED or awaiting booking for today gets «Всё в силе?» with the buttons «Всё в силе» / «Перенести» /
+      # «Отменить». Sent once per booking (table_reservation_morning_checks), never for a booking that starts sooner
+      # than `min-lead-minutes` after the send, never for a booking made after `time`. Off by default.
+      enabled: ${ASTOR_BOOKING_MORNING_CHECK_ENABLED:false}
+      time: ${ASTOR_BOOKING_MORNING_CHECK_TIME:10:30}
+      min-lead-minutes: ${ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES:90}
+      venue-code: ${ASTOR_BOOKING_MORNING_CHECK_VENUE_CODE:AERIS}
+      timezone: ${ASTOR_BOOKING_MORNING_CHECK_TIMEZONE:Asia/Yekaterinburg}
+      # How often the clock is checked; the first check after a start also catches up a send time already passed.
+      poll-ms: ${ASTOR_BOOKING_MORNING_CHECK_POLL_MS:60000}
+      initial-delay-ms: ${ASTOR_BOOKING_MORNING_CHECK_INITIAL_DELAY_MS:60000}
   integrations:
     saby:
       enabled: ${ASTOR_SABY_ENABLED:false}
