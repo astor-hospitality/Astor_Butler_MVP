@@ -5,3 +5,4 @@ feedback:
   button: "Leave feedback"
   ask_text: "Please write your feedback in one message. I will pass it on to the AERIS team privately, without any pressure."
   thanks: "Thank you, I have passed your feedback on to the team. I am still here: just ask for the menu, a table booking, the video tour or a manager."
+  tip_offer: "If you would like to thank the team, you can leave a tip."

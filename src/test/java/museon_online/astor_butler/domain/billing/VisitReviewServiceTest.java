@@ -152,11 +152,23 @@ class VisitReviewServiceTest {
         Optional<VisitReviewService.CommentLink> link = reviews.attachComment(CHAT, 88L);
         Optional<VisitReviewService.CommentLink> again = reviews.attachComment(CHAT, 89L);
 
-        assertThat(link).contains(new VisitReviewService.CommentLink(bill.id(), 77L, 4));
+        // The guest went to write the comment before opening the tip: the tip is offered after it.
+        assertThat(link).contains(new VisitReviewService.CommentLink(bill.id(), 77L, 4, true));
         assertThat(again).isEmpty();
         assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type, BillOperation::details)
                 .contains(tuple(BillOperationType.REVIEW_RECEIVED, "comment=feedback#88"))
                 .doesNotContain(tuple(BillOperationType.REVIEW_RECEIVED, "comment=feedback#89"));
+    }
+
+    @Test
+    void aCommentAfterTheGuestOpenedTheTipDoesNotOfferItAgain() {
+        GuestBill bill = bill(77L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(bill);
+        reviews.handleCallback("visit_review:" + bill.id() + ":stars:5", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":tip", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":comment", CHAT);
+
+        assertThat(reviews.attachComment(CHAT, 88L)).contains(new VisitReviewService.CommentLink(bill.id(), 77L, 5, false));
     }
 
     @Test

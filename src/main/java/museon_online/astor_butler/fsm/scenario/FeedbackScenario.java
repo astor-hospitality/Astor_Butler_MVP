@@ -18,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -38,6 +39,12 @@ public class FeedbackScenario implements FsmScenario {
     static final String TEXT_BUTTON = "feedback.button";
     static final String TEXT_ASK = "feedback.ask_text";
     static final String TEXT_THANKS = "feedback.thanks";
+    static final String TEXT_TIP_OFFER = "feedback.tip_offer";
+    /**
+     * Russian like the main menu and the rating buttons, whatever the guest's language: the tip scenario knows the
+     * guest wants it by the word "чаевые".
+     */
+    static final List<List<String>> TIP_OFFER_ROWS = List.of(List.of("Оставить чаевые"), List.of("Главное меню"));
 
     private final FSMStorage fsmStorage;
     private final FeedbackService feedbackService;
@@ -139,16 +146,24 @@ public class FeedbackScenario implements FsmScenario {
                 "handoffReason", reasonAction
         ));
         visit.ifPresent(link -> metadata.put("visitReviewBillId", link.billId()));
+        List<String> actions = new ArrayList<>(List.of("FEEDBACK", reasonAction, "ADMIN_ALERT", "RETURN_MAIN_MENU"));
+        String reply = thanks.text();
+        if (visit.map(VisitReviewService.CommentLink::offerTip).orElse(false)) {
+            // The guest went from the stars to the comment, past the tip button; the tip is offered once more.
+            reply = reply + "\n\n" + guestTexts.text(locale, TEXT_TIP_OFFER).text();
+            metadata.put("replyKeyboardRows", TIP_OFFER_ROWS);
+            actions.add("TIP_OFFERED");
+        }
         return OutgoingMessage.of(
                 incoming,
-                thanks.text(),
+                reply,
                 BotState.READY_FOR_DIALOG.name(),
                 false,
                 false,
                 true,
                 false,
                 adminAlert(incoming, previousState, text, feedback, locale, visit),
-                List.of("FEEDBACK", reasonAction, "ADMIN_ALERT", "RETURN_MAIN_MENU")
+                actions
         ).withMetadata(withLanguage(metadata, thanks));
     }
 

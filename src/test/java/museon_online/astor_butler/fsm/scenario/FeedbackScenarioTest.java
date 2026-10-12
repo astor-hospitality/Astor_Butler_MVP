@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -89,12 +90,34 @@ class FeedbackScenarioTest {
         ReflectionTestUtils.setField(scenario, "visitReviews", visitReviews);
         IncomingMessage incoming = telegram("Вкусно, но горячее ждали долго");
         when(feedbackService.create(any(GuestFeedbackCommand.class))).thenReturn(feedback());
-        when(visitReviews.attachComment(incoming.chatId(), 88L)).thenReturn(Optional.of(new VisitReviewService.CommentLink(12L, 77L, 4)));
+        when(visitReviews.attachComment(incoming.chatId(), 88L)).thenReturn(Optional.of(new VisitReviewService.CommentLink(12L, 77L, 4, true)));
 
         OutgoingMessage outgoing = scenario.handle(incoming, BotState.FEEDBACK_COLLECT_TEXT, incoming.text());
 
         assertThat(outgoing.adminAlert().text()).contains("Комментарий к оценке визита: ★★★★☆, заявка #77");
         assertThat(outgoing.metadata()).containsEntry("visitReviewBillId", 12L);
+        // The tip button stayed on the message before the comment; after it the tip is offered again, without pressure.
+        assertThat(outgoing.text()).isEqualTo("""
+                Спасибо, передал отзыв команде. Я остаюсь на связи: можно попросить меню, бронь, видео-тур или менеджера.
+
+                Если захотите поблагодарить команду, можно оставить чаевые.""");
+        assertThat(outgoing.metadata()).containsEntry("replyKeyboardRows", List.of(List.of("Оставить чаевые"), List.of("Главное меню")));
+        assertThat(outgoing.actions()).contains("TIP_OFFERED");
+    }
+
+    @Test
+    void theTipIsNotOfferedAgainOnceTheGuestOpenedIt() {
+        VisitReviewService visitReviews = mock(VisitReviewService.class);
+        ReflectionTestUtils.setField(scenario, "visitReviews", visitReviews);
+        IncomingMessage incoming = telegram("Вкусно, но горячее ждали долго");
+        when(feedbackService.create(any(GuestFeedbackCommand.class))).thenReturn(feedback());
+        when(visitReviews.attachComment(incoming.chatId(), 88L)).thenReturn(Optional.of(new VisitReviewService.CommentLink(12L, 77L, 4, false)));
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.FEEDBACK_COLLECT_TEXT, incoming.text());
+
+        assertThat(outgoing.text()).doesNotContain("чаевые");
+        assertThat(outgoing.metadata()).doesNotContainKey("replyKeyboardRows");
+        assertThat(outgoing.actions()).doesNotContain("TIP_OFFERED");
     }
 
     @Test
@@ -110,6 +133,7 @@ class FeedbackScenarioTest {
         assertThat(outgoing.adminAlert().required()).isTrue();
         assertThat(outgoing.adminAlert().text()).doesNotContain("Комментарий к оценке визита");
         assertThat(outgoing.metadata()).doesNotContainKey("visitReviewBillId");
+        assertThat(outgoing.metadata()).doesNotContainKey("replyKeyboardRows");
     }
 
     @Test

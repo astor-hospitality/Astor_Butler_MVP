@@ -58,8 +58,13 @@ public class VisitReviewService {
         static final CallbackResult NOT_HANDLED = new CallbackResult(false, null, null);
     }
 
-    /** The visit a guest's comment belongs to, for the team's card. */
-    public record CommentLink(Long billId, Long tableReservationId, Integer stars) {
+    /**
+     * The visit a guest's comment belongs to, for the team's card.
+     *
+     * @param offerTip the guest has not opened the tip for this visit: the button stayed above the comment, so the
+     *                 thanks for the comment offers it again
+     */
+    public record CommentLink(Long billId, Long tableReservationId, Integer stars, boolean offerTip) {
     }
 
     /** Asks the guest, unless they were asked for this bill already or the bill is cancelled. */
@@ -182,7 +187,7 @@ public class VisitReviewService {
             }
             bills.reviewNoted(review.billId(), BillOperationType.REVIEW_RECEIVED, COMMENT_MARK + "feedback#" + feedbackId);
             Long reservationId = bills.find(review.billId()).map(GuestBill::tableReservationId).orElse(null);
-            return Optional.of(new CommentLink(review.billId(), reservationId, review.stars()));
+            return Optional.of(new CommentLink(review.billId(), reservationId, review.stars(), review.tipRequestedAt() == null));
         }
         return Optional.empty();
     }
