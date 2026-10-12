@@ -168,6 +168,17 @@ astor:
       exclude-zones: ${ASTOR_BOOKING_AUTO_CONFIRM_EXCLUDE_ZONES:VIP_ZONE}
       check-interval-ms: ${ASTOR_BOOKING_AUTO_CONFIRM_CHECK_INTERVAL_MS:30000}
       initial-delay-ms: ${ASTOR_BOOKING_AUTO_CONFIRM_INITIAL_DELAY_MS:60000}
+    hold-expiry:
+      # Off (default): a request the hostess never answers keeps its table for as long as it takes, as before (#87).
+      # On: a request still awaiting the hostess ttl-minutes after the card was sent becomes EXPIRED and its table is
+      # released, so a new request for the same time no longer gets 409; the guest hears «Команда не успела
+      # подтвердить бронь за N минут» and may pick another time, the hostess card is closed with «⏱ Истекло», the
+      # manager chat (telegram.booking.manager-chat-id) gets the card: «Да» takes the table again if it is still free.
+      # Confirmed bookings and requests already in the venue's system (a Saby id on the order) never expire here.
+      enabled: ${ASTOR_BOOKING_HOLD_EXPIRY_ENABLED:false}
+      ttl-minutes: ${ASTOR_BOOKING_HOLD_TTL_MINUTES:15}
+      check-seconds: ${ASTOR_BOOKING_HOLD_EXPIRY_CHECK_SECONDS:60}
+      initial-delay-seconds: ${ASTOR_BOOKING_HOLD_EXPIRY_INITIAL_DELAY_SECONDS:60}
     external-sync:
       # Reads bookings back from the venue's own system (Saby) and confirms/cancels local orders accordingly.
       # Runs only while a provider is enabled and configured; 0 is not supported, set a large value to slow it down.
