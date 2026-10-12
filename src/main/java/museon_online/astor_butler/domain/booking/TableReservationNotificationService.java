@@ -7,6 +7,7 @@ import museon_online.astor_butler.domain.billing.ReviewMoment;
 import museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.entry.GuestEntryService;
+import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
@@ -84,6 +85,10 @@ public class TableReservationNotificationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private GuestEntryService guestEntryService;
 
+    /** The kitchen's «готовить ко времени» (#164): one bold line on a lunch card while the mark is on. Optional so the constructor stays. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LunchPreorderMark preorderMark;
+
     /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
@@ -93,7 +98,7 @@ public class TableReservationNotificationService {
         String chatId = hostessChatId(order);
         Message sent = send(
                 chatId,
-                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync) + handoffLine(order) + modeLine(order, decision),
+                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync) + handoffLine(order) + preorderLine(order) + modeLine(order, decision),
                 approvalKeyboard(order.id()),
                 "hostess-approval-request"
         );
@@ -698,6 +703,24 @@ public class TableReservationNotificationService {
 
     void setGuestEntryService(GuestEntryService guestEntryService) {
         this.guestEntryService = guestEntryService;
+    }
+
+    /**
+     * «⏱ Готовить ко времени 13:00» (#164) on the card of a business lunch while the pre-order mark is on — the same time the
+     * kitchen reads at the start of the Saby comment, so the hostess can write it on the ticket herself when the dishes did not
+     * reach Presto. Empty for any other reservation and while the mark is off, so the card stays as it was.
+     */
+    String preorderLine(TableReservationOrder order) {
+        if (preorderMark == null) {
+            return "";
+        }
+        return preorderMark.cardLine(order)
+                .map(line -> "\n<b>" + escape(line) + "</b>\n")
+                .orElse("");
+    }
+
+    void setPreorderMark(LunchPreorderMark preorderMark) {
+        this.preorderMark = preorderMark;
     }
 
     private String hostessText(TableReservationOrder order) {

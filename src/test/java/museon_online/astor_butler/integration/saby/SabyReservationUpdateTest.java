@@ -2,6 +2,7 @@ package museon_online.astor_butler.integration.saby;
 
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
+import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.http.HttpMethod;
@@ -126,15 +127,56 @@ class SabyReservationUpdateTest {
         fixture.server().verify();
     }
 
+    /** #164: a moved lunch keeps the kitchen's line first in the Presto comment, with the new time and party; the rest is appended as before. */
+    @Test
+    void aMovedLunchRefreshesTheKitchenLineInFrontOfTheComment() {
+        Fixture fixture = fixture(writable());
+        fixture.provider().setPreorderMark(new LunchPreorderMark(true, 10));
+        expectAuth(fixture.server());
+        expectOrder(fixture.server(), "ПРЕДЗАКАЗ: готовить ко времени 12:50, гостей 2 · Hostess note · Astor Butler #12");
+        fixture.server().expect(once(), requestTo(UPDATE_URL))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.datetime").value("2026-10-07 15:30:00"))
+                .andExpect(jsonPath("$.comment").value(org.hamcrest.Matchers.startsWith("ПРЕДЗАКАЗ: готовить ко времени 15:20, гостей 3 · Hostess note · Astor Butler #12 · Изменение Butler: ")))
+                .andExpect(jsonPath("$.comment").value(org.hamcrest.Matchers.not(containsString("12:50"))))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        ExternalReservationResult result = fixture.provider().updateReservation(EXTERNAL_ID, command(3, "2026-10-07T10:30:00Z"), "12");
+
+        assertThat(result.created()).isTrue();
+        fixture.server().verify();
+    }
+
+    /** #164: a comment without the line is merged exactly as before, bean or no bean. */
+    @Test
+    void anOrdinaryCommentIsMergedAsBeforeWithTheMarkOn() {
+        Fixture fixture = fixture(writable());
+        fixture.provider().setPreorderMark(new LunchPreorderMark(true, 10));
+        expectAuth(fixture.server());
+        expectOrder(fixture.server());
+        fixture.server().expect(once(), requestTo(UPDATE_URL))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.comment").value(org.hamcrest.Matchers.startsWith("Hostess note · Изменение Butler: У окна")))
+                .andExpect(jsonPath("$.comment").value(org.hamcrest.Matchers.not(containsString("ПРЕДЗАКАЗ"))))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        assertThat(fixture.provider().updateReservation(EXTERNAL_ID, command(3, "2026-10-07T10:30:00Z"), "12").created()).isTrue();
+        fixture.server().verify();
+    }
+
     private static void expectOrder(MockRestServiceServer server) {
+        expectOrder(server, "Hostess note");
+    }
+
+    private static void expectOrder(MockRestServiceServer server, String comment) {
         server.expect(once(), requestTo("https://api.saby.test/retail/order/" + EXTERNAL_ID))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
-                        {"product":"restaurant","pointId":206,"comment":"Hostess note",
+                        {"product":"restaurant","pointId":206,"comment":"%s",
                          "customer":{"name":"Old name","phone":"79991111111","email":"guest@example.test"},
                          "booking":{"visitors":2,"table":42,"hall":7,"woTable":false},
                          "nomenclatures":[{"id":101,"count":2}]}
-                        """, MediaType.APPLICATION_JSON));
+                        """.formatted(comment), MediaType.APPLICATION_JSON));
     }
 
     private static TableReservationCommand command(int partySize, String startUtc) {

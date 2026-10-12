@@ -11,6 +11,8 @@ import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
 import museon_online.astor_butler.domain.lunch.BusinessLunchService;
+import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -50,6 +52,10 @@ public class ButlerPauseSummaryService {
     private final ObjectMapper json = new ObjectMapper().findAndRegisterModules()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private Clock clock = Clock.systemUTC();
+
+    /** The kitchen's «готовить ко времени» of a lunch (#164): one more piece of the lunch line while the mark is on. Optional so the constructor stays. */
+    @Autowired(required = false)
+    private LunchPreorderMark preorderMark;
 
     public ButlerPauseSummaryService(TableReservationRepository reservations, GuestBillRepository bills,
                                      JdbcTemplate jdbcTemplate, ShiftBriefingProperties properties,
@@ -96,7 +102,7 @@ public class ButlerPauseSummaryService {
                 lunches.add(new ButlerPauseSummary.Lunch(order.id(),
                         TIME.format(LocalDateTime.ofInstant(order.requestedStartAt(), zone)), name(order), table(order),
                         party(order), presto ? "в Presto" : lunchStatus(order.status()),
-                        composition(order)));
+                        composition(order), readyAt(order)));
             }
         }
 
@@ -124,6 +130,9 @@ public class ButlerPauseSummaryService {
             text.append("• ").append(lunch.time()).append(" · ").append(escape(lunch.table())).append(" · ")
                     .append(guests(lunch.partySize())).append(" · ").append(escape(lunch.guestName()))
                     .append(" · ").append(lunch.status()).append(" · #").append(lunch.id());
+            if (lunch.readyAt() != null && !lunch.readyAt().isBlank()) {
+                text.append(" · готовить к ").append(lunch.readyAt());
+            }
             if (lunch.composition() != null && !lunch.composition().isBlank()) {
                 text.append("\n  ").append(escape(lunch.composition()));
             }
@@ -246,6 +255,15 @@ public class ButlerPauseSummaryService {
 
     private static boolean isLunch(TableReservationOrder order) {
         return BusinessLunchService.SEATING_LABEL.equals(order.seatingPreference());
+    }
+
+    /** «12:50» while the pre-order mark is on (#164); null otherwise, so the line reads as before. */
+    private String readyAt(TableReservationOrder order) {
+        return preorderMark == null ? null : preorderMark.readyAt(order.requestedStartAt()).orElse(null);
+    }
+
+    void setPreorderMark(LunchPreorderMark preorderMark) {
+        this.preorderMark = preorderMark;
     }
 
     /** The hostess comment of a lunch is its composition («Бизнес-ланч: 2 × «Сет 1», 450 ₽. …»); the label is the line's own. */

@@ -8,6 +8,7 @@ import museon_online.astor_butler.domain.billing.GuestBillStatus;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -171,6 +172,21 @@ class ButlerPauseSummaryServiceTest {
                 .contains("<b>Бизнес-ланчи сегодня:</b> 0")
                 .contains("открыто 0")
                 .contains("<b>Открытые поручения:</b> 0");
+    }
+
+    /** #164: with the kitchen mark on, the lunch line also says when the kitchen was asked to be ready; off — the line as before. */
+    @Test
+    void theLunchLineCarriesTheKitchenTimeOnlyWhileTheMarkIsOn() {
+        assertThat(service.build().lunchesToday().get(0).readyAt()).isNull();
+        assertThat(service.summaryText()).doesNotContain("готовить к");
+
+        service.setPreorderMark(new LunchPreorderMark(true, 10));
+
+        assertThat(service.build().lunchesToday().get(0).readyAt()).isEqualTo("12:50");
+        assertThat(service.summaryText()).contains("• 13:00 · Table 2 · 2 гостя · Мария · ждёт хостес · #4 · готовить к 12:50\n  2 × «Сет 1», 450 ₽.");
+
+        service.setPreorderMark(new LunchPreorderMark(false, 10));
+        assertThat(service.summaryText()).contains("• 13:00 · Table 2 · 2 гостя · Мария · ждёт хостес · #4\n  2 × «Сет 1», 450 ₽.");
     }
 
     private static TableReservationOrder order(Long id, TableReservationStatus status, LocalDate day, int hour, int minute,
