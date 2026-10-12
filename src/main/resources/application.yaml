@@ -116,7 +116,7 @@ astor:
   kill-switch:
     # The shift manager's stop button (#134): /stop (/стоп), /start_butler (/go), /status_butler in the staff, manager
     # or admin chat. Paused, guest requests (booking, change/cancel, lunch, event) go to the staff chat as plain cards
-    # and the timers (auto-confirm, morning check, Presto sync, payment links) wait; menus, consent and answers keep
+    # and the timers (auto-confirm, hold expiry, morning check, Presto sync, payment links) wait; menus, consent and answers keep
     # working. The flag is in Redis without TTL and survives a restart. Off by default: the commands are unknown.
     enabled: ${ASTOR_KILL_SWITCH_ENABLED:false}
   shift:

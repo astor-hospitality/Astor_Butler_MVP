@@ -64,7 +64,6 @@ public class TelegramRouter {
     private final TelegramChatViewService chatViewService;
     private final TelegramVoiceEnrichmentGuard voiceEnrichmentGuard;
     private final HostessReservationApprovalService hostessReservationApprovalService;
-    private final ButlerPauseCommandService butlerPauseCommandService;
     private final TelegramMediaSender telegramMediaSender;
     private final VisitReviewService visitReviewService;
     private final BookingMorningCheckService morningCheckService;
@@ -83,6 +82,10 @@ public class TelegramRouter {
 
     @Value("${telegram.admin.chat-id:}")
     private String adminChatId;
+
+    /** The shift manager's kill switch commands (#134): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ButlerPauseCommandService butlerPauseCommandService;
 
 
     public void handle(Update update, AbsSender sender) {
@@ -104,7 +107,7 @@ public class TelegramRouter {
 
             log.info("📨 [TG] Incoming message from {}: {}", incoming.chatId(), incoming.text());
             // Before the hostess boundary: it consumes every text in the staff chat, /stop included.
-            if (butlerPauseCommandService.handle(incoming)) {
+            if (butlerPauseCommandService != null && butlerPauseCommandService.handle(incoming)) {
                 return;
             }
             if (hostessReservationApprovalService.handle(incoming)) {

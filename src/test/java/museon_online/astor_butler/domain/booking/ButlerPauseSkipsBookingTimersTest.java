@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * While the shift manager has stopped Butler (#134) the booking timers do nothing: no card confirms itself, no guest
- * is asked «Всё в силе?», nothing is read back from Presto. The same tick with Butler running still does its work.
+ * is asked «Всё в силе?», no hold expires, nothing is read back from Presto. The same tick with Butler running still does its work.
  */
 class ButlerPauseSkipsBookingTimersTest {
 
@@ -84,6 +84,23 @@ class ButlerPauseSkipsBookingTimersTest {
         when(repository.findActiveOrdersWithExternalId(anyInt())).thenReturn(List.of());
         sync.run();
         verify(repository).findActiveOrdersWithExternalId(anyInt());
+    }
+
+    @Test
+    void holdExpiryTimerSkipsTheTickWhilePaused() {
+        BookingHoldExpiryProperties properties = new BookingHoldExpiryProperties();
+        properties.setEnabled(true);
+        BookingHoldExpiryService service = new BookingHoldExpiryService(properties, repository, mock(TableReservationService.class));
+        service.setButlerPause(pause);
+
+        when(pause.paused()).thenReturn(true);
+        assertThat(service.run()).isEqualTo(BookingHoldExpiryService.Report.NOTHING);
+        verifyNoInteractions(repository);
+
+        when(pause.paused()).thenReturn(false);
+        when(repository.findAwaitingManagerConfirmationUnansweredSince(any(), any(), anyInt())).thenReturn(List.of());
+        service.run();
+        verify(repository).findAwaitingManagerConfirmationUnansweredSince(any(), any(), anyInt());
     }
 
     @Test
