@@ -221,6 +221,13 @@ astor:
   startup:
     admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
     operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}
+  # Public pages the bot links to (#86): the consent step, the AERIS guest card, the startup message and the pinned
+  # admin/system notes. The policy lives on the Astor site; the guest guide and the FSM Viewer are the GitHub Pages of
+  # this repository (docs/), served under the organisation since the move. Change them here, not in code.
+  links:
+    policy: ${ASTOR_LINK_POLICY:https://astor-ai.ru/policy.html}
+    guest-guide: ${ASTOR_LINK_GUEST_GUIDE:https://astor-hospitality.github.io/Astor_Butler_MVP/docs/guest-guide.html}
+    fsm-viewer: ${ASTOR_LINK_FSM_VIEWER:https://astor-hospitality.github.io/Astor_Butler_MVP/docs/FSM_SCENARIOS_VIEWER.html}
   telegram:
     # Voice replies in the Telegram bot: the answer as a voice note (server TTS, SALUTE_TTS_FORMAT=opus) plus a
     # 2–4 line text summary with link buttons and "Подробнее". off (default) changes nothing; on = every reply in a

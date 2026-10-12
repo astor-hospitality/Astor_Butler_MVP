@@ -2,6 +2,7 @@ package museon_online.astor_butler.fsm.handler;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.config.AstorLinksProperties;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.core.CommandContext;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
@@ -23,11 +24,10 @@ import java.util.List;
     @Deprecated(forRemoval = false)
     public class GreetingHandler implements FSMHandler {
 
-        private static final String POLICY_URL = "https://michaelwelly.github.io/Astor_Butler_MVP/docs/policy.html";
-
         private final TelegramSender sender;
         private final FSMStorage storage;
         private final ModelGateway modelGateway;
+        private final AstorLinksProperties links;
 
         @Override
         public BotState getState() {
@@ -82,7 +82,7 @@ import java.util.List;
                         llmResponse + "\n\n" +
                         "Чтобы продолжить, отправьте, пожалуйста, свой контакт.\n\n" +
                         "Продолжая, вы соглашаетесь с " +
-                        "<a href=\"" + POLICY_URL + "\">политикой обработки персональных данных</a>.";
+                        "<a href=\"" + links.getPolicy() + "\">политикой обработки персональных данных</a>.";
 
                 KeyboardButton shareContact = KeyboardButton.builder()
                         .text("📱 Поделиться контактом")
@@ -106,7 +106,7 @@ import java.util.List;
                         "\n\n" +
                         "Чтобы продолжить, отправьте, пожалуйста, свой контакт.\n\n" +
                         "Продолжая, вы соглашаетесь с " +
-                        "<a href=\"" + POLICY_URL + "\">политикой обработки персональных данных</a>.";
+                        "<a href=\"" + links.getPolicy() + "\">политикой обработки персональных данных</a>.";
 
                 KeyboardButton shareContact = KeyboardButton.builder()
                         .text("📱 Поделиться контактом")
