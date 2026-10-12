@@ -113,6 +113,12 @@ astor:
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
+  kill-switch:
+    # The shift manager's stop button (#134): /stop (/стоп), /start_butler (/go), /status_butler in the staff, manager
+    # or admin chat. Paused, guest requests (booking, change/cancel, lunch, event) go to the staff chat as plain cards
+    # and the timers (auto-confirm, hold expiry, morning check, Presto sync, payment links) wait; menus, consent and answers keep
+    # working. The flag is in Redis without TTL and survives a restart. Off by default: the commands are unknown.
+    enabled: ${ASTOR_KILL_SWITCH_ENABLED:false}
   shift:
     briefing:
       # Twice a day into the analytics chat: the plan in the first minutes of the shift, the look back once it is over.

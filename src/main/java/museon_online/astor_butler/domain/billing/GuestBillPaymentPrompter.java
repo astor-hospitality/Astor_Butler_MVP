@@ -1,5 +1,6 @@
 package museon_online.astor_butler.domain.billing;
 
+import museon_online.astor_butler.domain.shift.ButlerPauseService;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
@@ -42,6 +43,10 @@ public class GuestBillPaymentPrompter {
     private final Map<Long, Instant> retryAfter = new ConcurrentHashMap<>();
     private long lastCheckedId;
 
+    /** The shift manager's kill switch (#134): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ButlerPauseService butlerPause;
+
     public record Report(int checked, int sent, int skipped, int failed) {
         static final Report NOTHING = new Report(0, 0, 0, 0);
     }
@@ -80,6 +85,10 @@ public class GuestBillPaymentPrompter {
 
     public synchronized Report run() {
         if (!properties.isEnabled()) {
+            return Report.NOTHING;
+        }
+        if (butlerPause != null && butlerPause.paused()) {
+            log.debug("Guest bill payment links skipped: Butler is paused by the shift manager");
             return Report.NOTHING;
         }
         Optional<ExternalPaymentProvider> provider = providers.stream().filter(ExternalPaymentProvider::enabled).findFirst();
@@ -149,5 +158,9 @@ public class GuestBillPaymentPrompter {
                 .map(TableReservationOrder::status)
                 .filter(status -> status == TableReservationStatus.CONFIRMED)
                 .isPresent();
+    }
+
+    void setButlerPause(ButlerPauseService butlerPause) {
+        this.butlerPause = butlerPause;
     }
 }

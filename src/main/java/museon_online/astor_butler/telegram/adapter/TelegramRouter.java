@@ -11,6 +11,7 @@ import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.BookingMorningCheckService;
 import museon_online.astor_butler.domain.booking.HostessBookingEditService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
+import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.MessageGatewayService;
 import museon_online.astor_butler.service.message.OutgoingMessage;
@@ -84,6 +85,10 @@ public class TelegramRouter {
     @Value("${telegram.admin.chat-id:}")
     private String adminChatId;
 
+    /** The shift manager's kill switch commands (#134): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ButlerPauseCommandService butlerPauseCommandService;
+
 
     public void handle(Update update, AbsSender sender) {
         try {
@@ -103,6 +108,10 @@ public class TelegramRouter {
             incoming = voiceEnrichmentGuard.enrich(incoming, sender);
 
             log.info("📨 [TG] Incoming message from {}: {}", incoming.chatId(), incoming.text());
+            // Before the hostess boundary: it consumes every text in the staff chat, /stop included.
+            if (butlerPauseCommandService != null && butlerPauseCommandService.handle(incoming)) {
+                return;
+            }
             if (hostessReservationApprovalService.handle(incoming)) {
                 return;
             }

@@ -1,5 +1,6 @@
 package museon_online.astor_butler.domain.booking;
 
+import museon_online.astor_butler.domain.shift.ButlerPauseService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.billing.BillingSync;
@@ -31,6 +32,10 @@ public class ExternalBookingSync {
     private final BillingSync billingSync;
     private long lastCheckedId;
 
+    /** The shift manager's kill switch (#134): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ButlerPauseService butlerPause;
+
     public record Report(int checked, int confirmed, int cancelled, int unknown, int failed) {
         static final Report NOTHING = new Report(0, 0, 0, 0, 0);
     }
@@ -50,6 +55,10 @@ public class ExternalBookingSync {
     public synchronized Report run() {
         ExternalReservationStatus status = externalProvider.status();
         if (status == null || !status.enabled() || !status.configured()) {
+            return Report.NOTHING;
+        }
+        if (butlerPause != null && butlerPause.paused()) {
+            log.debug("External booking sync skipped: Butler is paused by the shift manager");
             return Report.NOTHING;
         }
         List<TableReservationOrder> orders = lastCheckedId == 0
@@ -90,5 +99,9 @@ public class ExternalBookingSync {
             }
         }
         return new Report(orders.size(), confirmed, cancelled, unknown, failed);
+    }
+
+    void setButlerPause(ButlerPauseService butlerPause) {
+        this.butlerPause = butlerPause;
     }
 }

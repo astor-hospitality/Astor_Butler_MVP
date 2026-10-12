@@ -1,5 +1,6 @@
 package museon_online.astor_butler.domain.booking;
 
+import museon_online.astor_butler.domain.shift.ButlerPauseService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.api.common.ApiException;
@@ -31,12 +32,20 @@ public class BookingHoldExpiryService {
     private final TableReservationService reservationService;
     private Clock clock = Clock.systemUTC();
 
+    /** The shift manager's kill switch (#134): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ButlerPauseService butlerPause;
+
     public record Report(int checked, int expired, int skipped, int failed) {
         static final Report NOTHING = new Report(0, 0, 0, 0);
     }
 
     public synchronized Report run() {
         if (!properties.isEnabled()) {
+            return Report.NOTHING;
+        }
+        if (butlerPause != null && butlerPause.paused()) {
+            log.debug("Booking hold expiry skipped: Butler is paused by the shift manager");
             return Report.NOTHING;
         }
         int minutes = properties.ttlMinutes();
@@ -73,5 +82,9 @@ public class BookingHoldExpiryService {
 
     void setClock(Clock clock) {
         this.clock = clock;
+    }
+
+    void setButlerPause(ButlerPauseService butlerPause) {
+        this.butlerPause = butlerPause;
     }
 }

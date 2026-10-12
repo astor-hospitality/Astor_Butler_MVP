@@ -120,6 +120,28 @@ public class TelegramSystemNotifier {
     }
 
     /**
+     * One plain line in the system chat for an operational event that is not a guest dialogue, such as the shift
+     * manager stopping or starting Butler (#134): the same chat and the same switches as the dialogue traces.
+     */
+    public boolean sendSystemNotice(String text) {
+        if (!telegramEnabled || !notificationsEnabled || systemChatId == null || systemChatId.isBlank()
+                || text == null || text.isBlank()) {
+            return false;
+        }
+        TelegramBot telegramBot = telegramBotProvider.getIfAvailable();
+        if (telegramBot == null) {
+            return false;
+        }
+        try {
+            sendGlassesText(telegramBot, "Astor Butler · " + text.strip());
+            return true;
+        } catch (Exception e) {
+            log.warn("Telegram system notice failed: {}", e.getClass().getSimpleName());
+            return false;
+        }
+    }
+
+    /**
      * The hostess changed a booking from its card (#150): one line in the system chat with who, which order and what
      * changed, so the change is traceable next to the dialogue traces. Plain text, bounded fields.
      */

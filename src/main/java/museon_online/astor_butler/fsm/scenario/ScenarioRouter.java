@@ -3,6 +3,7 @@ package museon_online.astor_butler.fsm.scenario;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.semantic.IntentExampleRepository;
+import museon_online.astor_butler.domain.shift.ButlerPauseGate;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
 import museon_online.astor_butler.fsm.understanding.GuestInputUnderstandingService;
@@ -46,17 +47,26 @@ public class ScenarioRouter {
     private final GuestInputUnderstandingService inputUnderstandingService;
     private final IntentExampleRepository intentExampleRepository;
 
+    /**
+     * The shift manager's kill switch (#134): asked before a writing scenario handles a message. Optional so the
+     * existing constructor and its tests stay as they are; without the bean nothing is ever held.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ButlerPauseGate butlerPauseGate;
+
     public OutgoingMessage route(IncomingMessage incoming, BotState currentState, String text) {
         // A guest the Concierge sent for a business lunch may still have to give consent: the lunch waits and then goes on.
         businessLunchScenario.rememberHandoff(incoming, text);
         if (firstTouchScenario.supports(incoming, currentState, text)) {
-            return businessLunchScenario.continueAfterFirstTouch(incoming, firstTouchScenario.handle(incoming, currentState, text));
+            OutgoingMessage firstTouch = firstTouchScenario.handle(incoming, currentState, text);
+            // Consent works while Butler is paused, but the lunch the guest came for is not started behind the manager's back.
+            return butlerPaused() ? firstTouch : businessLunchScenario.continueAfterFirstTouch(incoming, firstTouch);
         }
 
         // Its own steps and its own entry phrases, decided before any intent guessing, so that an answer such as "13:00"
         // or "на двоих" cannot be taken for the start of a table booking.
         if (businessLunchScenario.supports(incoming, currentState, text)) {
-            return businessLunchScenario.handle(incoming, currentState, text);
+            return dispatch(businessLunchScenario, incoming, currentState, text, null);
         }
 
         OutgoingMessage keyboardShortcut = tryKeyboardShortcutRoute(incoming, currentState, text);
@@ -70,7 +80,7 @@ public class ScenarioRouter {
         // goes to the booking before an intent is guessed from those words. A call for the team is still a call.
         if (waitsAtTableBookingSummary(currentState) && understood.primaryIntent() != InputIntent.MANAGER_HELP) {
             return withUnderstandingMetadata(
-                    withExecutablePendingContent(incoming, tableBookingScenario.handle(incoming, currentState, understood.routeText(), understood)),
+                    withExecutablePendingContent(incoming, dispatch(tableBookingScenario, incoming, currentState, understood.routeText(), understood)),
                     understood
             );
         }
@@ -89,7 +99,7 @@ public class ScenarioRouter {
         for (FsmScenario scenario : orderedRuntimeScenarios()) {
             if (scenario.supports(incoming, currentState, routeText, understood)) {
                 OutgoingMessage outgoing = withUnderstandingMetadata(
-                        withExecutablePendingContent(incoming, scenario.handle(incoming, currentState, routeText, understood)),
+                        withExecutablePendingContent(incoming, dispatch(scenario, incoming, currentState, routeText, understood)),
                         understood
                 );
                 captureRecoveryMissIfNeeded(incoming, currentState, understood, outgoing);
@@ -120,7 +130,30 @@ public class ScenarioRouter {
         if (scenario == null || !scenario.supports(incoming, state, text)) {
             return null;
         }
-        return withExecutablePendingContent(incoming, scenario.handle(incoming, state, text));
+        return withExecutablePendingContent(incoming, dispatch(scenario, incoming, state, text, null));
+    }
+
+    /**
+     * Every scenario call goes through here: while the shift manager has stopped Butler, a writing scenario
+     * (booking, change or cancellation, lunch, event request) is not called and the guest hears that the team has
+     * the message; the rest run as usual.
+     */
+    private OutgoingMessage dispatch(FsmScenario scenario, IncomingMessage incoming, BotState state, String text, UnderstoodInput understood) {
+        if (butlerPauseGate != null) {
+            OutgoingMessage held = butlerPauseGate.hold(scenario.id(), incoming, state, text);
+            if (held != null) {
+                return held;
+            }
+        }
+        return understood == null ? scenario.handle(incoming, state, text) : scenario.handle(incoming, state, text, understood);
+    }
+
+    private boolean butlerPaused() {
+        return butlerPauseGate != null && butlerPauseGate.paused();
+    }
+
+    void setButlerPauseGate(ButlerPauseGate butlerPauseGate) {
+        this.butlerPauseGate = butlerPauseGate;
     }
 
     private Map<String, Object> understandingContext(IncomingMessage incoming) {
@@ -152,7 +185,7 @@ public class ScenarioRouter {
             return null;
         }
         OutgoingMessage outgoing = withUnderstandingMetadata(
-                withExecutablePendingContent(incoming, scenario.handle(incoming, currentState, routeText, understood)),
+                withExecutablePendingContent(incoming, dispatch(scenario, incoming, currentState, routeText, understood)),
                 understood
         );
         captureRecoveryMissIfNeeded(incoming, currentState, understood, outgoing);
@@ -268,7 +301,11 @@ public class ScenarioRouter {
         }
 
         if (table) {
-            OutgoingMessage primary = tableBookingScenario.handle(incoming, state, text, understood);
+            OutgoingMessage primary = dispatch(tableBookingScenario, incoming, state, text, understood);
+            if (primary != null && primary.actions() != null && primary.actions().contains("BUTLER_PAUSED")) {
+                // Held for the team: no booking step to come back to, so nothing is deferred.
+                return primary;
+            }
             List<String> pending = new ArrayList<>();
             if (menu) {
                 pending.add(encodePendingIntent("MENU_ASSETS", pendingMenuPrompt(text)));
