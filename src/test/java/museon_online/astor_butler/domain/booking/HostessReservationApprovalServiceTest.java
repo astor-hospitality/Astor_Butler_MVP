@@ -211,6 +211,50 @@ class HostessReservationApprovalServiceTest {
         verify(notifications, never()).sendStaffNotice(any(), any());
     }
 
+    @Test
+    void aLateYesOnAnExpiredCardTakesTheTableAgain() {
+        TableReservationOrder expired = order(7L, TableReservationStatus.EXPIRED, null);
+        TableReservationOrder confirmed = order(7L, TableReservationStatus.CONFIRMED, null);
+        when(reservations.getReservation(7L)).thenReturn(expired);
+        when(reservations.tableStillFree(expired)).thenReturn(true);
+        when(reservations.confirm(7L)).thenReturn(confirmed);
+
+        var result = service.handleCallback("table_booking:confirm:7", 600L);
+
+        assertThat(result.handled()).isTrue();
+        assertThat(result.answerText()).contains("подтверждена");
+        verify(reservations).confirm(7L);
+        verify(notifications).notifyHostessAcknowledged(confirmed);
+    }
+
+    @Test
+    void aLateYesIsAnsweredOnTheButtonWhenTheTableIsTaken() {
+        TableReservationOrder expired = order(7L, TableReservationStatus.EXPIRED, null);
+        when(reservations.getReservation(7L)).thenReturn(expired);
+        when(reservations.tableStillFree(expired)).thenReturn(false);
+
+        var result = service.handleCallback("table_booking:confirm:7", 500L);
+
+        assertThat(result.handled()).isTrue();
+        assertThat(result.answerText()).contains("уже занят");
+        verify(reservations, never()).confirm(any());
+    }
+
+    @Test
+    void aLateNoOnAnExpiredCardDeclinesIt() {
+        TableReservationOrder expired = order(7L, TableReservationStatus.EXPIRED, null);
+        TableReservationOrder rejected = order(7L, TableReservationStatus.REJECTED, null);
+        when(reservations.getReservation(7L)).thenReturn(expired);
+        when(reservations.reject(7L)).thenReturn(rejected);
+
+        var result = service.handleCallback("table_booking:reject:7", 600L);
+
+        assertThat(result.handled()).isTrue();
+        assertThat(result.answerText()).contains("отменена");
+        verify(reservations).reject(7L);
+        verify(notifications).notifyHostessRejected(rejected);
+    }
+
     private static IncomingMessage staff(Long chatId, Long userId, String username, String text) {
         return IncomingMessage.telegram(chatId, userId, 1, 1, text, null, "Даша", null, username, "ru", false, "c-1");
     }
