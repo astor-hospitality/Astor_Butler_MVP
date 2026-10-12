@@ -32,6 +32,11 @@ public class BusinessLunchService {
     public static final String SEATING_LABEL = "Бизнес-ланч";
     public static final int MAX_GUESTS = 20;
     public static final int MAX_PORTIONS = 60;
+    /** The longest wish for the kitchen or the bar the bot keeps (#165); the dialogue cuts anything longer. */
+    public static final int WISH_LIMIT = 200;
+    /** How the guest's wish reads on the hostess card and in the Saby comment: every wish is agreed with the kitchen, never promised. */
+    public static final String WISH_PREFIX = "Пожелание гостя: ";
+    public static final String WISH_SUFFIX = " — согласовать с кухней";
 
     private final TableReservationService tableReservationService;
     private final List<ExternalLunchOrderProvider> externalProviders;
@@ -59,6 +64,8 @@ public class BusinessLunchService {
     /**
      * @param setCode the chosen set, or null for an à la carte order
      * @param dishCodes one code per slot of the set; for an à la carte order one code per portion, repeated as ordered
+     * @param comment the free line the guest added at the summary, if any
+     * @param wishes the guest's wish for the kitchen or the bar from the separate question (#165), if any
      */
     public record Request(
             Long chatId,
@@ -73,8 +80,26 @@ public class BusinessLunchService {
             String guestPhone,
             String comment,
             String source,
-            String conciergeRequestId
+            String conciergeRequestId,
+            String wishes
     ) {
+        public Request(
+                Long chatId,
+                Long telegramUserId,
+                BusinessLunchOffer offer,
+                String setCode,
+                List<String> dishCodes,
+                int guests,
+                LocalDate date,
+                LocalTime time,
+                String guestName,
+                String guestPhone,
+                String comment,
+                String source,
+                String conciergeRequestId
+        ) {
+            this(chatId, telegramUserId, offer, setCode, dishCodes, guests, date, time, guestName, guestPhone, comment, source, conciergeRequestId, null);
+        }
     }
 
     /**
@@ -270,8 +295,18 @@ public class BusinessLunchService {
                 request.comment(),
                 request.source(),
                 request.conciergeRequestId(),
-                reservation.sbisExternalId()
+                reservation.sbisExternalId(),
+                blankToNull(request.wishes())
         );
+    }
+
+    /** «Пожелание гостя: без лука — согласовать с кухней» — the one line both the hostess card and the Saby comment carry (#165). */
+    public static String wishLine(String wishes) {
+        return WISH_PREFIX + wishes.trim() + WISH_SUFFIX;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /** The one line the hostess reads on her card: what was ordered, where it came from and whether she has to enter it herself. */
@@ -293,6 +328,9 @@ public class BusinessLunchService {
             if (total != null) {
                 comment.append("Итого ").append(total).append(" ₽. ");
             }
+        }
+        if (request.wishes() != null && !request.wishes().isBlank()) {
+            comment.append(wishLine(request.wishes())).append(". ");
         }
         if (request.comment() != null && !request.comment().isBlank()) {
             comment.append("Пожелание: ").append(request.comment().trim()).append(". ");

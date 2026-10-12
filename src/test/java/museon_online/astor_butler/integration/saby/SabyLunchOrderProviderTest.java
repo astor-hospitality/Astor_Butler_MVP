@@ -1,5 +1,7 @@
 package museon_online.astor_butler.integration.saby;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOrder;
 import museon_online.astor_butler.domain.lunch.ExternalLunchOrderProvider;
 import org.junit.jupiter.api.Test;
@@ -110,6 +112,56 @@ class SabyLunchOrderProviderTest {
         fixture.server().verify();
     }
 
+    /** #165: the guest's wish goes into the booking comment Presto shows, after what Butler wrote there, marked as something to agree. */
+    @Test
+    void theGuestsWishIsWrittenIntoTheBookingCommentWhenItIsNotThereYet() {
+        SabyReservationProperties properties = writable();
+        properties.setPriceListId("4");
+        Fixture fixture = fixture(properties);
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andRespond(withSuccess("{\"nomenclatures\": [{\"id\": 31, \"name\": \"Борщ со сметаной\", \"cost\": 270}]}", MediaType.APPLICATION_JSON));
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.nomenclatures[0].id").value(31))
+                .andExpect(jsonPath("$.comment").value("Hostess note · Astor Butler #77 · Пожелание гостя: без лука — согласовать с кухней"))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider()
+                .submit(order(BOOKING_ID, List.of(dish("Борщ со сметаной", 2)), "без лука"), "astor-lunch-77");
+
+        assertThat(result.accepted()).isTrue();
+        fixture.server().verify();
+    }
+
+    @Test
+    void theWishIsNotWrittenTwiceAndNeverPushesTheButlerMarkerOut() {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode carried = mapper.createObjectNode().put("comment", "Борщ × 1. Пожелание гостя: без лука — согласовать с кухней. · Astor Butler #77");
+        SabyLunchOrderProvider.withWishes(carried, "без лука");
+        assertThat(carried.get("comment").asText()).isEqualTo("Борщ × 1. Пожелание гостя: без лука — согласовать с кухней. · Astor Butler #77");
+
+        ObjectNode none = mapper.createObjectNode().put("comment", "Hostess note · Astor Butler #77");
+        SabyLunchOrderProvider.withWishes(none, "  ");
+        assertThat(none.get("comment").asText()).isEqualTo("Hostess note · Astor Butler #77");
+
+        ObjectNode empty = mapper.createObjectNode();
+        SabyLunchOrderProvider.withWishes(empty, "соус  отдельно");
+        assertThat(empty.get("comment").asText()).isEqualTo("Пожелание гостя: соус отдельно — согласовать с кухней");
+
+        ObjectNode longWish = mapper.createObjectNode().put("comment", "Hostess note · Astor Butler #77");
+        SabyLunchOrderProvider.withWishes(longWish, "без лука ".repeat(40).trim());
+        String cut = longWish.get("comment").asText();
+        assertThat(cut).hasSizeLessThanOrEqualTo(SabyOrderPayload.MAX_GUEST_COMMENT)
+                .startsWith("Hostess note · Astor Butler #77 · Пожелание гостя: без лука")
+                .contains("… — согласовать с кухней");
+
+        ObjectNode full = mapper.createObjectNode().put("comment", "x".repeat(SabyOrderPayload.MAX_GUEST_COMMENT - 20) + " · Astor Butler #77");
+        SabyLunchOrderProvider.withWishes(full, "без лука");
+        assertThat(full.get("comment").asText()).endsWith("Astor Butler #77").doesNotContain("Пожелание гостя");
+    }
+
     @Test
     void aDishPrestoDoesNotKnowKeepsTheWholeOrderWithStaff() {
         Fixture fixture = fixture(writable());
@@ -182,9 +234,13 @@ class SabyLunchOrderProviderTest {
     }
 
     private static BusinessLunchOrder order(String externalReservationId, List<BusinessLunchOrder.Item> dishes) {
+        return order(externalReservationId, dishes, null);
+    }
+
+    private static BusinessLunchOrder order(String externalReservationId, List<BusinessLunchOrder.Item> dishes, String wishes) {
         Instant start = Instant.parse("2026-10-07T08:00:00Z");
         return new BusinessLunchOrder("AERIS", 77L, "4", start, start.plusSeconds(5400), 2, null, null, null, dishes, null,
-                "Иван", "+7 999 000-00-00", null, "TELEGRAM", null, externalReservationId);
+                "Иван", "+7 999 000-00-00", null, "TELEGRAM", null, externalReservationId, wishes);
     }
 
     private static void expectAuth(MockRestServiceServer server) {

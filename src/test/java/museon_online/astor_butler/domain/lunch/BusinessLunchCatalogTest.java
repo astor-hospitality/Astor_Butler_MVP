@@ -95,6 +95,35 @@ class BusinessLunchCatalogTest {
                 .hasMessageContaining("set slot names an unknown course: A [MAIN]");
     }
 
+    /** #165: what is in a dish is read when the restaurant has written it, and is simply absent when it has not. Nothing is invented. */
+    @Test
+    void compositionAndAllergensAreOptionalFieldsOfADish() throws IOException {
+        BusinessLunchOffer offer = read("""
+                {"venueCode": "X", "days": ["MONDAY"], "from": "12:00", "to": "16:00",
+                 "courses": [{"code": "SOUP", "title": "Суп", "dishes": [
+                   {"code": "A", "title": "Суп А", "priceRub": 100, "portion": "300 г",
+                    "ingredients": "вода, овощи", "allergens": "сельдерей", "canBeWithout": ["зелени", "сметаны"]},
+                   {"code": "B", "title": "Суп Б", "priceRub": 100}
+                 ]}], "sets": []}
+                """);
+
+        BusinessLunchOffer.Dish filled = offer.dish("A").orElseThrow();
+        assertThat(filled.ingredients()).isEqualTo("вода, овощи");
+        assertThat(filled.allergens()).isEqualTo("сельдерей");
+        assertThat(filled.canBeWithout()).containsExactly("зелени", "сметаны");
+        assertThat(filled.describesComposition()).isTrue();
+
+        BusinessLunchOffer.Dish bare = offer.dish("B").orElseThrow();
+        assertThat(bare.ingredients()).isNull();
+        assertThat(bare.allergens()).isNull();
+        assertThat(bare.canBeWithout()).isEmpty();
+        assertThat(bare.describesComposition()).isFalse();
+
+        // The shipped AERIS file carries no composition yet: the restaurant fills it in (MENU_COMPOSITION_FOR_BOT.md).
+        BusinessLunchOffer aeris = new BusinessLunchCatalog(objectMapper).find("AERIS").orElseThrow();
+        assertThat(aeris.courses().stream().flatMap(course -> course.dishes().stream())).noneMatch(BusinessLunchOffer.Dish::describesComposition);
+    }
+
     @Test
     void checksFindNothingWrongWithTheFixtures() {
         assertThat(BusinessLunchCatalog.problems(BusinessLunchFixtures.fullMenu())).isEmpty();

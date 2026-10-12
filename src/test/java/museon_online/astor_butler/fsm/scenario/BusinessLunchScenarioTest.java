@@ -602,6 +602,201 @@ class BusinessLunchScenarioTest {
         assertThat(drafts).isEmpty();
     }
 
+    // Wishes for the kitchen and the bar, and what is in a dish (#165). All of it waits behind astor.business-lunch.wishes.enabled.
+
+    @Test
+    void withTheFlagOffNobodyIsAskedForWishesAndNoDishQuestionIsTaken() {
+        say("/start lunch_carte");
+        say("Нисуаз");
+
+        OutgoingMessage guests = say("дальше");
+        assertThat(say("дальше").nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+        assertThat(say("дальше").nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
+        assertThat(guests.text()).doesNotContain("Пожелания к блюдам");
+
+        IncomingMessage question = telegram("что в борще?", null);
+        ReflectionTestUtils.setField(scenario, "defaultVenueCode", "CARTE");
+        assertThat(scenario.supports(question, BotState.READY_FOR_DIALOG, question.text())).isFalse();
+    }
+
+    @Test
+    void withTheFlagOnTheWishIsAskedAfterTheDishesAndReachesTheHostessAndTheVenuesSystem() {
+        ReflectionTestUtils.setField(scenario, "wishesEnabled", true);
+        VenueSystem saby = new VenueSystem(new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-501", ""));
+        providers.add(saby);
+        say("/start lunch_aeris");
+        say("Салат или суп + горячее · 650 ₽");
+        say("Куриный бульон");
+
+        OutgoingMessage asked = say("Паста с томатами");
+        assertThat(asked.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_WISHES.name());
+        assertThat(asked.text()).isEqualTo("Пожелания к блюдам или напиткам? Например: без лука, соус отдельно, лимонад кислее. Или «нет».");
+        assertThat(asked.actions()).containsExactly("BUSINESS_LUNCH", "ASK_LUNCH_WISHES");
+        assertThat(buttons(asked)).containsExactly("Нет", "↩️ Отменить");
+
+        OutgoingMessage noted = say("Без лука,  соус\nотдельно");
+        assertThat(noted.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
+        assertThat(noted.text()).startsWith("Пожелание записал, передам кухне вместе с заказом — подтвердят при подаче.\n\nНа сколько гостей накрыть?");
+        assertThat(noted.text().toLowerCase()).doesNotContain("сделаем", "обязательно");
+        assertThat(drafts.get(CHAT).wishes()).isEqualTo("Без лука, соус отдельно");
+
+        say("2");
+        say("завтра");
+        OutgoingMessage summary = say("13:00");
+        assertThat(summary.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
+        assertThat(summary.text()).contains("Блюда: Куриный бульон, Паста с томатами", "Пожелание: Без лука, соус отдельно");
+
+        OutgoingMessage placed = say("✅ Отправить заявку");
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestComment()).isEqualTo(
+                "Бизнес-ланч из Concierge: 2 × «Салат или суп + горячее», 650 ₽. Куриный бульон, Паста с томатами. "
+                        + "Пожелание гостя: Без лука, соус отдельно — согласовать с кухней.");
+        assertThat(saby.order.wishes()).isEqualTo("Без лука, соус отдельно");
+        assertThat(saby.order.comment()).isNull();
+        assertThat(placed.text()).contains("Пожелание: Без лука, соус отдельно").endsWith("Передал пожелание кухне, подтвердят при подаче.");
+        assertThat(placed.text().toLowerCase()).doesNotContain("подтвержден");
+    }
+
+    @Test
+    void noWishSkipsTheQuestionWithoutLeavingTheLunch() {
+        ReflectionTestUtils.setField(scenario, "wishesEnabled", true);
+
+        OutgoingMessage asked = say("/start lunch_simple_s1_p2_d20261006_t1300");
+        assertThat(asked.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_WISHES.name());
+        assertThat(asked.text()).contains("Состав и стоимость на день подтвердит команда.", "Пожелания к блюдам или напиткам?");
+
+        OutgoingMessage summary = say("Нет");
+        assertThat(summary.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
+        assertThat(summary.text()).contains("Отправляю заявку команде?").doesNotContain("Пожелание");
+        assertThat(drafts.get(CHAT).wishes()).isEmpty();
+
+        OutgoingMessage placed = say("да");
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestComment()).doesNotContain("Пожелание");
+        assertThat(placed.text()).doesNotContain("Передал пожелание");
+        assertThat(placed.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+    }
+
+    @Test
+    void theOtherWaysOfSayingNoWishAlsoSkipItAndCancelStillLeaves() {
+        ReflectionTestUtils.setField(scenario, "wishesEnabled", true);
+        for (String none : List.of("не надо", "ничего", "нет, спасибо", "Дальше")) {
+            say("/start lunch_simple_s1_p2_d20261006_t1300");
+            assertThat(say(none).nextState()).as(none).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
+        }
+
+        say("/start lunch_simple_s1_p2_d20261006_t1300");
+        OutgoingMessage left = say("↩️ Отменить");
+        assertThat(left.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(drafts).isEmpty();
+        verify(tableReservationService, never()).createReservation(any());
+    }
+
+    @Test
+    void aWishLongerThanTheLimitKeepsItsFirstTwoHundredCharacters() {
+        ReflectionTestUtils.setField(scenario, "wishesEnabled", true);
+        say("/start lunch_simple_s1_p2_d20261006_t1300");
+        String tooLong = "без лука ".repeat(30).trim();
+        assertThat(tooLong).hasSizeGreaterThan(200);
+
+        OutgoingMessage noted = say(tooLong);
+
+        assertThat(noted.text()).startsWith("Пожелание длинное, записал первые 200 символов. Пожелание записал");
+        assertThat(drafts.get(CHAT).wishes()).hasSizeLessThanOrEqualTo(200).startsWith("без лука без лука").doesNotEndWith(" ");
+    }
+
+    @Test
+    void atTheSummaryANewWishReplacesTheOneGivenBefore() {
+        ReflectionTestUtils.setField(scenario, "wishesEnabled", true);
+        say("/start lunch_simple_s1_p2_d20261006_t1300");
+        say("без лука");
+
+        OutgoingMessage replaced = say("а лимонад, пожалуйста, сделайте послаще");
+        assertThat(replaced.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
+        assertThat(replaced.text()).contains("Пожелание записал.", "Пожелание: а лимонад, пожалуйста, сделайте послаще").doesNotContain("без лука");
+        assertThat(drafts.get(CHAT).comment()).isNull();
+
+        say("да");
+
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestComment())
+                .contains("Пожелание гостя: а лимонад, пожалуйста, сделайте послаще — согласовать с кухней.")
+                .doesNotContain("без лука");
+    }
+
+    @Test
+    void whatIsInADishIsAnsweredFromTheMenuAtAnyStepWithoutChangingTheOrder() {
+        ReflectionTestUtils.setField(scenario, "wishesEnabled", true);
+        say("/start lunch_carte");
+        say("Нисуаз");
+
+        OutgoingMessage borscht = say("Что в борще?");
+        assertThat(borscht.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+        assertThat(borscht.text()).isEqualTo(
+                "«Борщ со сметаной»: состав — свёкла, говядина, капуста, картофель, сметана. Аллергены: молоко. "
+                        + "Можно попросить без: сметаны — согласуем с кухней."
+                        + "\n\nСалаты: что добавить? Каждое нажатие добавляет одну порцию.\nВ заказе: Нисуаз × 1. Итого 290 ₽.");
+
+        OutgoingMessage caesar = say("аллергены в цезаре");
+        assertThat(caesar.text()).startsWith("«Цезарь с цыплёнком»: состав — романо, цыплёнок, пармезан, соус цезарь. Аллергены в меню не указаны — уточнит официант.");
+
+        OutgoingMessage unknown = say("состав нисуаза");
+        assertThat(unknown.text()).startsWith("«Нисуаз»: состав в меню бота пока не заполнен — уточнит официант при подаче.");
+
+        OutgoingMessage noDish = say("из чего это?");
+        assertThat(noDish.text()).startsWith("Не понял, про какое блюдо спросить. Напишите, например: «состав борща».");
+        assertThat(drafts.get(CHAT).dishCodes()).containsExactly("NICOISE");
+
+        // Later steps too: the step's own question comes back after the answer, and «что входит в ланч» is not a dish question.
+        say("дальше");
+        say("дальше");
+        OutgoingMessage atWishes = say("нет");
+        assertThat(atWishes.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_WISHES.name());
+        OutgoingMessage cappuccino = say("что в капучино");
+        assertThat(cappuccino.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_WISHES.name());
+        assertThat(cappuccino.text()).startsWith("«Капучино»: состав в меню бота пока не заполнен").endsWith("Или «нет».");
+        assertThat(say("Нет").nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
+        OutgoingMessage atPartySize = say("из чего нисуаз?");
+        assertThat(atPartySize.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
+        assertThat(atPartySize.text()).startsWith("«Нисуаз»: состав в меню бота пока не заполнен").endsWith("На сколько гостей накрыть?");
+        assertThat(say("что входит в ланч?").text()).startsWith("Напишите число гостей");
+    }
+
+    @Test
+    void aDishQuestionFromTheMainMenuIsAnsweredWithoutStartingALunch() {
+        ReflectionTestUtils.setField(scenario, "wishesEnabled", true);
+        ReflectionTestUtils.setField(scenario, "defaultVenueCode", "CARTE");
+
+        OutgoingMessage answer = say("Состав борща");
+
+        assertThat(answer.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(answer.text()).isEqualTo("«Борщ со сметаной»: состав — свёкла, говядина, капуста, картофель, сметана. Аллергены: молоко. "
+                + "Можно попросить без: сметаны — согласуем с кухней.\n\nЕсли захотите заказать бизнес-ланч, напишите «ланч».");
+        assertThat(answer.actions()).containsExactly("BUSINESS_LUNCH", "LUNCH_DISH_COMPOSITION", "RETURN_MAIN_MENU");
+        assertThat(drafts).isEmpty();
+        assertThat(states.get(CHAT)).isEqualTo(BotState.READY_FOR_DIALOG);
+
+        // A question that names no lunch dish is left to the other scenarios, and so is one that names the menu as a whole.
+        IncomingMessage pizza = telegram("что в пицце?", null);
+        assertThat(scenario.supports(pizza, BotState.READY_FOR_DIALOG, pizza.text())).isFalse();
+        IncomingMessage menu = telegram("что в меню?", null);
+        assertThat(scenario.supports(menu, BotState.READY_FOR_DIALOG, menu.text())).isFalse();
+        // A wish at the wishes step that merely mentions a dish is a wish, not a question.
+        say("ланч");
+        say("дальше");
+        say("Борщ со сметаной");
+        say("дальше");
+        assertThat(say("дальше").nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_WISHES.name());
+        OutgoingMessage wish = say("борщ без сметаны");
+        assertThat(wish.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
+        assertThat(drafts.get(CHAT).wishes()).isEqualTo("борщ без сметаны");
+    }
+
     private OutgoingMessage say(String text) {
         IncomingMessage incoming = telegram(text, null);
         BotState state = states.get(CHAT);
