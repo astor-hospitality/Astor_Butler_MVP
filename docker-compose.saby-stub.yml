@@ -47,5 +47,7 @@ services:
       ASTOR_BILLING_REVIEW_DELAY_MINUTES: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:-5}
       # on-bill asks the review together with the payment page (stars first, link right after) and puts «Счёт» on the hostess card.
       ASTOR_REVIEW_MOMENT: ${ASTOR_REVIEW_MOMENT:-after-close}
+      # The guest's own «счёт» in the bot (#153 A2); off unless set, as in production.
+      ASTOR_GUEST_BILL_REQUEST_ENABLED: ${ASTOR_GUEST_BILL_REQUEST_ENABLED:-false}
     depends_on:
       - saby-stub
