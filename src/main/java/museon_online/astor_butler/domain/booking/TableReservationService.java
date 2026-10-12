@@ -138,6 +138,24 @@ public class TableReservationService {
         return confirmed;
     }
 
+    /**
+     * Nobody answered the hostess card within the timeout and the policy says yes: the booking is confirmed as if the
+     * hostess had pressed the button, the guest gets the order, the hostess sees why. A card decided meanwhile is left
+     * alone (conflict), which the timer treats as nothing to do.
+     */
+    @Transactional
+    public TableReservationOrder confirmAutomatically(Long id, int afterMinutes) {
+        TableReservationOrder current = requireOrder(id);
+        if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
+            throw conflict("Only awaiting manager confirmation reservations can be confirmed", current.tableCode());
+        }
+
+        TableReservationOrder confirmed = repository.confirm(id);
+        notificationService.notifyHostessAutoConfirmed(confirmed, afterMinutes);
+        notificationService.notifyGuestConfirmed(confirmed);
+        return confirmed;
+    }
+
     @Transactional
     public TableReservationOrder reject(Long id) {
         return reject(id, true);
