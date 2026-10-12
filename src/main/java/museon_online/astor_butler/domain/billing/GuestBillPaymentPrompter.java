@@ -156,7 +156,7 @@ public class GuestBillPaymentPrompter {
         }
         return reservations.findOrder(bill.tableReservationId())
                 .map(TableReservationOrder::status)
-                .filter(status -> status == TableReservationStatus.CONFIRMED)
+                .filter(status -> status == TableReservationStatus.CONFIRMED || status == TableReservationStatus.SEATED)
                 .isPresent();
     }
 

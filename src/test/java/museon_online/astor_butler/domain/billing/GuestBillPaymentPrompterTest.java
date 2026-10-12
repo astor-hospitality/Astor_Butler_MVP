@@ -76,6 +76,16 @@ class GuestBillPaymentPrompterTest {
     }
 
     @Test
+    void aSeatedGuestIsAsReadyForTheLinkAsAConfirmedOne() {
+        issued(77L);
+        reservation(77L, TableReservationStatus.SEATED);
+        when(provider.paymentLink("order-1")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/1", null)));
+
+        assertThat(prompter.run()).isEqualTo(new GuestBillPaymentPrompter.Report(1, 1, 0, 0));
+        verify(notifier).paymentLink(any(), eq("https://pay.test/1"));
+    }
+
+    @Test
     void leavesABillAloneForAWhileWhenTheVenueHasNoPage() {
         GuestBill bill = issued(77L);
         reservation(77L, TableReservationStatus.CONFIRMED);

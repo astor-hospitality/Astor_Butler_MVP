@@ -83,8 +83,7 @@ public class TableReservationService {
             return Optional.empty();
         }
         return repository.findActiveOrdersByChatId(chatId, venueCode).stream()
-                .filter(order -> order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
-                        || order.status() == TableReservationStatus.CONFIRMED)
+                .filter(TableReservationService::holdsATable)
                 .filter(order -> order.requestedStartAt() != null && order.requestedEndAt() != null)
                 .filter(order -> order.requestedStartAt().isBefore(endAt) && startAt.isBefore(order.requestedEndAt()))
                 .min(Comparator.comparing(TableReservationOrder::requestedStartAt));
@@ -243,7 +242,7 @@ public class TableReservationService {
         TableReservationOrder current = requireOrder(id);
         return switch (current.status()) {
             case AWAITING_MANAGER_CONFIRMATION -> reject(id, false);
-            case CONFIRMED -> {
+            case CONFIRMED, SEATED -> {
                 List<VenueTable> alternatives = alternativesForRejected(current);
                 TableReservationOrder cancelled = repository.cancel(id);
                 notificationService.notifyGuestRejected(cancelled, alternatives);
@@ -251,6 +250,58 @@ public class TableReservationService {
             }
             default -> current;
         };
+    }
+
+    /**
+     * The hostess pressed «🪑 Гость сел» (#151): the confirmed booking becomes SEATED and remembers the time; the
+     * table stays held as before. Pressing twice is not an error — the order comes back as it is. A booking that
+     * is not confirmed (still awaiting, refused, cancelled, expired) cannot be seated: conflict.
+     *
+     * @param staffRef who pressed, for the log and the system chat
+     */
+    @Transactional
+    public TableReservationOrder seatByStaff(Long id, String staffRef) {
+        return seat(id, staffRef == null || staffRef.isBlank() ? "хостес" : staffRef);
+    }
+
+    /**
+     * The venue's own system says the guest is at the table (#151, {@code ASTOR_SABY_SEATED_STATES}): a confirmed
+     * local order follows, once, and the hostess chat gets a short note. Any other status is returned as it is: an
+     * awaiting order is confirmed first by {@link #confirmFromVenue} on its own read, a seated one is not stamped
+     * again, a closed one is not reopened.
+     */
+    @Transactional
+    public TableReservationOrder seatFromVenue(Long id) {
+        TableReservationOrder current = requireOrder(id);
+        if (current.status() != TableReservationStatus.CONFIRMED) {
+            return current;
+        }
+        TableReservationOrder seated = seat(id, "Presto");
+        notificationService.notifyHostessSeatedByVenue(seated);
+        return seated;
+    }
+
+    private TableReservationOrder seat(Long id, String who) {
+        TableReservationOrder current = requireOrder(id);
+        if (current.status() == TableReservationStatus.SEATED) {
+            return current;
+        }
+        if (current.status() != TableReservationStatus.CONFIRMED) {
+            throw conflict("Only confirmed reservations can be seated", current.tableCode());
+        }
+        if (!repository.seatIfConfirmed(id)) {
+            // Seated by the other path between the read and the write: that stamp stands, this one is a repeat.
+            TableReservationOrder again = requireOrder(id);
+            if (again.status() == TableReservationStatus.SEATED) {
+                return again;
+            }
+            throw conflict("Only confirmed reservations can be seated", current.tableCode());
+        }
+        TableReservationOrder seated = requireOrder(id);
+        log.info("Table reservation {} seated by {}: table {}, seatedAt {}", id, who, seated.tableCode(), seated.seatedAt());
+        notificationService.traceSeated(seated, who);
+        // TODO(#163): the waiter card at seating — table, wishes, allergens — starts here, in the waiter's own chat only.
+        return seated;
     }
 
     private TableReservationOrder reject(Long id, boolean cancelInVenueSystem) {
@@ -276,8 +327,7 @@ public class TableReservationService {
         if (current.status() == TableReservationStatus.CANCELLED) {
             return current;
         }
-        if (current.status() != TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
-                && current.status() != TableReservationStatus.CONFIRMED) {
+        if (!holdsATable(current)) {
             throw conflict("Only active table reservations can be cancelled", current.tableCode());
         }
 
@@ -356,10 +406,19 @@ public class TableReservationService {
                 .toList();
     }
 
-    /** Which changes a guest or the hostess may still make: a refused, cancelled or expired request holds nothing. */
+    /**
+     * Which changes a guest or the hostess may still make: a refused, cancelled or expired request holds nothing;
+     * a seated guest (#151) may still be moved by the hostess — another table, more chairs.
+     */
     private static boolean canBeChanged(TableReservationOrder order) {
-        return order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
-                || order.status() == TableReservationStatus.CONFIRMED;
+        return holdsATable(order);
+    }
+
+    /** Awaiting, confirmed or seated: the statuses that keep a table and count as the guest's live booking. */
+    static boolean holdsATable(TableReservationOrder order) {
+        return order != null && (order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION
+                || order.status() == TableReservationStatus.CONFIRMED
+                || order.status() == TableReservationStatus.SEATED);
     }
 
     static boolean timeChanged(TableReservationOrder before, TableReservationOrder after) {

@@ -6,6 +6,8 @@ public enum ExternalBookingState {
     PENDING,
     /** The venue accepted the booking. */
     CONFIRMED,
+    /** The guest is at the table (#151); only when the provider was told which of its codes mean that. */
+    SEATED,
     /** The visit took place or the booking was closed. */
     COMPLETED,
     /** Cancelled on the venue's side. */

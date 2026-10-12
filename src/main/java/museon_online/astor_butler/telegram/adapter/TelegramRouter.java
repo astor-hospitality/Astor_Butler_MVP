@@ -11,6 +11,7 @@ import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.BookingMorningCheckService;
 import museon_online.astor_butler.domain.booking.HostessBookingEditService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
+import museon_online.astor_butler.domain.booking.HostessSeatedService;
 import museon_online.astor_butler.domain.entry.StaffHandoffLinkCommandService;
 import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
 import museon_online.astor_butler.domain.tips.TipsStaffCommandService;
@@ -94,6 +95,10 @@ public class TelegramRouter {
     /** The manager's /официант and /чаевые (#161): optional for the same reason. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private TipsStaffCommandService tipsStaffCommandService;
+
+    /** «🪑 Гость сел» on the confirmed hostess card (#151): optional for the same reason. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private HostessSeatedService hostessSeatedService;
 
     /** The staff member's personal guest link, /ссылка (#128): optional for the same reason. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -229,6 +234,26 @@ public class TelegramRouter {
                     .showAlert(false)
                     .build());
             return true;
+        }
+
+        // «🪑 Гость сел» on the confirmed hostess card (#151): the pressed card itself gets the line and loses the button.
+        if (hostessSeatedService != null) {
+            HostessSeatedService.CallbackResult seated = hostessSeatedService.handleCallback(
+                    callbackQuery.getData(),
+                    chatId,
+                    callbackQuery.getMessage(),
+                    HostessBookingEditService.staffRef(
+                            presser == null ? null : presser.getUserName(),
+                            presser == null ? null : presser.getFirstName(),
+                            presser == null ? null : presser.getId()));
+            if (seated.handled()) {
+                execute(sender, AnswerCallbackQuery.builder()
+                        .callbackQueryId(callbackQuery.getId())
+                        .text(seated.answerText())
+                        .showAlert(false)
+                        .build());
+                return true;
+            }
         }
 
         HostessBillRequestService.CallbackResult billRequest = hostessBillRequestService.handleCallback(callbackQuery.getData(), chatId);

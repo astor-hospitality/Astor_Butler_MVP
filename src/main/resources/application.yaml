@@ -224,6 +224,12 @@ astor:
       ttl-minutes: ${ASTOR_BOOKING_HOLD_TTL_MINUTES:15}
       check-seconds: ${ASTOR_BOOKING_HOLD_EXPIRY_CHECK_SECONDS:60}
       initial-delay-seconds: ${ASTOR_BOOKING_HOLD_EXPIRY_INITIAL_DELAY_SECONDS:60}
+    seated:
+      # Off (default): nothing changes. On (#151): the confirmed hostess card (and the one the timer confirmed) carries
+      # «🪑 Гость сел»; the press makes the booking SEATED with seated_at, the card reads «🪑 Гость сел 14:32», the
+      # system chat gets one line. SEATED holds the table like CONFIRMED, never expires, is never auto-confirmed, may
+      # still be edited by the hostess. The same status from Presto is switched on separately: ASTOR_SABY_SEATED_STATES.
+      enabled: ${ASTOR_BOOKING_SEATED_ENABLED:false}
     external-sync:
       # Reads bookings back from the venue's own system (Saby) and confirms/cancels local orders accordingly.
       # Runs only while a provider is enabled and configured; 0 is not supported, set a large value to slow it down.
@@ -259,6 +265,10 @@ astor:
       zone-id: ${SABY_ZONE_ID:Asia/Yekaterinburg}
       timeout-ms: ${SABY_TIMEOUT_MS:3000}
       max-retries: ${SABY_MAX_RETRIES:1}
+      # Which order/{id}/state codes mean «the guest is at the table» (#151): a comma list of state or
+      # state/productState, e.g. 50/1002. Empty (default): nothing is ever SEATED from Saby. The real codes behind the
+      # green tick in Presto Waiter are recorded on the live test: docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
+      seated-states: ${ASTOR_SABY_SEATED_STATES:}
   billing:
     # Butler never takes the money. On: a bill and its journal are kept for every order Butler places.
     enabled: ${ASTOR_BILLING_ENABLED:false}

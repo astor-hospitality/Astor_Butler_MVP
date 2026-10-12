@@ -12,12 +12,18 @@ import java.util.Set;
  * </ul>
  * A cancellation on either field wins. Codes outside the documented set stay {@link #UNKNOWN}, so a surprise from
  * the live account never turns into a confirmation for the guest.
+ *
+ * «The guest is at the table» (#151) has no documented code: {@link #SEATED} comes only from the codes configured in
+ * {@link SabySeatedStates} ({@code ASTOR_SABY_SEATED_STATES}), checked right after the cancellation and before the
+ * documented sets, so the venue's own answer wins over the guess from the documentation.
  */
 public enum SabyBookingState {
     /** Created, not yet accepted by the venue. */
     PENDING,
     /** The venue accepted the booking. */
     CONFIRMED,
+    /** The guest is at the table: a configured code matched (#151). */
+    SEATED,
     /** The visit took place or the order was closed. */
     COMPLETED,
     /** Cancelled on the Saby side. */
@@ -35,8 +41,16 @@ public enum SabyBookingState {
     private static final Set<Integer> PRODUCT_CANCELLED = Set.of(1998);
 
     public static SabyBookingState of(Integer state, Integer productState) {
+        return of(state, productState, SabySeatedStates.NONE);
+    }
+
+    /** The same with the seating codes of the venue; null or empty means no code ever reads as SEATED. */
+    public static SabyBookingState of(Integer state, Integer productState, SabySeatedStates seated) {
         if (in(STATE_CANCELLED, state) || in(PRODUCT_CANCELLED, productState)) {
             return CANCELLED;
+        }
+        if (seated != null && seated.matches(state, productState)) {
+            return SEATED;
         }
         if (in(STATE_COMPLETED, state) || in(PRODUCT_COMPLETED, productState)) {
             return COMPLETED;

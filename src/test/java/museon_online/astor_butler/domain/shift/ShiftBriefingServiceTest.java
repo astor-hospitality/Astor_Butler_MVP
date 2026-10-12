@@ -104,6 +104,24 @@ class ShiftBriefingServiceTest {
         assertThat(briefing.reviews().thumbsDown()).isEqualTo(1);
     }
 
+    @Test void theEveningSaysWhoCameOnlyWhenSeatingIsMarked() {
+        when(reservations.findOrdersStartingBetween(eq("AERIS"), any(), any(), anyInt())).thenReturn(List.of(
+                order(13, 0, 2, TableReservationStatus.SEATED, "Стол 5", "Ирина", null),
+                order(19, 0, 4, TableReservationStatus.CONFIRMED, "Стол 7", "Пётр", null),
+                order(20, 0, 6, TableReservationStatus.CANCELLED, "Стол 9", "Отменён", null)));
+        when(bills.findOpenedBetween(eq("AERIS"), any(), any(), anyInt())).thenReturn(List.of());
+        when(reviews.findCreatedBetween(any(), any(), anyInt())).thenReturn(List.of());
+        var service = service(properties(true, true));
+
+        assertThat(service.evening(DAY).guests()).isEqualTo(6);
+        assertThat(formatter.format(service.evening(DAY))).doesNotContain("Сели");
+
+        formatter.setSeatedEnabled(true);
+
+        assertThat(formatter.format(service.evening(DAY))).contains("Броней: 2, гостей: 6, отменено: 1").contains("Сели: 1, не пришли: 1");
+        assertThat(formatter.format(service.morning(DAY))).contains("13:00 · Стол 5 · 2 гостя · Ирина · ланч · <i>гость сел</i>");
+    }
+
     @Test void switchesThatAreOffAreSaidPlainly() {
         var warnings = properties(true, false).warnings();
         assertThat(warnings).anySatisfy(w -> assertThat(w).contains("Presto не подключён"));

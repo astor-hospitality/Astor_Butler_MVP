@@ -35,9 +35,20 @@ public class SabyReservationProperties {
     private String zoneId = "Asia/Yekaterinburg";
     private long timeoutMs = 3000;
     private int maxRetries = 1;
+    /**
+     * Codes of «the guest is at the table» (#151), {@code state} or {@code state/productState} separated by commas;
+     * empty (default) — nothing is ever SEATED from Saby. The real codes are recorded on the live test, see
+     * docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
+     */
+    private String seatedStates = "";
 
     public boolean configured() {
         return missingConfiguration().isEmpty();
+    }
+
+    /** {@link #seatedStates} parsed; {@link SabySeatedStates#NONE} while the variable is empty. */
+    public SabySeatedStates seatedCodes() {
+        return SabySeatedStates.parse(seatedStates);
     }
 
     public List<String> missingConfiguration() {

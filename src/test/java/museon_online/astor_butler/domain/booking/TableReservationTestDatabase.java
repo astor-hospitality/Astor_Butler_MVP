@@ -1,8 +1,12 @@
 package museon_online.astor_butler.domain.booking;
 
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.init.ScriptUtils;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.UUID;
@@ -10,8 +14,9 @@ import java.util.UUID;
 /**
  * A fresh in-memory database with the three booking tables as the production migrations define them
  * (2026-06-05-table-booking-foundation.sql, 2026-06-16-table-booking-seating-preferences.sql), minus what H2 cannot
- * run from those files: the foreign keys to {@code users}, the partial index and the seed upsert. The repository SQL
- * then runs unchanged, so the tests exercise the real queries behind the hold and its expiry.
+ * run from those files: the foreign keys to {@code users}, the partial index and the seed upsert. The later migrations
+ * that only add columns (2026-10-12-booking-seated.sql, #151) are applied as they are. The repository SQL then runs
+ * unchanged, so the tests exercise the real queries behind the hold, its expiry and the seating.
  */
 final class TableReservationTestDatabase {
 
@@ -80,6 +85,11 @@ final class TableReservationTestDatabase {
                     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
                 """);
+        try (Connection connection = dataSource.getConnection()) {
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/changelog/2026-10-12-booking-seated.sql"));
+        } catch (SQLException e) {
+            throw new IllegalStateException("Cannot apply the seating migration to the test database", e);
+        }
         return jdbc;
     }
 
@@ -110,6 +120,12 @@ final class TableReservationTestDatabase {
                 VALUES (?, ?, ?, ?, ?, ?)
                 """, tableId, orderId, status, Timestamp.from(startAt), Timestamp.from(endAt),
                 Timestamp.from(startAt.plusSeconds(15 * 60L)));
+    }
+
+    /** The guest sat down at {@code at}, as {@code seatIfConfirmed} leaves the row but with a chosen time. */
+    static void seated(JdbcTemplate jdbc, long orderId, Instant at) {
+        jdbc.update("UPDATE table_reservation_orders SET status = 'SEATED', seated_at = ? WHERE id = ?",
+                Timestamp.from(at), orderId);
     }
 
     static String holdStatus(JdbcTemplate jdbc, long orderId) {

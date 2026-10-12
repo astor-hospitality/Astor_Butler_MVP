@@ -222,7 +222,7 @@ public class SabyReservationProvider implements ExternalReservationProvider {
                     "Saby order state response has no state.");
         }
         Integer productState = intOrNull(response, "productState");
-        SabyBookingState mapped = SabyBookingState.of(state, productState);
+        SabyBookingState mapped = SabyBookingState.of(state, productState, properties.seatedCodes());
         return new SabyOrderResult(true, "SABY_STATE_" + state, externalId, state, productState,
                 intOrNull(response, "payState"), mapped,
                 mapped == SabyBookingState.UNKNOWN
@@ -326,6 +326,7 @@ public class SabyReservationProvider implements ExternalReservationProvider {
         return switch (state == null ? SabyBookingState.UNKNOWN : state) {
             case PENDING -> ExternalBookingState.PENDING;
             case CONFIRMED -> ExternalBookingState.CONFIRMED;
+            case SEATED -> ExternalBookingState.SEATED;
             case COMPLETED -> ExternalBookingState.COMPLETED;
             case CANCELLED -> ExternalBookingState.CANCELLED;
             case UNKNOWN -> ExternalBookingState.UNKNOWN;

@@ -119,6 +119,8 @@ services:
       SABY_PAYMENT_ENABLED: ${SABY_PAYMENT_ENABLED:-false}
       ASTOR_BILLING_ENABLED: ${ASTOR_BILLING_ENABLED:-false}
       ASTOR_SABY_CALL_LOG_ENABLED: ${ASTOR_SABY_CALL_LOG_ENABLED:-false}
+      # Saby codes that mean «the guest is at the table» (#151), e.g. 50/1002; empty (default) — nothing is SEATED from Saby.
+      ASTOR_SABY_SEATED_STATES: ${ASTOR_SABY_SEATED_STATES:-}
       ASTOR_BILLING_REVIEW_DELAY_MINUTES: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:-60}
       # Morning reconfirmation of today's bookings (#149): off by default; the venue clock is Asia/Yekaterinburg.
       ASTOR_BOOKING_MORNING_CHECK_ENABLED: ${AERIS_BOOKING_MORNING_CHECK_ENABLED:-${ASTOR_BOOKING_MORNING_CHECK_ENABLED:-false}}
@@ -150,6 +152,8 @@ services:
       ASTOR_STAFF_HANDOFF_TENANT: ${AERIS_STAFF_HANDOFF_TENANT:-${ASTOR_STAFF_HANDOFF_TENANT:-}}
       # Hostess edits a booking from its card (#150): «✏️ Изменить» → table / time / party size. Off by default.
       ASTOR_BOOKING_STAFF_EDIT_ENABLED: ${AERIS_BOOKING_STAFF_EDIT_ENABLED:-${ASTOR_BOOKING_STAFF_EDIT_ENABLED:-false}}
+      # «🪑 Гость сел» on the confirmed hostess card (#151): off by default; the press makes the booking SEATED with the time.
+      ASTOR_BOOKING_SEATED_ENABLED: ${AERIS_BOOKING_SEATED_ENABLED:-${ASTOR_BOOKING_SEATED_ENABLED:-false}}
       # Table hold expiry (#87): off by default. On, a request the hostess did not answer within the TTL becomes EXPIRED,
       # the table is released, the guest may pick another time, the card goes to TELEGRAM_BOOKING_MANAGER_CHAT_ID.
       ASTOR_BOOKING_HOLD_EXPIRY_ENABLED: ${AERIS_BOOKING_HOLD_EXPIRY_ENABLED:-${ASTOR_BOOKING_HOLD_EXPIRY_ENABLED:-false}}

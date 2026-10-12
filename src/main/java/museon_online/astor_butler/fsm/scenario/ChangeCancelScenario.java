@@ -222,6 +222,9 @@ public class ChangeCancelScenario implements FsmScenario {
         if (order.status() == TableReservationStatus.CONFIRMED) {
             return "Бронь подтверждена\n\nВаш стол ждет вас.";
         }
+        if (order.status() == TableReservationStatus.SEATED) {
+            return "Бронь подтверждена\n\nВы уже за столом.";
+        }
         if (order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION) {
             return "Заявка ждет подтверждения хостес";
         }

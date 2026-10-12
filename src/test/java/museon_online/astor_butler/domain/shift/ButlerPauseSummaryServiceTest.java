@@ -89,6 +89,18 @@ class ButlerPauseSummaryServiceTest {
     }
 
     @Test
+    void aSeatedGuestIsStillAnOpenBookingAndTheLunchSaysSo() {
+        when(reservations.findOrdersStartingBetween(eq("AERIS"), eq(FROM), eq(TO), anyInt())).thenReturn(List.of(
+                order(8L, TableReservationStatus.SEATED, TODAY, 12, 30, "Вера", "Table 6", 2, "Бизнес-ланч",
+                        "Бизнес-ланч: Борщ × 2. Итого 540 ₽.", null)));
+
+        ButlerPauseSummary summary = service.build();
+
+        assertThat(summary.confirmed()).extracting(ButlerPauseSummary.Booking::id).containsExactly(8L);
+        assertThat(summary.lunchesToday()).extracting(ButlerPauseSummary.Lunch::status).containsExactly("гость сел");
+    }
+
+    @Test
     void listsTodaysLunchesWithTheirCompositionOnly() {
         ButlerPauseSummary summary = service.build();
 

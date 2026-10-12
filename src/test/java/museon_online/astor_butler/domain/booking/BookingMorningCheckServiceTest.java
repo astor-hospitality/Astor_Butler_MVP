@@ -211,6 +211,24 @@ class BookingMorningCheckServiceTest {
     }
 
     @Test
+    void aGuestWhoAlreadySatDownIsNotAskedAndAnOldButtonIsRefused() {
+        TableReservationOrder seated = order(50L, 1010L, 13, 0, TableReservationStatus.SEATED, DAY.minusDays(1));
+        when(reservations.findOrdersStartingBetween(eq("AERIS"), any(), any(), anyInt())).thenReturn(List.of(confirmedAtOne, seated));
+        asked();
+
+        verify(notifier).ask(eq(confirmedAtOne), any());
+        verify(notifier, never()).ask(eq(seated), any());
+        assertThat(checks.find(50L)).isEmpty();
+
+        // The question went out while the booking was confirmed; the guest sat down before pressing «Всё в силе».
+        when(reservations.findOrder(41L)).thenReturn(Optional.of(order(41L, GUEST_A, 13, 0, TableReservationStatus.SEATED, DAY.minusDays(1))));
+        BookingMorningCheckService.CallbackResult result = service.handleCallback("morning_check:41:keep", GUEST_A);
+        assertThat(result.handled()).isTrue();
+        assertThat(result.answerText()).contains("уже не активна");
+        verify(notifier, never()).hostessReconfirmed(any(), any());
+    }
+
+    @Test
     void anAnswerForABookingThatIsNoLongerActiveIsRefused() {
         asked();
         when(reservations.findOrder(41L)).thenReturn(Optional.of(order(41L, GUEST_A, 13, 0, TableReservationStatus.CANCELLED, DAY.minusDays(1))));
