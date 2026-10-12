@@ -5,6 +5,7 @@ import museon_online.astor_butler.model.ModelTextResponse;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -328,6 +329,115 @@ class GlassesAssistServiceTest {
                 new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), true, 1000)) {
             var outcome = service.respond(scope, UUID.randomUUID().toString(), "Задача: Анне принести воду на пятый стол", null, null);
             assertThat(outcome.spoken()).isEqualTo("Записал поручение для Анна: Принести воду. Стол 5.");
+        }
+    }
+
+    /* ---------- a short order by dish numbers (#184) ---------- */
+
+    private GlassesShortOrders orders(GlassesStaffTaskRelay butler, boolean enabled, List<GlassesLunchDishes.Dish> menu) {
+        var dishes = mock(GlassesLunchDishes.class);
+        when(dishes.configured()).thenReturn(true);
+        when(dishes.dishes("aeris")).thenReturn(menu);
+        return new GlassesShortOrders(butler, dishes, enabled, "aeris");
+    }
+
+    @Test void aSpokenShortOrderBecomesATaskForTheTableAndNoModelIsCalled() {
+        var gateway = mock(ModelGateway.class);
+        var voice = mock(GlassesVoice.class);
+        var transcripts = mock(GlassesTranscriptRelay.class);
+        var butler = mock(GlassesStaffTaskRelay.class);
+        when(butler.configured()).thenReturn(true);
+        when(voice.transcribe(any())).thenReturn("Забить 14 на 12.");
+        var receipt = new GlassesVoiceTasks.Receipt("task-7", "Стол 12: Борщ со сметаной ×1 (голосовой заказ)", "Анна", "anna", false,
+                "Забить 14 на 12.", "12", "NORMAL", "ASSIGNED");
+        when(butler.create(any(), any(), any(), eq("order"))).thenReturn(receipt);
+        var menu = List.of(new GlassesLunchDishes.Dish(14, "BORSCHT", "Борщ со сметаной"));
+        String id = UUID.randomUUID().toString();
+        // Names off: the order confirmation names nobody and is spoken as it is.
+        var noNames = new GlassesSpeechFilter(true, false, "");
+        try (var service = new GlassesAssistService(gateway, voice, transcripts, new GlassesVoiceTasks(gateway, butler, true,
+                GlassesVoiceTasks.DEFAULT_TRIGGERS), orders(butler, true, menu), noNames, true, 1000)) {
+            var outcome = service.respondAudio(scope, id, "", new byte[]{1}, null, null);
+
+            assertThat(outcome.text()).isEqualTo("Записал: стол 12, Борщ со сметаной");
+            assertThat(outcome.spoken()).isEqualTo("Записал: стол 12, Борщ со сметаной");
+            assertThat(outcome.task()).isEqualTo(receipt);
+            verify(butler).create(scope, id, new GlassesVoiceTasks.Draft(null, "12", "Стол 12: Борщ со сметаной ×1 (голосовой заказ)",
+                    "Забить 14 на 12.", "NORMAL"), "order");
+            verify(transcripts).sendLater(scope, id, "audio", "Забить 14 на 12.", "Записал: стол 12, Борщ со сметаной", null, null);
+            verifyNoInteractions(gateway);
+
+            // The same request again: the same confirmation and receipt from the cache, no second task.
+            var again = whenSlotAvailable(() -> service.respondAudio(scope, id, "", new byte[]{1}, null, null));
+            assertThat(again.text()).isEqualTo(outcome.text());
+            assertThat(again.spoken()).isEqualTo(outcome.spoken());
+            assertThat(again.task()).isEqualTo(receipt);
+            verify(butler, times(1)).create(any(), any(), any(), any());
+        }
+    }
+
+    @Test void anUnknownNumberIsAnsweredWithoutATaskAndWithTheFeatureOffThePhraseIsAQuestion() {
+        var gateway = mock(ModelGateway.class);
+        var butler = mock(GlassesStaffTaskRelay.class);
+        when(butler.configured()).thenReturn(true);
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Не понял вопрос.", "test", "test", Duration.ZERO));
+        var menu = List.of(new GlassesLunchDishes.Dish(14, "BORSCHT", "Борщ со сметаной"));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), orders(butler, true, menu),
+                GlassesSpeechFilter.defaults(), true, 1000)) {
+            var outcome = service.respond(scope, UUID.randomUUID().toString(), "забить 99 на 12", null, null);
+            assertThat(outcome.text()).isEqualTo("Блюда с номером 99 нет");
+            assertThat(outcome.spoken()).isEqualTo("Блюда с номером 99 нет");
+            assertThat(outcome.task()).isNull();
+            verifyNoInteractions(gateway);
+            verify(butler, never()).create(any(), any(), any(), any());
+            // An explicit question with an order phrase is a question.
+            var question = whenSlotAvailable(() -> service.respond(scope, UUID.randomUUID().toString(), "забить 14 на 12", null, "assist"));
+            assertThat(question.text()).isEqualTo("Не понял вопрос.");
+            assertThat(question.task()).isNull();
+        }
+        // ASTOR_GLASSES_SHORT_ORDERS_ENABLED=false: the phrase goes to assist as before, nothing is created.
+        reset(gateway);
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Не понял вопрос.", "test", "test", Duration.ZERO));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), orders(butler, false, menu),
+                GlassesSpeechFilter.defaults(), true, 1000)) {
+            var outcome = service.respond(scope, UUID.randomUUID().toString(), "забить 14 на 12", null, null);
+            assertThat(outcome.text()).isEqualTo("Не понял вопрос.");
+            assertThat(outcome.task()).isNull();
+            verify(gateway).generateText(argThat(r -> r.scenario().equals("GLASSES_INFORMATIONAL")));
+            verify(butler, never()).create(any(), any(), any(), any());
+            verify(butler, never()).create(any(), any(), any());
+        }
+    }
+
+    @Test void butlerRefusingAnOrderTellsTheWearerToRepeatAndKeepsTextReady() {
+        var gateway = mock(ModelGateway.class);
+        var butler = mock(GlassesStaffTaskRelay.class);
+        when(butler.configured()).thenReturn(true);
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Ответ.", "test", "test", Duration.ZERO));
+        when(butler.create(any(), any(), any(), eq("order"))).thenThrow(new GlassesFailure(503, "TASK_UNAVAILABLE", "Не смог записать поручение, повторите"));
+        var menu = List.of(new GlassesLunchDishes.Dish(14, "BORSCHT", "Борщ со сметаной"));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), orders(butler, true, menu),
+                GlassesSpeechFilter.defaults(), true, 1000)) {
+            service.assist("первый вопрос");
+            assertThat(service.capabilities().text()).isTrue();
+            assertThatThrownBy(() -> whenSlotAvailable(() -> service.respond(scope, UUID.randomUUID().toString(), "забить 14 на 12", null, null)))
+                    .satisfies(e -> assertThat(((GlassesFailure) e).code).isEqualTo("TASK_UNAVAILABLE"));
+            assertThat(service.capabilities().text()).isTrue();
+            // The menu failing is the order's own refusal, and says nothing about the model either.
+            var dishes = mock(GlassesLunchDishes.class);
+            when(dishes.configured()).thenReturn(true);
+            when(dishes.dishes("aeris")).thenThrow(GlassesShortOrders.refused());
+            try (var broken = new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                    new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS), new GlassesShortOrders(butler, dishes, true, "aeris"),
+                    GlassesSpeechFilter.defaults(), true, 1000)) {
+                broken.assist("первый вопрос");
+                assertThatThrownBy(() -> whenSlotAvailable(() -> broken.respond(scope, UUID.randomUUID().toString(), "забить 14 на 12", null, null)))
+                        .satisfies(e -> assertThat(((GlassesFailure) e).code).isEqualTo("ORDER_UNAVAILABLE"));
+                assertThat(broken.capabilities().text()).isTrue();
+            }
         }
     }
 
