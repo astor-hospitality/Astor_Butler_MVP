@@ -11,6 +11,7 @@ import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.BookingMorningCheckService;
 import museon_online.astor_butler.domain.booking.HostessBookingEditService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
+import museon_online.astor_butler.domain.entry.StaffHandoffLinkCommandService;
 import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
 import museon_online.astor_butler.domain.tips.TipsStaffCommandService;
 import museon_online.astor_butler.service.message.IncomingMessage;
@@ -94,6 +95,10 @@ public class TelegramRouter {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private TipsStaffCommandService tipsStaffCommandService;
 
+    /** The staff member's personal guest link, /ссылка (#128): optional for the same reason. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private StaffHandoffLinkCommandService staffHandoffLinkCommandService;
+
 
     public void handle(Update update, AbsSender sender) {
         try {
@@ -118,6 +123,10 @@ public class TelegramRouter {
                 return;
             }
             if (tipsStaffCommandService != null && tipsStaffCommandService.handle(incoming)) {
+                return;
+            }
+            // /ссылка in the staff chat (#128): answered here, before the hostess boundary consumes the text.
+            if (staffHandoffLinkCommandService != null && staffHandoffLinkCommandService.handle(incoming, sender)) {
                 return;
             }
             if (hostessReservationApprovalService.handle(incoming)) {

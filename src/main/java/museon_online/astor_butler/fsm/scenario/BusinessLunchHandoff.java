@@ -20,6 +20,8 @@ import java.util.regex.Pattern;
  * <li>a gateway message with {@code payload.concierge = {scenario: "BUSINESS_LUNCH", venueCode, setCode, partySize, date, time, requestId}}.</li>
  * </ul>
  * Only the scenario marker is required. Anything that does not parse is left out and the dialogue asks for it.
+ * <p>{@code _h<staff_id>} and {@code _n<стол>} in the same link (#128) are not read here but by
+ * {@link museon_online.astor_butler.domain.entry.StaffHandoffLink}; this parser skips them as it skips any unknown field.
  */
 record BusinessLunchHandoff(
         String venueCode,

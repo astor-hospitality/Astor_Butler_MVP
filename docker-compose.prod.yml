@@ -145,6 +145,9 @@ services:
       # Tips to the waiter of the table (#161): /официант and /чаевые in the staff chat, the recipient by table. Off by default.
       ASTOR_TIPS_PERSONAL_ENABLED: ${AERIS_TIPS_PERSONAL_ENABLED:-${ASTOR_TIPS_PERSONAL_ENABLED:-false}}
       ASTOR_TIPS_PERSONAL_TENANT: ${ASTOR_TIPS_PERSONAL_TENANT:-AERIS}
+      # Staff member's personal guest link / QR and the entry log (#128): /ссылка in the staff chat, «Привёл(а)» on the hostess card. Off by default.
+      ASTOR_STAFF_HANDOFF_ENABLED: ${AERIS_STAFF_HANDOFF_ENABLED:-${ASTOR_STAFF_HANDOFF_ENABLED:-false}}
+      ASTOR_STAFF_HANDOFF_TENANT: ${AERIS_STAFF_HANDOFF_TENANT:-${ASTOR_STAFF_HANDOFF_TENANT:-}}
       # Hostess edits a booking from its card (#150): «✏️ Изменить» → table / time / party size. Off by default.
       ASTOR_BOOKING_STAFF_EDIT_ENABLED: ${AERIS_BOOKING_STAFF_EDIT_ENABLED:-${ASTOR_BOOKING_STAFF_EDIT_ENABLED:-false}}
       # Table hold expiry (#87): off by default. On, a request the hostess did not answer within the TTL becomes EXPIRED,
@@ -252,6 +255,9 @@ services:
       ASTOR_LUNCH_WISHES_ENABLED: ${C3FLEX_LUNCH_WISHES_ENABLED:-${ASTOR_LUNCH_WISHES_ENABLED:-false}}
       ASTOR_KILL_SWITCH_ENABLED: ${C3FLEX_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
       ASTOR_GUEST_BILL_REQUEST_ENABLED: ${C3FLEX_GUEST_BILL_REQUEST_ENABLED:-${ASTOR_GUEST_BILL_REQUEST_ENABLED:-false}}
+      # Staff member's personal guest link / QR and the entry log (#128): /ссылка in the staff chat, «Привёл(а)» on the hostess card. Off by default.
+      ASTOR_STAFF_HANDOFF_ENABLED: ${C3FLEX_STAFF_HANDOFF_ENABLED:-${ASTOR_STAFF_HANDOFF_ENABLED:-false}}
+      ASTOR_STAFF_HANDOFF_TENANT: ${C3FLEX_STAFF_HANDOFF_TENANT:-${ASTOR_STAFF_HANDOFF_TENANT:-}}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
       YANDEX_AGENT_ID: ${YANDEX_AGENT_ID:-fvt18kmmnas336paia3g}
