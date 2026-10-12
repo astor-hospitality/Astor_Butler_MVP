@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class YandexTextEmbeddingProviderTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final VirtualTime time = new VirtualTime();
     private YandexEmbeddingStubServer stub;
 
     @BeforeEach
@@ -30,7 +32,7 @@ class YandexTextEmbeddingProviderTest {
     private YandexTextEmbeddingProvider provider(int dimension, int maxAttempts, Duration throttle) {
         return new YandexTextEmbeddingProvider(stub.baseUrl() + "/", "test-api-key", "b1gfolder",
                 "text-search-doc/latest", "text-search-query/latest", dimension, Duration.ofSeconds(5), throttle,
-                maxAttempts, Duration.ofMillis(1));
+                maxAttempts, Duration.ofMillis(1), time::now, time::sleep);
     }
 
     @Test
@@ -87,6 +89,7 @@ class YandexTextEmbeddingProviderTest {
 
         assertThat(provider(256, 3, Duration.ZERO).embed("меню")).hasSize(256);
         assertThat(stub.requests()).hasSize(3);
+        assertThat(time.sleeps()).containsExactly(Duration.ofMillis(1), Duration.ofMillis(2));
     }
 
     @Test
@@ -135,16 +138,23 @@ class YandexTextEmbeddingProviderTest {
         assertThat(stub.requests()).isEmpty();
     }
 
+    /**
+     * The gap is between request <em>starts</em>, so it is checked on the provider's own clock: how long it slept,
+     * not how far apart the stub saw the requests (that subtracts the first call's latency and flakes under load).
+     */
     @Test
     void throttleKeepsTheMinimumGapBetweenRequests() {
         YandexTextEmbeddingProvider provider = provider(256, 1, Duration.ofMillis(150));
 
-        provider.embed("первый");
-        provider.embed("второй");
+        provider.embed("первый");                   // idle provider: no wait
+        time.advance(Duration.ofMillis(40));        // the first round trip took 40 ms
+        provider.embed("второй");                   // waits out the rest of the gap
+        provider.embed("третий");                   // straight after: waits the whole gap
+        time.advance(Duration.ofMillis(500));       // idle for longer than the gap
+        provider.embed("четвёртый");                // no wait again
 
-        List<YandexEmbeddingStubServer.Seen> seen = stub.requests();
-        assertThat(Duration.ofNanos(seen.get(1).atNanos() - seen.get(0).atNanos()))
-                .isGreaterThanOrEqualTo(Duration.ofMillis(140));
+        assertThat(stub.requests()).hasSize(4);
+        assertThat(time.sleeps()).containsExactly(Duration.ofMillis(110), Duration.ofMillis(150));
     }
 
     @Test
@@ -161,5 +171,29 @@ class YandexTextEmbeddingProviderTest {
                 .containsExactly("Api-Key speechkit-key", "Api-Key yandex-key", "Api-Key dedicated-key");
         assertThat(seen.get(1).body()).contains("emb://speechkit-folder/text-search-doc/latest");
         assertThat(seen.get(2).body()).contains("emb://own-folder/text-search-doc/latest");
+    }
+
+    /** Monotonic clock that moves only when the test advances it or the provider sleeps on it. */
+    static final class VirtualTime {
+
+        private final List<Duration> sleeps = new ArrayList<>();
+        private long nowNanos = 1_000_000_000L;
+
+        long now() {
+            return nowNanos;
+        }
+
+        void advance(Duration elapsed) {
+            nowNanos += elapsed.toNanos();
+        }
+
+        void sleep(Duration delay) {
+            sleeps.add(delay);
+            nowNanos += delay.toNanos();
+        }
+
+        List<Duration> sleeps() {
+            return List.copyOf(sleeps);
+        }
     }
 }
