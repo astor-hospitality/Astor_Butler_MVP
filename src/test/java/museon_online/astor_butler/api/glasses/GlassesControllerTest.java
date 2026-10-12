@@ -354,6 +354,65 @@ class GlassesControllerTest {
         }
     }
 
+    /* ---------- what the earpiece hears ---------- */
+
+    @Test void theVoiceAndPronounceTextCarryTheFilteredLineWhileTextKeepsThePrice() throws Exception {
+        var speech = mock(GlassesSpeech.class);
+        when(speech.configured()).thenReturn(true);
+        when(speech.synthesize(any())).thenReturn(new byte[]{1, 2, 3});
+        when(speech.voiceGender()).thenReturn("male");
+        when(speech.mimeType()).thenReturn("audio/mpeg");
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Бизнес-ланч стоит 650 рублей, стол 12 свободен до 14:30.",
+                "test", "test", Duration.ZERO));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), speech, GlassesSpeechFilter.defaults(), true, 1000)) {
+            var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper);
+            var result = c.assist(request(json(Map.of("text", "Что по бизнес-ланчу?"))));
+            assertThat(result.getStatusCode().value()).isEqualTo(200);
+            var body = (GlassesController.AssistResponse) result.getBody();
+            assertThat(body.text()).isEqualTo("Бизнес-ланч стоит 650 рублей, стол 12 свободен до 14:30.");
+            assertThat(body.pronounceText()).isEqualTo("Бизнес-ланч — цена в меню, стол 12 свободен до 14:30.");
+            assertThat(body.audioBase64()).isEqualTo(Base64.getEncoder().encodeToString(new byte[]{1, 2, 3}));
+            verify(speech).synthesize("Бизнес-ланч — цена в меню, стол 12 свободен до 14:30.");
+            verify(speech, never()).synthesize(contains("650"));
+        }
+    }
+
+    @Test void withNamesOffTheTaskIsConfirmedAloudWithoutTheAssignee() throws Exception {
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text(DRAFT_JSON, "test", "test", Duration.ZERO));
+        var butler = butler(new GlassesVoiceTasks.Receipt("task-1", "Принести воду", "Анна", "anna", false,
+                "Принести воду на пятый стол", "5", "NORMAL", "ASSIGNED"));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), GlassesTranscriptRelay.disabled(),
+                new GlassesVoiceTasks(gateway, butler, true, GlassesVoiceTasks.DEFAULT_TRIGGERS),
+                new GlassesSpeechFilter(true, false, ""), true, 1000)) {
+            var mvc = MockMvcBuilders.standaloneSetup(new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper)).build();
+            mvc.perform(post("/api/glasses/assist").header("Authorization", "Bearer " + TOKEN).contentType("application/json")
+                            .content(json(Map.of("text", "Анне принести воду на пятый стол", "intent", "task"))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.text").value("Записал поручение для Анна: Принести воду. Стол 5."))
+                    .andExpect(jsonPath("$.pronounceText").value("Записал поручение. Стол 5."))
+                    .andExpect(jsonPath("$.task.assignee").value("Анна"));
+        }
+        // The default keeps the name, as the manager allowed.
+        try (var service = withTasks(butler)) {
+            var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper);
+            var body = (GlassesController.AssistResponse) c.assist(request(json(Map.of("text", "Анне принести воду", "intent", "task")))).getBody();
+            assertThat(body.pronounceText()).isEqualTo("Записал поручение для Анна: Принести воду. Стол 5.");
+        }
+    }
+
+    @Test void withTheFilterOffTheEarpieceHearsTheTextAsItIs() throws Exception {
+        var speech = mock(GlassesSpeech.class);
+        when(speech.configured()).thenReturn(true);
+        when(speech.synthesize(any())).thenReturn(new byte[]{1});
+        when(gateway.generateText(any())).thenReturn(ModelTextResponse.text("Ланч — 650 рублей.", "test", "test", Duration.ZERO));
+        try (var service = new GlassesAssistService(gateway, mock(GlassesVoice.class), speech, GlassesSpeechFilter.disabled(), true, 1000)) {
+            var c = new GlassesController(access(Instant.now().plusSeconds(60).toString()), service, mapper);
+            var body = (GlassesController.AssistResponse) c.assist(request(json(Map.of("text", "Что по ланчу?")))).getBody();
+            assertThat(body.pronounceText()).isEqualTo("Ланч — 650 рублей.");
+            verify(speech).synthesize("Ланч — 650 рублей.");
+        }
+    }
+
     @Test void anUnknownIntentIsMalformedAndAPhotoCannotBeATask() throws Exception {
         rejects(json(Map.of("text", "Принести воду", "intent", "order")), 400, "MALFORMED_REQUEST");
         rejects(json(Map.of("text", "Принести воду", "intent", "")), 400, "MALFORMED_REQUEST");

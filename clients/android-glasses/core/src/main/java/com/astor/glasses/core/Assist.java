@@ -85,6 +85,20 @@ public final class Assist {
     }
 
     /**
+     * What the phone reads aloud itself when there is no server voice: the server's {@code pronounceText} — the
+     * answer without swearing and sums, which the earpiece may say next to guests — or the answer itself when
+     * the server sent none. The screen always shows the answer.
+     */
+    public static String spoken(JSONObject reply, String answer) {
+        Object line = reply == null ? null : reply.opt("pronounceText");
+        if (line instanceof String) {
+            String spoken = (String) line;
+            if (!spoken.trim().isEmpty() && spoken.length() <= MAX_ANSWER_CHARS) return spoken;
+        }
+        return answer;
+    }
+
+    /**
      * Speech prepared by the server, when it is present, of a known type and within the size limit.
      * As on the iPhone, only the agreed male voice is played; otherwise the phone reads the text itself.
      */

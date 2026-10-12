@@ -73,6 +73,21 @@ public class AssistTest {
         assertNull(Assist.answer(new JSONObject().put("requestId", "1-1-1-1-1").put("text", "Ответ"), "1-1-1-1-1"));
     }
 
+    @Test public void thePhoneReadsTheServersPronounceTextAndFallsBackToTheAnswer() throws Exception {
+        String answer = "Бизнес-ланч стоит 650 рублей, стол 12 свободен.";
+        JSONObject reply = new JSONObject().put("text", answer).put("pronounceText", "Бизнес-ланч — цена в меню, стол 12 свободен.");
+        assertEquals("Бизнес-ланч — цена в меню, стол 12 свободен.", Assist.spoken(reply, answer));
+        // No line from the server, an empty one or a wrong type: the answer itself, as before.
+        assertEquals(answer, Assist.spoken(new JSONObject().put("text", answer), answer));
+        assertEquals(answer, Assist.spoken(new JSONObject().put("pronounceText", "   "), answer));
+        assertEquals(answer, Assist.spoken(new JSONObject().put("pronounceText", 42), answer));
+        assertEquals(answer, Assist.spoken(new JSONObject().put("pronounceText", JSONObject.NULL), answer));
+        assertEquals(answer, Assist.spoken(null, answer));
+        StringBuilder huge = new StringBuilder();
+        for (int i = 0; i <= Assist.MAX_ANSWER_CHARS; i++) huge.append('а');
+        assertEquals(answer, Assist.spoken(new JSONObject().put("pronounceText", huge.toString()), answer));
+    }
+
     @Test public void serverSpeechIsPlayedOnlyWhenItIsTheAgreedVoiceAndSize() throws Exception {
         String encoded = Base64.getEncoder().encodeToString(new byte[]{9, 8, 7});
         JSONObject good = new JSONObject().put("audioBase64", encoded).put("audioMimeType", "audio/mpeg").put("audioVoiceGender", "male");
