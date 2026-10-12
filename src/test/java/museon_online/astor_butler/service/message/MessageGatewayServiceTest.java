@@ -270,6 +270,27 @@ class MessageGatewayServiceTest {
     }
 
     @Test
+    void theGuestsBillRequestIsAnsweredBeforeAnyScenarioOrTheModel() {
+        IncomingMessage incoming = telegram("счёт");
+        when(fsmStorage.getState(incoming.chatId())).thenReturn(BotState.READY_FOR_DIALOG);
+        when(firstTouchScenario.supports(eq(incoming), eq(BotState.READY_FOR_DIALOG), eq(incoming.text()))).thenReturn(false);
+        museon_online.astor_butler.domain.billing.GuestBillRequestService billRequests =
+                org.mockito.Mockito.mock(museon_online.astor_butler.domain.billing.GuestBillRequestService.class);
+        OutgoingMessage answered = OutgoingMessage.of(incoming, "", BotState.READY_FOR_DIALOG.name(), false, false, false, false,
+                AdminAlert.none(), java.util.List.of("GUEST_BILL_REQUEST", "STAFF_NOTIFIED"));
+        when(billRequests.handle(eq(incoming), eq(BotState.READY_FOR_DIALOG), eq("счёт"))).thenReturn(java.util.Optional.of(answered));
+        ReflectionTestUtils.setField(service, "guestBillRequestService", billRequests);
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.actions()).containsExactly("GUEST_BILL_REQUEST", "STAFF_NOTIFIED");
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        verify(modelGateway, never()).generateText(any());
+        verify(tableBookingScenario, never()).handle(any(), any(), any());
+        verify(fsmTimelineWriter).append(any(FsmTimelineEvent.class));
+    }
+
+    @Test
     void returnsFallbackWhenLlmTimesOut() {
         IncomingMessage incoming = telegram("Check админки");
         String routeText = "check админки";
