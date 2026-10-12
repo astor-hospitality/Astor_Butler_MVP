@@ -63,6 +63,32 @@ class SabyPaymentProviderTest {
     }
 
     @Test
+    void readsTheSumWhenSabyNamesItInRubles() throws Exception {
+        assertThat(SabyPaymentProvider.amountMinor(objectMapper.readTree("{\"link\":\"https://pay.test/1\",\"amount\":540}"))).isEqualTo(54_000L);
+        assertThat(SabyPaymentProvider.amountMinor(objectMapper.readTree("{\"result\":{\"url\":\"https://pay.test/2\",\"sum\":\"1110.50\"}}"))).isEqualTo(111_050L);
+        assertThat(SabyPaymentProvider.amountMinor(objectMapper.readTree("{\"url\":\"https://pay.test/3\",\"totalPrice\":\"2 400,00\"}"))).isEqualTo(240_000L);
+
+        assertThat(SabyPaymentProvider.amountMinor(objectMapper.readTree("{\"link\":\"https://pay.test/4\"}"))).isNull();
+        assertThat(SabyPaymentProvider.amountMinor(objectMapper.readTree("{\"link\":\"https://pay.test/5\",\"amount\":0}"))).isNull();
+        assertThat(SabyPaymentProvider.amountMinor(objectMapper.readTree("{\"link\":\"https://pay.test/6\",\"amount\":-10}"))).isNull();
+        assertThat(SabyPaymentProvider.amountMinor(objectMapper.readTree("{\"link\":\"https://pay.test/7\",\"amount\":\"скоро\"}"))).isNull();
+        assertThat(SabyPaymentProvider.amountMinor(objectMapper.readTree("\"https://pay.test/8\""))).isNull();
+        assertThat(SabyPaymentProvider.amountMinor(null)).isNull();
+    }
+
+    @Test
+    void aLinkWithASumCarriesItToButler() {
+        Fixture fixture = fixture(properties(true));
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo(LINK_URL))
+                .andRespond(withSuccess("{\"link\":\"https://online.sbis.ru/pay/abc\",\"amount\":540}", MediaType.APPLICATION_JSON));
+
+        Optional<ExternalPaymentProvider.PaymentLink> link = fixture.provider().paymentLink(ORDER_ID);
+
+        assertThat(link.orElseThrow().amountMinor()).isEqualTo(54_000L);
+    }
+
+    @Test
     void anAnswerWithoutALinkIsNoLinkNotAGuess() {
         Fixture fixture = fixture(properties(true));
         expectAuth(fixture.server());
