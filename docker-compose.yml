@@ -112,6 +112,8 @@ services:
       ASTOR_BOOKING_STAFF_EDIT_ENABLED: ${C3FLEX_BOOKING_STAFF_EDIT_ENABLED:-${ASTOR_BOOKING_STAFF_EDIT_ENABLED:-false}}
       # «🪑 Гость сел» on the confirmed hostess card (#151): off by default, nothing changes until enabled.
       ASTOR_BOOKING_SEATED_ENABLED: ${C3FLEX_BOOKING_SEATED_ENABLED:-${ASTOR_BOOKING_SEATED_ENABLED:-false}}
+      # Guest card for the waiter after «гость сел» (#163): wishes, remembered preferences, visits, favourites. Off by default.
+      ASTOR_WAITER_GUEST_CARD_ENABLED: ${C3FLEX_WAITER_GUEST_CARD_ENABLED:-${ASTOR_WAITER_GUEST_CARD_ENABLED:-false}}
       # Table hold expiry (#87): off by default. On, a request the hostess did not answer within the TTL becomes EXPIRED,
       # the table is released, the guest may pick another time, the card goes to TELEGRAM_BOOKING_MANAGER_CHAT_ID.
       ASTOR_BOOKING_HOLD_EXPIRY_ENABLED: ${C3FLEX_BOOKING_HOLD_EXPIRY_ENABLED:-${ASTOR_BOOKING_HOLD_EXPIRY_ENABLED:-false}}
@@ -338,6 +340,8 @@ services:
       ASTOR_BOOKING_STAFF_EDIT_ENABLED: ${AERIS_BOOKING_STAFF_EDIT_ENABLED:-${ASTOR_BOOKING_STAFF_EDIT_ENABLED:-false}}
       # «🪑 Гость сел» on the confirmed hostess card (#151): off by default, nothing changes until enabled.
       ASTOR_BOOKING_SEATED_ENABLED: ${AERIS_BOOKING_SEATED_ENABLED:-${ASTOR_BOOKING_SEATED_ENABLED:-false}}
+      # Guest card for the waiter after «гость сел» (#163): wishes, remembered preferences, visits, favourites. Off by default.
+      ASTOR_WAITER_GUEST_CARD_ENABLED: ${AERIS_WAITER_GUEST_CARD_ENABLED:-${ASTOR_WAITER_GUEST_CARD_ENABLED:-false}}
       # Table hold expiry (#87): off by default. On, a request the hostess did not answer within the TTL becomes EXPIRED,
       # the table is released, the guest may pick another time, the card goes to TELEGRAM_BOOKING_MANAGER_CHAT_ID.
       ASTOR_BOOKING_HOLD_EXPIRY_ENABLED: ${AERIS_BOOKING_HOLD_EXPIRY_ENABLED:-${ASTOR_BOOKING_HOLD_EXPIRY_ENABLED:-false}}
@@ -575,6 +579,7 @@ services:
       ASTOR_BOOKING_AUTO_CONFIRM_ENABLED: "false"
       ASTOR_BOOKING_STAFF_EDIT_ENABLED: "false"
       ASTOR_BOOKING_SEATED_ENABLED: "false"
+      ASTOR_WAITER_GUEST_CARD_ENABLED: "false"
       ASTOR_BOOKING_HOLD_EXPIRY_ENABLED: "false"
       ASTOR_GUEST_BILL_REQUEST_ENABLED: "false"
       TELEGRAM_SYSTEM_CHAT_ID: ${SMART_SOLUTION_SYSTEM_CHAT_ID:-}

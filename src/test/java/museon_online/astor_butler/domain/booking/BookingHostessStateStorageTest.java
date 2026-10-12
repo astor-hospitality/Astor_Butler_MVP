@@ -89,6 +89,17 @@ class BookingHostessStateStorageTest {
 
         assertThat(storage.markEscalated(44L)).isTrue();
         assertThat(storage.markEscalated(44L)).isFalse();
+    }
+
+    @Test
+    void theGuestCardIsMarkedSentOnceAndForgottenWithTheCard() {
+        when(values.setIfAbsent(eq("astor:booking:guest-card:sent:44"), anyString(), eq(BookingHostessStateStorage.CARD_TTL)))
+                .thenReturn(true, false);
+
+        assertThat(storage.markGuestCardSent(44L)).isTrue();
+        assertThat(storage.markGuestCardSent(44L)).isFalse();
+        assertThat(storage.markGuestCardSent(null)).isFalse();
+        verify(values, times(2)).setIfAbsent(eq("astor:booking:guest-card:sent:44"), anyString(), any(Duration.class));
 
         when(redis.hasKey("astor:booking:hostess:escalated:44")).thenReturn(true);
         assertThat(storage.escalated(44L)).isTrue();

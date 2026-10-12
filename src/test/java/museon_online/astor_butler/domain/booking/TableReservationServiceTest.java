@@ -596,6 +596,31 @@ class TableReservationServiceTest {
     }
 
     @Test
+    void theGuestCardFollowsTheSeatingOnceAndItsFailureDoesNotUndoIt() {
+        GuestCardService guestCards = mock(GuestCardService.class);
+        service.setGuestCardService(guestCards);
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
+        TableReservationOrder seated = seated(order(10L, table, TableReservationStatus.SEATED));
+        when(repository.findOrder(10L)).thenReturn(Optional.of(confirmed), Optional.of(seated), Optional.of(seated));
+        when(repository.seatIfConfirmed(10L)).thenReturn(true);
+
+        assertThat(service.seatByStaff(10L, "@dasha")).isEqualTo(seated);
+        assertThat(service.seatByStaff(10L, "@dasha")).isEqualTo(seated);
+        verify(guestCards, org.mockito.Mockito.times(1)).onSeated(seated);
+
+        // The card breaks: the booking is seated all the same, by either path.
+        org.mockito.Mockito.doThrow(new IllegalStateException("no card")).when(guestCards).onSeated(any());
+        // The venue path reads the order twice before the write: both reads still see it confirmed.
+        when(repository.findOrder(11L)).thenReturn(Optional.of(withId(confirmed, 11L)), Optional.of(withId(confirmed, 11L)),
+                Optional.of(withId(seated, 11L)));
+        when(repository.seatIfConfirmed(11L)).thenReturn(true);
+        assertThat(service.seatFromVenue(11L).status()).isEqualTo(TableReservationStatus.SEATED);
+        verify(notificationService).traceSeated(withId(seated, 11L), "Presto");
+        verify(guestCards).onSeated(withId(seated, 11L));
+    }
+
+    @Test
     void seatingTwiceOrLosingTheRaceIsNotAnError() {
         VenueTable table = table(1L, "5", 4, true, true);
         TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
