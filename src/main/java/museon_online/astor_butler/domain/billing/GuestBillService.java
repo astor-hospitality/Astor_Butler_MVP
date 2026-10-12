@@ -159,6 +159,11 @@ public class GuestBillService {
         return billId == null ? Optional.empty() : bills.find(billId);
     }
 
+    /** The bill of a reservation, for the hostess who has the reservation number in front of her. */
+    public Optional<GuestBill> findByReservation(Long tableReservationId) {
+        return tableReservationId == null ? Optional.empty() : bills.findByReservation(tableReservationId);
+    }
+
     public Optional<GuestBill> findByExternalOrder(String externalProvider, String externalOrderId) {
         if (isBlank(externalProvider) || isBlank(externalOrderId)) {
             return Optional.empty();

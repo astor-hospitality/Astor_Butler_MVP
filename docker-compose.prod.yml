@@ -120,6 +120,9 @@ services:
       ASTOR_BILLING_ENABLED: ${ASTOR_BILLING_ENABLED:-false}
       ASTOR_SABY_CALL_LOG_ENABLED: ${ASTOR_SABY_CALL_LOG_ENABLED:-false}
       ASTOR_BILLING_REVIEW_DELAY_MINUTES: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:-60}
+      # after-close (default): the review after the venue closes the order / by the clock. on-bill: at the bill — with
+      # the payment link, or by the hostess «Счёт» button on the reservation card. docs/integrations/SABY_BILLING.md §8
+      ASTOR_REVIEW_MOMENT: ${ASTOR_REVIEW_MOMENT:-after-close}
       TELEGRAM_BOT_ENABLED: ${TELEGRAM_BOT_ENABLED:-true}
       TELEGRAM_GET_UPDATES_TIMEOUT_SECONDS: ${TELEGRAM_GET_UPDATES_TIMEOUT_SECONDS:-20}
       TELEGRAM_UI_CLEANUP_ENABLED: ${TELEGRAM_UI_CLEANUP_ENABLED:-false}
