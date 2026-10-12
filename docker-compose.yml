@@ -343,6 +343,9 @@ services:
       ASTOR_KILL_SWITCH_ENABLED: ${AERIS_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
       # The guest's own «счёт» in the bot (#153 A2): a card to the staff chat and, with on-bill, the review. Off by default.
       ASTOR_GUEST_BILL_REQUEST_ENABLED: ${AERIS_GUEST_BILL_REQUEST_ENABLED:-${ASTOR_GUEST_BILL_REQUEST_ENABLED:-false}}
+      # Tips to the waiter of the table (#161): /официант and /чаевые in the staff chat, the recipient by table. Off by default.
+      ASTOR_TIPS_PERSONAL_ENABLED: ${AERIS_TIPS_PERSONAL_ENABLED:-${ASTOR_TIPS_PERSONAL_ENABLED:-false}}
+      ASTOR_TIPS_PERSONAL_TENANT: ${ASTOR_TIPS_PERSONAL_TENANT:-AERIS}
       # MAX messenger channel (docs/architecture/MAX_ADAPTER_PLAN.md): off unless AERIS_MAX_ENABLED=true and a token
       # from business.max.ru is set. MAX is reached directly, without the Telegram proxy.
       ASTOR_MAX_ENABLED: ${AERIS_MAX_ENABLED:-false}
