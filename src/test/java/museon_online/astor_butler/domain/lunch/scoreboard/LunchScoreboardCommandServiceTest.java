@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 /** /табло: the same table now, in the staff chats only, unknown everywhere while the flag is off. */
 class LunchScoreboardCommandServiceTest {
 
-    /** 2026-10-12 23:30 in Yekaterinburg: still the 12th there, already the 13th... nowhere, but 18:30 UTC. */
+    /** 18:30 UTC is 23:30 in Yekaterinburg: still the 12th by the venue clock, so «сегодня» is the 12th. */
     private static final Instant NOW = Instant.parse("2026-10-12T18:30:00Z");
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 12);
 
