@@ -1,5 +1,6 @@
 package museon_online.astor_butler.domain.booking;
 
+import museon_online.astor_butler.domain.shift.ButlerPauseService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -48,6 +49,10 @@ public class BookingMorningCheckService {
     private final BookingMorningCheckNotifier notifier;
     private final Clock clock;
 
+    /** The shift manager's kill switch (#134): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ButlerPauseService butlerPause;
+
     public record Report(int checked, int sent, int skipped, int failed) {
         static final Report NOTHING = new Report(0, 0, 0, 0);
     }
@@ -74,6 +79,10 @@ public class BookingMorningCheckService {
     /** Asks today's guests once the venue clock has passed the send time; safe to call as often as the clock ticks. */
     public synchronized Report run() {
         if (!properties.isEnabled()) {
+            return Report.NOTHING;
+        }
+        if (butlerPause != null && butlerPause.paused()) {
+            log.debug("Morning booking checks skipped: Butler is paused by the shift manager");
             return Report.NOTHING;
         }
         ZoneId zone = properties.zone();
@@ -195,5 +204,9 @@ public class BookingMorningCheckService {
 
     private static LocalTime startTime(TableReservationOrder order, ZoneId zone) {
         return order.requestedStartAt() == null ? LocalTime.MIDNIGHT : LocalTime.ofInstant(order.requestedStartAt(), zone);
+    }
+
+    void setButlerPause(ButlerPauseService butlerPause) {
+        this.butlerPause = butlerPause;
     }
 }

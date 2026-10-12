@@ -9,6 +9,7 @@ import museon_online.astor_butler.domain.billing.HostessBillRequestService;
 import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.BookingMorningCheckService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
+import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.MessageGatewayService;
 import museon_online.astor_butler.service.message.OutgoingMessage;
@@ -62,6 +63,7 @@ public class TelegramRouter {
     private final TelegramChatViewService chatViewService;
     private final TelegramVoiceEnrichmentGuard voiceEnrichmentGuard;
     private final HostessReservationApprovalService hostessReservationApprovalService;
+    private final ButlerPauseCommandService butlerPauseCommandService;
     private final TelegramMediaSender telegramMediaSender;
     private final VisitReviewService visitReviewService;
     private final BookingMorningCheckService morningCheckService;
@@ -99,6 +101,10 @@ public class TelegramRouter {
             incoming = voiceEnrichmentGuard.enrich(incoming, sender);
 
             log.info("📨 [TG] Incoming message from {}: {}", incoming.chatId(), incoming.text());
+            // Before the hostess boundary: it consumes every text in the staff chat, /stop included.
+            if (butlerPauseCommandService.handle(incoming)) {
+                return;
+            }
             if (hostessReservationApprovalService.handle(incoming)) {
                 return;
             }

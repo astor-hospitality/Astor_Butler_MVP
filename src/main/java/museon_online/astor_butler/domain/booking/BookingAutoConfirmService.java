@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.api.common.ApiException;
 import museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
+import museon_online.astor_butler.domain.shift.ButlerPauseService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -38,6 +39,10 @@ public class BookingAutoConfirmService {
 
     @Value("${telegram.booking.hostess-chat-id:}")
     private String hostessChatId;
+
+    /** The shift manager's kill switch (#134): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ButlerPauseService butlerPause;
 
     public record Report(int checked, int confirmed, int escalated, int skipped, int failed) {
         static final Report NOTHING = new Report(0, 0, 0, 0, 0);
@@ -75,6 +80,10 @@ public class BookingAutoConfirmService {
 
     public synchronized Report run() {
         if (!properties.isEnabled()) {
+            return Report.NOTHING;
+        }
+        if (butlerPause != null && butlerPause.paused()) {
+            log.debug("Booking auto-confirm skipped: Butler is paused by the shift manager");
             return Report.NOTHING;
         }
         int minutes = policy.timeoutMinutes();
@@ -126,5 +135,9 @@ public class BookingAutoConfirmService {
 
     void setHostessChatId(String hostessChatId) {
         this.hostessChatId = hostessChatId;
+    }
+
+    void setButlerPause(ButlerPauseService butlerPause) {
+        this.butlerPause = butlerPause;
     }
 }

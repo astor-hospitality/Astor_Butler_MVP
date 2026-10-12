@@ -115,6 +115,10 @@ services:
       ASTOR_BOOKING_MORNING_CHECK_ENABLED: ${C3FLEX_BOOKING_MORNING_CHECK_ENABLED:-false}
       ASTOR_BOOKING_MORNING_CHECK_TIME: ${ASTOR_BOOKING_MORNING_CHECK_TIME:-10:30}
       ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES: ${ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES:-90}
+      # Business lunch scenario switch (#134 fallback): on by default, as before; false hides «ланч» for guests without a new image.
+      ASTOR_BUSINESS_LUNCH_ENABLED: ${C3FLEX_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
+      # Shift manager's kill switch (#134): /stop, /start_butler, /status_butler in the staff chat. Off by default.
+      ASTOR_KILL_SWITCH_ENABLED: ${C3FLEX_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
       ASTOR_OPERATIONAL_PREVIEW_ENABLED: ${C3FLEX_OPERATIONAL_PREVIEW_ENABLED:-false}
       ASTOR_INTENT_EXAMPLES_INGEST_ON_STARTUP: ${ASTOR_INTENT_EXAMPLES_INGEST_ON_STARTUP:-true}
       ASTOR_SEMANTIC_CHUNKS_INGEST_ON_STARTUP: ${ASTOR_SEMANTIC_CHUNKS_INGEST_ON_STARTUP:-true}
@@ -319,6 +323,10 @@ services:
       ASTOR_BOOKING_MORNING_CHECK_ENABLED: ${AERIS_BOOKING_MORNING_CHECK_ENABLED:-${ASTOR_BOOKING_MORNING_CHECK_ENABLED:-false}}
       ASTOR_BOOKING_MORNING_CHECK_TIME: ${ASTOR_BOOKING_MORNING_CHECK_TIME:-10:30}
       ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES: ${ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES:-90}
+      # Business lunch scenario switch (#134 fallback): on by default, as before; false hides «ланч» for guests without a new image.
+      ASTOR_BUSINESS_LUNCH_ENABLED: ${AERIS_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
+      # Shift manager's kill switch (#134): /stop, /start_butler, /status_butler in the staff chat. Off by default.
+      ASTOR_KILL_SWITCH_ENABLED: ${AERIS_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
       # MAX messenger channel (docs/architecture/MAX_ADAPTER_PLAN.md): off unless AERIS_MAX_ENABLED=true and a token
       # from business.max.ru is set. MAX is reached directly, without the Telegram proxy.
       ASTOR_MAX_ENABLED: ${AERIS_MAX_ENABLED:-false}
