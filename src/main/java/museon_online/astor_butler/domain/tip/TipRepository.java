@@ -125,6 +125,34 @@ public class TipRepository {
         );
     }
 
+    public TipOrder updateAmount(Long id, long amountMinor, String guestComment) {
+        jdbcTemplate.update("""
+                UPDATE tip_orders
+                SET amount_minor = ?,
+                    guest_comment = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                amountMinor,
+                blankToNull(guestComment),
+                id
+        );
+        return findOrder(id).orElseThrow();
+    }
+
+    public TipOrder updateSbpUrl(Long id, String sbpUrl) {
+        jdbcTemplate.update("""
+                UPDATE tip_orders
+                SET sbp_url = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+                """,
+                blankToNull(sbpUrl),
+                id
+        );
+        return findOrder(id).orElseThrow();
+    }
+
     public TipOrder updateStatus(Long id, TipOrderStatus status) {
         jdbcTemplate.update("""
                 UPDATE tip_orders

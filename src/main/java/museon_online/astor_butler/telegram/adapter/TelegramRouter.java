@@ -7,6 +7,7 @@ import museon_online.astor_butler.fsm.core.event.InboundEvent;
 import museon_online.astor_butler.fsm.core.idempotency.IdempotencyGuard;
 import museon_online.astor_butler.domain.billing.VisitReviewService;
 import museon_online.astor_butler.domain.booking.HostessReservationApprovalService;
+import museon_online.astor_butler.domain.tip.TipHandoffService;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.MessageGatewayService;
 import museon_online.astor_butler.service.message.OutgoingMessage;
@@ -20,6 +21,7 @@ import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.methods.send.SendPhoto;
 import org.telegram.telegrambots.meta.api.methods.pinnedmessages.PinChatMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
 import org.telegram.telegrambots.meta.api.objects.Audio;
 import org.telegram.telegrambots.meta.api.objects.CallbackQuery;
 import org.telegram.telegrambots.meta.api.objects.Contact;
@@ -62,6 +64,7 @@ public class TelegramRouter {
     private final HostessReservationApprovalService hostessReservationApprovalService;
     private final TelegramMediaSender telegramMediaSender;
     private final VisitReviewService visitReviewService;
+    private final TipHandoffService tipHandoffService;
     private final TelegramVoiceReplyService voiceReplyService;
 
     @Value("${telegram.ui.preview-enabled:true}")
@@ -159,6 +162,33 @@ public class TelegramRouter {
                 // The button stands for words the guest could have typed; the bot answers them the usual way.
                 IncomingMessage asTyped = typedByGuest(callbackQuery, chatId, review.guestText());
                 send(asTyped, messageGatewayService.handle(asTyped), sender);
+            }
+            return true;
+        }
+
+        TipHandoffService.StaffCallbackResult tip = tipHandoffService.handleStaffCallback(
+                callbackQuery.getData(),
+                chatId,
+                callbackQuery.getFrom() == null ? null : callbackQuery.getFrom().getFirstName()
+        );
+        if (tip.handled()) {
+            execute(sender, AnswerCallbackQuery.builder()
+                    .callbackQueryId(callbackQuery.getId())
+                    .text(tip.answerText())
+                    .showAlert(false)
+                    .build());
+            if (tip.doneLabel() != null && callbackQuery.getMessage() != null) {
+                // The card says who marked the tip; pressing again only answers that it is already marked.
+                execute(sender, EditMessageReplyMarkup.builder()
+                        .chatId(chatId.toString())
+                        .messageId(callbackQuery.getMessage().getMessageId())
+                        .replyMarkup(InlineKeyboardMarkup.builder()
+                                .keyboard(List.of(List.of(InlineKeyboardButton.builder()
+                                        .text(tip.doneLabel())
+                                        .callbackData(callbackQuery.getData())
+                                        .build())))
+                                .build())
+                        .build());
             }
             return true;
         }

@@ -16,7 +16,8 @@ import java.util.regex.Pattern;
 /**
  * Asks the guest how the visit went, once per bill, and keeps the answer: stars, a thumb, and whether they asked
  * to leave a tip. The question goes out when the venue closes the order, or after the visit ends by the clock.
- * Words from the guest are not collected here; the feedback scenario does that.
+ * Words from the guest are not collected here: the optional comment after the stars goes through the feedback
+ * scenario, and {@link #attachComment} ties it back to the rated visit.
  */
 @Service
 @Slf4j
@@ -24,7 +25,12 @@ public class VisitReviewService {
 
     static final int BATCH = 50;
     static final String TIP_PHRASE = "чаевые";
-    private static final Pattern CALLBACK = Pattern.compile("^visit_review:(\\d{1,18}):(stars:([1-5])|thumb:(UP|DOWN)|tip)$");
+    /** The words of the feedback button: the comment button leads the guest into the feedback scenario. */
+    static final String COMMENT_PHRASE = "Оставить отзыв";
+    /** A comment counts for the visit only if the guest asked to write it this recently. */
+    static final Duration COMMENT_WINDOW = Duration.ofHours(3);
+    private static final String COMMENT_MARK = "comment=";
+    private static final Pattern CALLBACK = Pattern.compile("^visit_review:(\\d{1,18}):(stars:([1-5])|thumb:(UP|DOWN)|tip|comment)$");
 
     private final BillingProperties properties;
     private final GuestBillService bills;
@@ -50,6 +56,15 @@ public class VisitReviewService {
      */
     public record CallbackResult(boolean handled, String answerText, String guestText) {
         static final CallbackResult NOT_HANDLED = new CallbackResult(false, null, null);
+    }
+
+    /**
+     * The visit a guest's comment belongs to, for the team's card.
+     *
+     * @param offerTip the guest has not opened the tip for this visit: the button stayed above the comment, so the
+     *                 thanks for the comment offers it again
+     */
+    public record CommentLink(Long billId, Long tableReservationId, Integer stars, boolean offerTip) {
     }
 
     /** Asks the guest, unless they were asked for this bill already or the bill is cancelled. */
@@ -125,18 +140,60 @@ public class VisitReviewService {
         if (matcher.group(3) != null) {
             VisitReview review = reviews.rate(billId, Integer.parseInt(matcher.group(3)));
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "stars=" + review.stars());
-            notifier.reviewThanks(bill, review);
+            notifier.reviewThanks(bill, review, !commentRequested(billId));
             return new CallbackResult(true, "Спасибо за оценку!", null);
         }
         if (matcher.group(4) != null) {
             VisitReview review = reviews.thumb(billId, VisitReview.Thumb.valueOf(matcher.group(4)));
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "thumb=" + review.thumb());
-            notifier.reviewThanks(bill, review);
+            notifier.reviewThanks(bill, review, !commentRequested(billId));
             return new CallbackResult(true, "Спасибо!", null);
+        }
+        if ("comment".equals(matcher.group(2))) {
+            bills.reviewNoted(billId, BillOperationType.COMMENT_REQUESTED, null);
+            return new CallbackResult(true, "Напишите пару слов — передадим команде.", COMMENT_PHRASE);
         }
         reviews.tipRequested(billId);
         bills.reviewNoted(billId, BillOperationType.TIP_REQUESTED, null);
         return new CallbackResult(true, "Сейчас предложу, как оставить чаевые.", TIP_PHRASE);
+    }
+
+    /**
+     * Ties feedback the guest has just written to the visit they rated, when they pressed "Добавить комментарий"
+     * for it within {@link #COMMENT_WINDOW} and that comment is not tied yet. Notes the link in the bill's journal.
+     *
+     * @return the visit, or empty for feedback written for any other reason
+     */
+    public Optional<CommentLink> attachComment(Long chatId, Long feedbackId) {
+        if (chatId == null || feedbackId == null) {
+            return Optional.empty();
+        }
+        Instant since = clock.instant().minus(COMMENT_WINDOW);
+        for (VisitReview review : reviews.findByChatId(chatId, 5)) {
+            List<BillOperation> history = bills.historyOf(review.billId());
+            Optional<BillOperation> asked = history.stream()
+                    .filter(operation -> operation.type() == BillOperationType.COMMENT_REQUESTED)
+                    .reduce((first, second) -> second);
+            if (asked.isEmpty() || asked.get().occurredAt() == null || asked.get().occurredAt().isBefore(since)) {
+                continue;
+            }
+            long askedId = asked.get().id();
+            boolean answered = history.stream().anyMatch(operation -> operation.id() > askedId
+                    && operation.type() == BillOperationType.REVIEW_RECEIVED
+                    && operation.details() != null
+                    && operation.details().startsWith(COMMENT_MARK));
+            if (answered) {
+                continue;
+            }
+            bills.reviewNoted(review.billId(), BillOperationType.REVIEW_RECEIVED, COMMENT_MARK + "feedback#" + feedbackId);
+            Long reservationId = bills.find(review.billId()).map(GuestBill::tableReservationId).orElse(null);
+            return Optional.of(new CommentLink(review.billId(), reservationId, review.stars(), review.tipRequestedAt() == null));
+        }
+        return Optional.empty();
+    }
+
+    private boolean commentRequested(long billId) {
+        return bills.historyOf(billId).stream().anyMatch(operation -> operation.type() == BillOperationType.COMMENT_REQUESTED);
     }
 
     public Optional<VisitReview> reviewOf(Long billId) {

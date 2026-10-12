@@ -78,7 +78,8 @@ public class GuestBillNotifier {
         return send(bill.chatId(), text, keyboard, "guest-visit-review-prompt");
     }
 
-    public boolean reviewThanks(GuestBill bill, VisitReview review) {
+    /** @param offerComment the guest has not asked to write a comment for this visit yet; the comment is optional */
+    public boolean reviewThanks(GuestBill bill, VisitReview review, boolean offerComment) {
         boolean askThumb = review.thumb() == null;
         boolean offerTip = review.tipRequestedAt() == null;
         String text = askThumb
@@ -89,6 +90,9 @@ public class GuestBillNotifier {
             rows.add(List.of(
                     InlineKeyboardButton.builder().text("👍").callbackData(CALLBACK_PREFIX + bill.id() + ":thumb:UP").build(),
                     InlineKeyboardButton.builder().text("👎").callbackData(CALLBACK_PREFIX + bill.id() + ":thumb:DOWN").build()));
+        }
+        if (offerComment) {
+            rows.add(List.of(InlineKeyboardButton.builder().text("Добавить комментарий").callbackData(CALLBACK_PREFIX + bill.id() + ":comment").build()));
         }
         if (offerTip) {
             rows.add(List.of(InlineKeyboardButton.builder().text("Оставить чаевые").callbackData(CALLBACK_PREFIX + bill.id() + ":tip").build()));

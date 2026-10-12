@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -67,6 +68,40 @@ class GuestBillPaymentPrompterTest {
 
         assertThat(prompter.run()).isEqualTo(GuestBillPaymentPrompter.Report.NOTHING);
         verify(provider, times(1)).paymentLink(anyString());
+    }
+
+    @Test
+    void theVenuesSumOnThePaymentPageGoesIntoTheBillAndTheMessage() {
+        GuestBill bill = issued(77L);
+        reservation(77L, TableReservationStatus.CONFIRMED);
+        when(provider.paymentLink("order-1")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/1", 61_000L)));
+
+        prompter.run();
+
+        var sent = forClass(GuestBill.class);
+        verify(notifier).paymentLink(sent.capture(), eq("https://pay.test/1"));
+        assertThat(sent.getValue().venueAmountMinor()).isEqualTo(61_000L);
+        GuestBill stored = bills.find(bill.id()).orElseThrow();
+        assertThat(stored.venueAmountMinor()).isEqualTo(61_000L);
+        assertThat(stored.payState()).isEqualTo(BillPayState.NOT_REPORTED);
+        assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type)
+                .contains(BillOperationType.VENUE_AMOUNT_REPORTED, BillOperationType.AMOUNT_MISMATCH, BillOperationType.PAYMENT_LINK_ISSUED)
+                .doesNotContain(BillOperationType.PAY_STATE_CHANGED);
+    }
+
+    @Test
+    void aPaymentPageWithoutASumLeavesTheEstimate() {
+        GuestBill bill = issued(77L);
+        reservation(77L, TableReservationStatus.CONFIRMED);
+        when(provider.paymentLink("order-1")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/1", null)));
+
+        prompter.run();
+
+        var sent = forClass(GuestBill.class);
+        verify(notifier).paymentLink(sent.capture(), eq("https://pay.test/1"));
+        assertThat(sent.getValue().venueAmountMinor()).isNull();
+        assertThat(sent.getValue().estimateMinor()).isEqualTo(54_000L);
+        assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type).doesNotContain(BillOperationType.VENUE_AMOUNT_REPORTED);
     }
 
     @Test

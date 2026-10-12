@@ -96,7 +96,8 @@ public class GuestBillPaymentPrompter {
                     failed++;
                     continue;
                 }
-                if (notifier.paymentLink(bill, link.get().url())) {
+                GuestBill withSum = withVenueSum(bill, provider.get().providerId(), link.get().amountMinor());
+                if (notifier.paymentLink(withSum, link.get().url())) {
                     bills.paymentLinkSent(bill.id(), provider.get().providerId());
                     retryAfter.remove(bill.id());
                     sent++;
@@ -113,6 +114,17 @@ public class GuestBillPaymentPrompter {
             }
         }
         return new Report(waiting.size(), sent, skipped, failed);
+    }
+
+    /**
+     * The sum the venue's payment page names goes into the bill: the guest reads "К оплате" instead of Butler's estimate,
+     * and tips are counted from it. The pay state is left as the venue last reported it.
+     */
+    private GuestBill withVenueSum(GuestBill bill, String providerId, Long amountMinor) {
+        if (amountMinor == null || amountMinor <= 0) {
+            return bill;
+        }
+        return bills.venueReported(providerId, bill.externalOrderId(), bill.payState(), amountMinor).orElse(bill);
     }
 
     /** A bill without a reservation is not waiting for anyone; one with a reservation waits for its confirmation. */

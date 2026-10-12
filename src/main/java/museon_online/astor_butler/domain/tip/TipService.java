@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -51,6 +52,16 @@ public class TipService {
         return cancelDraft(order.id());
     }
 
+    /** The guest changed the size of a tip they have not confirmed yet: the same thanks, a new sum. */
+    @Transactional
+    public TipOrder changeDraftAmount(Long id, long amountMinor, String guestComment) {
+        if (amountMinor < 1) {
+            throw badRequest("amountMinor must be positive");
+        }
+        TipOrder order = requireAwaitingConfirmation(id);
+        return repository.updateAmount(order.id(), amountMinor, guestComment);
+    }
+
     @Transactional
     public TipOrder confirmDraft(Long id) {
         TipOrder order = requireAwaitingConfirmation(id);
@@ -61,6 +72,41 @@ public class TipService {
     public TipOrder cancelDraft(Long id) {
         TipOrder order = requireAwaitingConfirmation(id);
         return repository.updateStatus(order.id(), TipOrderStatus.CANCELLED);
+    }
+
+    /** A waiter got the tip by the venue's QR or terminal. Butler takes no money; this only records it. */
+    @Transactional
+    public TipOrder markPaid(Long id) {
+        TipOrder order = requireOrder(id);
+        if (order.status() == TipOrderStatus.PAID) {
+            return order;
+        }
+        if (order.status() != TipOrderStatus.AWAITING_PAYMENT) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    ErrorCode.CONFLICT,
+                    "Only confirmed tips awaiting payment can be marked paid",
+                    Map.of("id", id, "status", order.status())
+            );
+        }
+        return repository.updateStatus(order.id(), TipOrderStatus.PAID);
+    }
+
+    /** The recipient's own SBP link, once the venue has given one. */
+    public Optional<String> sbpLinkOf(TipOrder order) {
+        if (order == null || order.staffId() == null) {
+            return Optional.empty();
+        }
+        return repository.findStaff(order.staffId())
+                .map(StaffProfile::sbpLink)
+                .map(String::trim)
+                .filter(link -> !link.isEmpty());
+    }
+
+    /** Which link the guest was given to pay the tip by. */
+    @Transactional
+    public TipOrder attachSbpUrl(Long id, String sbpUrl) {
+        return repository.updateSbpUrl(id, sbpUrl);
     }
 
     private StaffProfile resolveStaff(TipOrderCommand command) {

@@ -134,7 +134,8 @@ public class GuestBillService {
     /** A note in the journal about the guest's word after the visit; the word itself lives in {@link VisitReview}. */
     @Transactional
     public void reviewNoted(Long billId, BillOperationType type, String details) {
-        if (type != BillOperationType.REVIEW_PROMPTED && type != BillOperationType.REVIEW_RECEIVED && type != BillOperationType.TIP_REQUESTED) {
+        if (type != BillOperationType.REVIEW_PROMPTED && type != BillOperationType.REVIEW_RECEIVED
+                && type != BillOperationType.TIP_REQUESTED && type != BillOperationType.COMMENT_REQUESTED) {
             throw new IllegalArgumentException("Not a review note: " + type);
         }
         require(billId);
