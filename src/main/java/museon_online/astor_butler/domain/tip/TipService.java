@@ -3,6 +3,9 @@ package museon_online.astor_butler.domain.tip;
 import lombok.RequiredArgsConstructor;
 import museon_online.astor_butler.api.common.ApiException;
 import museon_online.astor_butler.api.common.ErrorCode;
+import museon_online.astor_butler.domain.tips.TipRecipient;
+import museon_online.astor_butler.domain.tips.TipRecipientResolver;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +18,13 @@ import java.util.Map;
 public class TipService {
 
     private final TipRepository repository;
+
+    /**
+     * The waiter of the guest's table as the recipient (#161, {@code astor.tips.personal.enabled}). Optional so that
+     * {@code new TipService(repository)} keeps working; absent or off, the venue's default recipient is used as before.
+     */
+    @Autowired(required = false)
+    private TipRecipientResolver recipientResolver;
 
     public List<StaffProfile> listActiveStaff(String venueCode) {
         return repository.findActiveStaff(venueCode);
@@ -35,8 +45,41 @@ public class TipService {
     @Transactional
     public TipOrder createDraft(TipOrderCommand command) {
         validateCommand(command);
+        TipRecipient personal = personalRecipient(command);
+        if (personal != null) {
+            // The waiter of the table, by name and own link: no staff_profiles row stands behind them.
+            return repository.createDraft(withRecipientName(command, personal.name()), null, personal.link());
+        }
         StaffProfile staff = resolveStaff(command);
         return repository.createDraft(command, staff);
+    }
+
+    /** The waiter of the guest's table today, when the feature is on and the caller did not name a recipient. */
+    private TipRecipient personalRecipient(TipOrderCommand command) {
+        if (command.staffId() != null || recipientResolver == null || !recipientResolver.enabled()) {
+            return null;
+        }
+        TipRecipient recipient = recipientResolver.forChat(command.chatId(), command.venueCode());
+        return recipient != null && recipient.personal() ? recipient : null;
+    }
+
+    private static TipOrderCommand withRecipientName(TipOrderCommand command, String name) {
+        return new TipOrderCommand(
+                command.chatId(),
+                command.telegramUserId(),
+                command.userId(),
+                command.venueCode(),
+                null,
+                name,
+                command.amountMinor(),
+                command.currency(),
+                command.guestName(),
+                command.guestComment()
+        );
+    }
+
+    void setRecipientResolver(TipRecipientResolver recipientResolver) {
+        this.recipientResolver = recipientResolver;
     }
 
     @Transactional
