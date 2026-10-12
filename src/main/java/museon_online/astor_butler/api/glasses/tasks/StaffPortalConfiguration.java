@@ -36,7 +36,8 @@ public class StaffPortalConfiguration {
     @Bean @Order(1)
     SecurityFilterChain staffSecurity(HttpSecurity http,
             @Value("${astor.staff.enabled:false}") boolean enabled,
-            @Qualifier("staffJwtDecoder") ObjectProvider<JwtDecoder> decoder) throws Exception {
+            @Qualifier("staffJwtDecoder") ObjectProvider<JwtDecoder> decoder,
+            ObjectProvider<StaffPortalService> portal) throws Exception {
         http.securityMatcher("/api/staff/**", "/api/admin/staff/**", "/api/admin/staff-tasks/**")
                 .cors(Customizer.withDefaults()).csrf(c -> c.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -50,7 +51,11 @@ public class StaffPortalConfiguration {
         if (enabled) {
             http.oauth2ResourceServer(o -> o.jwt(j -> j.decoder(decoder.getObject()))
                     .authenticationEntryPoint((r, s, ex) -> error(s, 401, "UNAUTHORIZED")));
-            http.addFilterAfter(new StaffBodyLimitFilter(),
+            // A photo is larger than a JSON command; its route is exempt only while photos have a storage.
+            http.addFilterAfter(new StaffBodyLimitFilter(() -> {
+                        StaffPortalService tasks = portal.getIfAvailable();
+                        return tasks != null && tasks.evidenceLimits().isPresent();
+                    }),
                     org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter.class);
         }
         return http.build();

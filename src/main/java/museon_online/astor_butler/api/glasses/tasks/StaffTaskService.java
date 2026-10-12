@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -30,6 +31,8 @@ public final class StaffTaskService {
 
     private static final int MAX_STAGES = 10;
     private static final int MAX_PAGE = 100;
+    /** A pilot limit: a stage keeps a few photos, not a gallery, so one task cannot fill the storage. */
+    static final int MAX_STAGE_PHOTOS = 10;
 
     private final StaffTaskStore store;
     private final StaffShifts shifts;
@@ -91,14 +94,46 @@ public final class StaffTaskService {
     /** A received photo is counted on its stage. It closes neither the stage nor the task. */
     public synchronized StaffTask evidence(StaffScope scope, String taskId, String eventId, String stageCode,
                                            Instant capturedAt) {
+        return evidence(scope, taskId, eventId, stageCode, capturedAt, null);
+    }
+
+    /**
+     * The same for a photo whose bytes are already stored. The hash of the file is part of the request, so
+     * the same event id with another file is a conflict and not a quiet replay of the first one.
+     */
+    public synchronized StaffTask evidence(StaffScope scope, String taskId, String eventId, String stageCode,
+                                           Instant capturedAt, String contentSha256) {
         own(scope, taskId);
-        return once(scope, eventId, fingerprint("evidence", scope.staffId(), taskId, stageCode, capturedAt), () -> {
-            StaffTask task = working(notClosed(own(scope, taskId)));
-            StaffTask.Stage stage = stage(task, stageCode);
-            if (stage.done()) throw conflict("STAGE_CLOSED", "The stage is already closed");
+        return once(scope, eventId, evidencePrint(scope, taskId, stageCode, capturedAt, contentSha256), () -> {
+            StaffTask task = own(scope, taskId);
+            StaffTask.Stage stage = photographed(task, stageCode);
             return save(replaceStage(task, new StaffTask.Stage(stage.code(), stage.title(), stage.evidenceRequired(),
                     false, stage.evidence() + 1)), task.version());
         });
+    }
+
+    /**
+     * What {@link #evidence} would answer, without changing anything: the earlier result when this event id
+     * already counted this very file, empty when the photo may be stored and counted, a refusal otherwise.
+     * Asked before a file is written, so a request that will be refused never reaches the storage.
+     */
+    public synchronized Optional<StaffTask> evidenceReplay(StaffScope scope, String taskId, String eventId,
+                                                           String stageCode, Instant capturedAt, String contentSha256) {
+        StaffTask task = own(scope, taskId);
+        Optional<StaffTask> replay = replayed(scope, eventId, evidencePrint(scope, taskId, stageCode, capturedAt, contentSha256));
+        if (replay.isEmpty()) photographed(task, stageCode);
+        return replay;
+    }
+
+    /** The caller's own task: same venue, assigned to the caller, shift open. Refuses anyone else. */
+    public synchronized StaffTask assigned(StaffScope scope, String taskId) {
+        return own(scope, taskId);
+    }
+
+    /** A task of the caller's venue, for a hostess or a manager. Another venue's task reads as missing. */
+    public synchronized StaffTask managed(StaffScope scope, String taskId) {
+        manager(scope);
+        return inTenant(scope, taskId);
     }
 
     /* ---------- Hostess or manager ---------- */
@@ -232,6 +267,14 @@ public final class StaffTaskService {
                 .orElseThrow(() -> malformed("Unknown stage"));
     }
 
+    /** The stage a photo may be counted on: the task is being worked on, the stage is open and not full. */
+    private StaffTask.Stage photographed(StaffTask task, String stageCode) {
+        StaffTask.Stage stage = stage(working(notClosed(task)), stageCode);
+        if (stage.done()) throw conflict("STAGE_CLOSED", "The stage is already closed");
+        if (stage.evidence() >= MAX_STAGE_PHOTOS) throw conflict("EVIDENCE_LIMIT", "The stage already has as many photos as it keeps");
+        return stage;
+    }
+
     private StaffTask replaceStage(StaffTask task, StaffTask.Stage changed) {
         return task.withStages(task.stages().stream()
                 .map(stage -> stage.code().equals(changed.code()) ? changed : stage).toList());
@@ -258,17 +301,28 @@ public final class StaffTaskService {
      * result without acting again; the same id with a different request is a conflict.
      */
     private StaffTask once(StaffScope scope, String eventId, String fingerprint, Supplier<StaffTask> action) {
-        if (blank(eventId) || eventId.length() > 64) throw malformed("Event id is required");
-        var seen = store.event(scope.tenant(), eventId);
-        if (seen.isPresent()) {
-            if (!seen.get().fingerprint().equals(fingerprint)) {
-                throw conflict("EVENT_CONFLICT", "This event id was already used for another request");
-            }
-            return seen.get().result();
-        }
+        Optional<StaffTask> replay = replayed(scope, eventId, fingerprint);
+        if (replay.isPresent()) return replay.get();
         StaffTask result = action.get();
         store.remember(new StaffTaskStore.ProcessedEvent(scope.tenant(), eventId, fingerprint, result));
         return result;
+    }
+
+    /** The result this event id already produced for this very request; a conflict when it was another request. */
+    private Optional<StaffTask> replayed(StaffScope scope, String eventId, String fingerprint) {
+        if (blank(eventId) || eventId.length() > 64) throw malformed("Event id is required");
+        var seen = store.event(scope.tenant(), eventId);
+        if (seen.isEmpty()) return Optional.empty();
+        if (!seen.get().fingerprint().equals(fingerprint)) {
+            throw conflict("EVENT_CONFLICT", "This event id was already used for another request");
+        }
+        return Optional.of(seen.get().result());
+    }
+
+    private static String evidencePrint(StaffScope scope, String taskId, String stageCode, Instant capturedAt,
+                                        String contentSha256) {
+        return contentSha256 == null ? fingerprint("evidence", scope.staffId(), taskId, stageCode, capturedAt)
+                : fingerprint("evidence", scope.staffId(), taskId, stageCode, capturedAt, contentSha256);
     }
 
     private StaffTask save(StaffTask changed, long expectedVersion) {

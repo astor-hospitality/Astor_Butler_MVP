@@ -8,7 +8,7 @@
 - Данные: `astor_staff_members`, `astor_staff_tasks`, `astor_staff_task_events`, `astor_staff_task_audit`, tenant lock в PostgreSQL **монолита Astor**.
 - Менеджер/хостес создают, отменяют, переназначают поручения, разрешают HELP. Только MANAGER ведёт справочник/смены. Сотрудник принимает, закрывает этапы и завершает **свою** задачу с открытой сменой.
 - Пилотный bearer `/api/glasses/assist` не является staff JWT и не разрешает изменения задач. Staff API не вызывает guest FSM/booking/notifications. Реальная интеграция Concierge→staff остаётся отдельной работой; `sourceRef` сейчас — только метка, не ссылка с авторизацией.
-- Фото `/api/staff/tasks/{task}/evidence` пока **503 EVIDENCE_UNAVAILABLE**. Новые задачи UI создаются без обязательного фото; API может задать `evidenceRequired=true`, но такой этап нельзя закрыть до появления реального storage. Изолированный pilot S3/step ACK не подключён автоматически к этому домену.
+- Фото `/api/staff/tasks/{task}/evidence` по умолчанию **503 EVIDENCE_UNAVAILABLE**: хранилище фото выключено, пока не заданы `astor.staff.evidence.*`. Контракт, настройки и что нужно на стенде: `STAFF_TASK_EVIDENCE.md` (issue #94, с 2026-10-11). Новые задачи UI создаются без обязательного фото; API может задать `evidenceRequired=true`, но такой этап нельзя закрыть без сохранённого файла. Изолированный pilot S3/step ACK не подключён автоматически к этому домену.
 
 ## 1. Отдельный Keycloak Astor
 
@@ -191,7 +191,7 @@ Static worker публикует только HTML/JS/CSS и **не** proxy-ит
 | `GET /api/staff/tasks` | `{items,fullSnapshot:true}` — только caller assignments/открытая смена |
 | `POST /api/staff/tasks/{task}/commands` | `{eventId,type,expectedVersion,stageCode?}` |
 | `POST .../{task}/delivery` | `{eventId,kind}`; delivery/voiced не accept |
-| `POST .../{task}/evidence` | Пока 503, без фальшивой записи |
+| `POST .../{task}/evidence` | 503, пока хранилище фото не настроено; дальше фото этапа и чтение по `STAFF_TASK_EVIDENCE.md`. Без фальшивой записи |
 
 Все task mutations в одной PostgreSQL transaction: tenant-row lock → актуальные права → task CAS → processed-event result → audit. Одновременно работающие экземпляры не теряют same-version delivery marks. Same event/request возвращает предыдущий result; same event/другой request — 409; устаревшая version — 409. При повторе снова проверяются текущие role/activity/shift/ownership. Directory/shift edits также берут tenant lock; обновление metadata и task mutations не являются guest FSM.
 
