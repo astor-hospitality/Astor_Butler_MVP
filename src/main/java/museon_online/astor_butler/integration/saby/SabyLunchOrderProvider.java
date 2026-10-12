@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOrder;
+import museon_online.astor_butler.domain.lunch.BusinessLunchService;
 import museon_online.astor_butler.domain.lunch.ExternalLunchOrderProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.restclient.RestTemplateBuilder;
@@ -33,6 +34,8 @@ import java.util.regex.Pattern;
 public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
 
     static final String LUNCH_ATTACHED = "SABY_LUNCH_ATTACHED";
+    /** Below this many characters a cut wish says nothing useful, so it is left to the hostess card. */
+    static final int MIN_WISH_ROOM = 12;
     private static final Pattern EXTERNAL_ID = Pattern.compile("[A-Za-z0-9-]{1,64}");
     private static final DateTimeFormatter SABY_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -134,6 +137,7 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
             }
             ObjectNode update = snapshot.deepCopy();
             update.set("nomenclatures", new ObjectMapper().valueToTree(nomenclatures));
+            withWishes(update, order.wishes());
             client.put(SabyReservationProvider.ORDER_PATH + bookingId + "/update", update);
         } catch (SabyApiException exception) {
             log.warn("Saby lunch order update failed: {} (HTTP {})", exception.kind(), exception.httpStatus());
@@ -141,6 +145,33 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
         }
         return new Result(true, providerId(), LUNCH_ATTACHED, bookingId,
                 "Lunch dishes attached to the Saby booking; the hostess still confirms the visit.");
+    }
+
+    /**
+     * The guest's wish for the kitchen (#165) rides on the booking comment, where the hostess reads it in Presto. The booking
+     * Butler wrote already carries it inside the hostess line; this adds the same line only when that comment lacks it (a long
+     * order cut at {@link SabyOrderPayload#MAX_GUEST_COMMENT}), and only when it still fits, so the Butler marker is never pushed out.
+     * Saby's own limit on the comment is not documented; the hostess card always has the full wish.
+     */
+    static void withWishes(ObjectNode update, String wishes) {
+        if (wishes == null || wishes.isBlank()) {
+            return;
+        }
+        String existing = update.path("comment").asText("");
+        if (existing.contains(BusinessLunchService.WISH_PREFIX)) {
+            return;
+        }
+        String wish = wishes.trim().replaceAll("\\s+", " ");
+        String lead = existing.isBlank() ? "" : existing + " · ";
+        int room = SabyOrderPayload.MAX_GUEST_COMMENT - lead.length() - BusinessLunchService.WISH_PREFIX.length() - BusinessLunchService.WISH_SUFFIX.length();
+        if (room < MIN_WISH_ROOM) {
+            log.info("Saby comment has no room for the lunch wish; the hostess card carries it");
+            return;
+        }
+        if (wish.length() > room) {
+            wish = wish.substring(0, room - 1).stripTrailing() + "…";
+        }
+        update.put("comment", lead + BusinessLunchService.wishLine(wish));
     }
 
     private static String failureStatus(SabyApiException exception) {

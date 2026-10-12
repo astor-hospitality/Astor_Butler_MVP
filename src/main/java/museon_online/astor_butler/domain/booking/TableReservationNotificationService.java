@@ -193,6 +193,38 @@ public class TableReservationNotificationService {
         ), null, "hostess-guest-cancelled");
     }
 
+    /**
+     * The guest wrote «счёт» to the bot (#153 A2): the staff chat gets a card in the usual style, without the phone,
+     * so the waiter brings the bill. Returns whether the card left Butler.
+     */
+    public boolean notifyHostessGuestAskedForBill(TableReservationOrder order) {
+        return send(hostessChatId(order), guestAskedForBillText(order), null, "hostess-guest-bill-request") != null;
+    }
+
+    String guestAskedForBillText(TableReservationOrder order) {
+        String who = order.tableCode() == null ? "Гость" : tableName(order);
+        return """
+                💳 <b>%s просит счёт</b> (гость написал в боте)
+
+                <b>Заказ:</b> #%s
+                <b>Гость:</b> %s
+                <b>Стол:</b> %s
+                <b>Дата:</b> %s
+                <b>Время:</b> %s
+                <b>Гостей:</b> %s
+
+                Принесите счёт к столу. Гостю ответил, что счёт сейчас будет.
+                """.formatted(
+                escape(who),
+                order.id(),
+                escape(blank(order.guestName(), "гость из Telegram")),
+                escape(tableName(order)),
+                formatDate(order.requestedStartAt()),
+                formatTimeRange(order),
+                order.partySize() == null ? "не указано" : order.partySize()
+        );
+    }
+
     public void notifyGuestConfirmed(TableReservationOrder order) {
         if (order.chatId() == null) {
             return;

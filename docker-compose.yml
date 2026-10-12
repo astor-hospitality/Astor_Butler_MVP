@@ -122,8 +122,12 @@ services:
       ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES: ${ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES:-90}
       # Business lunch scenario switch (#134 fallback): on by default, as before; false hides «ланч» for guests without a new image.
       ASTOR_BUSINESS_LUNCH_ENABLED: ${C3FLEX_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
+      # Lunch wishes for the kitchen and the bar + dish composition from the menu file (#165). Off by default.
+      ASTOR_LUNCH_WISHES_ENABLED: ${C3FLEX_LUNCH_WISHES_ENABLED:-${ASTOR_LUNCH_WISHES_ENABLED:-false}}
       # Shift manager's kill switch (#134): /stop, /start_butler, /status_butler in the staff chat. Off by default.
       ASTOR_KILL_SWITCH_ENABLED: ${C3FLEX_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
+      # The guest's own «счёт» in the bot (#153 A2): a card to the staff chat and, with on-bill, the review. Off by default.
+      ASTOR_GUEST_BILL_REQUEST_ENABLED: ${C3FLEX_GUEST_BILL_REQUEST_ENABLED:-${ASTOR_GUEST_BILL_REQUEST_ENABLED:-false}}
       # Staff member's personal guest link / QR and the entry log (#128): /ссылка in the staff chat, «Привёл(а)» on the hostess card. Off by default.
       ASTOR_STAFF_HANDOFF_ENABLED: ${C3FLEX_STAFF_HANDOFF_ENABLED:-${ASTOR_STAFF_HANDOFF_ENABLED:-false}}
       ASTOR_STAFF_HANDOFF_TENANT: ${C3FLEX_STAFF_HANDOFF_TENANT:-${ASTOR_STAFF_HANDOFF_TENANT:-}}
@@ -340,8 +344,12 @@ services:
       ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES: ${ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES:-90}
       # Business lunch scenario switch (#134 fallback): on by default, as before; false hides «ланч» for guests without a new image.
       ASTOR_BUSINESS_LUNCH_ENABLED: ${AERIS_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
+      # Lunch wishes for the kitchen and the bar + dish composition from the menu file (#165). Off by default.
+      ASTOR_LUNCH_WISHES_ENABLED: ${AERIS_LUNCH_WISHES_ENABLED:-${ASTOR_LUNCH_WISHES_ENABLED:-false}}
       # Shift manager's kill switch (#134): /stop, /start_butler, /status_butler in the staff chat. Off by default.
       ASTOR_KILL_SWITCH_ENABLED: ${AERIS_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
+      # The guest's own «счёт» in the bot (#153 A2): a card to the staff chat and, with on-bill, the review. Off by default.
+      ASTOR_GUEST_BILL_REQUEST_ENABLED: ${AERIS_GUEST_BILL_REQUEST_ENABLED:-${ASTOR_GUEST_BILL_REQUEST_ENABLED:-false}}
       # Tips to the waiter of the table (#161): /официант and /чаевые in the staff chat, the recipient by table. Off by default.
       ASTOR_TIPS_PERSONAL_ENABLED: ${AERIS_TIPS_PERSONAL_ENABLED:-${ASTOR_TIPS_PERSONAL_ENABLED:-false}}
       ASTOR_TIPS_PERSONAL_TENANT: ${ASTOR_TIPS_PERSONAL_TENANT:-AERIS}
@@ -557,6 +565,7 @@ services:
       ASTOR_BOOKING_AUTO_CONFIRM_ENABLED: "false"
       ASTOR_BOOKING_STAFF_EDIT_ENABLED: "false"
       ASTOR_BOOKING_HOLD_EXPIRY_ENABLED: "false"
+      ASTOR_GUEST_BILL_REQUEST_ENABLED: "false"
       TELEGRAM_SYSTEM_CHAT_ID: ${SMART_SOLUTION_SYSTEM_CHAT_ID:-}
       TELEGRAM_SYSTEM_NOTIFICATIONS_ENABLED: ${SMART_SOLUTION_SYSTEM_NOTIFICATIONS_ENABLED:-false}
       TELEGRAM_OPS_CHAT_ID: ${SMART_SOLUTION_OPS_CHAT_ID:-${SMART_SOLUTION_TEAM_CHAT_ID:-}}
