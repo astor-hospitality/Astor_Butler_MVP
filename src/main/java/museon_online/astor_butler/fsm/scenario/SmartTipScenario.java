@@ -126,16 +126,21 @@ public class SmartTipScenario implements FsmScenario {
         if (isConfirmIntent(text)) {
             TipOrder order = tipService.confirmLatestDraft(incoming.chatId());
             fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
-            return OutgoingMessage.of(
-                    incoming,
-                    """
+            boolean personal = isPersonal(order);
+            // A personal recipient (#161) gets the waiter's own link and nothing else: the guest pays them directly.
+            String confirmed = personal
+                    ? "Чаевые для %s: %s".formatted(staffName(order), order.sbpUrl().trim())
+                    : """
                             Зафиксировал благодарность #%s и перевел ее в ожидание оплаты.
 
                             Получатель: %s
                             Сумма: %s ₽
 
                             Оплата чаевых через бота пока не подключена, поэтому деньги не списаны. Я вернул вас в главное меню.
-                            """.formatted(order.id(), staffName(order), rubles(order.amountMinor())),
+                            """.formatted(order.id(), staffName(order), rubles(order.amountMinor()));
+            return OutgoingMessage.of(
+                    incoming,
+                    confirmed,
                     BotState.READY_FOR_DIALOG.name(),
                     false,
                     false,
@@ -147,7 +152,7 @@ public class SmartTipScenario implements FsmScenario {
                     "scenario", id(),
                     "tipOrderId", order.id(),
                     "tipOrderStatus", order.status().name(),
-                    "paymentBoundary", "SBP_OR_TELEGRAM_STARS_NEXT"
+                    "paymentBoundary", personal ? "SBP_LINK_PERSONAL" : "SBP_OR_TELEGRAM_STARS_NEXT"
             ));
         }
         if (isRejectIntent(text)) {
@@ -229,6 +234,11 @@ public class SmartTipScenario implements FsmScenario {
             return "уточняется";
         }
         return String.valueOf(amountMinor / 100L);
+    }
+
+    /** The waiter of the table with their own link (#161): no staff profile behind the order, the link known at draft time. */
+    private static boolean isPersonal(TipOrder order) {
+        return order.staffId() == null && order.sbpUrl() != null && !order.sbpUrl().isBlank();
     }
 
     private String staffName(TipOrder order) {

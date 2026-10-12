@@ -58,13 +58,21 @@ public class TipRepository {
     }
 
     public TipOrder createDraft(TipOrderCommand command, StaffProfile staff) {
+        return createDraft(command, staff, null);
+    }
+
+    /**
+     * @param sbpUrl the link the guest will be given to pay by, known at draft time for a personal recipient (#161:
+     *               the waiter of the table); null when the recipient is a staff profile or has no link yet
+     */
+    public TipOrder createDraft(TipOrderCommand command, StaffProfile staff, String sbpUrl) {
         Long id = jdbcTemplate.queryForObject("""
                 INSERT INTO tip_orders (
                     chat_id, telegram_user_id, user_id, venue_code, staff_id, staff_display_name,
-                    status, source, amount_minor, currency, guest_name, guest_comment,
+                    status, source, amount_minor, currency, guest_name, guest_comment, sbp_url,
                     created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'TELEGRAM', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'TELEGRAM', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 RETURNING id
                 """,
                 Long.class,
@@ -78,7 +86,8 @@ public class TipRepository {
                 command.amountMinor(),
                 currency(command.currency()),
                 blankToNull(command.guestName()),
-                blankToNull(command.guestComment())
+                blankToNull(command.guestComment()),
+                blankToNull(sbpUrl)
         );
         return findOrder(id).orElseThrow();
     }
