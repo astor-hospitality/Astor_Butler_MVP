@@ -364,6 +364,28 @@ public class TableReservationRepository {
         );
     }
 
+    /**
+     * Hostess cards nobody answered: awaiting since before the cutoff, for a visit that has not ended yet, oldest first.
+     * {@code updated_at} is when the card was (re)sent: creation and a guest's change both set it.
+     */
+    public List<TableReservationOrder> findAwaitingManagerConfirmationUnansweredSince(Instant cutoff, Instant now, int limit) {
+        return jdbcTemplate.query("""
+                SELECT tro.*, vt.table_code, vt.display_name AS table_display_name
+                FROM table_reservation_orders tro
+                LEFT JOIN venue_tables vt ON vt.id = tro.table_id
+                WHERE tro.status = 'AWAITING_MANAGER_CONFIRMATION'
+                  AND tro.updated_at <= ?
+                  AND (tro.requested_end_at IS NULL OR tro.requested_end_at > ?)
+                ORDER BY tro.updated_at ASC
+                LIMIT ?
+                """,
+                orderMapper(),
+                timestamp(cutoff),
+                timestamp(now),
+                Math.max(1, limit)
+        );
+    }
+
     public Optional<TableReservationOrder> findLatestAwaitingManagerConfirmation(String hostessChatId) {
         List<TableReservationOrder> result = jdbcTemplate.query("""
                 SELECT tro.*, vt.table_code, vt.display_name AS table_display_name

@@ -156,6 +156,18 @@ astor:
     # HOSTESS: the hostess button in Telegram confirms. VENUE_SYSTEM: a booking that is in Presto is confirmed only
     # there (read back by the external sync); the hostess can still reject. Orders Presto does not know stay with the hostess.
     confirmation-source: ${ASTOR_BOOKING_CONFIRMATION_SOURCE:HOSTESS}
+    auto-confirm:
+      # Off (default): the hostess card waits for «Да» / «Нет» for as long as it takes, as before. On: a card nobody
+      # answered within timeout-minutes confirms itself and the guest gets the order; «Нет» before that declines as usual.
+      # A card a person has to see goes to the manager chat (telegram.booking.manager-chat-id) after the same timeout
+      # instead: the venue is in manual mode (/manual on in the staff chat, «перегружены»), the party is max-party or
+      # more, the wish or the chosen table is in exclude-zones. docs/fsm/FSM_SCENARIOS.md, TableBookingScenario.
+      enabled: ${ASTOR_BOOKING_AUTO_CONFIRM_ENABLED:false}
+      timeout-minutes: ${ASTOR_BOOKING_AUTO_CONFIRM_TIMEOUT_MINUTES:7}
+      max-party: ${ASTOR_BOOKING_AUTO_CONFIRM_MAX_PARTY:6}
+      exclude-zones: ${ASTOR_BOOKING_AUTO_CONFIRM_EXCLUDE_ZONES:VIP_ZONE}
+      check-interval-ms: ${ASTOR_BOOKING_AUTO_CONFIRM_CHECK_INTERVAL_MS:30000}
+      initial-delay-ms: ${ASTOR_BOOKING_AUTO_CONFIRM_INITIAL_DELAY_MS:60000}
     external-sync:
       # Reads bookings back from the venue's own system (Saby) and confirms/cancels local orders accordingly.
       # Runs only while a provider is enabled and configured; 0 is not supported, set a large value to slow it down.

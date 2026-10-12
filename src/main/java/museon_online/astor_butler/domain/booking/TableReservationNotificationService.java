@@ -2,6 +2,7 @@ package museon_online.astor_butler.domain.booking;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
@@ -9,6 +10,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageReplyMarkup;
+import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
@@ -20,6 +23,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +40,8 @@ public class TableReservationNotificationService {
     private final ObjectProvider<TelegramBot> telegramBotProvider;
     private final TableReservationPendingIntentService pendingIntentService;
     private final TelegramGuestContextRepository guestContextRepository;
+    private final BookingAutoConfirmPolicy autoConfirmPolicy;
+    private final BookingHostessStateStorage hostessStateStorage;
 
     @Value("${telegram.bot.enabled:false}")
     private boolean telegramEnabled;
@@ -54,12 +60,49 @@ public class TableReservationNotificationService {
      *                     tells the hostess what is already there and what she has to enter herself
      */
     public void notifyHostessApprovalRequest(TableReservationOrder order, ExternalReservationResult externalSync) {
-        send(
-                hostessChatId(order),
-                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync),
+        Decision decision = autoConfirmDecision(order);
+        String chatId = hostessChatId(order);
+        Message sent = send(
+                chatId,
+                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync) + modeLine(order, decision),
                 approvalKeyboard(order.id()),
                 "hostess-approval-request"
         );
+        if (sent != null && decision != null && decision != Decision.OFF) {
+            rememberHostessCard(order, chatId, sent);
+        }
+    }
+
+    /** The card nobody answered confirmed itself: its buttons go, a note under it says so. */
+    public void notifyHostessAutoConfirmed(TableReservationOrder order, int afterMinutes) {
+        Optional<BookingHostessStateStorage.CardRef> card = hostessCard(order);
+        card.ifPresent(this::removeButtons);
+        send(hostessChatId(order), hostessAutoConfirmedText(order, afterMinutes), null,
+                card.map(BookingHostessStateStorage.CardRef::messageId).orElse(null), "hostess-auto-confirmed");
+    }
+
+    /** The card nobody answered went to the manager: a note under it says so; its buttons stay, whoever answers first decides. */
+    public void notifyHostessEscalated(TableReservationOrder order, Decision decision, int afterMinutes) {
+        Optional<BookingHostessStateStorage.CardRef> card = hostessCard(order);
+        send(hostessChatId(order), hostessEscalatedText(order, decision, afterMinutes), null,
+                card.map(BookingHostessStateStorage.CardRef::messageId).orElse(null), "hostess-escalated");
+    }
+
+    public void notifyManagerEscalation(TableReservationOrder order, Decision decision, int afterMinutes) {
+        send(managerChatId(order), managerEscalationText(order, decision, afterMinutes), approvalKeyboard(order.id()),
+                "manager-escalation");
+    }
+
+    public void notifyGuestEscalatedToManager(TableReservationOrder order) {
+        if (order.chatId() == null) {
+            return;
+        }
+        send(order.chatId().toString(), guestEscalatedText(order), guestMainMenuKeyboard(), "guest-escalated");
+    }
+
+    /** A plain answer to a staff command in the chat it came from. */
+    public void sendStaffNotice(String chatId, String text) {
+        send(chatId, text, null, "staff-notice");
     }
 
     public void notifyHostessExternalCancelFailed(TableReservationOrder order) {
@@ -133,34 +176,219 @@ public class TableReservationNotificationService {
         send(order.chatId().toString(), guestCancelledText(order), guestMainMenuKeyboard(), "guest-cancelled");
     }
 
-    private void send(String chatId, String text, ReplyKeyboard keyboard, String target) {
+    private Message send(String chatId, String text, ReplyKeyboard keyboard, String target) {
+        return send(chatId, text, keyboard, null, target);
+    }
+
+    /** Returns the sent message, or null when nothing was sent. */
+    private Message send(String chatId, String text, ReplyKeyboard keyboard, Integer replyToMessageId, String target) {
         if (!telegramEnabled || !notificationsEnabled || chatId == null || chatId.isBlank()) {
             log.debug("Table reservation Telegram notification skipped: target={}, botEnabled={}, notificationsEnabled={}, chatConfigured={}",
                     target,
                     telegramEnabled,
                     notificationsEnabled,
                     chatId != null && !chatId.isBlank());
-            return;
+            return null;
         }
 
         try {
             TelegramBot telegramBot = telegramBotProvider.getIfAvailable();
             if (telegramBot == null) {
                 log.debug("Table reservation Telegram notification skipped: bot bean is not available");
-                return;
+                return null;
             }
-            telegramBot.execute(SendMessage.builder()
+            SendMessage.SendMessageBuilder builder = SendMessage.builder()
                     .chatId(chatId)
                     .text(text)
                     .parseMode("HTML")
-                    .replyMarkup(keyboard)
-                    .build());
+                    .replyMarkup(keyboard);
+            if (replyToMessageId != null) {
+                builder.replyToMessageId(replyToMessageId).allowSendingWithoutReply(true);
+            }
+            return telegramBot.execute(builder.build());
         } catch (Exception e) {
             log.warn("Table reservation Telegram notification failed: target={}, orderId={}, reason={}",
                     target,
                     text.contains("#") ? "included" : "unknown",
                     e.getMessage());
+            return null;
         }
+    }
+
+    /** Takes the "Да" / "Нет" buttons off a card that is decided; an old or deleted card is simply left as it is. */
+    private void removeButtons(BookingHostessStateStorage.CardRef card) {
+        if (!telegramEnabled || !notificationsEnabled || card == null) {
+            return;
+        }
+        try {
+            TelegramBot telegramBot = telegramBotProvider.getIfAvailable();
+            if (telegramBot == null) {
+                return;
+            }
+            telegramBot.execute(EditMessageReplyMarkup.builder()
+                    .chatId(card.chatId())
+                    .messageId(card.messageId())
+                    .replyMarkup(null)
+                    .build());
+        } catch (Exception e) {
+            log.debug("Hostess card buttons were not removed: chatId={}, messageId={}, reason={}",
+                    card.chatId(), card.messageId(), e.getMessage());
+        }
+    }
+
+    /** Null when the policy cannot be asked right now: the card then reads exactly as before. */
+    private Decision autoConfirmDecision(TableReservationOrder order) {
+        if (autoConfirmPolicy == null) {
+            return null;
+        }
+        try {
+            return autoConfirmPolicy.decide(order);
+        } catch (RuntimeException e) {
+            log.warn("Auto-confirm policy is not available, the hostess card goes out without a mode line: orderId={}, reason={}",
+                    order.id(), e.toString());
+            return null;
+        }
+    }
+
+    private void rememberHostessCard(TableReservationOrder order, String chatId, Message sent) {
+        if (hostessStateStorage == null) {
+            return;
+        }
+        try {
+            hostessStateStorage.rememberHostessCard(order.id(), chatId, sent.getMessageId());
+        } catch (RuntimeException e) {
+            log.warn("Hostess card reference was not stored: orderId={}, reason={}", order.id(), e.toString());
+        }
+    }
+
+    private Optional<BookingHostessStateStorage.CardRef> hostessCard(TableReservationOrder order) {
+        if (hostessStateStorage == null) {
+            return Optional.empty();
+        }
+        try {
+            return hostessStateStorage.hostessCard(order.id());
+        } catch (RuntimeException e) {
+            log.debug("Hostess card reference was not read: orderId={}, reason={}", order.id(), e.toString());
+            return Optional.empty();
+        }
+    }
+
+    /** What the timer will do with this card; empty while the feature is off, so the card reads exactly as before. */
+    String modeLine(TableReservationOrder order, Decision decision) {
+        if (decision == null) {
+            return "";
+        }
+        int minutes = autoConfirmPolicy == null ? 0 : autoConfirmPolicy.timeoutMinutes();
+        return switch (decision) {
+            case OFF, VENUE_SYSTEM -> "";
+            case AUTO -> ("\n<b>Автоподтверждение</b> — без ответа через %d мин заявка подтвердится сама и гость получит ордер. "
+                    + "«Нет» до этого — отказ, как обычно.\n").formatted(minutes);
+            case MANUAL_MODE -> ("\n<b>Ручной режим («перегружены»)</b> — автоподтверждения нет, без ответа через %d мин заявка уйдёт менеджеру. "
+                    + "Вернуть автоподтверждение: /manual off\n").formatted(minutes);
+            case LARGE_PARTY -> ("\n<b>Требует решения: %s гостей</b> — автоподтверждения нет, без ответа через %d мин заявка уйдёт менеджеру.\n")
+                    .formatted(order.partySize(), minutes);
+            case EXCLUDED_ZONE -> ("\n<b>Требует решения: зона %s</b> — автоподтверждения нет, без ответа через %d мин заявка уйдёт менеджеру.\n")
+                    .formatted(escape(zoneLabel(order)), minutes);
+        };
+    }
+
+    String hostessAutoConfirmedText(TableReservationOrder order, int afterMinutes) {
+        return """
+                <b>Подтверждено автоматически через %d мин</b>
+
+                Бронь #%s: ответа не было, гостю отправлен ордер — %s, %s, %s, гостей: %s.
+                """.formatted(
+                afterMinutes,
+                order.id(),
+                escape(tableName(order)),
+                formatDate(order.requestedStartAt()),
+                formatTimeRange(order),
+                order.partySize()
+        );
+    }
+
+    String hostessEscalatedText(TableReservationOrder order, Decision decision, int afterMinutes) {
+        return """
+                <b>%d минут без ответа</b> — заявка #%s передана менеджеру (%s).
+                Кнопки на карточке работают: кто ответит первым, тот и решит.
+                """.formatted(afterMinutes, order.id(), escape(escalationReason(order, decision)));
+    }
+
+    String managerEscalationText(TableReservationOrder order, Decision decision, int afterMinutes) {
+        return """
+                <b>⏱ %d минут без ответа, %s</b>
+                Хостес не ответила на заявку — решение за вами: «Да» подтвердит бронь гостю, «Нет» — вежливый отказ с альтернативой.
+
+                <b>Заказ:</b> #%s
+                <b>Гость:</b> %s
+                <b>Telegram:</b> chat %s / user %s
+                <b>Стол:</b> %s
+                <b>Дата:</b> %s
+                <b>Время:</b> %s
+                <b>Гостей:</b> %s
+                <b>Телефон:</b> %s
+                <b>Зона/пожелание:</b> %s
+
+                <b>Исходный запрос гостя</b>
+                <blockquote>%s</blockquote>
+                """.formatted(
+                afterMinutes,
+                escape(escalationReason(order, decision)),
+                order.id(),
+                escape(blank(order.guestName(), "гость из Telegram")),
+                escape(text(order.chatId())),
+                escape(text(order.telegramUserId())),
+                escape(tableName(order)),
+                formatDate(order.requestedStartAt()),
+                formatTimeRange(order),
+                order.partySize(),
+                escape(blank(order.guestPhone(), "не указан")),
+                escape(seatingPreference(order)),
+                escape(blank(order.guestComment(), "нет"))
+        );
+    }
+
+    String guestEscalatedText(TableReservationOrder order) {
+        return """
+                <b>Заявка у менеджера</b>
+
+                Хостес сейчас занята, поэтому заявку #%s смотрит менеджер — ответим в ближайшее время.
+
+                <b>Стол:</b> %s
+                <b>Дата:</b> %s
+                <b>Время:</b> %s
+                <b>Гостей:</b> %s
+
+                Если планы изменятся, просто напишите сюда, и я помогу все поправить.
+                """.formatted(
+                order.id(),
+                escape(tableName(order)),
+                formatDate(order.requestedStartAt()),
+                formatTimeRange(order),
+                order.partySize()
+        );
+    }
+
+    private String escalationReason(TableReservationOrder order, Decision decision) {
+        if (decision == null) {
+            return "без ответа";
+        }
+        return switch (decision) {
+            case LARGE_PARTY -> order.partySize() + " гостей";
+            case EXCLUDED_ZONE -> "зона " + zoneLabel(order);
+            default -> "ручной режим";
+        };
+    }
+
+    private String zoneLabel(TableReservationOrder order) {
+        return blank(order.preferredZone(), tableName(order));
+    }
+
+    private String managerChatId(TableReservationOrder order) {
+        if (defaultManagerChatId != null && !defaultManagerChatId.isBlank()) {
+            return defaultManagerChatId;
+        }
+        return order.managerTelegramId() == null ? null : order.managerTelegramId().toString();
     }
 
     private String hostessApprovalRequestText(TableReservationOrder order) {

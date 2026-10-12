@@ -7,11 +7,16 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import static museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class TableReservationNotificationServiceTest {
 
-    private final TableReservationNotificationService service = new TableReservationNotificationService(null, null, null);
+    private final BookingAutoConfirmPolicy policy = mock(BookingAutoConfirmPolicy.class);
+    private final TableReservationNotificationService service =
+            new TableReservationNotificationService(null, null, null, policy, null);
 
     @Test
     void hostessCardIsUnchangedWhileTheRestaurantSystemIsOff() {
@@ -54,6 +59,61 @@ class TableReservationNotificationServiceTest {
         assertThat(service.externalSyncLine(
                 order(), result(false, TableReservationService.EXTERNAL_CHANGE_NOT_SYNCED, "saby-1")))
                 .contains("изменение не попало в Presto");
+    }
+
+    @Test
+    void hostessCardIsUnchangedWhileAutoConfirmIsOffOrPrestoDecides() {
+        assertThat(service.modeLine(order(), Decision.OFF)).isEmpty();
+        assertThat(service.modeLine(order(), Decision.VENUE_SYSTEM)).isEmpty();
+        assertThat(service.modeLine(order(), null)).isEmpty();
+    }
+
+    @Test
+    void hostessCardSaysTheRequestConfirmsItselfAfterTheTimeout() {
+        when(policy.timeoutMinutes()).thenReturn(7);
+
+        assertThat(service.modeLine(order(), Decision.AUTO))
+                .contains("через 7 мин", "подтвердится");
+    }
+
+    @Test
+    void hostessCardSaysManualModeSendsTheCardToTheManager() {
+        when(policy.timeoutMinutes()).thenReturn(7);
+
+        assertThat(service.modeLine(order(), Decision.MANUAL_MODE))
+                .contains("Ручной режим", "7 мин", "менеджеру", "/manual off");
+    }
+
+    @Test
+    void hostessCardSaysALargePartyOrAnExcludedZoneNeedsADecision() {
+        when(policy.timeoutMinutes()).thenReturn(7);
+
+        assertThat(service.modeLine(order(), Decision.LARGE_PARTY))
+                .contains("Требует решения: 2 гостей", "менеджеру");
+        assertThat(service.modeLine(order(), Decision.EXCLUDED_ZONE))
+                .contains("Требует решения", "зона", "менеджеру");
+    }
+
+    @Test
+    void managerCardSaysWhyItCameAndKeepsTheRequest() {
+        assertThat(service.managerEscalationText(order(), Decision.MANUAL_MODE, 7))
+                .contains("7 минут без ответа", "ручной режим", "Заказ:</b> #44", "Наталья");
+        assertThat(service.managerEscalationText(order(), Decision.LARGE_PARTY, 7))
+                .contains("7 минут без ответа", "2 гостей");
+    }
+
+    @Test
+    void hostessIsToldTheCardWentToTheManagerOrConfirmedItself() {
+        assertThat(service.hostessEscalatedText(order(), Decision.MANUAL_MODE, 7))
+                .contains("7 минут без ответа", "#44", "менеджеру");
+        assertThat(service.hostessAutoConfirmedText(order(), 7))
+                .contains("Подтверждено автоматически через 7 мин", "#44");
+    }
+
+    @Test
+    void guestHearsTheRequestIsWithTheManager() {
+        assertThat(service.guestEscalatedText(order()))
+                .contains("у менеджера", "ответим в ближайшее время", "#44");
     }
 
     private ExternalReservationResult result(boolean created, String status, String externalId) {

@@ -547,6 +547,35 @@ class TableReservationServiceTest {
                 order.hostessChatId(), order.sbisExternalId(), order.createdAt(), order.updatedAt());
     }
 
+    @Test
+    void confirmsAutomaticallyAndTellsTheHostessAndTheGuest() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder awaiting = order(10L, table);
+        TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(awaiting));
+        when(repository.confirm(10L)).thenReturn(confirmed);
+
+        TableReservationOrder result = service.confirmAutomatically(10L, 7);
+
+        assertThat(result).isEqualTo(confirmed);
+        verify(repository).confirm(10L);
+        verify(notificationService).notifyHostessAutoConfirmed(confirmed, 7);
+        verify(notificationService).notifyGuestConfirmed(confirmed);
+        verify(notificationService, never()).notifyHostessConfirmed(any());
+    }
+
+    @Test
+    void refusesToConfirmAutomaticallyWhatTheHostessAlreadyDecided() {
+        VenueTable table = table(1L, "5", 4, true, true);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(order(10L, table, TableReservationStatus.REJECTED)));
+
+        assertThatThrownBy(() -> service.confirmAutomatically(10L, 7))
+                .isInstanceOf(ApiException.class)
+                .hasMessageContaining("Only awaiting manager confirmation reservations can be confirmed");
+        verify(repository, never()).confirm(any());
+        verify(notificationService, never()).notifyGuestConfirmed(any());
+    }
+
     private TableReservationCommand command(String tableCode, Instant start, Instant end, int partySize) {
         return new TableReservationCommand(
                 1773317437L,

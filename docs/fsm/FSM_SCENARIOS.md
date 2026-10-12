@@ -474,7 +474,7 @@ flowchart TD
 | `TABLE_BOOKING_COLLECT_PARTY_SIZE` | Нужно число гостей | Сбор party size. |
 | `TABLE_BOOKING_COLLECT_SEATING_PREFERENCE` | Legacy-пожелания по посадке | Совместимый старый state: если runtime попал сюда, текст сохраняется как пожелание и заявка создается. Новый happy path собирает "у окна", "винная комната", "тихий стол" на шаге выбора стола/зоны и не задает финальный вопрос. |
 | `TABLE_BOOKING_WAIT_TABLE_SELECTION` | Ждем стол | План отправлен, ждем стол/зону/автовыбор. |
-| `TABLE_BOOKING_WAIT_HOSTESS_CONFIRMATION` | Ждем хостес | Заявка и hold созданы, хостес решает кнопками. |
+| `TABLE_BOOKING_WAIT_HOSTESS_CONFIRMATION` | Ждем хостес | Заявка и hold созданы, хостес решает кнопками. При `ASTOR_BOOKING_AUTO_CONFIRM_ENABLED=true` у карточки есть таймер (`ASTOR_BOOKING_AUTO_CONFIRM_TIMEOUT_MINUTES`, 7 мин): без ответа заявка подтверждается сама, а в ручном режиме (`/manual on`, «перегружены»), при компании от `ASTOR_BOOKING_AUTO_CONFIRM_MAX_PARTY` гостей или зоне из `ASTOR_BOOKING_AUTO_CONFIRM_EXCLUDE_ZONES` уходит менеджеру (`TELEGRAM_BOOKING_MANAGER_CHAT_ID`), гостю — «Заявка у менеджера». |
 | `TABLE_BOOKING_CONFIRMED` | Подтверждено | Гостю отправлен order, возврат домой. |
 | `TABLE_BOOKING_REJECTED` | Отклонено | Предложить другой вариант, затем домой или change. |
 | `TABLE_BOOKING_CHANGE_REQUESTED` | Изменение | Пересобрать draft и пройти подтверждение заново. |
@@ -634,10 +634,15 @@ flowchart TD
     Interpret -- "неясно / повтор intent" --> Plan
     ZonePick --> Order
     AutoPick --> Order
-    Order --> Hostess["Карточка хостес Да / Нет"]
+    Order --> Hostess["Карточка хостес Да / Нет<br/>+ строка режима, если включён таймер"]
     Hostess -- "Да" --> Confirm["CONFIRMED + гостю order"]
     Hostess -- "Нет" --> Reject["REJECTED + предложить другой вариант"]
-    Confirm --> Home["READY_FOR_DIALOG"]
+    Hostess -- "нет ответа N мин, авто" --> AutoConfirm["CONFIRMED автоматически<br/>гостю order, хостес «Подтверждено автоматически через N мин»"]
+    Hostess -- "нет ответа N мин: ручной режим /<br/>крупная компания / VIP-зона" --> Manager["Карточка менеджеру Да / Нет<br/>гостю «Заявка у менеджера»"]
+    Manager -- "Да" --> Confirm
+    Manager -- "Нет" --> Reject
+    AutoConfirm --> Home["READY_FOR_DIALOG"]
+    Confirm --> Home
     Reject --> Home
 ```
 
@@ -652,7 +657,10 @@ flowchart TD
 - `подбери сам` использует рейтинг столов: 4, 5, 3, 11, 17, 16, 15, 13, 14, 18, 12, 6, 2, 1, 10, 9, 7, 8, 19;
 - зоны AERIS: 1-6 у окна, 7-8 винная комната, 9-10 у бара, 11-12 камерная гостиная, 13-15 VIP-зона, 16-18 центр зала, 19 угловой столик;
 - хостес подтверждает только кнопками;
-- после `Да`/`Нет` гость получает человекочитаемый результат.
+- после `Да`/`Нет` гость получает человекочитаемый результат;
+- таймер подтверждения (#148, `BookingAutoConfirmService`, выключен по умолчанию — `ASTOR_BOOKING_AUTO_CONFIRM_ENABLED=false`, поведение прежнее): при включении карточка хостес получает строку режима, а заявка без `Да`/`Нет` через `ASTOR_BOOKING_AUTO_CONFIRM_TIMEOUT_MINUTES` (7) минут подтверждается сама — гостю order, под карточкой «Подтверждено автоматически через N мин», кнопки с карточки снимаются; `Нет` до истечения — отказ, как обычно;
+- исключения из автоподтверждения (`BookingAutoConfirmPolicy`): ручной режим заведения, компания от `ASTOR_BOOKING_AUTO_CONFIRM_MAX_PARTY` (6) гостей — на карточке «Требует решения: N гостей», пожелание или стол в зоне из `ASTOR_BOOKING_AUTO_CONFIRM_EXCLUDE_ZONES` (`VIP_ZONE`); такие заявки без ответа через те же N минут уходят менеджеру (`TELEGRAM_BOOKING_MANAGER_CHAT_ID`) карточкой с теми же кнопками `Да`/`Нет`, гостю — «Заявка у менеджера, ответим в ближайшее время», хостес — «N минут без ответа — заявка передана менеджеру»; кто ответит первым, тот и решает, второй получает «уже подтверждена/отменена»; переданная менеджеру заявка автоматически не подтверждается, даже если ручной режим потом выключили;
+- ручной режим «перегружены»: команда `/manual on [причина]` (алиас `/ручной`) и `/manual off` (алиас `/авто`), `/manual` — текущий режим; принимается только из staff-чата хостес, чата менеджера и admin-чата (`HostessReservationApprovalService`), хранится в Redis (`{prefix}:booking:hostess:manual-mode`: причина, кто, когда) без срока, то есть до обратной команды; при `ASTOR_BOOKING_CONFIRMATION_SOURCE=VENUE_SYSTEM` заявку, которая уже в Presto, таймер не трогает — её подтверждает Presto.
 
 ## EventBookingScenario
 
