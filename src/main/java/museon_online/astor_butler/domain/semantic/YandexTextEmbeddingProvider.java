@@ -21,6 +21,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 
 /**
  * {@code ASTOR_SEMANTIC_EMBEDDINGS_PROVIDER=yandex}: Yandex AI Studio text embeddings called directly, independent of
@@ -57,6 +59,8 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
     private final long throttleNanos;
     private final int maxAttempts;
     private final Duration retryDelay;
+    private final LongSupplier nanoTime;
+    private final Consumer<Duration> sleeper;
     private final Object throttleLock = new Object();
     private long nextRequestAtNanos;
 
@@ -108,6 +112,17 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
     YandexTextEmbeddingProvider(String baseUrl, String apiKey, String folderId, String documentModel, String queryModel,
                                 int expectedDimension, Duration timeout, Duration throttle, int maxAttempts,
                                 Duration retryDelay) {
+        this(baseUrl, apiKey, folderId, documentModel, queryModel, expectedDimension, timeout, throttle, maxAttempts,
+                retryDelay, System::nanoTime, YandexTextEmbeddingProvider::sleep);
+    }
+
+    /**
+     * Time seam for tests: {@code nanoTime} is the monotonic clock the throttle and the latency log read, {@code sleeper}
+     * is what throttle and retry back-off wait with. Production uses {@link System#nanoTime()} and {@link Thread#sleep}.
+     */
+    YandexTextEmbeddingProvider(String baseUrl, String apiKey, String folderId, String documentModel, String queryModel,
+                                int expectedDimension, Duration timeout, Duration throttle, int maxAttempts,
+                                Duration retryDelay, LongSupplier nanoTime, Consumer<Duration> sleeper) {
         this.endpoint = URI.create(firstNonBlank(baseUrl, DEFAULT_BASE_URL).replaceFirst("/+$", "") + PATH);
         this.apiKey = blankToNull(apiKey);
         this.folderId = blankToNull(folderId);
@@ -118,8 +133,10 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
         this.throttleNanos = Math.max(0, throttle.toNanos());
         this.maxAttempts = Math.max(1, maxAttempts);
         this.retryDelay = retryDelay;
+        this.nanoTime = nanoTime;
+        this.sleeper = sleeper;
         this.httpClient = HttpClient.newBuilder().connectTimeout(timeout).build();
-        this.nextRequestAtNanos = System.nanoTime();
+        this.nextRequestAtNanos = nanoTime.getAsLong();
     }
 
     /** Label stored in {@code embedding_model}: the document model, so rows from another model are recognisable. */
@@ -161,7 +178,7 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
         Map<String, String> body = new LinkedHashMap<>();
         body.put("modelUri", modelUri);
         body.put("text", text);
-        long startedAt = System.nanoTime();
+        long startedAt = nanoTime.getAsLong();
         List<Double> embedding = readEmbedding(send(body));
         if (embedding.isEmpty()) {
             throw new IllegalStateException("Yandex embeddings returned no vector for " + modelUri);
@@ -172,7 +189,7 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
                     + "; set ASTOR_SEMANTIC_EMBEDDING_DIMENSION=" + embedding.size() + " and re-index");
         }
         log.debug("Semantic embedding provider=yandex model={} dimension={} latencyMs={}",
-                model, embedding.size(), Duration.ofNanos(System.nanoTime() - startedAt).toMillis());
+                model, embedding.size(), Duration.ofNanos(nanoTime.getAsLong() - startedAt).toMillis());
         return embedding;
     }
 
@@ -196,7 +213,7 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
                 response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             } catch (IOException e) {
                 if (attempt < maxAttempts) {
-                    sleep(backoff(null, attempt));
+                    sleeper.accept(backoff(null, attempt));
                     continue;
                 }
                 throw new IllegalStateException("Yandex embedding request failed after " + attempt + " attempts", e);
@@ -209,7 +226,7 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
                 return response.body();
             }
             if ((status == 429 || status >= 500) && attempt < maxAttempts) {
-                sleep(backoff(response, attempt));
+                sleeper.accept(backoff(response, attempt));
                 continue;
             }
             // The body may echo the request; only the status goes to the log.
@@ -249,13 +266,13 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
         }
         long waitNanos;
         synchronized (throttleLock) {
-            long now = System.nanoTime();
+            long now = nanoTime.getAsLong();
             long startAt = nextRequestAtNanos - now > 0 ? nextRequestAtNanos : now;
             nextRequestAtNanos = startAt + throttleNanos;
             waitNanos = startAt - now;
         }
         if (waitNanos > 0) {
-            sleep(Duration.ofNanos(waitNanos));
+            sleeper.accept(Duration.ofNanos(waitNanos));
         }
     }
 
@@ -273,7 +290,7 @@ public class YandexTextEmbeddingProvider implements EmbeddingProvider {
         return retryAfter.orElse(retryDelay.multipliedBy(1L << Math.min(4, attempt - 1)));
     }
 
-    private void sleep(Duration delay) {
+    private static void sleep(Duration delay) {
         try {
             Thread.sleep(delay);
         } catch (InterruptedException e) {

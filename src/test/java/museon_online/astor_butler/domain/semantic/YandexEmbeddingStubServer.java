@@ -16,7 +16,7 @@ import java.util.stream.IntStream;
 /** Stand-in for Yandex AI Studio {@code /foundationModels/v1/textEmbedding}: records requests, answers from a queue. */
 final class YandexEmbeddingStubServer implements AutoCloseable {
 
-    record Seen(String method, String path, String authorization, String contentType, String body, long atNanos) {
+    record Seen(String method, String path, String authorization, String contentType, String body) {
     }
 
     private record Reply(int status, String body) {
@@ -38,7 +38,7 @@ final class YandexEmbeddingStubServer implements AutoCloseable {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             stub.requests.add(new Seen(exchange.getRequestMethod(), exchange.getRequestURI().getPath(),
                     exchange.getRequestHeaders().getFirst("Authorization"),
-                    exchange.getRequestHeaders().getFirst("Content-Type"), body, System.nanoTime()));
+                    exchange.getRequestHeaders().getFirst("Content-Type"), body));
             Reply reply;
             synchronized (stub.replies) {
                 reply = stub.replies.isEmpty() ? new Reply(200, vectorJson(256)) : stub.replies.pollFirst();
