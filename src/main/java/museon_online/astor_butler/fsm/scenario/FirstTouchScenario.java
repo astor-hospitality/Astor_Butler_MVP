@@ -3,12 +3,14 @@ package museon_online.astor_butler.fsm.scenario;
 import lombok.RequiredArgsConstructor;
 import museon_online.astor_butler.config.AstorLinksProperties;
 import museon_online.astor_butler.domain.consent.ConsentVaultService;
+import museon_online.astor_butler.domain.entry.StaffHandoffLink;
 import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.fsm.storage.FSMStorage;
 import museon_online.astor_butler.service.message.AdminAlert;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.MessageChannel;
 import museon_online.astor_butler.service.message.OutgoingMessage;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -22,6 +24,10 @@ public class FirstTouchScenario implements FsmScenario {
     private final TableBookingDraftStorage tableBookingDraftStorage;
     private final ChangeCancelDraftStorage changeCancelDraftStorage;
     private final AstorLinksProperties links;
+
+    /** {@code astor.staff-handoff.enabled} (#128): with it on, {@code /start h_<staff_id>[_t<стол>]} is a start like any other. */
+    @Value("${astor.staff-handoff.enabled:false}")
+    private boolean staffHandoffEnabled;
 
     public String id() {
         return "FIRST_TOUCH";
@@ -53,6 +59,9 @@ public class FirstTouchScenario implements FsmScenario {
             return FirstTouchSignal.CONTACT_SHARED;
         }
         if ("/start".equalsIgnoreCase(text) || "/restart".equalsIgnoreCase(text)) {
+            return FirstTouchSignal.START_COMMAND;
+        }
+        if (staffHandoffEnabled && StaffHandoffLink.isPlainStart(text)) {
             return FirstTouchSignal.START_COMMAND;
         }
         if (currentState == BotState.UNKNOWN && incoming.hasMessengerUser()) {
@@ -170,6 +179,10 @@ public class FirstTouchScenario implements FsmScenario {
 
     public boolean sideEffecting() {
         return true;
+    }
+
+    void setStaffHandoffEnabled(boolean staffHandoffEnabled) {
+        this.staffHandoffEnabled = staffHandoffEnabled;
     }
 
     private enum FirstTouchSignal {

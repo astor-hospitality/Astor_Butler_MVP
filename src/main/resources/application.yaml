@@ -119,6 +119,17 @@ astor:
     # and the timers (auto-confirm, hold expiry, morning check, Presto sync, payment links) wait; menus, consent and answers keep
     # working. The flag is in Redis without TTL and survives a restart. Off by default: the commands are unknown.
     enabled: ${ASTOR_KILL_SWITCH_ENABLED:false}
+  staff-handoff:
+    # A staff member's personal guest link / QR and the log of who brought the guest in (#128). On: `/ссылка <staff_id> [стол]`
+    # (`/link`) in the staff, manager or admin chat answers with the lunch deep-link `…_h<staff_id>[_n<стол>]` and a QR
+    # rendered locally; a /start with `_h<staff_id>` (lunch link, `_hhost` for the printed QR at the host stand) or
+    # `h_<staff_id>[_t<стол>]` (entry without the lunch) writes a row to guest_entry_events, the hostess card of a request
+    # made within session-hours gets «Привёл(а): <имя>», the system chat one line. A journal note only: no bonuses, no
+    # ratings. Off by default: the parameters are ignored exactly as before and the command is unknown.
+    enabled: ${ASTOR_STAFF_HANDOFF_ENABLED:false}
+    # The tenant of astor_staff_members the display names are read from (the same as the glasses'); blank — any tenant.
+    tenant: ${ASTOR_STAFF_HANDOFF_TENANT:${ASTOR_GLASSES_TENANT:}}
+    session-hours: ${ASTOR_STAFF_HANDOFF_SESSION_HOURS:6}
   shift:
     briefing:
       # Twice a day into the analytics chat: the plan in the first minutes of the shift, the look back once it is over.
