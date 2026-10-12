@@ -228,6 +228,29 @@ class TableReservationNotificationServiceTest {
         return new ExternalReservationResult(created, true, "SABY", status, externalId, "", List.of(), Map.of());
     }
 
+    @Test
+    void theGuestsOwnBillRequestIsACardInTheUsualStyleWithoutThePhone() {
+        String card = service.guestAskedForBillText(order());
+
+        assertThat(card)
+                .startsWith("💳 <b>Стол 5 (5) просит счёт</b> (гость написал в боте)")
+                .contains("<b>Заказ:</b> #44", "<b>Гость:</b> Наталья", "<b>Стол:</b> Стол 5 (5)", "<b>Дата:</b> 07.10.2026",
+                        "<b>Время:</b> 13:00 - 15:00", "<b>Гостей:</b> 2", "Принесите счёт к столу")
+                .doesNotContain("Телефон", "+79990000000", "Telegram:");
+    }
+
+    @Test
+    void theGuestsOwnBillRequestNamesTheGuestWhenNoTableWasChosen() {
+        TableReservationOrder withoutTable = new TableReservationOrder(44L, 1773317437L, 1773317437L, null, null, null, null, null, null,
+                TableReservationStatus.CONFIRMED, "TELEGRAM", Instant.parse("2026-10-07T08:00:00Z"), Instant.parse("2026-10-07T10:00:00Z"),
+                null, null, "+79990000000", null, null, null, null, null, Instant.parse("2026-10-06T00:00:00Z"), Instant.parse("2026-10-06T00:00:00Z"));
+
+        assertThat(service.guestAskedForBillText(withoutTable))
+                .startsWith("💳 <b>Гость просит счёт</b> (гость написал в боте)")
+                .contains("<b>Стол:</b> не выбран", "<b>Гость:</b> гость из Telegram", "<b>Гостей:</b> не указано")
+                .doesNotContain("+79990000000");
+    }
+
     private TableReservationOrder order() {
         return new TableReservationOrder(
                 44L,

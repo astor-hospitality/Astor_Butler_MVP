@@ -119,6 +119,16 @@ astor:
       # согласовать с кухней»; «состав …» / «что в …» / «аллергены …» is answered from the lunch menu file when the
       # restaurant has filled ingredients in (docs/operations/MENU_COMPOSITION_FOR_BOT.md). Off by default.
       enabled: ${ASTOR_LUNCH_WISHES_ENABLED:false}
+  tips:
+    personal:
+      # Tips to the waiter of the table (#161): the manager assigns a waiter to a table for the shift (/официант) and keeps the
+      # waiter's own tip link in the staff directory (/чаевые). With a waiter and a link, the guest's tip goes to that person by
+      # name and link; otherwise the venue's default recipient, as before. Off by default: the commands are unknown and the
+      # recipient is the default one, word for word. The directory is astor_staff_members of this tenant; the shift day is
+      # counted in the venue's time zone.
+      enabled: ${ASTOR_TIPS_PERSONAL_ENABLED:false}
+      tenant: ${ASTOR_TIPS_PERSONAL_TENANT:AERIS}
+      timezone: ${ASTOR_TIPS_PERSONAL_TIMEZONE:Asia/Yekaterinburg}
   kill-switch:
     # The shift manager's stop button (#134): /stop (/стоп), /start_butler (/go), /status_butler in the staff, manager
     # or admin chat. Paused, guest requests (booking, change/cancel, lunch, event) go to the staff chat as plain cards
@@ -247,6 +257,15 @@ astor:
     payment-prompt-delay-ms: ${ASTOR_BILLING_PAYMENT_PROMPT_DELAY_MS:30000}
     review-delay-minutes: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:60}
     review-lookback-hours: ${ASTOR_BILLING_REVIEW_LOOKBACK_HOURS:24}
+    guest-bill-request:
+      # The guest asks for the bill in the bot (#153 A2): «счёт», «чек», «посчитайте», «рассчитайте», «оплатить», «закрыть стол»
+      # as whole words, outside a dialogue step, from a guest with a visit today. Off (default): the words go to the usual flow.
+      # On: the staff chat gets «💳 Стол N просит счёт (гость написал в боте)» (no phone), the guest hears «передал команде»,
+      # and with astor.review.moment=on-bill the review is asked right there, as by the hostess «Счёт» button.
+      enabled: ${ASTOR_GUEST_BILL_REQUEST_ENABLED:false}
+      # A second «счёт» inside this window sends the team nothing and is answered with «уже передал».
+      repeat-window-minutes: ${ASTOR_GUEST_BILL_REQUEST_REPEAT_WINDOW_MINUTES:10}
+      timezone: ${ASTOR_GUEST_BILL_REQUEST_TIMEZONE:Asia/Yekaterinburg}
   review:
     # When the guest is asked how it went (stars, then 👍/👎, then tips). after-close (default): when the venue closes
     # the order, or by the clock after the visit, as before. on-bill: at the bill, while the guest is still at the table:

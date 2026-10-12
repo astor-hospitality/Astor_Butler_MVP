@@ -168,6 +168,8 @@ ON CONFLICT (tenant, staff_id) DO NOTHING;
 
 `tenant` должен совпадать с `ASTOR_GLASSES_TENANT` очков, `staff_id` менеджера — с `ASTOR_GLASSES_STAFF`. Смена менеджера должна быть открыта, иначе поручение «на себя» получит 409 `ASSIGNEE_OFF_SHIFT` и в наушнике будет «повторите». Когда включат портал с Keycloak, `staff_id` станет `sub` токена — записи пилота тогда нужно согласовать с реальными subject ID.
 
+Тот же справочник с 2026-10-12 использует сценарий чаевых ([#161](https://github.com/astor-hospitality/Astor_Butler_MVP/issues/161), флаг `ASTOR_TIPS_PERSONAL_ENABLED`, tenant `ASTOR_TIPS_PERSONAL_TENANT` — тот же, что у очков): миграция `2026-10-12-tips-personal` добавляет в `astor_staff_members` колонки `tip_link` (ссылка официанта для чаевых — СБП на физлицо, чтобы без комиссии на вывод) и `tip_note` (короткая заметка менеджеру, например «СБП, Сбер») и таблицу `table_waiter_assignments` (официант стола на день смены: `tenant`, `table_code`, `shift_date`, `staff_id`, `assigned_by`). Заполняются не SQL-ом, а командами менеджера в staff-чате: `/чаевые <staff_id> <ссылка>` и `/официант <стол> <имя>` — ссылки в git, памятки и чаты не класть; бот их в чат не выводит. Для чаевых нужны только `active = TRUE` и роль `WAITER` в списке `/чаевые`; открытая смена (`shift_open`) не требуется, в отличие от поручений. Подробно — `BUSINESS_LUNCH_FIRST_TEST.md` §6, «Чаевые официанту стола».
+
 ## Выкатка на VM (оба образа)
 
 Код не деплоится этим PR; порядок для оператора после merge в `main`:

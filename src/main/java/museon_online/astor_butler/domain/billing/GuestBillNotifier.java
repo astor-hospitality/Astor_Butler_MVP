@@ -64,6 +64,17 @@ public class GuestBillNotifier {
         return send(bill.chatId(), text, null, "guest-bill-paid");
     }
 
+    /**
+     * The bot's answer to the guest's own «счёт» (#153 A2), sent here rather than through the FSM reply so that it
+     * lands before the review question when the review is asked at the bill. Plain text, keyboards untouched.
+     */
+    public boolean billRequestReply(Long chatId, String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        return send(chatId, text, null, "guest-bill-request-reply");
+    }
+
     public boolean reviewPrompt(GuestBill bill) {
         String text = """
                 <b>Как прошёл обед?</b>
