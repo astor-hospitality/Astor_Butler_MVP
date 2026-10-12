@@ -251,6 +251,15 @@ astor:
     payment-prompt-delay-ms: ${ASTOR_BILLING_PAYMENT_PROMPT_DELAY_MS:30000}
     review-delay-minutes: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:60}
     review-lookback-hours: ${ASTOR_BILLING_REVIEW_LOOKBACK_HOURS:24}
+    guest-bill-request:
+      # The guest asks for the bill in the bot (#153 A2): «счёт», «чек», «посчитайте», «рассчитайте», «оплатить», «закрыть стол»
+      # as whole words, outside a dialogue step, from a guest with a visit today. Off (default): the words go to the usual flow.
+      # On: the staff chat gets «💳 Стол N просит счёт (гость написал в боте)» (no phone), the guest hears «передал команде»,
+      # and with astor.review.moment=on-bill the review is asked right there, as by the hostess «Счёт» button.
+      enabled: ${ASTOR_GUEST_BILL_REQUEST_ENABLED:false}
+      # A second «счёт» inside this window sends the team nothing and is answered with «уже передал».
+      repeat-window-minutes: ${ASTOR_GUEST_BILL_REQUEST_REPEAT_WINDOW_MINUTES:10}
+      timezone: ${ASTOR_GUEST_BILL_REQUEST_TIMEZONE:Asia/Yekaterinburg}
   review:
     # When the guest is asked how it went (stars, then 👍/👎, then tips). after-close (default): when the venue closes
     # the order, or by the clock after the visit, as before. on-bill: at the bill, while the guest is still at the table:

@@ -127,6 +127,8 @@ services:
       # after-close (default): the review after the venue closes the order / by the clock. on-bill: at the bill — with
       # the payment link, or by the hostess «Счёт» button on the reservation card. docs/integrations/SABY_BILLING.md §8
       ASTOR_REVIEW_MOMENT: ${ASTOR_REVIEW_MOMENT:-after-close}
+      # The guest's own «счёт» in the bot (#153 A2): a card «стол N просит счёт» to the staff chat and, with on-bill, the review. Off by default.
+      ASTOR_GUEST_BILL_REQUEST_ENABLED: ${AERIS_GUEST_BILL_REQUEST_ENABLED:-${ASTOR_GUEST_BILL_REQUEST_ENABLED:-false}}
       # Auto-confirm of the hostess card (#148, docs/fsm/FSM_SCENARIOS.md): off by default, nothing changes until enabled.
       # Unanswered cards go to TELEGRAM_BOOKING_MANAGER_CHAT_ID after the timeout in manual mode (/manual on) or for a large party.
       ASTOR_BOOKING_AUTO_CONFIRM_ENABLED: ${AERIS_BOOKING_AUTO_CONFIRM_ENABLED:-${ASTOR_BOOKING_AUTO_CONFIRM_ENABLED:-false}}
@@ -245,6 +247,7 @@ services:
       ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES: ${ASTOR_BOOKING_MORNING_CHECK_MIN_LEAD_MINUTES:-90}
       ASTOR_BUSINESS_LUNCH_ENABLED: ${C3FLEX_BUSINESS_LUNCH_ENABLED:-${ASTOR_BUSINESS_LUNCH_ENABLED:-true}}
       ASTOR_KILL_SWITCH_ENABLED: ${C3FLEX_KILL_SWITCH_ENABLED:-${ASTOR_KILL_SWITCH_ENABLED:-false}}
+      ASTOR_GUEST_BILL_REQUEST_ENABLED: ${C3FLEX_GUEST_BILL_REQUEST_ENABLED:-${ASTOR_GUEST_BILL_REQUEST_ENABLED:-false}}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
       YANDEX_AGENT_ID: ${YANDEX_AGENT_ID:-fvt18kmmnas336paia3g}
