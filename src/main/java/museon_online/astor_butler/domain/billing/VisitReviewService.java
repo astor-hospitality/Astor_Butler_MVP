@@ -144,7 +144,7 @@ public class VisitReviewService {
         if (matcher.group(3) != null) {
             VisitReview review = reviews.rate(billId, Integer.parseInt(matcher.group(3)));
             if (journeyEvents != null) {
-                journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+                journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=" + review.stars());
             }
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "stars=" + review.stars());
             notifier.reviewThanks(bill, review);
@@ -153,7 +153,7 @@ public class VisitReviewService {
         if (matcher.group(4) != null) {
             VisitReview review = reviews.thumb(billId, VisitReview.Thumb.valueOf(matcher.group(4)));
             if (journeyEvents != null) {
-                journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+                journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "thumb=" + review.thumb());
             }
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "thumb=" + review.thumb());
             notifier.reviewThanks(bill, review);

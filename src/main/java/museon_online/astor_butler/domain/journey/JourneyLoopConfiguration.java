@@ -23,11 +23,14 @@ public class JourneyLoopConfiguration {
     @Bean
     ReturnLoop returnLoop(GuestJourneyProperties properties, GuestVisitRepository visits, JourneyRecorder recorder, UsefulnessPolicy policy,
                           TableReservationNotificationService notifications, TableReservationRepository reservations,
-                          TableRequestRouter router) {
+                          TableRequestRouter router, LastLunchService lastLunch,
+                          museon_online.astor_butler.domain.lunch.BusinessLunchCatalog lunches,
+                          @Value("${astor.business-lunch.default-venue-code:AERIS}") String venueCode) {
         return new ReturnLoop(properties, visits, recorder, policy,
                 (chatId, text) -> notifications.notifyGuestChat(chatId, text, "journey-return-loop"),
                 reservationId -> reservations.findOrder(reservationId)
                         .map(order -> new ReturnLoop.Guest(order.guestName(), router.waiterName(order).orElse(null))),
+                chatId -> lunches.find(venueCode).flatMap(menu -> lastLunch.find(chatId, menu)).isPresent(),
                 Clock.systemUTC());
     }
 

@@ -158,6 +158,23 @@ public class GuestVisitRepository {
                 + "ORDER BY visit_day LIMIT ?", VISIT, Timestamp.from(before), limit);
     }
 
+    /**
+     * Visits a week past whose invitation is still due: day inside [from, before), a chat to write to, not invited and
+     * not already returned. Oldest first; done visits leave the list, so it never clogs.
+     */
+    public List<GuestVisit> awaitingInvite(Instant from, Instant before, int limit) {
+        return jdbc.query("SELECT " + VISIT_COLUMNS + " FROM guest_visits v WHERE stage = 'AFTER' AND visit_day >= ? AND visit_day < ? "
+                + "AND chat_id IS NOT NULL AND returned_visit_id IS NULL AND NOT EXISTS (SELECT 1 FROM guest_visit_events e "
+                + "WHERE e.visit_id = v.id AND e.kind = 'INVITED') ORDER BY visit_day LIMIT ?",
+                VISIT, Timestamp.from(from), Timestamp.from(before), limit);
+    }
+
+    /** The note of the visit's latest event of this kind, e.g. the rating of a review. */
+    public Optional<String> eventNote(long visitId, VisitEventKind kind) {
+        return jdbc.queryForList("SELECT note FROM guest_visit_events WHERE visit_id = ? AND kind = ? ORDER BY id DESC LIMIT 1",
+                String.class, visitId, kind.name()).stream().filter(java.util.Objects::nonNull).findFirst();
+    }
+
     public boolean hasEvent(long visitId, VisitEventKind kind) {
         Integer count = jdbc.queryForObject("SELECT count(*) FROM guest_visit_events WHERE visit_id = ? AND kind = ?",
                 Integer.class, visitId, kind.name());

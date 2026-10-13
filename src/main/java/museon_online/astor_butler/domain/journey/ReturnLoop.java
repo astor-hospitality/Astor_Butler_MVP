@@ -33,22 +33,37 @@ public class ReturnLoop {
         void send(long chatId, String text);
     }
 
+    /** Whether the guest's last lunch has dishes still on today's menu — the invitation offers exactly that. */
+    public interface Repeatable {
+        boolean hasSomethingToRepeat(long chatId);
+    }
+
+    static final String SORRY = "Спасибо, что честно оценили визит — передали управляющему, разберёмся.";
+    static final String STOP_HINT = " Если такие сообщения не нужны — напишите «больше не пишите».";
+
+    static String thanks(String waiter) {
+        return waiter == null ? "Спасибо за отзыв — передали команде AERIS. Хорошего дня!"
+                : waiter + " получил ваш отзыв — спасибо, ему очень приятно. Хорошего дня!";
+    }
+
     private final GuestJourneyProperties properties;
     private final GuestVisitRepository visits;
     private final JourneyRecorder recorder;
     private final UsefulnessPolicy policy;
     private final GuestText guest;
     private final Guests guests;
+    private final Repeatable repeatable;
     private final Clock clock;
 
     public ReturnLoop(GuestJourneyProperties properties, GuestVisitRepository visits, JourneyRecorder recorder, UsefulnessPolicy policy,
-                      GuestText guest, Guests guests, Clock clock) {
+                      GuestText guest, Guests guests, Repeatable repeatable, Clock clock) {
         this.properties = properties;
         this.visits = visits;
         this.recorder = recorder;
         this.policy = policy;
         this.guest = guest;
         this.guests = guests;
+        this.repeatable = repeatable;
         this.clock = clock;
     }
 
@@ -66,15 +81,18 @@ public class ReturnLoop {
             return;
         }
         for (GuestVisit visit : visits.inStagesWithDayBefore(List.of(JourneyStage.SEATED, JourneyStage.BILL), today, BATCH)) {
-            if (visit.chatId() != null && policy.permits(visit.reservationId(), visit.chatId(), ProactiveMessage.AFTER)) {
-                send(visit, afterText(visit));
+            Optional<String> text = visit.chatId() == null ? Optional.empty() : afterText(visit);
+            if (text.isPresent() && policy.permits(visit.reservationId(), visit.chatId(), ProactiveMessage.AFTER)) {
+                send(visit, text.get());
             }
             record(visit, VisitEventKind.AFTER_SENT);
         }
         Instant inviteBefore = now.toLocalDate().minusDays(properties.getReturnLoop().getInviteAfterDays() - 1L).atStartOfDay(zone).toInstant();
-        for (GuestVisit visit : visits.inStagesWithDayBefore(List.of(JourneyStage.AFTER), inviteBefore, BATCH)) {
-            if (visit.chatId() == null || visit.returnedVisitId() != null || visits.hasEvent(visit.id(), VisitEventKind.INVITED)
-                    || visits.hasLaterVisit(visit.chatId(), visit.guestPhone(), visit.openedAt(), visit.id())) {
+        // Only visits inside the window: a loop turned on late does not invite everyone who ever came.
+        Instant inviteFrom = inviteBefore.minus(java.time.Duration.ofDays(properties.getReturnLoop().getWindowDays()));
+        for (GuestVisit visit : visits.awaitingInvite(inviteFrom, inviteBefore, BATCH)) {
+            if (visits.hasLaterVisit(visit.chatId(), visit.guestPhone(), visit.openedAt(), visit.id())
+                    || !repeatable.hasSomethingToRepeat(visit.chatId())) {
                 continue;
             }
             if (policy.permits(visit.reservationId(), visit.chatId(), ProactiveMessage.INVITE)) {
@@ -84,13 +102,28 @@ public class ReturnLoop {
         }
     }
 
-    private String afterText(GuestVisit visit) {
-        Optional<String> waiter = guests.of(visit.reservationId()).map(Guest::waiter).filter(name -> !name.isBlank());
-        if (waiter.isEmpty()) {
-            return "Спасибо за отзыв — передали команде AERIS. Хорошего дня!";
+    /** Only after a review: a good one thanks for the waiter, a poor one is passed on; no review — nothing to say. */
+    private Optional<String> afterText(GuestVisit visit) {
+        Optional<String> rating = visits.eventNote(visit.id(), VisitEventKind.REVIEW);
+        if (rating.isEmpty()) {
+            return Optional.empty();
         }
-        String what = visits.hasEvent(visit.id(), VisitEventKind.TIP) ? "ваш отзыв и чаевые" : "ваш отзыв";
-        return waiter.get() + " получил " + what + " — спасибо, ему очень приятно. Хорошего дня!";
+        if (!good(rating.get())) {
+            return Optional.of(SORRY + STOP_HINT);
+        }
+        String waiter = guests.of(visit.reservationId()).map(Guest::waiter).filter(name -> !name.isBlank()).orElse(null);
+        return Optional.of(thanks(waiter) + STOP_HINT);
+    }
+
+    static boolean good(String rating) {
+        if (rating.startsWith("stars=")) {
+            try {
+                return Integer.parseInt(rating.substring("stars=".length()).trim()) >= 4;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+        return rating.equals("thumb=UP");
     }
 
     private String inviteText(GuestVisit visit, LocalDate today) {

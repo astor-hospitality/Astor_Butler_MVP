@@ -47,12 +47,16 @@ public class JourneyEvents {
     }
 
     public void onReservationId(Long reservationId, VisitEventKind kind, String source) {
+        onReservationId(reservationId, kind, source, null);
+    }
+
+    public void onReservationId(Long reservationId, VisitEventKind kind, String source, String note) {
         if (reservationId == null || !recorder.enabled()) {
             return;
         }
         try {
             visits.findByReservation(reservationId).ifPresent(visit -> recorder.record(visit.reservationId(), visit.chatId(),
-                    visit.guestPhone(), visit.venueCode(), visit.visitDay(), kind, source, null));
+                    visit.guestPhone(), visit.venueCode(), visit.visitDay(), kind, source, note));
         } catch (RuntimeException e) {
             log.warn("Guest journey event by reservation not recorded: reservation={}, kind={}, reason={}", reservationId, kind, e.toString());
         }

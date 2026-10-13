@@ -45,7 +45,15 @@ class ReturnLoopTest {
         Clock clock = Clock.fixed(now, ZoneOffset.UTC);
         JourneyRecorder recorder = new JourneyRecorder(visits, properties, clock);
         return new ReturnLoop(properties, visits, recorder, new UsefulnessPolicy(visits, policyProperties),
-                (chatId, text) -> sent.add(chatId + ": " + text), reservationId -> Optional.of(new ReturnLoop.Guest("Мария", "Кирилл")), clock);
+                (chatId, text) -> sent.add(chatId + ": " + text), reservationId -> Optional.of(new ReturnLoop.Guest("Мария", "Кирилл")),
+                chatId -> somethingToRepeat, clock);
+    }
+
+    private boolean somethingToRepeat = true;
+
+    private void reviewed(long reservation, String rating) {
+        new JourneyRecorder(visits, properties, Clock.fixed(VISIT, ZoneOffset.UTC))
+                .record(reservation, CHAT, null, "AERIS", VISIT, VisitEventKind.REVIEW, "GUEST", rating);
     }
 
     private void visitAt(long reservation, JourneyStage stage, Instant day) {
@@ -62,13 +70,12 @@ class ReturnLoopTest {
     @Test
     void afterMessageNextDayOnlyOnce() {
         visitAt(42L, JourneyStage.BILL, VISIT);
-        new JourneyRecorder(visits, properties, Clock.fixed(VISIT, ZoneOffset.UTC))
-                .record(42L, CHAT, null, "AERIS", VISIT, VisitEventKind.TIP, "GUEST", null);
+        reviewed(42L, "stars=5");
 
         loop(Instant.parse("2026-10-15T07:00:00Z")).tick();
         loop(Instant.parse("2026-10-15T08:00:00Z")).tick();
 
-        assertThat(sent).containsExactly(CHAT + ": Кирилл получил ваш отзыв и чаевые — спасибо, ему очень приятно. Хорошего дня!");
+        assertThat(sent).containsExactly(CHAT + ": " + ReturnLoop.thanks("Кирилл") + ReturnLoop.STOP_HINT);
         assertThat(visits.findByReservation(42L).orElseThrow().stage()).isEqualTo(JourneyStage.AFTER);
     }
 
@@ -134,6 +141,69 @@ class ReturnLoopTest {
         properties.getReturnLoop().setEnabled(false);
 
         loop(Instant.parse("2026-10-15T07:00:00Z")).tick();
+
+        assertThat(sent).isEmpty();
+    }
+
+    @Test
+    void noNextDayMessageWithoutAReview() {
+        visitAt(42L, JourneyStage.BILL, VISIT);
+        new JourneyRecorder(visits, properties, Clock.fixed(VISIT, ZoneOffset.UTC))
+                .record(42L, CHAT, null, "AERIS", VISIT, VisitEventKind.TIP, "GUEST", null);
+
+        loop(Instant.parse("2026-10-15T07:00:00Z")).tick();
+
+        assertThat(sent).isEmpty();
+        assertThat(visits.findByReservation(42L).orElseThrow().stage()).isEqualTo(JourneyStage.AFTER);
+    }
+
+    @Test
+    void aLowRatingIsNotThankedAsAPleasure() {
+        visitAt(42L, JourneyStage.BILL, VISIT);
+        reviewed(42L, "stars=2");
+
+        loop(Instant.parse("2026-10-15T07:00:00Z")).tick();
+
+        assertThat(sent).containsExactly(CHAT + ": " + ReturnLoop.SORRY + ReturnLoop.STOP_HINT);
+    }
+
+    @Test
+    void noInviteWhenThereIsNothingToRepeat() {
+        visitAt(42L, JourneyStage.BILL, VISIT);
+        loop(Instant.parse("2026-10-15T07:00:00Z")).tick();
+        sent.clear();
+        somethingToRepeat = false;
+
+        loop(Instant.parse("2026-10-21T07:00:00Z")).tick();
+
+        assertThat(sent).isEmpty();
+    }
+
+    @Test
+    void oldInvitedVisitsDoNotCrowdOutANewOne() {
+        for (long r = 1000; r < 1120; r++) {
+            Instant day = Instant.parse("2026-10-01T08:00:00Z");
+            JourneyRecorder recorder = new JourneyRecorder(visits, properties, Clock.fixed(day, ZoneOffset.UTC));
+            recorder.record(r, 7L, null, "AERIS", day, VisitEventKind.SEATED, "STAFF", null);
+            recorder.record(r, 7L, null, "AERIS", day, VisitEventKind.AFTER_SENT, "BOT", null);
+            recorder.record(r, 7L, null, "AERIS", day, VisitEventKind.INVITED, "BOT", null);
+        }
+        visitAt(42L, JourneyStage.BILL, VISIT);
+        loop(Instant.parse("2026-10-15T07:00:00Z")).tick();
+        sent.clear();
+
+        loop(Instant.parse("2026-10-21T07:00:00Z")).tick();
+
+        assertThat(sent).hasSize(1);
+    }
+
+    @Test
+    void visitsOlderThanTheWindowAreNotInvitedWhenTheLoopIsTurnedOnLate() {
+        visitAt(42L, JourneyStage.BILL, VISIT);
+        loop(Instant.parse("2026-10-15T07:00:00Z")).tick();
+        sent.clear();
+
+        loop(Instant.parse("2026-12-01T07:00:00Z")).tick();
 
         assertThat(sent).isEmpty();
     }

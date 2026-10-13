@@ -148,7 +148,7 @@ class VisitReviewServiceTest {
         reviews.handleCallback("visit_review:" + bill.id() + ":stars:5", CHAT);
         reviews.handleCallback("visit_review:" + bill.id() + ":tip", CHAT);
 
-        org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+        org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=5");
         org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.TIP, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
     }
 }
