@@ -254,7 +254,8 @@ public class BusinessLunchService {
             BusinessLunchOffer.Dish dish = offer.dish(entry.getKey())
                     .orElseThrow(() -> new IllegalArgumentException("Unknown business lunch dish: " + entry.getKey()));
             String course = offer.courseOf(dish.code()).map(BusinessLunchOffer.Course::code).orElse("");
-            items.add(new BusinessLunchOrder.Item(course, dish.code(), dish.title(), entry.getValue(), dish.priceRub()));
+            items.add(new BusinessLunchOrder.Item(course, dish.code(), dish.title(), entry.getValue(), dish.priceRub(),
+                    dish.sabyName()));
         }
         return List.copyOf(items);
     }

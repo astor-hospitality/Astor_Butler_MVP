@@ -9,31 +9,36 @@
   "included": "",
   "courses": [
     {"code": "SALAD", "title": "Салаты", "dishes": [
-      {"code": "NICOISE", "title": "Нисуаз", "priceRub": 290, "portion": "170 г"},
-      {"code": "CAESAR_CHICKEN", "title": "Цезарь с цыплёнком", "priceRub": 290, "portion": "130 г"}
+      {"code": "SALAD_COLESLAW", "title": "Салат коул слоу", "sabyName": "Салат коул слоу ЛАНЧ", "priceRub": 230, "portion": null},
+      {"code": "SALAD_HERRING_APPLE", "title": "Салат с сельдью и яблоком", "sabyName": "Салат с сельдью и яблоком Ланч", "priceRub": 280, "portion": null},
+      {"code": "SALAD_BLINI", "title": "Блинный салат", "sabyName": "Блинный салат Ланч", "priceRub": 280, "portion": null}
     ]},
     {"code": "SOUP", "title": "Суп", "dishes": [
-      {"code": "BORSCHT", "title": "Борщ со сметаной", "priceRub": 270, "portion": "320 г"},
-      {"code": "CHICKEN_BROTH", "title": "Куриный бульон с домашней лапшой", "priceRub": 230, "portion": "300 г"}
+      {"code": "PEA_SOUP_SMOKED", "title": "Гороховый суп с копченостями", "sabyName": "Гороховый суп с копченостями ЛАНЧ", "priceRub": 290, "portion": null},
+      {"code": "MUSHROOM_CREAM_SOUP", "title": "Крем-суп грибной", "sabyName": "Крем суп грибной Ланч", "priceRub": 230, "portion": null}
     ]},
     {"code": "MAIN", "title": "Горячее", "dishes": [
-      {"code": "COD_TARTAR", "title": "Треска с соусом тартар", "priceRub": 520, "portion": "150 г"},
-      {"code": "CHICKEN_CUTLETS", "title": "Куриные котлеты с картофельным пюре", "priceRub": 370, "portion": "200 г"},
-      {"code": "STROGANOFF", "title": "Бефстроганов с картофельным пюре", "priceRub": 570, "portion": "250 г"}
+      {"code": "PASTA_BOLOGNESE", "title": "Паста болоньезе", "sabyName": "Паста болоньезе Ланч", "priceRub": 420, "portion": null},
+      {"code": "FISH_CUTLETS", "title": "Рыбные котлеты с картофельным пюре", "sabyName": "Рыбные котлеты с картофельным пюре ЛАНЧ", "priceRub": 490, "portion": null},
+      {"code": "CHICKEN_SKEWERS", "title": "Шашлычок из куриного бедра с фасолью и болгарским перцем", "sabyName": "Шашлычок из куриного бедра с фасолью и болгарским перцем ЛАНЧ", "priceRub": 450, "portion": null}
     ]},
     {"code": "DESSERT", "title": "Десерты", "dishes": [
-      {"code": "MEDOVIK", "title": "Медовик", "priceRub": 220, "portion": "90 г"}
+      {"code": "CHEESECAKE_SAN_SEBASTIAN", "title": "Чизкейк Сан-Себастьян", "sabyName": "Чизкейк Сан-Себастьян ЛАНЧ", "priceRub": 250, "portion": null}
     ]},
     {"code": "DRINKS", "title": "Напитки", "dishes": [
-      {"code": "TEA_ASSAM", "title": "Чай ассам", "priceRub": 210, "portion": "500 мл"},
-      {"code": "TEA_SENCHA", "title": "Чай сенча", "priceRub": 210, "portion": "500 мл"},
-      {"code": "ESPRESSO", "title": "Эспрессо / лунго", "priceRub": 160, "portion": null},
-      {"code": "CAPPUCCINO", "title": "Капучино", "priceRub": 220, "portion": null},
-      {"code": "LEMONADE_RASPBERRY", "title": "Лимонад малина-бузина", "priceRub": 200, "portion": null},
-      {"code": "LEMONADE_BASIL", "title": "Лимонад базилик-жасмин", "priceRub": 200, "portion": null},
-      {"code": "LEMONADE_PASSION_FRUIT", "title": "Лимонад маракуйя-ананас", "priceRub": 200, "portion": null},
-      {"code": "CRANBERRY_MORS", "title": "Домашний клюквенный морс", "priceRub": 140, "portion": "200 мл"},
-      {"code": "WINE_OF_THE_DAY", "title": "Вино дня", "priceRub": 350, "portion": "125 мл"}
+      {"code": "ESPRESSO", "title": "Эспрессо", "sabyName": "Эспрессо", "priceRub": 160, "portion": null},
+      {"code": "LUNGO", "title": "Лунго", "sabyName": "Лунго", "priceRub": 160, "portion": null},
+      {"code": "TEA_ASSAM", "title": "Чай ассам", "sabyName": "Ассам 500 мл", "priceRub": 210, "portion": "500 мл"},
+      {"code": "TEA_SENCHA", "title": "Чай сенча", "sabyName": "Сенча 500 мл", "priceRub": 210, "portion": "500 мл"},
+      {"code": "CAPPUCCINO", "title": "Капучино", "sabyName": "Капучино", "priceRub": 220, "portion": null},
+      {"code": "LEMONADE_RASPBERRY", "title": "Лимонад малина-бузина", "sabyName": "Лимонад малина-бузина 250 мл", "priceRub": 200, "portion": "250 мл"},
+      {"code": "LEMONADE_BASIL", "title": "Лимонад базилик-жасмин", "sabyName": "Лимонад базилик жасмин 250 мл", "priceRub": 200, "portion": "250 мл"},
+      {"code": "LEMONADE_PASSION_FRUIT", "title": "Лимонад маракуйя-ананас", "sabyName": "Лимонад маракуйя ананас 250 мл", "priceRub": 200, "portion": "250 мл"},
+      {"code": "LEMONADE_CLASSIC", "title": "Лимонад классический", "sabyName": "Лимонад классический", "priceRub": 200, "portion": null},
+      {"code": "LEMONADE_CITRUS", "title": "Лимонад цитрусовый", "sabyName": "Лимонад цитрусовый 250мл", "priceRub": 200, "portion": "250 мл"},
+      {"code": "CRANBERRY_MORS", "title": "Клюквенный морс", "sabyName": "Морс клюквенный 200 мл", "priceRub": 140, "portion": "200 мл"},
+      {"code": "WINE_OF_THE_DAY_WHITE", "title": "Вино дня белое", "sabyName": "Вино дня белое 125 мл", "priceRub": 350, "portion": "125 мл"},
+      {"code": "WINE_OF_THE_DAY_RED", "title": "Вино дня красное", "sabyName": "Вино дня красное 125 мл", "priceRub": 350, "portion": "125 мл"}
     ]}
   ],
   "sets": []

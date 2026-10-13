@@ -161,7 +161,8 @@ test("auto-confirm plays the busy staff after the configured delay", async () =>
 
 test("the stub knows the AERIS lunch dishes from the repository file", async () => {
   const dishes = await loadDishes();
-  assert.ok(dishes.some((d) => d.name === "Борщ со сметаной" && d.cost === 270), "lunch file is read");
+  // Lunch dishes go under their exact Saby name (sabyName), as Presto lists them.
+  assert.ok(dishes.some((d) => d.name === "Гороховый суп с копченостями ЛАНЧ" && d.cost === 290), "lunch file is read by sabyName");
   assert.ok(dishes.length >= 17);
 });
 

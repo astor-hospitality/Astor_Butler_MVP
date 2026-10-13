@@ -113,6 +113,63 @@ class SabyLunchOrderProviderTest {
         fixture.server().verify();
     }
 
+    /** 13.10: Presto names lunch dishes with suffixes («… ЛАНЧ», «… 500 мл»); the menu's sabyName is what Saby is searched by. */
+    @Test
+    void looksTheDishUpBySabyNameWhenTheMenuGivesOneAndByTitleOtherwise() {
+        SabyReservationProperties properties = writable();
+        properties.setPriceListId("4");
+        Fixture fixture = fixture(properties);
+        expectAuth(fixture.server());
+        // Presto has both the à la carte soup and the lunch one: only the exact Saby name picks the lunch dish.
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andRespond(withSuccess("{\"nomenclatures\": ["
+                        + "{\"id\": 30, \"name\": \"Гороховый суп с копченостями\", \"cost\": 390},"
+                        + "{\"id\": 31, \"name\": \"Гороховый суп с копченостями ЛАНЧ\", \"cost\": 290}]}", MediaType.APPLICATION_JSON));
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andRespond(withSuccess("[{\"id\": 55, \"name\": \"Капучино\", \"cost\": 220}]", MediaType.APPLICATION_JSON));
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.nomenclatures[0].id").value(31))
+                .andExpect(jsonPath("$.nomenclatures[0].count").value(1))
+                .andExpect(jsonPath("$.nomenclatures[1].id").value(55))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(
+                new BusinessLunchOrder.Item("SOUP", "PEA_SOUP_SMOKED", "Гороховый суп с копченостями", 1, 290, "Гороховый суп с копченостями ЛАНЧ"),
+                new BusinessLunchOrder.Item("DRINKS", "CAPPUCCINO", "Капучино", 1, 220))), "astor-lunch-77");
+
+        assertThat(result.accepted()).isTrue();
+        fixture.server().verify();
+    }
+
+    @Test
+    void anItemIsLookedUpBySabyNameOnlyWhenItIsNotBlank() {
+        assertThat(new BusinessLunchOrder.Item("SOUP", "PEA", "Гороховый суп", 1, 290, "Гороховый суп ЛАНЧ").sabyLookupName())
+                .isEqualTo("Гороховый суп ЛАНЧ");
+        assertThat(new BusinessLunchOrder.Item("SOUP", "PEA", "Гороховый суп", 1, 290).sabyLookupName()).isEqualTo("Гороховый суп");
+        assertThat(new BusinessLunchOrder.Item("SOUP", "PEA", "Гороховый суп", 1, 290, " ").sabyLookupName()).isEqualTo("Гороховый суп");
+    }
+
+    @Test
+    void anUnknownSabyNameKeepsTheWholeOrderWithTheHostess() {
+        SabyReservationProperties properties = writable();
+        properties.setPriceListId("4");
+        Fixture fixture = fixture(properties);
+        expectAuth(fixture.server());
+        // Presto has the dish only under its plain title: the exact sabyName does not match, and the title is not tried.
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andRespond(withSuccess("{\"nomenclatures\": [{\"id\": 30, \"name\": \"Блинный салат\", \"cost\": 280}]}", MediaType.APPLICATION_JSON));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(
+                new BusinessLunchOrder.Item("SALAD", "SALAD_BLINI", "Блинный салат", 1, 280, "Блинный салат Ланч"))), "astor-lunch-77");
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.status()).isEqualTo("DISH_NOT_IN_SABY");
+        assertThat(result.message()).contains("Блинный салат Ланч");
+        fixture.server().verify();
+    }
+
     /** #165: the guest's wish goes into the booking comment Presto shows, after what Butler wrote there, marked as something to agree. */
     @Test
     void theGuestsWishIsWrittenIntoTheBookingCommentWhenItIsNotThereYet() {

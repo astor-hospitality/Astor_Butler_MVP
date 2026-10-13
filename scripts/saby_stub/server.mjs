@@ -36,7 +36,7 @@ export async function loadDishes() {
   };
   try {
     const lunch = JSON.parse(await readFile(resolve(HERE, "../../src/main/resources/business-lunch/aeris.json"), "utf8"));
-    for (const course of lunch.courses || []) for (const dish of course.dishes || []) add(dish.title, dish.priceRub, "Бизнес-ланч · " + course.title);
+    for (const course of lunch.courses || []) for (const dish of course.dishes || []) add(dish.sabyName || dish.title, dish.priceRub, "Бизнес-ланч · " + course.title);
   } catch { /* no lunch file in this checkout */ }
   try {
     const kitchen = JSON.parse(await readFile(resolve(HERE, "../../src/main/resources/menu/aeris/site/kitchen.json"), "utf8"));

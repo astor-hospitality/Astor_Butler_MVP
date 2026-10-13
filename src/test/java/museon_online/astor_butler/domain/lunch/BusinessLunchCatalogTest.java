@@ -19,11 +19,12 @@ class BusinessLunchCatalogTest {
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
     /**
-     * The AERIS lunch menu, typed in by hand from the photo of the printed menu that Mikhail sent on 2026-10-06.
-     * It stays unconfirmed until Mikhail has checked the prices against the menu himself.
+     * The AERIS lunch menu as the Saby price list «Бизнес ланчи» (point «Гастробар AERIS») had it on 2026-10-13.
+     * Guests read the clean title; Presto is searched by the exact Saby name, suffixes («ЛАНЧ», «500 мл») and all.
+     * It stays unconfirmed until the venue has checked the menu itself.
      */
     @Test
-    void theShippedAerisOfferIsThePrintedLunchMenu() {
+    void theShippedAerisOfferIsTheSabyLunchPriceList() {
         BusinessLunchCatalog catalog = new BusinessLunchCatalog(objectMapper);
 
         BusinessLunchOffer aeris = catalog.find("aeris").orElseThrow();
@@ -35,26 +36,71 @@ class BusinessLunchCatalogTest {
         assertThat(aeris.to()).isEqualTo(LocalTime.of(16, 0));
         assertThat(aeris.seating()).isEqualTo(90);
         assertThat(aeris.courses()).extracting(BusinessLunchOffer.Course::title).containsExactly("Салаты", "Суп", "Горячее", "Десерты", "Напитки");
-        assertThat(aeris.courses().stream().flatMap(course -> course.dishes().stream()).map(dish -> dish.title() + " " + dish.priceRub() + " " + dish.portion()))
+        assertThat(aeris.courses().stream().flatMap(course -> course.dishes().stream())
+                .map(dish -> dish.title() + " | " + dish.sabyLookupName() + " | " + dish.priceRub() + " | " + dish.portion()))
                 .containsExactly(
-                        "Нисуаз 290 170 г",
-                        "Цезарь с цыплёнком 290 130 г",
-                        "Борщ со сметаной 270 320 г",
-                        "Куриный бульон с домашней лапшой 230 300 г",
-                        "Треска с соусом тартар 520 150 г",
-                        "Куриные котлеты с картофельным пюре 370 200 г",
-                        "Бефстроганов с картофельным пюре 570 250 г",
-                        "Медовик 220 90 г",
-                        "Чай ассам 210 500 мл",
-                        "Чай сенча 210 500 мл",
-                        "Эспрессо / лунго 160 null",
-                        "Капучино 220 null",
-                        "Лимонад малина-бузина 200 null",
-                        "Лимонад базилик-жасмин 200 null",
-                        "Лимонад маракуйя-ананас 200 null",
-                        "Домашний клюквенный морс 140 200 мл",
-                        "Вино дня 350 125 мл");
+                        "Салат коул слоу | Салат коул слоу ЛАНЧ | 230 | null",
+                        "Салат с сельдью и яблоком | Салат с сельдью и яблоком Ланч | 280 | null",
+                        "Блинный салат | Блинный салат Ланч | 280 | null",
+                        "Гороховый суп с копченостями | Гороховый суп с копченостями ЛАНЧ | 290 | null",
+                        "Крем-суп грибной | Крем суп грибной Ланч | 230 | null",
+                        "Паста болоньезе | Паста болоньезе Ланч | 420 | null",
+                        "Рыбные котлеты с картофельным пюре | Рыбные котлеты с картофельным пюре ЛАНЧ | 490 | null",
+                        "Шашлычок из куриного бедра с фасолью и болгарским перцем | Шашлычок из куриного бедра с фасолью и болгарским перцем ЛАНЧ | 450 | null",
+                        "Чизкейк Сан-Себастьян | Чизкейк Сан-Себастьян ЛАНЧ | 250 | null",
+                        "Эспрессо | Эспрессо | 160 | null",
+                        "Лунго | Лунго | 160 | null",
+                        "Чай ассам | Ассам 500 мл | 210 | 500 мл",
+                        "Чай сенча | Сенча 500 мл | 210 | 500 мл",
+                        "Капучино | Капучино | 220 | null",
+                        "Лимонад малина-бузина | Лимонад малина-бузина 250 мл | 200 | 250 мл",
+                        "Лимонад базилик-жасмин | Лимонад базилик жасмин 250 мл | 200 | 250 мл",
+                        "Лимонад маракуйя-ананас | Лимонад маракуйя ананас 250 мл | 200 | 250 мл",
+                        "Лимонад классический | Лимонад классический | 200 | null",
+                        "Лимонад цитрусовый | Лимонад цитрусовый 250мл | 200 | 250 мл",
+                        "Клюквенный морс | Морс клюквенный 200 мл | 140 | 200 мл",
+                        "Вино дня белое | Вино дня белое 125 мл | 350 | 125 мл",
+                        "Вино дня красное | Вино дня красное 125 мл | 350 | 125 мл");
         assertThat(catalog.find("NOWHERE")).isEmpty();
+    }
+
+    /** Every dish in the shipped AERIS file can be shown to a guest and ordered: a title and a positive price. */
+    @Test
+    void everyShippedAerisDishHasATitleAndAPrice() throws IOException {
+        BusinessLunchOffer aeris;
+        try (InputStream json = getClass().getResourceAsStream("/business-lunch/aeris.json")) {
+            aeris = BusinessLunchCatalog.read(objectMapper, json);
+        }
+
+        List<BusinessLunchOffer.Dish> dishes = aeris.courses().stream().flatMap(course -> course.dishes().stream()).toList();
+        assertThat(dishes).isNotEmpty();
+        assertThat(dishes).allSatisfy(dish -> {
+            assertThat(dish.code()).isNotBlank();
+            assertThat(dish.title()).isNotBlank();
+            assertThat(dish.priceRub()).isNotNull().isPositive();
+            assertThat(dish.sabyLookupName()).isNotBlank();
+        });
+        // The guest never sees the Presto suffix.
+        assertThat(dishes).extracting(BusinessLunchOffer.Dish::title).noneMatch(title -> title.toLowerCase().contains("ланч"));
+    }
+
+    /** Menus written before sabyName keep looking Saby up by the title; a blank sabyName counts as absent. */
+    @Test
+    void theSabyNameIsOptionalAndFallsBackToTheTitle() throws IOException {
+        BusinessLunchOffer offer = read("""
+                {"venueCode": "TEST", "days": ["MONDAY"], "from": "12:00", "to": "16:00",
+                 "courses": [{"code": "SOUP", "title": "Суп", "dishes": [
+                   {"code": "BORSCHT", "title": "Борщ", "priceRub": 270},
+                   {"code": "PEA", "title": "Гороховый суп", "sabyName": "Гороховый суп ЛАНЧ", "priceRub": 290},
+                   {"code": "BLANK", "title": "Солянка", "sabyName": "  ", "priceRub": 300}]}]}
+                """);
+
+        assertThat(offer.dish("BORSCHT").orElseThrow().sabyName()).isNull();
+        assertThat(offer.dish("BORSCHT").orElseThrow().sabyLookupName()).isEqualTo("Борщ");
+        assertThat(offer.dish("PEA").orElseThrow().title()).isEqualTo("Гороховый суп");
+        assertThat(offer.dish("PEA").orElseThrow().sabyLookupName()).isEqualTo("Гороховый суп ЛАНЧ");
+        assertThat(offer.dish("PEA").orElseThrow().withNumber(7).sabyName()).isEqualTo("Гороховый суп ЛАНЧ");
+        assertThat(offer.dish("BLANK").orElseThrow().sabyLookupName()).isEqualTo("Солянка");
     }
 
     @Test

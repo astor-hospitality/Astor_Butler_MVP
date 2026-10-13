@@ -162,6 +162,29 @@ class BusinessLunchServiceTest {
         assertThat(command.getValue().partySize()).isEqualTo(2);
     }
 
+    /** The guest-facing title stays in the order and the comment; the Saby name only travels to the provider. */
+    @Test
+    void theSabyNameOfADishTravelsWithTheOrderItem() {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-503", ""));
+        BusinessLunchService service = service(List.of(saby));
+        when(tableReservationService.createReservation(any())).thenReturn(BusinessLunchFixtures.reservation(79, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 1));
+        BusinessLunchOffer carte = BusinessLunchFixtures.aLaCarte();
+        BusinessLunchOffer withSabyName = new BusinessLunchOffer(carte.venueCode(), carte.venueName(), carte.confirmedByVenue(), carte.days(),
+                carte.from(), carte.to(), carte.seatingMinutes(), carte.included(),
+                List.of(new BusinessLunchOffer.Course("SOUP", "Суп", List.of(
+                        new BusinessLunchOffer.Dish("PEA", "Гороховый суп", 290, null, null, null, null, null, "Гороховый суп ЛАНЧ")))),
+                List.of());
+
+        service.place(new BusinessLunchService.Request(CHAT, CHAT, withSabyName, null, List.of("PEA"),
+                1, TODAY.plusDays(1), LocalTime.of(13, 0), "Наталья", null, null, "CONCIERGE", "7f3b"));
+
+        assertThat(saby.order.dishes()).containsExactly(new BusinessLunchOrder.Item("SOUP", "PEA", "Гороховый суп", 1, 290, "Гороховый суп ЛАНЧ"));
+        assertThat(saby.order.dishes().get(0).sabyLookupName()).isEqualTo("Гороховый суп ЛАНЧ");
+        var command = forClass(TableReservationCommand.class);
+        verify(tableReservationService).createReservation(command.capture());
+        assertThat(command.getValue().guestComment()).contains("Гороховый суп × 1").doesNotContain("ЛАНЧ");
+    }
+
     @Test
     void anOrderWithNoDishesIsRefused() {
         BusinessLunchService service = service(List.of());

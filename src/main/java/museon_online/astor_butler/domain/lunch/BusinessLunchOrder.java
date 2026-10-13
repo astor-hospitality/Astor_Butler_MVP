@@ -58,6 +58,18 @@ public record BusinessLunchOrder(
                 guestName, guestPhone, comment, source, conciergeRequestId, externalReservationId, null);
     }
 
-    public record Item(String courseCode, String dishCode, String dishTitle, int quantity, Integer priceRub) {
+    /**
+     * One ordered dish. {@code dishTitle} is what the guest and staff read; {@code sabyName} is the exact name of the dish
+     * in the Saby price list when it differs from the title, otherwise null.
+     */
+    public record Item(String courseCode, String dishCode, String dishTitle, int quantity, Integer priceRub, String sabyName) {
+        public Item(String courseCode, String dishCode, String dishTitle, int quantity, Integer priceRub) {
+            this(courseCode, dishCode, dishTitle, quantity, priceRub, null);
+        }
+
+        /** The name to look the dish up by in Saby: {@code sabyName} when present and non-blank, else the title. */
+        public String sabyLookupName() {
+            return sabyName != null && !sabyName.isBlank() ? sabyName : dishTitle;
+        }
     }
 }

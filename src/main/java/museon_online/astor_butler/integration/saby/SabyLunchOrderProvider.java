@@ -112,9 +112,10 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
                 return new Result(false, providerId(), "NO_PRICE_LIST", "", "Saby reports no price list for the point; set SABY_PRICE_LIST_ID.");
             }
             for (BusinessLunchOrder.Item item : order.dishes()) {
-                Optional<SabyMenuCatalog.Dish> dish = catalog.findDish(item.dishTitle(), priceListId);
+                // The Saby price list names dishes its own way («… ЛАНЧ», «… 500 мл»); the menu file maps title → sabyName.
+                Optional<SabyMenuCatalog.Dish> dish = catalog.findDish(item.sabyLookupName(), priceListId);
                 if (dish.isEmpty()) {
-                    unknownDishes.add(item.dishTitle());
+                    unknownDishes.add(item.sabyLookupName());
                     continue;
                 }
                 nomenclatures.add(SabyOrderPayload.nomenclature(dish.get().id(), item.quantity(), priceListId, dish.get().name()));
