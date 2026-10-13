@@ -48,6 +48,9 @@ public class JourneyRecorder {
             GuestVisit visit = visits.findByReservation(reservationId)
                     .orElseGet(() -> open(reservationId, chatId, guestPhone, venueCode, visitDay));
             boolean written = visits.insertEvent(visit.id(), kind, source, note);
+            if (kind == VisitEventKind.MOVED && visitDay != null && !visitDay.equals(visit.visitDay())) {
+                visits.updateVisitDay(visit.id(), visitDay);
+            }
             if (written && kind.stage() != null && moves(visit.stage(), kind.stage())) {
                 visits.moveStage(visit.id(), kind.stage());
             }

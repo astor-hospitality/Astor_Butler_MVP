@@ -37,8 +37,12 @@ class JourneyEventsTest {
     }
 
     private static TableReservationOrder order(long id) {
+        return order(id, VISIT);
+    }
+
+    private static TableReservationOrder order(long id, Instant start) {
         return new TableReservationOrder(id, CHAT, CHAT, null, 5L, "13", "Стол 13", null, null, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION,
-                "TELEGRAM", VISIT, VISIT.plusSeconds(5400), 2, "Мария", "+79120000000", null, null, null, null, null,
+                "TELEGRAM", start, start.plusSeconds(5400), 2, "Мария", "+79120000000", null, null, null, null, null,
                 VISIT.minusSeconds(86400), VISIT.minusSeconds(86400), null);
     }
 
@@ -89,6 +93,17 @@ class JourneyEventsTest {
         events.guestMessage(null);
 
         assertThat(repository.findByReservation(42L).orElseThrow().guestMessages()).isEqualTo(1);
+    }
+
+    @Test
+    void aMovedBookingMovesTheVisitDay() {
+        events.onReservation(order(42L), VisitEventKind.REQUESTED, JourneyEvents.BOT);
+        Instant friday = VISIT.plusSeconds(2 * 86_400);
+        TableReservationOrder moved = order(42L, friday);
+
+        events.onReservation(moved, VisitEventKind.MOVED, JourneyEvents.GUEST);
+
+        assertThat(repository.findByReservation(42L).orElseThrow().visitDay()).isEqualTo(friday);
     }
 
     @Test

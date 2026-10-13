@@ -100,6 +100,10 @@ public class GuestVisitRepository {
                 stage.name(), stage.isExit() || stage == JourneyStage.AFTER || stage == JourneyStage.RETURNED, visitId);
     }
 
+    public void updateVisitDay(long visitId, Instant visitDay) {
+        jdbc.update("UPDATE guest_visits SET visit_day = ? WHERE id = ?", Timestamp.from(visitDay), visitId);
+    }
+
     public int incrementGuestMessages(long visitId) {
         jdbc.update("UPDATE guest_visits SET guest_messages = guest_messages + 1 WHERE id = ?", visitId);
         Integer count = jdbc.queryForObject("SELECT guest_messages FROM guest_visits WHERE id = ?", Integer.class, visitId);

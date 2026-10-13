@@ -221,6 +221,7 @@ public class TableReservationService {
         notificationService.notifyHostessHoldExpired(expired, afterMinutes);
         notificationService.notifyManagerHoldExpired(expired, afterMinutes);
         notificationService.notifyGuestHoldExpired(expired, afterMinutes);
+        journey(expired, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
         return expired;
     }
 
@@ -372,6 +373,7 @@ public class TableReservationService {
             cancelExternally(rejected);
         }
         notificationService.notifyGuestRejected(rejected, alternatives);
+        journey(rejected, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, cancelInVenueSystem ? museon_online.astor_butler.domain.journey.JourneyEvents.STAFF : museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO);
         return rejected;
     }
 
@@ -388,6 +390,7 @@ public class TableReservationService {
         TableReservationOrder cancelled = repository.cancel(id);
         cancelExternally(cancelled);
         notificationService.notifyHostessGuestCancelled(cancelled);
+        journey(cancelled, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
         return cancelled;
     }
 
@@ -408,6 +411,7 @@ public class TableReservationService {
                 : reserveExternally(changed, resolved.venueCode());
         changed = rememberExternalId(changed, sync);
         notificationService.notifyHostessApprovalRequest(changed, sync);
+        journey(changed, museon_online.astor_butler.domain.journey.VisitEventKind.MOVED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
         return changed;
     }
 

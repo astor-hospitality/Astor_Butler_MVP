@@ -363,9 +363,6 @@ public class TableReservationNotificationService {
     }
 
     public void notifyGuestCancelled(TableReservationOrder order) {
-        if (journeyEvents != null) {
-            journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
-        }
         if (order.chatId() == null) {
             return;
         }
