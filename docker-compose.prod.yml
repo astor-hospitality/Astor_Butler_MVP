@@ -116,6 +116,8 @@ services:
       SABY_POINT_ID: ${SABY_POINT_ID:-}
       SABY_HALL_ID: ${SABY_HALL_ID:-}
       SABY_PRICE_LIST_ID: ${SABY_PRICE_LIST_ID:-}
+      # Live Presto answered order/create slower than 3 s on 13.10 (TIMEOUT, booking state unknown); 10 s by default.
+      SABY_TIMEOUT_MS: ${SABY_TIMEOUT_MS:-10000}
       SABY_PAYMENT_ENABLED: ${SABY_PAYMENT_ENABLED:-false}
       ASTOR_BILLING_ENABLED: ${ASTOR_BILLING_ENABLED:-false}
       ASTOR_SABY_CALL_LOG_ENABLED: ${ASTOR_SABY_CALL_LOG_ENABLED:-false}
