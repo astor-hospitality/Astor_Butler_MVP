@@ -112,7 +112,24 @@ public class GuestVisitRepository {
 
     public List<GuestVisitEvent> unmirrored(int limit) {
         return jdbc.query("SELECT id, visit_id, kind, axis, source, note, occurred_at, mirrored_at FROM guest_visit_events "
-                + "WHERE mirrored_at IS NULL ORDER BY occurred_at, id LIMIT ?", EVENT, limit);
+                + "WHERE mirrored_at IS NULL AND mirror_attempts < ? ORDER BY occurred_at, id LIMIT ?", EVENT, MIRROR_ATTEMPTS, limit);
+    }
+
+    /** After this many failed sends an event is left out of the mirror (dead letter) and its visit's later events go on. */
+    public static final int MIRROR_ATTEMPTS = 5;
+
+    public void markMirrorFailed(long eventId) {
+        jdbc.update("UPDATE guest_visit_events SET mirror_attempts = mirror_attempts + 1 WHERE id = ?", eventId);
+    }
+
+    /** The funnel stage the visit's Saby deal was last moved to. */
+    public Optional<JourneyStage> sabyStage(long visitId) {
+        return jdbc.queryForList("SELECT saby_stage FROM guest_visits WHERE id = ?", String.class, visitId).stream()
+                .filter(java.util.Objects::nonNull).findFirst().map(JourneyStage::valueOf);
+    }
+
+    public void setSabyStage(long visitId, JourneyStage stage) {
+        jdbc.update("UPDATE guest_visits SET saby_stage = ? WHERE id = ?", stage.name(), visitId);
     }
 
     public void markMirrored(long eventId) {

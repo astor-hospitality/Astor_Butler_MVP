@@ -159,4 +159,70 @@ class SabyCrmMirrorTest {
 
         verify(visits, never()).unmirrored(50);
     }
+
+    private static GuestVisit visit(long id, String lead) {
+        return new GuestVisit(id, 40L + id, 421L, "+79120000000", "AERIS", JourneyStage.REQUESTED, lead, null, 0, AT, AT, null);
+    }
+
+    @Test
+    void oneVisitsFailureDoesNotHoldBackAnother() {
+        when(visits.unmirrored(50)).thenReturn(List.of(event(1, VisitEventKind.SEATED),
+                new GuestVisitEvent(2L, 8L, VisitEventKind.DISH_QUESTION, VisitEventKind.DISH_QUESTION.axis(), "GUEST", null, AT.plusSeconds(2), null)));
+        when(visits.findById(7L)).thenReturn(Optional.of(visit(7L, "9001")));
+        when(visits.findById(8L)).thenReturn(Optional.of(visit(8L, "9002")));
+        server.expect(once(), requestTo(RPC_URL))
+                .andRespond(withSuccess("{\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"Переход запрещён\"}}", MediaType.APPLICATION_JSON));
+        server.expect(once(), requestTo(RPC_URL)).andRespond(withSuccess("{\"result\":1}", MediaType.APPLICATION_JSON));
+
+        mirror.flush();
+
+        verify(visits).markMirrorFailed(1L);
+        verify(visits).markMirrored(2L);
+    }
+
+    @Test
+    void aDealWhoseAnswerCannotBeReadIsParkedNotCreatedAgain() {
+        when(visits.unmirrored(50)).thenReturn(List.of(event(1, VisitEventKind.REQUESTED)));
+        when(visits.findById(7L)).thenReturn(Optional.of(visit(null, "+79120000000")));
+        server.expect(once(), requestTo(RPC_URL)).andRespond(withSuccess("{\"result\":{}}", MediaType.APPLICATION_JSON));
+
+        mirror.flush();
+
+        verify(visits).setSabyLead(7L, SabyCrmMirror.PENDING);
+        verify(visits, never()).setSabyLead(7L, null);
+
+        when(visits.findById(7L)).thenReturn(Optional.of(visit(SabyCrmMirror.PENDING, "+79120000000")));
+        mirror.flush();
+
+        server.verify();
+        verify(visits, never()).markMirrored(1L);
+    }
+
+    @Test
+    void aDealSabyRefusedIsTriedAgainNextRun() {
+        when(visits.unmirrored(50)).thenReturn(List.of(event(1, VisitEventKind.REQUESTED)));
+        when(visits.findById(7L)).thenReturn(Optional.of(visit(null, "+79120000000")));
+        server.expect(once(), requestTo(RPC_URL))
+                .andRespond(withSuccess("{\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"Нет прав\"}}", MediaType.APPLICATION_JSON));
+
+        mirror.flush();
+
+        verify(visits).setSabyLead(7L, SabyCrmMirror.PENDING);
+        verify(visits).setSabyLead(7L, null);
+    }
+
+    @Test
+    void theFunnelNeverMovesBack() {
+        when(visits.unmirrored(50)).thenReturn(List.of(event(1, VisitEventKind.REQUESTED)));
+        when(visits.findById(7L)).thenReturn(Optional.of(visit("9001", "+79120000000")));
+        when(visits.sabyStage(7L)).thenReturn(Optional.of(JourneyStage.SEATED));
+        server.expect(once(), requestTo(RPC_URL))
+                .andExpect(jsonPath("$.params.EventData.d[7]").doesNotExist())
+                .andRespond(withSuccess("{\"result\":1}", MediaType.APPLICATION_JSON));
+
+        mirror.flush();
+
+        server.verify();
+        verify(visits, never()).setSabyStage(anyLong(), org.mockito.ArgumentMatchers.any());
+    }
 }

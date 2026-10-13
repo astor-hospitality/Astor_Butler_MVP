@@ -84,7 +84,7 @@ public class JourneyRecorder {
         }
     }
 
-    static boolean moves(JourneyStage current, JourneyStage next) {
+    public static boolean moves(JourneyStage current, JourneyStage next) {
         if (current != null && current.isExit()) {
             return false;
         }

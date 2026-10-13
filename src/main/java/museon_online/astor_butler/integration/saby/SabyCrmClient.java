@@ -39,7 +39,7 @@ class SabyCrmClient {
         JsonNode result = client.rpc("CRMLead.insertRecord", params);
         JsonNode id = result.has("@Документ") ? result.path("@Документ") : result;
         if (!(id.isIntegralNumber() || id.isTextual() && id.asText().matches("\\d+"))) {
-            throw new SabyApiException(SabyApiException.Kind.HTTP_ERROR, 200, "Saby CRMLead.insertRecord returned no deal id");
+            throw new SabyApiException(SabyApiException.Kind.INVALID_RESPONSE, 200, "Saby CRMLead.insertRecord returned no deal id");
         }
         return id.asText();
     }

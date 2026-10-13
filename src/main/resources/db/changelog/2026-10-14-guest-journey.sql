@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS guest_visits (
     venue_code VARCHAR(32) NOT NULL,
     stage VARCHAR(24) NOT NULL,
     saby_lead_id VARCHAR(64),
+    saby_stage VARCHAR(24),
     returned_visit_id BIGINT,
     guest_messages INTEGER NOT NULL DEFAULT 0,
     visit_day TIMESTAMP WITH TIME ZONE,
@@ -28,7 +29,8 @@ CREATE TABLE IF NOT EXISTS guest_visit_events (
     source VARCHAR(8) NOT NULL,
     note VARCHAR(500),
     occurred_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    mirrored_at TIMESTAMP WITH TIME ZONE
+    mirrored_at TIMESTAMP WITH TIME ZONE,
+    mirror_attempts INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_guest_visit_events_visit ON guest_visit_events(visit_id);
