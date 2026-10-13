@@ -292,6 +292,14 @@ public class TableReservationNotificationService {
         send(defaultHostessChatId, text, null, "staff-guest-question");
     }
 
+    /** A plain useful text to a guest's chat (the return loop of the guest journey). */
+    public void notifyGuestChat(long chatId, String text, String target) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        send(Long.toString(chatId), text, null, target);
+    }
+
     /** A plain useful text to the guest of the reservation. */
     public void notifyGuestText(TableReservationOrder order, String text, String target) {
         if (order == null || order.chatId() == null || text == null || text.isBlank()) {

@@ -141,6 +141,54 @@ public class GuestVisitRepository {
         jdbc.update("UPDATE guest_visits SET returned_visit_id = ? WHERE id = ?", toVisitId, fromVisitId);
     }
 
+    /** The guest's earlier visit that really happened (seated or later) since {@code since}, other than this reservation. */
+    public Optional<GuestVisit> previousVisitByPhone(String phone, Instant since, long excludeReservationId) {
+        if (phone == null || phone.isBlank()) {
+            return Optional.empty();
+        }
+        return jdbc.query("SELECT " + VISIT_COLUMNS + " FROM guest_visits WHERE guest_phone = ? AND reservation_id <> ? "
+                        + "AND COALESCE(visit_day, opened_at) >= ? AND stage IN ('SEATED', 'BILL', 'AFTER') AND returned_visit_id IS NULL "
+                        + "ORDER BY COALESCE(visit_day, opened_at) DESC LIMIT 1",
+                VISIT, phone, excludeReservationId, Timestamp.from(since)).stream().findFirst();
+    }
+
+    /** Visits in one of the stages whose day is before {@code before}, oldest first. */
+    public List<GuestVisit> inStagesWithDayBefore(List<JourneyStage> stages, Instant before, int limit) {
+        if (stages.isEmpty()) {
+            return List.of();
+        }
+        String in = String.join(", ", stages.stream().map(stage -> "'" + stage.name() + "'").toList());
+        return jdbc.query("SELECT " + VISIT_COLUMNS + " FROM guest_visits WHERE stage IN (" + in + ") AND visit_day < ? "
+                + "ORDER BY visit_day LIMIT ?", VISIT, Timestamp.from(before), limit);
+    }
+
+    public boolean hasEvent(long visitId, VisitEventKind kind) {
+        Integer count = jdbc.queryForObject("SELECT count(*) FROM guest_visit_events WHERE visit_id = ? AND kind = ?",
+                Integer.class, visitId, kind.name());
+        return count != null && count > 0;
+    }
+
+    /** Whether the same guest (by chat or phone) opened another visit after this one. */
+    public boolean hasLaterVisit(Long chatId, String phone, Instant openedAfter, long excludeVisitId) {
+        Integer count = jdbc.queryForObject("SELECT count(*) FROM guest_visits WHERE id <> ? AND opened_at > ? "
+                        + "AND ((chat_id IS NOT NULL AND chat_id = ?) OR (guest_phone IS NOT NULL AND guest_phone = ?))",
+                Integer.class, excludeVisitId, Timestamp.from(openedAfter), chatId, phone);
+        return count != null && count > 0;
+    }
+
+    public List<GuestVisit> openedBetween(Instant from, Instant to) {
+        return jdbc.query("SELECT " + VISIT_COLUMNS + " FROM guest_visits WHERE opened_at >= ? AND opened_at < ?",
+                VISIT, Timestamp.from(from), Timestamp.from(to));
+    }
+
+    /** Events of one kind in the visits opened in the window. */
+    public List<GuestVisitEvent> eventsOfVisitsOpenedBetween(VisitEventKind kind, Instant from, Instant to) {
+        return jdbc.query("SELECT e.id, e.visit_id, e.kind, e.axis, e.source, e.note, e.occurred_at, e.mirrored_at "
+                        + "FROM guest_visit_events e JOIN guest_visits v ON v.id = e.visit_id "
+                        + "WHERE e.kind = ? AND v.opened_at >= ? AND v.opened_at < ?",
+                EVENT, kind.name(), Timestamp.from(from), Timestamp.from(to));
+    }
+
     public boolean wasSent(long visitId, String proactiveKind) {
         Integer count = jdbc.queryForObject("SELECT count(*) FROM guest_visit_sent WHERE visit_id = ? AND kind = ?",
                 Integer.class, visitId, proactiveKind);

@@ -47,6 +47,10 @@ public class TableReservationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.talk.SeatedHint seatedHint;
 
+    /** «Вернулся» on a new booking (spec 2026-10-13 §3.5): optional, silent while ASTOR_RETURN_LOOP_ENABLED is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.ReturnMatcher returnMatcher;
+
     public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
         this.journeyEvents = journeyEvents;
     }
@@ -136,6 +140,9 @@ public class TableReservationService {
         order = rememberExternalId(order, sync);
         notificationService.notifyHostessApprovalRequest(order, sync);
         journey(order, museon_online.astor_butler.domain.journey.VisitEventKind.REQUESTED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
+        if (returnMatcher != null && order != null && order.id() != null) {
+            returnMatcher.onNewReservation(order.id(), order.guestPhone());
+        }
         return order;
     }
 

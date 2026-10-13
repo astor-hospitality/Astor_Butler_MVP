@@ -18,7 +18,7 @@ import static org.mockito.Mockito.when;
 
 class JourneyRecorderTest {
 
-    /** Tuesday 14.10.2026 13:00 in Yekaterinburg (UTC+5). */
+    /** Wednesday 14.10.2026 13:00 in Yekaterinburg (UTC+5). */
     private static final Instant VISIT = Instant.parse("2026-10-14T08:00:00Z");
     private static final Instant BOOKED = Instant.parse("2026-10-13T14:40:00Z");
 
