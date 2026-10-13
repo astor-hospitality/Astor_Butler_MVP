@@ -122,7 +122,9 @@ public class FirstTouchScenario implements FsmScenario {
         if ("/restart".equalsIgnoreCase(text == null ? "" : text.trim())) {
             return "Перезапустил диалог и вернул главное меню. Можно начать заново: стол, меню, афиша, мероприятие или помощь команды.";
         }
-        return "";
+        // A known guest's /start must carry text: Telegram attaches the guest main menu only to a text message, and the
+        // pinned preview card alone left the guest without buttons (live test 13.10).
+        return "С возвращением! Чем помочь: стол, бизнес-ланч, меню, афиша или помощь команды. Выберите кнопкой или напишите.";
     }
 
     private OutgoingMessage handleContact(IncomingMessage incoming) {
