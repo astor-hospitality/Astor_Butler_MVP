@@ -3,6 +3,7 @@ package museon_online.astor_butler.domain.journey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -45,7 +46,7 @@ public class JourneyRecorder {
         }
         try {
             GuestVisit visit = visits.findByReservation(reservationId)
-                    .orElseGet(() -> visits.open(reservationId, chatId, guestPhone, venueCode == null ? "AERIS" : venueCode, visitDay));
+                    .orElseGet(() -> open(reservationId, chatId, guestPhone, venueCode, visitDay));
             boolean written = visits.insertEvent(visit.id(), kind, source, note);
             if (written && kind.stage() != null && moves(visit.stage(), kind.stage())) {
                 visits.moveStage(visit.id(), kind.stage());
@@ -54,6 +55,14 @@ public class JourneyRecorder {
         } catch (RuntimeException e) {
             log.warn("Guest journey event not recorded: reservation={}, kind={}, reason={}", reservationId, kind, e.toString());
             return Optional.empty();
+        }
+    }
+
+    private GuestVisit open(long reservationId, Long chatId, String guestPhone, String venueCode, Instant visitDay) {
+        try {
+            return visits.open(reservationId, chatId, guestPhone, venueCode == null ? "AERIS" : venueCode, visitDay);
+        } catch (DataIntegrityViolationException concurrentlyOpened) {
+            return visits.findByReservation(reservationId).orElseThrow(() -> concurrentlyOpened);
         }
     }
 

@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS guest_visits (
     id BIGSERIAL PRIMARY KEY,
     reservation_id BIGINT NOT NULL UNIQUE,
     chat_id BIGINT,
-    guest_phone VARCHAR(32),
+    guest_phone VARCHAR(80),
     venue_code VARCHAR(32) NOT NULL,
     stage VARCHAR(24) NOT NULL,
     saby_lead_id VARCHAR(64),

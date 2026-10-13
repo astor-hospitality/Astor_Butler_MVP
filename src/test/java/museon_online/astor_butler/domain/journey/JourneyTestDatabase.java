@@ -5,6 +5,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -15,10 +16,12 @@ final class JourneyTestDatabase implements AutoCloseable {
 
     private final Connection schema;
     private final JdbcTemplate jdbc;
+    private final DataSource dataSource;
 
-    private JourneyTestDatabase(Connection schema, JdbcTemplate jdbc) {
+    private JourneyTestDatabase(Connection schema, JdbcTemplate jdbc, DataSource dataSource) {
         this.schema = schema;
         this.jdbc = jdbc;
+        this.dataSource = dataSource;
     }
 
     static JourneyTestDatabase create() {
@@ -27,7 +30,7 @@ final class JourneyTestDatabase implements AutoCloseable {
         try {
             Connection schema = dataSource.getConnection();
             ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-14-guest-journey.sql"));
-            return new JourneyTestDatabase(schema, new JdbcTemplate(dataSource));
+            return new JourneyTestDatabase(schema, new JdbcTemplate(dataSource), dataSource);
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot build the journey test database", e);
         }
@@ -35,6 +38,10 @@ final class JourneyTestDatabase implements AutoCloseable {
 
     JdbcTemplate jdbc() {
         return jdbc;
+    }
+
+    DataSource dataSource() {
+        return dataSource;
     }
 
     @Override

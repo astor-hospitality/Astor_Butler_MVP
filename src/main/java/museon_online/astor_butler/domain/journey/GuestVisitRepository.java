@@ -1,14 +1,12 @@
 package museon_online.astor_butler.domain.journey;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -19,8 +17,13 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
-/** The guest journey ledger: visits, their events, bot-first messages already sent, and the guest's opt-out. */
+/**
+ * The guest journey ledger: visits, their events, bot-first messages already sent, and the guest's opt-out.
+ * Every call runs in its own transaction: the ledger is written from inside reservation transactions, and on PostgreSQL
+ * one failed ledger statement would otherwise abort — and roll back — the reservation itself.
+ */
 @Repository
+@Transactional(propagation = Propagation.REQUIRES_NEW)
 public class GuestVisitRepository {
 
     private static final String VISIT_COLUMNS = "id, reservation_id, chat_id, guest_phone, venue_code, stage, saby_lead_id, "
@@ -71,23 +74,12 @@ public class GuestVisitRepository {
     }
 
     public GuestVisit open(long reservationId, Long chatId, String guestPhone, String venueCode, Instant visitDay) {
-        KeyHolder keys = new GeneratedKeyHolder();
-        try {
-            jdbc.update(connection -> {
-                PreparedStatement statement = connection.prepareStatement(
-                        "INSERT INTO guest_visits(reservation_id, chat_id, guest_phone, venue_code, stage, visit_day) VALUES (?, ?, ?, ?, ?, ?)",
-                        new String[]{"id"});
-                statement.setLong(1, reservationId);
-                statement.setObject(2, chatId);
-                statement.setString(3, guestPhone);
-                statement.setString(4, venueCode);
-                statement.setString(5, JourneyStage.REQUESTED.name());
-                statement.setTimestamp(6, visitDay == null ? null : Timestamp.from(visitDay));
-                return statement;
-            }, keys);
-        } catch (DuplicateKeyException alreadyOpen) {
-            return findByReservation(reservationId).orElseThrow();
-        }
+        // Not a caught duplicate: on PostgreSQL a failed insert aborts this transaction. A concurrent open of the same
+        // reservation still fails on the unique key; the recorder reads the winner in a fresh transaction.
+        jdbc.update("INSERT INTO guest_visits(reservation_id, chat_id, guest_phone, venue_code, stage, visit_day) "
+                        + "SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM guest_visits WHERE reservation_id = ?)",
+                reservationId, chatId, guestPhone, venueCode, JourneyStage.REQUESTED.name(),
+                visitDay == null ? null : Timestamp.from(visitDay), reservationId);
         return findByReservation(reservationId).orElseThrow();
     }
 
