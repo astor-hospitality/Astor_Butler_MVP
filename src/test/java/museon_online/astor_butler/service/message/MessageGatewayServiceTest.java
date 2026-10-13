@@ -1397,6 +1397,8 @@ class MessageGatewayServiceTest {
         OutgoingMessage outgoing = service.handle(incoming);
 
         assertThat(outgoing.text()).isEqualTo(museon_online.astor_butler.domain.journey.OptOutCommand.REPLY);
+        verify(userEventProducer).publishIncomingMessage(eq(incoming), any(), eq(outgoing));
+        verify(fsmTimelineWriter).append(any(FsmTimelineEvent.class));
     }
 
     @Test
@@ -1410,5 +1412,7 @@ class MessageGatewayServiceTest {
         OutgoingMessage outgoing = service.handle(incoming);
 
         assertThat(outgoing.text()).isEqualTo("Бесплатная парковка во дворе.");
+        verify(userEventProducer).publishIncomingMessage(eq(incoming), any(), eq(outgoing));
+        verify(fsmTimelineWriter).append(any(FsmTimelineEvent.class));
     }
 }
