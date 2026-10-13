@@ -28,7 +28,27 @@ final class SabyMenuCatalog {
     static final String NOMENCLATURE_PATH = "/retail/v2/nomenclature/list";
     private static final DateTimeFormatter ACTUAL_DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss");
 
-    record Dish(long id, String name, Integer costRub) {
+    record Dish(long id, String name, Integer costRub, SabyNutrition nutrition) {
+        Dish(long id, String name, Integer costRub) {
+            this(id, name, costRub, null);
+        }
+    }
+
+    /** Portion weight and nutrition from {@code attributes} (per 100 g × {@code outQuantity} grams); null when Saby has none. */
+    static SabyNutrition nutrition(JsonNode attributes) {
+        if (attributes == null || !attributes.isObject()) {
+            return null;
+        }
+        double grams = attributes.path("outQuantity").asDouble(0);
+        JsonNode calories = attributes.path("calories");
+        if (grams <= 0 || !calories.isNumber()) {
+            return null;
+        }
+        double share = grams / 100.0;
+        return new SabyNutrition((int) Math.round(grams), (int) Math.round(calories.asDouble() * share),
+                (int) Math.round(attributes.path("protein").asDouble(0) * share),
+                (int) Math.round(attributes.path("fat").asDouble(0) * share),
+                (int) Math.round(attributes.path("carbohydrate").asDouble(0) * share));
     }
 
     private final SabyReservationProperties properties;
@@ -88,7 +108,7 @@ final class SabyMenuCatalog {
                 if (normalize(item.path("name").asText("")).equals(wanted) && item.path("id").isIntegralNumber()) {
                     JsonNode cost = item.path("cost");
                     return Optional.of(new Dish(item.path("id").asLong(), item.path("name").asText(),
-                            cost.isNumber() ? Integer.valueOf(cost.asInt()) : null));
+                            cost.isNumber() ? Integer.valueOf(cost.asInt()) : null, nutrition(item.get("attributes"))));
                 }
             }
             return Optional.empty();

@@ -70,6 +70,14 @@ public class MessageGatewayService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.OptOutCommand optOutCommand;
 
+    /** The butler's talk (spec 2026-10-13 §3.3): optional, answers nothing while off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.talk.ButlerTalk butlerTalk;
+
+    public void setButlerTalk(museon_online.astor_butler.domain.journey.talk.ButlerTalk butlerTalk) {
+        this.butlerTalk = butlerTalk;
+    }
+
     public void setOptOutCommand(museon_online.astor_butler.domain.journey.OptOutCommand optOutCommand) {
         this.optOutCommand = optOutCommand;
     }
@@ -87,6 +95,13 @@ public class MessageGatewayService {
             if (optedOut.isPresent()) {
                 return OutgoingMessage.of(incoming, optedOut.get(), currentState.name(), false, false, false, false,
                         museon_online.astor_butler.service.message.AdminAlert.none(), java.util.List.of("OPTED_OUT"));
+            }
+        }
+        if (butlerTalk != null) {
+            java.util.Optional<String> talked = butlerTalk.answer(incoming, currentState);
+            if (talked.isPresent()) {
+                return OutgoingMessage.of(incoming, talked.get(), currentState.name(), false, false, false, false,
+                        museon_online.astor_butler.service.message.AdminAlert.none(), java.util.List.of("BUTLER_TALK"));
             }
         }
 

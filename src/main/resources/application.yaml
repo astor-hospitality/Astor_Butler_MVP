@@ -118,6 +118,9 @@ astor:
       enabled: ${ASTOR_REPEAT_LUNCH_ENABLED:false}
     usefulness:
       enabled: ${ASTOR_USEFULNESS_POLICY_ENABLED:false}
+    talk:
+      enabled: ${ASTOR_BUTLER_TALK_ENABLED:false}
+      staff-tenant: ${ASTOR_TIPS_PERSONAL_TENANT:astor}
     return-loop:
       enabled: ${ASTOR_RETURN_LOOP_ENABLED:false}
       invite-after-days: ${ASTOR_RETURN_INVITE_AFTER_DAYS:7}

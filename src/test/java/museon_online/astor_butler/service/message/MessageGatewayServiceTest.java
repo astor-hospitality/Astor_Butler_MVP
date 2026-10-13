@@ -1398,4 +1398,17 @@ class MessageGatewayServiceTest {
 
         assertThat(outgoing.text()).isEqualTo(museon_online.astor_butler.domain.journey.OptOutCommand.REPLY);
     }
+
+    @Test
+    void butlerTalkAnswersBeforeTheScenarios() {
+        museon_online.astor_butler.domain.journey.talk.ButlerTalk talk = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.talk.ButlerTalk.class);
+        when(talk.answer(any(IncomingMessage.class), any())).thenReturn(java.util.Optional.of("Бесплатная парковка во дворе."));
+        service.setButlerTalk(talk);
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 1, 100, "где парковка?", null,
+                "Мария", null, "maria", "ru", false, "201");
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.text()).isEqualTo("Бесплатная парковка во дворе.");
+    }
 }

@@ -43,6 +43,10 @@ public class TableReservationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
 
+    /** The useful message at seating (spec 2026-10-13): optional, silent while ASTOR_BUTLER_TALK_ENABLED is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.talk.SeatedHint seatedHint;
+
     public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
         this.journeyEvents = journeyEvents;
     }
@@ -321,6 +325,9 @@ public class TableReservationService {
         log.info("Table reservation {} seated by {}: table {}, seatedAt {}", id, who, seated.tableCode(), seated.seatedAt());
         notificationService.traceSeated(seated, who);
         sendGuestCard(seated);
+        if (seatedHint != null) {
+            seatedHint.send(seated);
+        }
         journey(seated, museon_online.astor_butler.domain.journey.VisitEventKind.SEATED, "Presto".equals(who) ? museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO : museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
         return seated;
     }

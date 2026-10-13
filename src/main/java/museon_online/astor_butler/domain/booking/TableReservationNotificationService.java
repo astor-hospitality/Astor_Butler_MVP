@@ -266,6 +266,40 @@ public class TableReservationNotificationService {
      * The guest wrote «счёт» to the bot (#153 A2): the staff chat gets a card in the usual style, without the phone,
      * so the waiter brings the bill. Returns whether the card left Butler.
      */
+    /** A guest's table request (spec 2026-10-13 §3.3) as a card to the staff chat. */
+    public void notifyStaffGuestRequest(TableReservationOrder order, museon_online.astor_butler.domain.journey.talk.TableRequest request,
+                                        String guestText, String waiterName) {
+        String text = """
+                🙋 <b>%s просит: %s</b>
+
+                <b>Гость:</b> %s
+                <b>Написал:</b> «%s»
+                <b>Официант:</b> %s
+                """.formatted(escape(tableName(order)), escape(request.what()), escape(blank(order.guestName(), "гость из Telegram")),
+                escape(guestText == null ? "" : guestText), escape(blank(waiterName, "не назначен")));
+        send(hostessChatId(order), text, null, "staff-guest-request");
+    }
+
+    /** A guest's question the bot has no confirmed answer to, for the team. */
+    public void notifyStaffGuestQuestion(long guestChatId, String question) {
+        String text = """
+                ❓ <b>Гость спрашивает, а у бота нет ответа</b>
+
+                «%s»
+
+                Ответьте гостю или добавьте факт в справку бота (aeris-venue.json).
+                """.formatted(escape(question == null ? "" : question));
+        send(defaultHostessChatId, text, null, "staff-guest-question");
+    }
+
+    /** A plain useful text to the guest of the reservation. */
+    public void notifyGuestText(TableReservationOrder order, String text, String target) {
+        if (order == null || order.chatId() == null || text == null || text.isBlank()) {
+            return;
+        }
+        send(order.chatId().toString(), text, null, target);
+    }
+
     public boolean notifyHostessGuestAskedForBill(TableReservationOrder order) {
         return send(hostessChatId(order), guestAskedForBillText(order), null, "hostess-guest-bill-request") != null;
     }
