@@ -264,6 +264,20 @@ ASTOR_SABY_SEATED_STATES              пусто (по умолчанию) — �
 
 Поддержка Saby (чат 06.10): лицензия AERIS — Presto Профи, API бронирования входит; доступ «Подключения к Saby» выдаёт только руководитель организации; тестового контура нет; лимиты — ≤ 5 параллельных потоков, авторизация ≤ 300 вызовов/мин с одного IP.
 
+## 8.1. CRM: воронка визита
+
+Зеркало пути гостя (`SabyCrmMirror`, флаг `ASTOR_SABY_CRM_MIRROR_ENABLED`, по умолчанию выключен) пишет в Saby CRM
+через JSON-RPC `https://online.sbis.ru/service/` с тем же сервисным токеном:
+
+- `CRMLead.insertRecord` — сделка на визит: `Регламент` = `SABY_CRM_JOURNEY_REGULATION_ID`, `КонтактноеЛицо` (имя, телефон),
+  `Примечание` «Astor Butler · бронь #N». Id сделки (`@Документ`) хранится в `guest_visits.saby_lead_id`.
+- `CRMEvent.AddEvent` — событие ленты как комментарий `ОСЬ: СОБЫТИЕ`; если для этапа задан переход в
+  `SABY_CRM_PHASE_DIRECTIONS` (`STAGE=id,…`), сделка переходит на этап — так доска воронки показывает визиты по этапам.
+
+События уходят по порядку, по 50 за проход; на первой ошибке проход останавливается и повторяется в следующий раз
+(`guest_visit_events.mirrored_at`). Воронку и id переходов заводят в Saby руками; первую сделку — только после «да» Михаила.
+Заглушка: `scripts/saby_stub` отвечает на оба метода. Включение — [GUEST_JOURNEY_ROLLOUT.md](../operations/GUEST_JOURNEY_ROLLOUT.md).
+
 ## 9. Источники
 
 - [API для Presto](https://saby.ru/help/integration/api/app_presto)
