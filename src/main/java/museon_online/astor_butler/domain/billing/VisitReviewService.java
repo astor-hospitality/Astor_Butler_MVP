@@ -33,6 +33,14 @@ public class VisitReviewService {
     private final GuestBillNotifier notifier;
     private final Clock clock;
 
+    /** The guest journey ledger (spec 2026-10-13): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
+    public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
+        this.journeyEvents = journeyEvents;
+    }
+
     @Autowired
     public VisitReviewService(BillingProperties properties, GuestBillService bills, VisitReviewRepository reviews, GuestBillNotifier notifier) {
         this(properties, bills, reviews, notifier, Clock.systemUTC());
@@ -135,17 +143,26 @@ public class VisitReviewService {
         }
         if (matcher.group(3) != null) {
             VisitReview review = reviews.rate(billId, Integer.parseInt(matcher.group(3)));
+            if (journeyEvents != null) {
+                journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+            }
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "stars=" + review.stars());
             notifier.reviewThanks(bill, review);
             return new CallbackResult(true, "Спасибо за оценку!", null);
         }
         if (matcher.group(4) != null) {
             VisitReview review = reviews.thumb(billId, VisitReview.Thumb.valueOf(matcher.group(4)));
+            if (journeyEvents != null) {
+                journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+            }
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "thumb=" + review.thumb());
             notifier.reviewThanks(bill, review);
             return new CallbackResult(true, "Спасибо!", null);
         }
         reviews.tipRequested(billId);
+        if (journeyEvents != null) {
+            journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.TIP, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+        }
         bills.reviewNoted(billId, BillOperationType.TIP_REQUESTED, null);
         return new CallbackResult(true, "Сейчас предложу, как оставить чаевые.", TIP_PHRASE);
     }

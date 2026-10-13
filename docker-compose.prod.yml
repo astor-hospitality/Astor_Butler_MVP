@@ -121,6 +121,8 @@ services:
       SABY_PAYMENT_ENABLED: ${SABY_PAYMENT_ENABLED:-false}
       ASTOR_BILLING_ENABLED: ${ASTOR_BILLING_ENABLED:-false}
       ASTOR_SABY_CALL_LOG_ENABLED: ${ASTOR_SABY_CALL_LOG_ENABLED:-false}
+      # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): visit ledger and guest message counter.
+      ASTOR_GUEST_JOURNEY_ENABLED: ${ASTOR_GUEST_JOURNEY_ENABLED:-false}
       # Saby codes that mean «the guest is at the table» (#151), e.g. 50/1002; empty (default) — nothing is SEATED from Saby.
       ASTOR_SABY_SEATED_STATES: ${ASTOR_SABY_SEATED_STATES:-}
       ASTOR_BILLING_REVIEW_DELAY_MINUTES: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:-60}

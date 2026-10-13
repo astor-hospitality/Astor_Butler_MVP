@@ -89,6 +89,16 @@ public class BusinessLunchScenario implements FsmScenario {
     private final BookingTimeProvider timeProvider;
     private final IdentityService identityService;
 
+    /** The guest journey ledger (spec 2026-10-13): optional, silent while the feature is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
+    private void journey(IncomingMessage incoming, museon_online.astor_butler.domain.journey.VisitEventKind kind, String note) {
+        if (journeyEvents != null && incoming != null) {
+            journeyEvents.onChat(incoming.chatId(), kind, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, note);
+        }
+    }
+
     @Value("${astor.business-lunch.enabled:true}")
     private boolean enabled = true;
 
@@ -156,6 +166,7 @@ public class BusinessLunchScenario implements FsmScenario {
         if (wishesEnabled && asksComposition(normalized)) {
             List<BusinessLunchOffer.Dish> asked = dishesNamed(offer.get(), normalized);
             if (!asked.isEmpty()) {
+                journey(incoming, museon_online.astor_butler.domain.journey.VisitEventKind.DISH_QUESTION, normalized);
                 return advance(incoming, offer.get(), draft, composition(asked, normalized));
             }
             if (state != BotState.BUSINESS_LUNCH_COLLECT_WISHES) {
@@ -571,6 +582,7 @@ public class BusinessLunchScenario implements FsmScenario {
             return Optional.empty();
         }
         BusinessLunchOffer offer = catalog.find(defaultVenueCode).orElseThrow();
+        journey(incoming, museon_online.astor_butler.domain.journey.VisitEventKind.DISH_QUESTION, normalized);
         String answer = composition(dishesNamed(offer, normalized), normalized)
                 + "\n\nЕсли захотите заказать бизнес-ланч, напишите «ланч».";
         fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);

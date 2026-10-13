@@ -66,6 +66,10 @@ public class TelegramRouter {
     private final TelegramExceptionHandler exceptionHandler;
     private final IdempotencyGuard idempotencyGuard;
     private final MessageGatewayService messageGatewayService;
+
+    /** The guest journey ledger (spec 2026-10-13): optional, silent while the feature is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
     private final TelegramChatViewService chatViewService;
     private final TelegramVoiceEnrichmentGuard voiceEnrichmentGuard;
     private final HostessReservationApprovalService hostessReservationApprovalService;
@@ -175,6 +179,9 @@ public class TelegramRouter {
 
         CallbackQuery callbackQuery = update.getCallbackQuery();
         Long chatId = callbackQuery.getMessage() == null ? null : callbackQuery.getMessage().getChatId();
+        if (journeyEvents != null) {
+            journeyEvents.guestMessage(chatId);
+        }
 
         TelegramVoiceReplyService.CallbackResult fullReply = voiceReplyService.handleCallback(callbackQuery.getData(), chatId, sender);
         if (fullReply.handled()) {
@@ -345,6 +352,9 @@ public class TelegramRouter {
                     inboundEvent.getType(),
                     inboundEvent.getChatId()
             );
+            if (journeyEvents != null) {
+                journeyEvents.guestMessage(inboundEvent.getChatId());
+            }
 
             return true;
 

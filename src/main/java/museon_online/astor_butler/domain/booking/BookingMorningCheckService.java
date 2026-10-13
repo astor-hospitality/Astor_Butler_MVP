@@ -61,6 +61,14 @@ public class BookingMorningCheckService {
         static final CallbackResult NOT_HANDLED = new CallbackResult(false, null, null);
     }
 
+    /** The guest journey ledger (spec 2026-10-13): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
+    public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
+        this.journeyEvents = journeyEvents;
+    }
+
     @Autowired
     public BookingMorningCheckService(BookingMorningCheckProperties properties, TableReservationRepository reservations,
                                       BookingMorningCheckRepository checks, BookingMorningCheckNotifier notifier) {
@@ -182,6 +190,9 @@ public class BookingMorningCheckService {
                     yield new CallbackResult(true, "Спасибо, уже отметили. Ждём вас!", null);
                 }
                 checks.answer(reservationId, BookingMorningCheck.ANSWER_KEEP, now, true);
+                if (journeyEvents != null) {
+                    journeyEvents.onReservation(order.get(), museon_online.astor_butler.domain.journey.VisitEventKind.MORNING_CONFIRMED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+                }
                 notifier.thanks(order.get(), startTime);
                 notifier.hostessReconfirmed(order.get(), startTime);
                 yield new CallbackResult(true, "Спасибо, ждём вас!", null);

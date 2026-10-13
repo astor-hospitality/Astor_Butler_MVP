@@ -25,6 +25,16 @@ public class HiddenHeartScenario implements FsmScenario {
     private final FSMStorage fsmStorage;
     private final DonationService donationService;
 
+    /** The guest journey ledger (spec 2026-10-13): optional, silent while the feature is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
+    private void journey(IncomingMessage incoming, museon_online.astor_butler.domain.journey.VisitEventKind kind, String note) {
+        if (journeyEvents != null && incoming != null) {
+            journeyEvents.onChat(incoming.chatId(), kind, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, note);
+        }
+    }
+
     @Override
     public String id() {
         return "HIDDEN_HEART";
@@ -83,6 +93,7 @@ public class HiddenHeartScenario implements FsmScenario {
         }
 
         DonationOrder order = donationService.createDraft(donationOrderCommand(incoming, text));
+        journey(incoming, museon_online.astor_butler.domain.journey.VisitEventKind.GOOD_DEED, null);
         fsmStorage.setState(incoming.chatId(), BotState.DONATION_CONFIRMATION);
         return OutgoingMessage.of(
                 incoming,

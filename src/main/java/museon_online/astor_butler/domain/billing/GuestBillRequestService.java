@@ -86,6 +86,10 @@ public class GuestBillRequestService {
     @Autowired(required = false)
     private ButlerPauseService butlerPause;
 
+    /** The guest journey ledger (spec 2026-10-13): optional, silent while the feature is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
     @Autowired
     public GuestBillRequestService(GuestBillRequestProperties properties, ReviewProperties reviewProperties,
                                    HostessBillRequestService billRequests, TableReservationRepository reservations,
@@ -137,6 +141,9 @@ public class GuestBillRequestService {
         }
 
         boolean cardSent = notifications.notifyHostessGuestAskedForBill(order);
+        if (cardSent && journeyEvents != null) {
+            journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.BILL_REQUESTED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+        }
         if (!cardSent) {
             log.warn("Guest {} asked for the bill of reservation {}, but the staff chat could not be reached", incoming.chatId(), order.id());
             forget(order.id());

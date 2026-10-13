@@ -1084,4 +1084,19 @@ class TableReservationServiceTest {
                 Instant.parse("2026-06-05T00:00:00Z")
         );
     }
+
+    @Test
+    void journeyHearsTheSeatingByStaff() {
+        museon_online.astor_butler.domain.journey.JourneyEvents journey = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.JourneyEvents.class);
+        service.setJourneyEvents(journey);
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
+        TableReservationOrder seated = seated(order(10L, table, TableReservationStatus.SEATED));
+        when(repository.findOrder(10L)).thenReturn(Optional.of(confirmed), Optional.of(seated));
+        when(repository.seatIfConfirmed(10L)).thenReturn(true);
+
+        service.seatByStaff(10L, "@dasha");
+
+        verify(journey).onReservation(seated, museon_online.astor_butler.domain.journey.VisitEventKind.SEATED, museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
+    }
 }

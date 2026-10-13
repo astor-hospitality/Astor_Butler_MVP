@@ -49,6 +49,14 @@ public class TableReservationNotificationService {
     private final BookingAutoConfirmPolicy autoConfirmPolicy;
     private final BookingHostessStateStorage hostessStateStorage;
 
+    /** The guest journey ledger (spec 2026-10-13): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
+    public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
+        this.journeyEvents = journeyEvents;
+    }
+
     @Value("${telegram.bot.enabled:false}")
     private boolean telegramEnabled;
 
@@ -279,6 +287,9 @@ public class TableReservationNotificationService {
     }
 
     public void notifyGuestConfirmed(TableReservationOrder order) {
+        if (journeyEvents != null) {
+            journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.CONFIRMED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
+        }
         if (order.chatId() == null) {
             return;
         }
@@ -298,6 +309,9 @@ public class TableReservationNotificationService {
     }
 
     public void notifyGuestCancelled(TableReservationOrder order) {
+        if (journeyEvents != null) {
+            journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+        }
         if (order.chatId() == null) {
             return;
         }
@@ -306,6 +320,9 @@ public class TableReservationNotificationService {
 
     /** The hostess moved the booking to another time (#150): the guest hears the new time and whether the table stayed. */
     public void notifyGuestMovedByStaff(TableReservationOrder changed, TableReservationOrder before) {
+        if (journeyEvents != null) {
+            journeyEvents.onReservation(changed, museon_online.astor_butler.domain.journey.VisitEventKind.MOVED, museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
+        }
         if (changed.chatId() == null) {
             return;
         }
