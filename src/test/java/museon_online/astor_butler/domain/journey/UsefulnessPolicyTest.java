@@ -77,9 +77,20 @@ class UsefulnessPolicyTest {
 
     @Test
     void withoutAVisitTheKindIsNotDeduplicatedButOptOutHolds() {
-        assertThat(policy.allow(99L, CHAT, ProactiveMessage.CONFIRMED)).isInstanceOf(ProactiveDecision.Allow.class);
-        assertThat(policy.allow(99L, CHAT, ProactiveMessage.CONFIRMED)).isInstanceOf(ProactiveDecision.Allow.class);
+        assertThat(policy.allow(99L, CHAT, ProactiveMessage.MORNING)).isInstanceOf(ProactiveDecision.Allow.class);
+        assertThat(policy.allow(99L, CHAT, ProactiveMessage.MORNING)).isInstanceOf(ProactiveDecision.Allow.class);
         repository.optOut(CHAT);
-        assertThat(policy.allow(99L, CHAT, ProactiveMessage.CONFIRMED)).isInstanceOf(ProactiveDecision.Silent.class);
+        assertThat(policy.allow(99L, CHAT, ProactiveMessage.MORNING)).isInstanceOf(ProactiveDecision.Silent.class);
+    }
+
+    /** A re-confirmed new time or a second payment link answers the guest's own action: never deduplicated or opted out. */
+    @Test
+    void answersToTheGuestsOwnActionsAreNeverSilenced() {
+        assertThat(policy.allow(42L, CHAT, ProactiveMessage.CONFIRMED)).isInstanceOf(ProactiveDecision.Allow.class);
+        assertThat(policy.allow(42L, CHAT, ProactiveMessage.CONFIRMED)).isInstanceOf(ProactiveDecision.Allow.class);
+        repository.optOut(CHAT);
+        assertThat(policy.allow(42L, CHAT, ProactiveMessage.CONFIRMED)).isInstanceOf(ProactiveDecision.Allow.class);
+        assertThat(policy.allow(42L, CHAT, ProactiveMessage.BILL_READY)).isInstanceOf(ProactiveDecision.Allow.class);
+        assertThat(policy.allow(42L, CHAT, ProactiveMessage.BILL_READY)).isInstanceOf(ProactiveDecision.Allow.class);
     }
 }

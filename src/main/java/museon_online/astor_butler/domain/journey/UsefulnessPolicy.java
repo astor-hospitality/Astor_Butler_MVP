@@ -28,7 +28,7 @@ public class UsefulnessPolicy {
     }
 
     public ProactiveDecision allow(Long reservationId, Long chatId, ProactiveMessage kind) {
-        if (!properties.isEnabled()) {
+        if (!properties.isEnabled() || kind.answer()) {
             return ProactiveDecision.allow();
         }
         try {
@@ -36,7 +36,7 @@ public class UsefulnessPolicy {
                 return new ProactiveDecision.Silent("opted out");
             }
             Optional<GuestVisit> visit = reservationId == null ? Optional.empty() : visits.findByReservation(reservationId);
-            if (visit.isEmpty() || kind == ProactiveMessage.STAFF_COMING) {
+            if (visit.isEmpty()) {
                 return ProactiveDecision.allow();
             }
             if (visits.wasSent(visit.get().id(), kind.name())) {
