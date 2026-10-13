@@ -110,6 +110,14 @@ astor:
       provider: ${ASTOR_I18N_MT_PROVIDER:none}
       source-language: ${ASTOR_I18N_MT_SOURCE_LANGUAGE:ru}
       cache-max-entries: ${ASTOR_I18N_MT_CACHE_MAX_ENTRIES:5000}
+  # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): the visit ledger and guest message counter.
+  guest-journey:
+    enabled: ${ASTOR_GUEST_JOURNEY_ENABLED:false}
+    zone-id: ${ASTOR_GUEST_JOURNEY_ZONE_ID:Asia/Yekaterinburg}
+    return-loop:
+      enabled: ${ASTOR_RETURN_LOOP_ENABLED:false}
+      invite-after-days: ${ASTOR_RETURN_INVITE_AFTER_DAYS:7}
+      window-days: ${ASTOR_RETURN_WINDOW_DAYS:30}
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}

@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-14-guest-journey
+      author: astor-butler
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-14-guest-journey.sql
