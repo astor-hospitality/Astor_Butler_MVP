@@ -134,7 +134,7 @@ final class SabyOrderPayload {
     }
 
     /** Saby examples send ids as numbers; keep non-numeric ids as strings. */
-    private static Object idValue(String value) {
+    static Object idValue(String value) {
         String trimmed = value.trim();
         try {
             return Long.parseLong(trimmed);
