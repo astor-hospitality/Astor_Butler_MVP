@@ -46,7 +46,7 @@ public record BusinessLunchOffer(
      * cannot be ordered by voice. Numbers are unique within the offer ({@link BusinessLunchCatalog#problems}).
      */
     public record Dish(String code, String title, Integer priceRub, String portion, String ingredients, String allergens,
-                       List<String> canBeWithout, Integer number) {
+                       List<String> canBeWithout, Integer number, String sabyName) {
         public Dish {
             canBeWithout = canBeWithout == null ? List.of() : List.copyOf(canBeWithout);
         }
@@ -63,9 +63,22 @@ public record BusinessLunchOffer(
             this(code, title, priceRub, portion, ingredients, allergens, canBeWithout, null);
         }
 
+        public Dish(String code, String title, Integer priceRub, String portion, String ingredients, String allergens,
+                    List<String> canBeWithout, Integer number) {
+            this(code, title, priceRub, portion, ingredients, allergens, canBeWithout, number, null);
+        }
+
         /** The same dish under a spoken number; {@code null} removes it. */
         public Dish withNumber(Integer number) {
-            return new Dish(code, title, priceRub, portion, ingredients, allergens, canBeWithout, number);
+            return new Dish(code, title, priceRub, portion, ingredients, allergens, canBeWithout, number, sabyName);
+        }
+
+        /**
+         * The name the dish is looked up by in the Saby (Presto) price list: {@code sabyName} when the menu file gives one
+         * (Presto names carry suffixes like «ЛАНЧ» or «500 мл» that guests should not see), otherwise the guest-facing title.
+         */
+        public String sabyLookupName() {
+            return hasText(sabyName) ? sabyName : title;
         }
 
         /** Whether the dish may be ordered by its number through the glasses. */
