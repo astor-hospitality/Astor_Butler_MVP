@@ -57,13 +57,20 @@ public class GuestVisitRepository {
 
     /**
      * The visit whose window holds {@code now}: from its opening to the start of the second day after the visit day,
-     * venue time (spec §3.1); a visit without a day keeps its window for two days from opening.
+     * venue time (spec §3.1); a visit without a day keeps its window for two days from opening. When several windows
+     * hold now, today's visit wins.
      */
     public Optional<GuestVisit> activeByChat(long chatId, Instant now) {
         List<GuestVisit> recent = jdbc.query("SELECT " + VISIT_COLUMNS
                 + " FROM guest_visits WHERE chat_id = ? AND opened_at <= ? ORDER BY opened_at DESC LIMIT 5",
                 VISIT, chatId, Timestamp.from(now));
-        return recent.stream().filter(visit -> now.isBefore(windowEnd(visit))).findFirst();
+        java.time.LocalDate today = now.atZone(zone).toLocalDate();
+        // Today's visit first, then the one at the table, then the nearest day: a booking made from the table for next
+        // week must not take over the lunch going on now.
+        return recent.stream().filter(visit -> now.isBefore(windowEnd(visit))).min(java.util.Comparator
+                .comparing((GuestVisit visit) -> visit.visitDay() == null || !visit.visitDay().atZone(zone).toLocalDate().equals(today))
+                .thenComparing(visit -> visit.stage() != JourneyStage.SEATED && visit.stage() != JourneyStage.BILL)
+                .thenComparing(visit -> visit.visitDay() == null ? Long.MAX_VALUE : Math.abs(visit.visitDay().getEpochSecond() - now.getEpochSecond())));
     }
 
     Instant windowEnd(GuestVisit visit) {

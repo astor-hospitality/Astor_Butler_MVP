@@ -154,6 +154,16 @@ class JourneyRecorderTest {
     }
 
     @Test
+    void aBookingMadeFromTheTableDoesNotTakeOverTodaysVisit() {
+        record(42L, "+79120000000", VisitEventKind.SEATED, "STAFF");
+        clock.set(VISIT.plusSeconds(1800));
+        Instant nextFriday = Instant.parse("2026-10-16T08:00:00Z");
+        recorder().record(43L, 421L, "+79120000000", "AERIS", nextFriday, VisitEventKind.REQUESTED, "BOT", null);
+
+        assertThat(repository.activeByChat(421L, VISIT.plusSeconds(1900)).orElseThrow().reservationId()).isEqualTo(42L);
+    }
+
+    @Test
     void guestMessageWithoutVisitIsIgnored() {
         assertThat(recorder().countGuestMessage(999L)).isEmpty();
     }
