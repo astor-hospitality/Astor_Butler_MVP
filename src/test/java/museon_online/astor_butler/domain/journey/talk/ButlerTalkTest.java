@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class ButlerTalkTest {
@@ -113,5 +114,27 @@ class ButlerTalkTest {
         properties.setEnabled(false);
 
         assertThat(talk.answer(says("а где у вас парковка?"), BotState.READY_FOR_DIALOG, Optional.empty())).isEmpty();
+    }
+
+    @Test
+    void menuButtonsAndScenarioWordsStayWithTheScenarios() {
+        for (String said : List.of("🎉 Мероприятие", "🎟 Афиша", "день рождения для детей", "какое вино у вас есть", "хочу на концерт")) {
+            assertThat(talk.answer(says(said), BotState.READY_FOR_DIALOG, Optional.empty())).as(said).isEmpty();
+        }
+        verify(team, org.mockito.Mockito.never()).ask(org.mockito.ArgumentMatchers.anyLong(), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void aBillRequestAtTheTableIsLeftToTheBillFlow() {
+        assertThat(talk.answer(says("позовите официанта, принесите счёт"), BotState.READY_FOR_DIALOG, seated())).isEmpty();
+        assertThat(talk.answer(says("можно счет и воду"), BotState.READY_FOR_DIALOG, seated())).isEmpty();
+        verifyNoInteractions(router);
+    }
+
+    @Test
+    void aNegatedRequestIsNotARequest() {
+        assertThat(talk.answer(says("приборы не нужны"), BotState.READY_FOR_DIALOG, seated())).isEmpty();
+        assertThat(talk.answer(says("вилку не надо, спасибо"), BotState.READY_FOR_DIALOG, seated())).isEmpty();
+        verifyNoInteractions(router);
     }
 }

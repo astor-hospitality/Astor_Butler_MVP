@@ -23,8 +23,13 @@ public class VenueFactsCatalog {
         PARKING("парков|машин[уа]\\s+оставить|где\\s+встать"),
         KIDS("дет(ьми|ей|ск)|ребён|ребен|с\\s+малыш"),
         WIFI("wi-?fi|вай-?фай|интернет|пароль\\s+от"),
-        WINE("вин[оау]\\s+к|какое\\s+вино|что\\s+выпить\\s+к"),
-        EVENTS("афиш|мероприят|концерт|что\\s+у\\s+вас\\s+(будет|идёт|идет)|событи");
+        // Wine pairing only: «какое вино у вас есть» is the wine list, and the afisha and events belong to their scenarios.
+        WINE("вин[оау]\\s+к\\s|что\\s+выпить\\s+к\\s|вин\\S*\\s+подойд|подойд\\S*\\s+(\\S+\\s+)?вин");
+
+        /** A question, not a menu button or a request: «?», or an asking word. */
+        private static final Pattern QUESTION = Pattern.compile(
+                "\\?|^(а\\s+)?(есть\\s+ли|можно\\s+ли|можно|где|как|какой|какая|какое|какие|сколько|что|у\\s+вас)\\b",
+                Pattern.UNICODE_CHARACTER_CLASS);
 
         private final Pattern pattern;
 
@@ -33,7 +38,10 @@ public class VenueFactsCatalog {
         }
 
         static Optional<Topic> of(String text) {
-            String said = text == null ? "" : text.toLowerCase(Locale.ROOT);
+            String said = text == null ? "" : text.toLowerCase(Locale.ROOT).trim();
+            if (!QUESTION.matcher(said).find()) {
+                return Optional.empty();
+            }
             for (Topic topic : values()) {
                 if (topic.pattern.matcher(said).find()) {
                     return Optional.of(topic);
@@ -73,7 +81,6 @@ public class VenueFactsCatalog {
             case KIDS -> facts.kids();
             case WIFI -> facts.wifi();
             case WINE -> facts.winePairing();
-            case EVENTS -> facts.events();
         };
         return value == null || value.isBlank() ? Optional.empty() : Optional.of(value.trim());
     }

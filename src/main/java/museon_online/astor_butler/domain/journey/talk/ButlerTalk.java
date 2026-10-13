@@ -28,6 +28,10 @@ public class ButlerTalk {
     private static final Pattern NUTRITION = Pattern.compile(
             "калори|кбжу|ккал|белк|жир[аыо]|углевод|сколько\\s+(грамм|весит)|\\bвес\\b|граммовк", Pattern.UNICODE_CHARACTER_CLASS);
 
+    /** «Счёт» belongs to the bill flow; a request with «не нужно» is no request. */
+    private static final Pattern NOT_A_TABLE_REQUEST = Pattern.compile(
+            "сч[её]т(?!\\S)|сч[её]т[аеу]\\b|\\bне\\s+(нужн|надо)", Pattern.UNICODE_CHARACTER_CLASS);
+
     /** Weight and nutrition by the dish's Saby name. */
     public interface Nutrition {
         Optional<SabyNutrition> of(String sabyName);
@@ -93,7 +97,8 @@ public class ButlerTalk {
             return Optional.empty();
         }
         String text = incoming.text().trim();
-        Optional<TableRequest> request = TableRequest.recognise(text);
+        Optional<TableRequest> request = NOT_A_TABLE_REQUEST.matcher(text.toLowerCase(Locale.ROOT)).find()
+                ? Optional.empty() : TableRequest.recognise(text);
         if (request.isPresent() && visit.isPresent() && visit.get().stage() == JourneyStage.SEATED) {
             events.onChat(incoming.chatId(), VisitEventKind.TABLE_REQUEST, JourneyEvents.GUEST, request.get().name());
             return Optional.of(router.route(visit.get().reservationId(), request.get(), text));
