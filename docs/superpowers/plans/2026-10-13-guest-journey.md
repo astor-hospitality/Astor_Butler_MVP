@@ -19,7 +19,7 @@
 - Окно визита для счётчика: от заявки до конца следующего дня после визита (время ресторана, `Asia/Yekaterinburg`).
 - «Вернулся»: новая бронь с тем же телефоном в **30** дней; приглашение — через `astor.guest-journey.return.invite-after-days` (по умолчанию **7**).
 - Время первого блюда в подсказке: «обычно через 7–10 минут» (интервью стажёра 12.10), настройка `astor.guest-journey.talk.first-dish-minutes=7-10`.
-- Факты о ресторане — только из `src/main/resources/business-lunch/aeris-venue.json`; нет факта — «уточню у команды» + вопрос в чат персонала. Факты не выдумывать.
+- Факты о ресторане — только из `src/main/resources/venue/aeris.json`; нет факта — «уточню у команды» + вопрос в чат персонала. Факты не выдумывать.
 - Тон: на «вы», эмодзи допустимы; тексты меняет только Михаил.
 - Каждая миграция — отдельный `- include:` с ровно одним `file:` в `changelog-master.yaml`.
 - Коммиты оканчиваются строкой `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -110,7 +110,7 @@
 ### Task 5: Диалог батлера — знания, КБЖУ, просьбы, подсказки
 
 **Files:**
-- Create: `src/main/resources/business-lunch/aeris-venue.json` (поля `parking`, `kids`, `wifi`, `winePairing`, `events`, `dishStories` со значениями `null`; факты вносит Михаил), `domain/journey/talk/{VenueFacts,VenueFactsCatalog,ButlerTalk,TableRequest,TableRequestRouter,ButlerTalkProperties}.java` (`astor.guest-journey.talk.enabled=false`)
+- Create: `src/main/resources/venue/aeris.json` (поля `parking`, `kids`, `wifi`, `winePairing`, `events`, `dishStories` со значениями `null`; факты вносит Михаил), `domain/journey/talk/{VenueFacts,VenueFactsCatalog,ButlerTalk,TableRequest,TableRequestRouter,ButlerTalkProperties}.java` (`astor.guest-journey.talk.enabled=false`)
 - Modify: `integration/saby/SabyMenuCatalog.java` (`Nutrition`), `fsm/scenario/BusinessLunchScenario.java` и `fsm/scenario/ScenarioRouter.java` (вызов `ButlerTalk.answer(...)` перед fallback), `TableReservationService.seatFromVenue` / «Гость сел» → подсказка `SEATED_HINT`; `docker-compose.prod.yml` (`ASTOR_BUTLER_TALK_ENABLED`)
 - Test: `integration/saby/SabyMenuCatalogNutritionTest.java`, `domain/journey/talk/{ButlerTalkTest,TableRequestRouterTest}.java`
 
@@ -168,7 +168,7 @@
 **Files:**
 - Create: `docs/operations/GUEST_JOURNEY_ROLLOUT.md`, `scripts/e2e/butler-40.txt`; Modify: `docs/operations/test-memos/README.md` (новые флаги в откате), `docs/integrations/SABY_PRESTO_BOOKING_API.md` (раздел «CRM: воронка визита»)
 
-- [ ] **Step 1:** Документ включения по §8 спецификации: команда на каждый флаг, проверка после (`guest_visit_events`, `guest_visits.guest_messages`, `saby_call_log`), откат; предусловия для CRM (воронка в Saby, тестовая сделка с «да» Михаила) и для диалога (факты в `aeris-venue.json` от Тариэля).
+- [ ] **Step 1:** Документ включения по §8 спецификации: команда на каждый флаг, проверка после (`guest_visit_events`, `guest_visits.guest_messages`, `saby_call_log`), откат; предусловия для CRM (воронка в Saby, тестовая сделка с «да» Михаила) и для диалога (факты в `venue/aeris.json` от Тариэля).
 - [ ] **Step 2:** `scripts/e2e/butler-40.txt` — 40 реплик тестового гостя для `/opt/astor-butler/e2e-say.py`: заявка словами, вопросы о блюдах и вине, просьбы за столом, счёт, отзыв словами.
 - [ ] **Step 3: Run** `mvn -B -o -q test` — PASS.
 - [ ] **Step 4: Commit** `docs(journey): rollout, rollback and the 40-message guest run`.

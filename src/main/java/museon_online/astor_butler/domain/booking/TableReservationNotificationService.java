@@ -287,7 +287,7 @@ public class TableReservationNotificationService {
 
                 «%s»
 
-                Ответьте гостю или добавьте факт в справку бота (aeris-venue.json).
+                Ответьте гостю или добавьте факт в справку бота (venue/aeris.json).
                 """.formatted(escape(question == null ? "" : question));
         send(defaultHostessChatId, text, null, "staff-guest-question");
     }

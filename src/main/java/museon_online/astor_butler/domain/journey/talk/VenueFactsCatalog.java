@@ -11,12 +11,12 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-/** Reads {@code business-lunch/aeris-venue.json} and finds which fact a guest's question is about. */
+/** Reads {@code venue/aeris.json} and finds which fact a guest's question is about. */
 @Component
 @Slf4j
 public class VenueFactsCatalog {
 
-    static final String RESOURCE = "business-lunch/aeris-venue.json";
+    static final String RESOURCE = "venue/aeris.json";
 
     /** What a guest can ask about the venue. */
     public enum Topic {
