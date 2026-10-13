@@ -14,7 +14,7 @@
 
 - Все новые флаги `false` по умолчанию; при выключенном флаге поведение бота не меняется ни на байт (тесты проверяют).
 - Флаги спецификации: `ASTOR_GUEST_JOURNEY_ENABLED`, `ASTOR_CONTACT_POLICY_ENABLED`, `ASTOR_SABY_CRM_MIRROR_ENABLED`, `ASTOR_RETURN_LOOP_ENABLED`. Дополнительно (поведение гостя, поэтому свой флаг): `ASTOR_REPEAT_LUNCH_ENABLED`, `ASTOR_LUNCH_NUTRITION_ENABLED`, `ASTOR_JOURNEY_WEEKLY_REPORT_ENABLED`.
-- Лимит: не больше **6** сообщений «бот первым» за путь; ни одного на этапе «За столом»; сбой политики = молчание.
+- Лимит: не больше **35** сообщений «бот первым» за путь (решение Михаила 13.10, конкурс — быстрый чатинг); ни одного по инициативе бота на этапе «За столом»; ответы гостю не ограничены и не задерживаются; сбой политики = молчание.
 - «Вернулся»: новая бронь с тем же телефоном в течение **30** дней. Приглашение вернуться — через `astor.guest-journey.return.invite-after-days` (по умолчанию **7**).
 - «Доброе дело» и «театр выбора» в этом плане — только события в ленте из существующих сценариев (`HiddenHeartScenario`, `SafePlayScenario`); новых сообщений гостю и денег нет.
 - Тон сообщений: на «вы», эмодзи допустимы. Тексты — как в примере диалога 13.10 (Мария), меняются только Михаилом.
@@ -47,7 +47,7 @@
   - `record GuestVisit(Long id, Long reservationId, Long chatId, String guestPhone, String venueCode, JourneyStage stage, String sabyLeadId, Long returnedVisitId, int botFirstMessages, Instant openedAt, Instant closedAt)`
   - `GuestVisitRepository`: `Optional<GuestVisit> findByReservation(long reservationId)`, `GuestVisit open(long reservationId, Long chatId, String guestPhone, String venueCode)`, `boolean insertEvent(long visitId, VisitEventKind kind, String source, String note)` (false, если oneShot уже есть), `void moveStage(long visitId, JourneyStage stage)`, `List<GuestVisitEvent> unmirrored(int limit)`, `void markMirrored(long eventId)`, `void setSabyLead(long visitId, String leadId)`, `int incrementBotFirst(long visitId)`, `Optional<GuestVisit> lastClosedByPhone(String phone, Instant since)`, `void linkReturn(long fromVisitId, long toVisitId)`
   - `JourneyRecorder.record(long reservationId, Long chatId, String guestPhone, String venueCode, VisitEventKind kind, String source, String note)` → `Optional<GuestVisit>`; при выключенном флаге — `Optional.empty()` без обращений к БД; исключения ловит и логирует.
-  - `GuestJourneyProperties` (`@ConfigurationProperties("astor.guest-journey")`): `enabled=false`, `return.inviteAfterDays=7`, `return.windowDays=30`, `maxBotFirstMessages=6`.
+  - `GuestJourneyProperties` (`@ConfigurationProperties("astor.guest-journey")`): `enabled=false`, `return.inviteAfterDays=7`, `return.windowDays=30`, `maxBotFirstMessages=35`.
 
 - [ ] **Step 1: Write the failing tests** — `JourneyRecorderTest` (H2/`JdbcTemplate`, как в `GuestCardServiceTest`):
   `disabledRecorderTouchesNothing` (мок репозитория без вызовов), `firstEventOpensVisitAndMovesStage` (REQUESTED → stage REQUESTED), `oneShotEventIsWrittenOnce` (SEATED дважды → одно событие, stage SEATED), `stageNeverGoesBack` (CONFIRMED после SEATED → stage SEATED), `exitAlwaysWins` (CANCELLED после SEATED → CANCELLED), `visitWithoutPhoneIsKeptByChat` (guestPhone=null → визит открыт, `lastClosedByPhone` не находит), `recorderSwallowsRepositoryFailure` (репозиторий бросает → `Optional.empty()`, нет исключения). `VisitEventKindTest.everyKindHasAxis`.
@@ -101,11 +101,11 @@
 - Consumes: `GuestVisitRepository.findByReservation`, `incrementBotFirst`; `JourneyRecorder` (`OPTED_OUT`).
 - Produces: `enum ContactMoment { REQUEST_RECEIVED, CONFIRMED, MORNING, BILL, AFTER, INVITE }`; `sealed interface ContactDecision` → `Allow`, `Silent(String reason)`; `ContactPolicy.allow(long reservationId, Long chatId, ContactMoment moment)` → `ContactDecision`. При выключенном флаге — всегда `Allow` (поведение как сейчас).
 
-- [ ] **Step 1: Write the failing test** `ContactPolicyTest`: `allowsKeyMomentWithinLimit`, `silentAfterSixBotFirstMessages` (7-е → `Silent("limit")`), `silentWhileSeated` (stage SEATED, moment AFTER → `Silent("at table")`), `silentWhenOptedOut`, `silentWhenPolicyFails` (репозиторий бросает → `Silent("error")`), `flagOffAlwaysAllows`, `optOutDoesNotBlockReplies` (ответ на сообщение гостя не идёт через политику — проверка на уровне `TelegramRouter.send`: нет вызова `allow`).
+- [ ] **Step 1: Write the failing test** `ContactPolicyTest`: `allowsKeyMomentWithinLimit`, `silentAfterThirtyFiveBotFirstMessages` (36-е → `Silent("limit")`), `repliesAreNeverCounted` (ответ на сообщение гостя не увеличивает счётчик), `silentWhileSeated` (stage SEATED, moment AFTER → `Silent("at table")`), `silentWhenOptedOut`, `silentWhenPolicyFails` (репозиторий бросает → `Silent("error")`), `flagOffAlwaysAllows`, `optOutDoesNotBlockReplies` (ответ на сообщение гостя не идёт через политику — проверка на уровне `TelegramRouter.send`: нет вызова `allow`).
 - [ ] **Step 2: Run** `mvn -B -o -q test -Dtest=ContactPolicyTest` — FAIL.
 - [ ] **Step 3: Implement**; каждое проактивное место: `if (policy.allow(...) instanceof Silent) return;` до отправки; `Allow` увеличивает `bot_first_messages`.
 - [ ] **Step 4: Run** полный `mvn -B -o -q test` — PASS.
-- [ ] **Step 5: Commit** `feat(journey): contact policy — key moments only, 6 per journey, silent at the table`.
+- [ ] **Step 5: Commit** `feat(journey): contact policy — key moments only, 35 per journey, silent at the table`.
 
 ### Task 5: КБЖУ и вес из Saby
 
