@@ -242,4 +242,29 @@ class FirstTouchScenarioTest {
         return IncomingMessage.max(MAX_CHAT_ID, 9_123_456L, text, phone, "Анна", null, null, "ru", false, "max-1",
                 java.util.Map.of("maxChatId", 555L));
     }
+
+    @Test
+    void knownGuestStartNamesTheLastLunchWhenTheGreetingHasOne() {
+        IncomingMessage incoming = telegram("/start", null);
+        when(consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())).thenReturn(true);
+        museon_online.astor_butler.domain.journey.RepeatLunchGreeting greeting = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.RepeatLunchGreeting.class);
+        when(greeting.text(incoming)).thenReturn(java.util.Optional.of("С возвращением, Мария! В прошлый раз у вас был Капучино. Повторить или собрать заново?"));
+        scenario.setRepeatLunchGreeting(greeting);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, "/start");
+
+        assertThat(outgoing.text()).isEqualTo("С возвращением, Мария! В прошлый раз у вас был Капучино. Повторить или собрать заново?");
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+    }
+
+    @Test
+    void knownGuestStartKeepsTheUsualGreetingWithoutALastLunch() {
+        IncomingMessage incoming = telegram("/start", null);
+        when(consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())).thenReturn(true);
+        museon_online.astor_butler.domain.journey.RepeatLunchGreeting greeting = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.RepeatLunchGreeting.class);
+        when(greeting.text(incoming)).thenReturn(java.util.Optional.empty());
+        scenario.setRepeatLunchGreeting(greeting);
+
+        assertThat(scenario.handle(incoming, BotState.READY_FOR_DIALOG, "/start").text()).contains("С возвращением", "бизнес-ланч");
+    }
 }
