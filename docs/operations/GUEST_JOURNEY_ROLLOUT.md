@@ -32,7 +32,7 @@ docker compose --env-file ../.env.production --env-file images.env -f docker-com
   вино к блюдам, афиша). Сейчас все `null`: бот на такие вопросы отвечает «уточню у команды». Факты даёт Тариэль,
   вносятся PR-ом и деплоем. Факты не выдумывать.
 - **CRM (флаг 6).** В Saby создана воронка «Визит гостя AERIS» с этапами `REQUESTED CONFIRMED VISIT_DAY SEATED BILL AFTER
-  RETURNED CANCELLED NO_SHOW OPTED_OUT`. В `.env.production`:
+  RETURNED CANCELLED NO_SHOW`. В `.env.production`:
   - `SABY_CRM_JOURNEY_REGULATION_ID` — id регламента воронки;
   - `SABY_CRM_PHASE_DIRECTIONS` — `REQUESTED=<id>,CONFIRMED=<id>,…` (id переходов этапов из Saby);
   - `SABY_CRM_RESPONSIBLE_ID` — необязательно, ответственный за сделки.

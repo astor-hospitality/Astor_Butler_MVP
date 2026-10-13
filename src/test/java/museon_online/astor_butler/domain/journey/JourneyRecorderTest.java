@@ -109,6 +109,15 @@ class JourneyRecorderTest {
     }
 
     @Test
+    void optingOutIsAContactPreferenceNotTheEndOfTheVisit() {
+        record(42L, "+79120000000", VisitEventKind.REQUESTED, "BOT");
+        record(42L, "+79120000000", VisitEventKind.OPTED_OUT, "GUEST");
+        GuestVisit visit = record(42L, "+79120000000", VisitEventKind.SEATED, "STAFF").orElseThrow();
+
+        assertThat(visit.stage()).isEqualTo(JourneyStage.SEATED);
+    }
+
+    @Test
     void visitWithoutPhoneIsKeptByChat() {
         GuestVisit visit = record(43L, null, VisitEventKind.REQUESTED, "BOT").orElseThrow();
 

@@ -23,7 +23,8 @@ public enum VisitEventKind {
     RETURNED(JourneyAxis.IDENTITY, JourneyStage.RETURNED, true),
     CANCELLED(JourneyAxis.SAFETY, JourneyStage.CANCELLED, true),
     NO_SHOW(JourneyAxis.NONE, JourneyStage.NO_SHOW, true),
-    OPTED_OUT(JourneyAxis.SAFETY, JourneyStage.OPTED_OUT, true);
+    // A contact preference, not a stage: the visit goes on, only the bot stops writing first.
+    OPTED_OUT(JourneyAxis.SAFETY, null, true);
 
     private final JourneyAxis axis;
     private final JourneyStage stage;
