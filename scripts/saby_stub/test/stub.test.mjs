@@ -242,3 +242,24 @@ test("recording never saves raw error pages or scalar response bodies", () => {
   assert.deepEqual(tryJson(Buffer.from("<html>password=secret guest@example.test</html>")), { "<body>": "<non-json omitted>" });
   assert.deepEqual(tryJson(Buffer.from('"raw-secret"')), { "<body>": "<omitted>" });
 });
+
+test("Saby CRM: a deal per visit, events move it through the funnel (guest journey mirror)", async () => {
+  const token = await auth();
+  const lead = await call("POST", "/service/", { token, body: { jsonrpc: "2.0", method: "CRMLead.insertRecord",
+    params: { "Регламент": 55, "КонтактноеЛицо": { "ФИО": "Мария", "Телефон": "79120000000" }, "Примечание": "Astor Butler · бронь #42" } } });
+  assert.equal(lead.status, 200);
+  const dealId = lead.json.result["@Документ"];
+  assert.ok(Number.isInteger(dealId));
+
+  const moved = await call("POST", "/service/", { token, body: { jsonrpc: "2.0", method: "CRMEvent.AddEvent",
+    params: { EventData: { d: [3, dealId, null, 0, 2, "IDENTITY: SEATED", null, 14], s: [], _type: "record", f: 0 } } } });
+  assert.equal(moved.status, 200);
+
+  const deal = world.crmDeal(dealId);
+  assert.equal(deal.contact["ФИО"], "Мария");
+  assert.deepEqual(deal.phases, [14]);
+  assert.deepEqual(deal.comments, ["IDENTITY: SEATED"]);
+
+  const unknown = await call("POST", "/service/", { token, body: { jsonrpc: "2.0", method: "CRMLead.nope", params: {} } });
+  assert.ok(unknown.json.error);
+});

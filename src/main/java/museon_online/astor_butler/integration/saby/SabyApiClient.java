@@ -70,6 +70,29 @@ class SabyApiClient {
         return authorizedCall(HttpMethod.PUT, uri(path), toJson(body), path, false);
     }
 
+    /**
+     * A JSON-RPC call to the online.sbis.ru service endpoint (Saby CRM), with the same service token. Never retried: a
+     * repeated insert may create a second deal. An {@code error} in the answer is a failure; the {@code result} is returned.
+     */
+    JsonNode rpc(String method, Map<String, ?> params) {
+        URI auth = URI.create(properties.getAuthUrl());
+        URI uri = UriComponentsBuilder.newInstance().scheme(auth.getScheme()).host(auth.getHost()).port(auth.getPort())
+                .path("/service/").build().toUri();
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("jsonrpc", "2.0");
+        body.put("method", method);
+        body.put("params", params);
+        body.put("protocol", 4);
+        body.put("id", 0);
+        JsonNode answer = authorizedCall(HttpMethod.POST, uri, toJson(body), method, false);
+        JsonNode error = answer.path("error");
+        if (!error.isMissingNode() && !error.isNull()) {
+            throw new SabyApiException(SabyApiException.Kind.HTTP_ERROR, 200,
+                    "Saby " + method + " answered with an error: " + error.path("message").asText(error.toString()));
+        }
+        return answer.path("result");
+    }
+
     private URI uri(String path) {
         return UriComponentsBuilder.fromUriString(trimTrailingSlash(properties.getBaseUrl()))
                 .path(path)

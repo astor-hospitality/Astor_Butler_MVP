@@ -295,6 +295,12 @@ astor:
       enabled: ${ASTOR_SABY_ENABLED:false}
       write-enabled: ${SABY_WRITE_ENABLED:false}
       payment-enabled: ${SABY_PAYMENT_ENABLED:false}
+      # Guest-journey mirror into a Saby CRM funnel: a deal per visit, events move it (docs/operations/GUEST_JOURNEY_ROLLOUT.md).
+      crm:
+        enabled: ${ASTOR_SABY_CRM_MIRROR_ENABLED:false}
+        regulation-id: ${SABY_CRM_JOURNEY_REGULATION_ID:}
+        phase-directions: ${SABY_CRM_PHASE_DIRECTIONS:}
+        responsible-id: ${SABY_CRM_RESPONSIBLE_ID:}
       base-url: ${SABY_API_BASE_URL:https://api.sbis.ru}
       auth-url: ${SABY_AUTH_URL:https://online.sbis.ru/oauth/service/}
       app-client-id: ${SABY_APP_CLIENT_ID:}
