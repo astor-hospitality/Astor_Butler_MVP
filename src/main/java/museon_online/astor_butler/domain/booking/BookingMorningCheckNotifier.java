@@ -46,7 +46,18 @@ public class BookingMorningCheckNotifier {
     }
 
     /** «Сегодня ждём вас в 13:00, 2 гостя. Всё в силе?» with the three buttons. @return whether the message left Butler */
+    /** The usefulness filter for bot-first messages (spec 2026-10-13): optional, allows everything while off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.UsefulnessPolicy usefulnessPolicy;
+
+    public void setUsefulnessPolicy(museon_online.astor_butler.domain.journey.UsefulnessPolicy usefulnessPolicy) {
+        this.usefulnessPolicy = usefulnessPolicy;
+    }
+
     public boolean ask(TableReservationOrder order, LocalTime startTime) {
+        if (usefulnessPolicy != null && order != null && !usefulnessPolicy.permits(order.id(), order.chatId(), museon_online.astor_butler.domain.journey.ProactiveMessage.MORNING)) {
+            return false;
+        }
         InlineKeyboardMarkup keyboard = InlineKeyboardMarkup.builder()
                 .keyboard(List.of(List.of(
                         button(BUTTON_KEEP, order.id(), "keep"),

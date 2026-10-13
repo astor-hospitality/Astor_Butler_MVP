@@ -34,7 +34,18 @@ public class GuestBillNotifier {
     private boolean notificationsEnabled;
 
     /** @return whether the message left Butler */
+    /** The usefulness filter for bot-first messages (spec 2026-10-13): optional, allows everything while off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.UsefulnessPolicy usefulnessPolicy;
+
+    public void setUsefulnessPolicy(museon_online.astor_butler.domain.journey.UsefulnessPolicy usefulnessPolicy) {
+        this.usefulnessPolicy = usefulnessPolicy;
+    }
+
     public boolean paymentLink(GuestBill bill, String url) {
+        if (usefulnessPolicy != null && bill != null && !usefulnessPolicy.permits(bill.tableReservationId(), bill.chatId(), museon_online.astor_butler.domain.journey.ProactiveMessage.BILL_READY)) {
+            return false;
+        }
         String amount = bill.venueAmountMinor() != null
                 ? "<b>К оплате:</b> " + rubles(bill.venueAmountMinor())
                 : bill.estimateMinor() != null

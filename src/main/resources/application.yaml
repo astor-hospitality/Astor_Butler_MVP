@@ -116,6 +116,8 @@ astor:
     zone-id: ${ASTOR_GUEST_JOURNEY_ZONE_ID:Asia/Yekaterinburg}
     repeat-lunch:
       enabled: ${ASTOR_REPEAT_LUNCH_ENABLED:false}
+    usefulness:
+      enabled: ${ASTOR_USEFULNESS_POLICY_ENABLED:false}
     return-loop:
       enabled: ${ASTOR_RETURN_LOOP_ENABLED:false}
       invite-after-days: ${ASTOR_RETURN_INVITE_AFTER_DAYS:7}

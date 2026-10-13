@@ -1385,4 +1385,17 @@ class MessageGatewayServiceTest {
         assertThat(flagOff.metadata()).isEqualTo(withoutBean.metadata());
         org.mockito.Mockito.verifyNoInteractions(memory);
     }
+
+    @Test
+    void optOutPhraseIsAnsweredBeforeTheScenarios() {
+        museon_online.astor_butler.domain.journey.OptOutCommand optOut = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.OptOutCommand.class);
+        when(optOut.tryHandle(1773317437L, "больше не пишите мне")).thenReturn(java.util.Optional.of(museon_online.astor_butler.domain.journey.OptOutCommand.REPLY));
+        service.setOptOutCommand(optOut);
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 1, 100, "больше не пишите мне", null,
+                "Мария", null, "maria", "ru", false, "200");
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.text()).isEqualTo(museon_online.astor_butler.domain.journey.OptOutCommand.REPLY);
+    }
 }

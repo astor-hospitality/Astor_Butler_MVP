@@ -49,6 +49,14 @@ public class TableReservationNotificationService {
     private final BookingAutoConfirmPolicy autoConfirmPolicy;
     private final BookingHostessStateStorage hostessStateStorage;
 
+    /** The usefulness filter for bot-first messages (spec 2026-10-13): optional, allows everything while off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.UsefulnessPolicy usefulnessPolicy;
+
+    public void setUsefulnessPolicy(museon_online.astor_butler.domain.journey.UsefulnessPolicy usefulnessPolicy) {
+        this.usefulnessPolicy = usefulnessPolicy;
+    }
+
     /** The guest journey ledger (spec 2026-10-13): optional so the constructor and its tests stay as they are. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
@@ -291,6 +299,10 @@ public class TableReservationNotificationService {
             journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.CONFIRMED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
         }
         if (order.chatId() == null) {
+            return;
+        }
+        if (usefulnessPolicy != null && !usefulnessPolicy.permits(order.id(), order.chatId(), museon_online.astor_butler.domain.journey.ProactiveMessage.CONFIRMED)) {
+            pendingIntentService.deliverAfterConfirmation(order);
             return;
         }
         send(order.chatId().toString(), guestConfirmedText(order), guestMainMenuKeyboard(), "guest-confirmed");

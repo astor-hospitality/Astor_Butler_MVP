@@ -66,6 +66,14 @@ public class MessageGatewayService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.fsm.reply.GuidingQuestionAppender guidingQuestionAppender;
 
+    /** «Не пишите мне» (spec 2026-10-13): optional, ignores the phrase while the usefulness filter is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.OptOutCommand optOutCommand;
+
+    public void setOptOutCommand(museon_online.astor_butler.domain.journey.OptOutCommand optOutCommand) {
+        this.optOutCommand = optOutCommand;
+    }
+
     public OutgoingMessage handle(IncomingMessage incoming) {
         if (incoming == null || incoming.chatId() == null) {
             throw new IllegalArgumentException("Incoming message must contain chatId for current MVP flow");
@@ -74,6 +82,13 @@ public class MessageGatewayService {
         String text = normalize(incoming.text());
         BotState currentState = resolveState(incoming.chatId());
         telegramIntakeService.capture(incoming);
+        if (optOutCommand != null) {
+            java.util.Optional<String> optedOut = optOutCommand.tryHandle(incoming.chatId(), incoming.text());
+            if (optedOut.isPresent()) {
+                return OutgoingMessage.of(incoming, optedOut.get(), currentState.name(), false, false, false, false,
+                        museon_online.astor_butler.service.message.AdminAlert.none(), java.util.List.of("OPTED_OUT"));
+            }
+        }
 
         if (logConversationsEnabled) {
             log.info(
