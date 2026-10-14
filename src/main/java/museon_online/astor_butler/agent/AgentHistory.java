@@ -83,6 +83,17 @@ class AgentHistory {
         }
     }
 
+    /**
+     * Moves past a turn that fell back. Its commitments keep their keys, so the next, different turn must not reuse
+     * them (it would replay a booking or hit another tool's key).
+     */
+    void skipTurn(String key) {
+        Conversation conversation = conversation(key);
+        synchronized (conversation) {
+            conversation.turns++;
+        }
+    }
+
     void add(String key, String said, String answered, String digest) {
         Conversation conversation = conversation(key);
         synchronized (conversation) {

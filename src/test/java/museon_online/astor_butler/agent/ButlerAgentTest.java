@@ -213,12 +213,56 @@ class ButlerAgentTest {
     void directBotFallbackIsEmptyAndWritten() {
         loopAnswers(AgentOutcome.fallback(List.of(), 0));
 
-        assertThat(agent.reply(guest(501L, "привет"), null)).isEmpty();
+        assertThat(agent.reply(guest(501L, "привет"), 9L)).isEmpty();
 
         ArgumentCaptor<VisitTurnDraft> drafts = ArgumentCaptor.forClass(VisitTurnDraft.class);
         verify(ledger).write(drafts.capture());
         assertThat(drafts.getValue().kind()).isEqualTo(TurnKind.FALLBACK);
         assertThat(drafts.getValue().channel()).isEqualTo(TurnChannel.BUTLER_TG);
+        assertThat(drafts.getValue().visitId()).isEqualTo(9L);
+    }
+
+    @Test
+    void directBotFallbackWithoutAVisitWritesNoOrphanRow() {
+        loopAnswers(AgentOutcome.fallback(List.of(), 0));
+
+        assertThat(agent.reply(guest(501L, "привет"), null)).isEmpty();
+
+        verify(ledger, never()).write(any());
+    }
+
+    @SuppressWarnings("unchecked")
+    private void loopAnswersInTurn(AgentOutcome... outcomes) {
+        java.util.concurrent.atomic.AtomicInteger next = new java.util.concurrent.atomic.AtomicInteger();
+        when(loop.run(anyList(), anyList(), any())).thenAnswer(invocation -> {
+            histories.add(List.copyOf((List<ModelChatMessage>) invocation.getArgument(0)));
+            contexts.add(invocation.getArgument(2));
+            return outcomes[Math.min(next.getAndIncrement(), outcomes.length - 1)];
+        });
+    }
+
+    @Test
+    void fallbackWithAToolCallThenTheNextTurnGetsANewKey() {
+        AgentOutcome.ToolUse booked = new AgentOutcome.ToolUse("reservation_create",
+                CapabilityResult.ok(Map.of("reservationId", 9L, "status", "AWAITING_HOSTESS")));
+        loopAnswersInTurn(AgentOutcome.fallback(List.of(booked), 1), new AgentOutcome("Чем помочь?", List.of(), false, 0));
+
+        agent.reply(guest(501L, "стол на двоих"), null);
+        agent.reply(guest(501L, "а меню?"), null);
+        agent.negotiate(turn(null, "стол"));
+        agent.negotiate(turn(null, "меню"));
+
+        assertThat(contexts).extracting(CapabilityContext::idempotencyKey).containsExactly("tg:501:1", "tg:501:2", "c-1:1", "c-1:2");
+    }
+
+    @Test
+    void aNegotiationFallbackWithoutToolCallsKeepsItsKeyForTheRetry() {
+        loopAnswersInTurn(AgentOutcome.fallback(List.of(), 0), new AgentOutcome("Слушаю.", List.of(), false, 0));
+
+        agent.negotiate(turn(null, "стол"));
+        agent.negotiate(turn(null, "стол"));
+
+        assertThat(contexts).extracting(CapabilityContext::idempotencyKey).containsExactly("c-1:1", "c-1:1");
     }
 
     @Test

@@ -186,4 +186,21 @@ class AgentLoopTest {
 
         assertThat(loop.run(history(), TOOLS, CTX).fallback()).isTrue();
     }
+
+    @Test
+    void phonesInToolFactsAreMaskedBeforeTheModelSeesThem() {
+        when(model.chat(any())).thenAnswer(invocation -> {
+            requests.add(invocation.getArgument(0));
+            return requests.size() == 1 ? call("table_availability", Map.of()) : text("Готово.");
+        });
+        when(registry.invoke(eq("table_availability"), any(), anyMap())).thenReturn(CapabilityResult.ok(Map.of(
+                "guestPhone", "+79120000060",
+                "note", "перезвонить 8 (912) 000-00-60",
+                "nested", Map.of("phone", "89120000060"))));
+
+        loop.run(history(), TOOLS, CTX);
+
+        String content = requests.get(1).messages().get(3).content();
+        assertThat(content).contains("+7 912 ***-**-60").doesNotContain("000-00-60").doesNotContain("9120000060");
+    }
 }

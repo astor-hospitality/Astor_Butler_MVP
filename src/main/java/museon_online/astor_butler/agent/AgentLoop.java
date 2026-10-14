@@ -172,7 +172,8 @@ public class AgentLoop {
         if (result.error() != null) {
             body.put("error", result.error());
         }
-        body.put("facts", result.facts() == null ? Map.of() : result.facts());
+        // The model needs no phone: the guest's number travels in the context, never through the prompt.
+        body.put("facts", result.facts() == null ? Map.of() : CapabilityRegistry.masked(result.facts()));
         try {
             return mapper.writeValueAsString(body);
         } catch (JsonProcessingException e) {

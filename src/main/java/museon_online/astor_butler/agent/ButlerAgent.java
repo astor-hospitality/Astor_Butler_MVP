@@ -119,6 +119,10 @@ public class ButlerAgent {
         }
         List<Map<String, Object>> facts = facts(outcome);
         if (outcome.fallback()) {
+            // Without a turn id a Concierge retry reuses the counter; once a tool ran the next turn needs new keys.
+            if (blankToNull(turn.turnId()) == null && outcome.toolCalls() > 0) {
+                history.skipTurn(key);
+            }
             write(fallbackTurn(visitId, sessionId, TurnChannel.CONCIERGE_TG, outcome), true);
             return new NegotiationReply(null, null, facts, visitId, true);
         }
@@ -153,7 +157,10 @@ public class ButlerAgent {
                 turnKey("tg:" + chatId, history.nextTurn(key)), blankToNull(incoming.firstName()), blankToNull(incoming.contactPhone()));
         AgentOutcome outcome = run(key, said, ctx, incoming.contactPhone(), chatId);
         if (outcome.fallback()) {
-            write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), true);
+            // The bot has no client retries: the next guest message is always a new turn with new keys.
+            history.skipTurn(key);
+            // Without a visit the row would belong to nothing on the board; the loop has logged the fallback.
+            write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), visit != null);
             return Optional.empty();
         }
         history.add(key, said, outcome.text(), digest(outcome));

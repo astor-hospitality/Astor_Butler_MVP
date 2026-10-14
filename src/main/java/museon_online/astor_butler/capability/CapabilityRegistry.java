@@ -205,9 +205,12 @@ public class CapabilityRegistry {
         }
     }
 
-    /** A copy with phone keys masked (dropped when the value is not a readable phone) and text phones masked. */
+    /**
+     * A copy with phone keys masked (dropped when the value is not a readable phone) and text phones masked. The
+     * Butler's agent applies it to the facts it hands the model.
+     */
     @SuppressWarnings("unchecked")
-    static Map<String, Object> masked(Map<String, Object> source) {
+    public static Map<String, Object> masked(Map<String, Object> source) {
         Map<String, Object> copy = new LinkedHashMap<>();
         source.forEach((key, value) -> {
             if (PHONE_KEYS.contains(key)) {
