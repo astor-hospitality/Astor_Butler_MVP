@@ -117,10 +117,7 @@ public class GuestBillNotifier {
             if (conciergeWebhook == null || bill.tableReservationId() == null) {
                 return false;
             }
-            Map<String, Object> facts = new LinkedHashMap<>();
-            facts.put("billId", bill.id());
-            facts.put("reservationId", bill.tableReservationId());
-            return conciergeWebhook.announceNow(ConciergeEvent.REVIEW, bill.tableReservationId(), null, facts);
+            return conciergeWebhook.announceNow(ConciergeEvent.REVIEW, bill.tableReservationId(), null, reviewFacts(bill));
         }
         String text = """
                 <b>Как прошёл обед?</b>
@@ -152,6 +149,25 @@ public class GuestBillNotifier {
         }
         InlineKeyboardMarkup keyboard = rows.isEmpty() ? null : InlineKeyboardMarkup.builder().keyboard(rows).build();
         return send(bill.chatId(), text, keyboard, "guest-visit-review-thanks");
+    }
+
+    /**
+     * The review question for a Telegram update or request thread: a Concierge bill's REVIEW is only queued (delivered on
+     * the webhook's own thread); a Telegram bill is asked as by {@link #reviewPrompt}.
+     */
+    public boolean reviewPromptQueued(GuestBill bill) {
+        if (bill != null && bill.chatId() == null) {
+            return conciergeWebhook != null && bill.tableReservationId() != null
+                    && conciergeWebhook.announce(ConciergeEvent.REVIEW, bill.tableReservationId(), null, reviewFacts(bill));
+        }
+        return reviewPrompt(bill);
+    }
+
+    private static Map<String, Object> reviewFacts(GuestBill bill) {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("billId", bill.id());
+        facts.put("reservationId", bill.tableReservationId());
+        return facts;
     }
 
     static Map<String, Object> billFacts(GuestBill bill, String url) {

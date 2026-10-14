@@ -184,6 +184,46 @@ class VisitReviewServiceTest {
         verify(notifier).reviewPrompt(telegram);
     }
 
+    @Test
+    void theConciergeQuestionIsDeliveredOutsideTheLockAndAFailureLeavesNothingBehind() {
+        GuestBill concierge = conciergeBill(95L);
+        org.mockito.Mockito.when(notifier.reachesConcierge(concierge)).thenReturn(true);
+        java.util.List<Boolean> lockHeld = new java.util.ArrayList<>();
+        org.mockito.Mockito.when(notifier.reviewPrompt(concierge)).thenAnswer(call -> {
+            lockHeld.add(Thread.holdsLock(reviews));
+            return lockHeld.size() > 1;
+        });
+
+        assertThat(reviews.prompt(concierge)).isEmpty();
+        assertThat(reviews.reviewOf(concierge.id())).isEmpty();
+        assertThat(reviews.prompt(concierge)).isPresent();
+
+        assertThat(lockHeld).containsExactly(false, false);
+        assertThat(bills.historyOf(concierge.id())).extracting(BillOperation::type)
+                .containsExactly(BillOperationType.ESTIMATE_CREATED, BillOperationType.REVIEW_PROMPTED);
+    }
+
+    @Test
+    void anInteractiveAskQueuesTheConciergeQuestionAndTheClockDeliversIt() {
+        GuestBill queued = conciergeBill(96L);
+        GuestBill clocked = conciergeBill(97L);
+        org.mockito.Mockito.when(notifier.reachesConcierge(any())).thenReturn(true);
+        org.mockito.Mockito.when(notifier.reviewPromptQueued(queued)).thenReturn(true);
+
+        assertThat(reviews.promptQueued(queued, "trigger=hostess")).isPresent();
+        assertThat(reviews.prompt(clocked)).isPresent();
+
+        verify(notifier).reviewPromptQueued(queued);
+        verify(notifier, never()).reviewPrompt(queued);
+        verify(notifier).reviewPrompt(clocked);
+        verify(notifier, never()).reviewPromptQueued(clocked);
+    }
+
+    private GuestBill conciergeBill(long reservationId) {
+        return bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", reservationId, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.minus(Duration.ofHours(2))));
+    }
+
     private GuestBill bill(long reservationId, Instant visitEndsAt) {
         return bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), visitEndsAt));

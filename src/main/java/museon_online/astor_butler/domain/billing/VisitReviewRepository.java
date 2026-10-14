@@ -29,6 +29,11 @@ public class VisitReviewRepository {
         return findByBill(billId).orElseThrow();
     }
 
+    /** Removes a reserved question nobody answered (its delivery failed), so it can be asked again. */
+    public void dropUnanswered(Long billId) {
+        jdbcTemplate.update("DELETE FROM visit_reviews WHERE bill_id = ? AND stars IS NULL AND thumb IS NULL", billId);
+    }
+
     public Optional<VisitReview> findByBill(Long billId) {
         List<VisitReview> result = jdbcTemplate.query("""
                 SELECT *

@@ -72,21 +72,70 @@ public class VisitReviewService {
      *
      * @param trigger journal detail such as {@code trigger=payment-link}; null for the close and the clock, as before
      */
-    public synchronized Optional<VisitReview> prompt(GuestBill bill, String trigger) {
-        // A bill without a chat is asked only when its booking belongs to a Concierge session (REVIEW through the webhook).
-        if (bill == null || bill.status() == GuestBillStatus.CANCELLED || (bill.chatId() == null && !notifier.reachesConcierge(bill))) {
+    public Optional<VisitReview> prompt(GuestBill bill, String trigger) {
+        return ask(bill, trigger, false);
+    }
+
+    /**
+     * The same for a Telegram update or a request thread (the hostess «Счёт», the guest's or the agent's «счёт»): the
+     * Concierge's question is only queued there, so a slow or absent Concierge never holds that thread. The clock and
+     * the payment prompter use {@link #prompt}, which delivers it on their own thread.
+     */
+    public Optional<VisitReview> promptQueued(GuestBill bill, String trigger) {
+        return ask(bill, trigger, true);
+    }
+
+    private Optional<VisitReview> ask(GuestBill bill, String trigger, boolean queued) {
+        if (bill == null || bill.status() == GuestBillStatus.CANCELLED) {
             return Optional.empty();
         }
-        Optional<VisitReview> existing = reviews.findByBill(bill.id());
-        if (existing.isPresent()) {
-            return existing;
+        if (bill.chatId() == null) {
+            return askThroughTheConcierge(bill, trigger, queued);
         }
-        if (!notifier.reviewPrompt(bill)) {
+        synchronized (this) {
+            Optional<VisitReview> existing = reviews.findByBill(bill.id());
+            if (existing.isPresent()) {
+                return existing;
+            }
+            if (!notifier.reviewPrompt(bill)) {
+                return Optional.empty();
+            }
+            VisitReview review = reviews.open(bill.id(), bill.chatId());
+            bills.reviewNoted(bill.id(), BillOperationType.REVIEW_PROMPTED, trigger);
+            return Optional.of(review);
+        }
+    }
+
+    /**
+     * A bill without a chat is asked only when its booking belongs to a Concierge session (REVIEW through the webhook).
+     * The review row is reserved under the lock, so it is asked once; the call to the Concierge happens outside it, and a
+     * question that did not go out drops the reserved row, so it can be asked again.
+     */
+    private Optional<VisitReview> askThroughTheConcierge(GuestBill bill, String trigger, boolean queued) {
+        if (!notifier.reachesConcierge(bill)) {
             return Optional.empty();
         }
-        VisitReview review = reviews.open(bill.id(), bill.chatId());
+        VisitReview reserved;
+        synchronized (this) {
+            Optional<VisitReview> existing = reviews.findByBill(bill.id());
+            if (existing.isPresent()) {
+                return existing;
+            }
+            reserved = reviews.open(bill.id(), null);
+        }
+        boolean sent;
+        try {
+            sent = queued ? notifier.reviewPromptQueued(bill) : notifier.reviewPrompt(bill);
+        } catch (RuntimeException e) {
+            log.warn("Review question for bill {} did not reach the Concierge: {}", bill.id(), e.getClass().getSimpleName());
+            sent = false;
+        }
+        if (!sent) {
+            reviews.dropUnanswered(bill.id());
+            return Optional.empty();
+        }
         bills.reviewNoted(bill.id(), BillOperationType.REVIEW_PROMPTED, trigger);
-        return Optional.of(review);
+        return Optional.of(reserved);
     }
 
     /** Visits that ended long enough ago and were not asked about yet. */

@@ -169,8 +169,9 @@ public class ConciergeWebhook {
     }
 
     /**
-     * The same, delivered on the calling thread (a scheduler's, never the guest's): true only when the Concierge
-     * accepted the event, so the caller may mark it sent.
+     * The same, delivered on the calling thread: true only when the Concierge accepted the event, so the caller may mark
+     * it sent. For scheduler threads only (the morning check, the payment prompter, the review clock) and never under a
+     * lock others wait on: a Telegram update or request thread uses {@link #announce}, since this may take seconds.
      */
     public boolean announceNow(String type, long reservationId, TableReservationOrder order, Map<String, Object> facts) {
         return event(type, reservationId, order, facts).map(this::deliver).orElse(false);

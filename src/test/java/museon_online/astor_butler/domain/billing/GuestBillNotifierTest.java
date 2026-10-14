@@ -59,6 +59,7 @@ class GuestBillNotifierTest {
 
         notifier.paymentLink(bill(1773317437L, 245050L), "https://pay.test/9");
 
+        verify(webhook, never()).announceNow(anyString(), anyLong(), any(), any());
         verify(webhook, never()).announce(anyString(), anyLong(), any(), any());
     }
 
@@ -79,7 +80,20 @@ class GuestBillNotifierTest {
         notifier.setConciergeWebhook(webhook);
 
         notifier.reviewPrompt(bill(1773317437L, 245050L));
+        notifier.reviewPromptQueued(bill(1773317437L, 245050L));
 
+        verify(webhook, never()).announceNow(anyString(), anyLong(), any(), any());
+        verify(webhook, never()).announce(anyString(), anyLong(), any(), any());
+    }
+
+    @Test
+    void aQueuedReviewOfAConciergeBillUsesTheQueueNotTheCallingThread() {
+        notifier.setConciergeWebhook(webhook);
+        when(webhook.announce(anyString(), anyLong(), any(), any())).thenReturn(true);
+
+        assertThat(notifier.reviewPromptQueued(bill(null, 245050L))).isTrue();
+
+        verify(webhook).announce(eq("REVIEW"), eq(93L), isNull(), argThat(facts -> Long.valueOf(5L).equals(facts.get("billId"))));
         verify(webhook, never()).announceNow(anyString(), anyLong(), any(), any());
     }
 
