@@ -385,8 +385,8 @@ astor:
     # reservation card in the semi-automatic one. Asked once per visit either way; the close stays as the safety net.
     moment: ${ASTOR_REVIEW_MOMENT:after-close}
   startup:
-    admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
-    operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}
+    admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:false}
+    operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:false}
   # Public pages the bot links to (#86): the consent step, the AERIS guest card, the startup message and the pinned
   # admin/system notes. The policy lives on the Astor site; the guest guide and the FSM Viewer are the GitHub Pages of
   # this repository (docs/), served under the organisation since the move. Change them here, not in code.
@@ -679,6 +679,8 @@ telegram:
   system:
     chat-id: ${TELEGRAM_SYSTEM_CHAT_ID:}
     notifications-enabled: ${TELEGRAM_SYSTEM_NOTIFICATIONS_ENABLED:false}
+    # Per-message «system trace» copy of guest dialogs (debug only); group chats are never traced.
+    trace-enabled: ${TELEGRAM_SYSTEM_TRACE_ENABLED:false}
   ops:
     chat-id: ${TELEGRAM_OPS_CHAT_ID:${TELEGRAM_HOSTESS_CHAT_ID:}}
     group-qa:

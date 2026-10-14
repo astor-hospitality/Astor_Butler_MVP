@@ -68,7 +68,7 @@ public record IncomingMessage(
             String correlationId,
             Map<String, Object> payload
     ) {
-        Map<String, Object> safePayload = payload == null ? Map.of() : Map.copyOf(new HashMap<>(payload));
+        Map<String, Object> safePayload = safeCopy(payload);
         return new IncomingMessage(
                 MessageChannel.TELEGRAM,
                 telegramUserId == null ? null : telegramUserId.toString(),
@@ -108,7 +108,7 @@ public record IncomingMessage(
             String correlationId,
             Map<String, Object> payload
     ) {
-        Map<String, Object> safePayload = payload == null ? Map.of() : Map.copyOf(new HashMap<>(payload));
+        Map<String, Object> safePayload = safeCopy(payload);
         return new IncomingMessage(
                 MessageChannel.MAX,
                 maxUserId == null ? null : maxUserId.toString(),
@@ -157,7 +157,21 @@ public record IncomingMessage(
                 bot,
                 correlationId,
                 receivedAt,
-                newPayload == null ? Map.of() : Map.copyOf(new HashMap<>(newPayload))
+                safeCopy(newPayload)
         );
+    }
+
+    /** Immutable copy without null values: Telegram leaves optional fields (reply username, voice mime type) null. */
+    private static Map<String, Object> safeCopy(Map<String, Object> payload) {
+        if (payload == null) {
+            return Map.of();
+        }
+        Map<String, Object> copy = new HashMap<>();
+        payload.forEach((key, value) -> {
+            if (key != null && value != null) {
+                copy.put(key, value);
+            }
+        });
+        return Map.copyOf(copy);
     }
 }

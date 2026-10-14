@@ -85,7 +85,8 @@ public class JourneyRecorder {
 
     private GuestVisit open(long reservationId, Long chatId, String guestPhone, String venueCode, Instant visitDay) {
         try {
-            return visits.open(reservationId, chatId, guestPhone, venueCode == null ? "AERIS" : venueCode, visitDay);
+            return visits.open(reservationId, chatId, guestPhone, venueCode == null ? "AERIS" : venueCode, visitDay,
+                    clock.instant());
         } catch (DataIntegrityViolationException concurrentlyOpened) {
             return visits.findByReservation(reservationId).orElseThrow(() -> concurrentlyOpened);
         }
