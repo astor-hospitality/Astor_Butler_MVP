@@ -62,6 +62,42 @@ class RecoveryScenarioTest {
         verify(fsmStorage).setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"Спасибо жду", "спасибо!", "Ок", "понял", "хорошо, жду", "Благодарю 🙏", "👍"})
+    void courtesyNeverWakesTheAdmin(String text) {
+        IncomingMessage incoming = telegram(text);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, text);
+
+        assertThat(outgoing.adminAlert().required()).isFalse();
+        assertThat(outgoing.actions()).containsExactly("RECOVERY", "COURTESY");
+        assertThat(outgoing.text()).contains("Пожалуйста");
+        org.mockito.Mockito.verifyNoInteractions(recoveryRetryService);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"Эй гудбай ты меня слышишь", "алло", "ты тут?", "Привет"})
+    void presenceCheckAnswersWithoutAdmin(String text) {
+        IncomingMessage incoming = telegram(text);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, text);
+
+        assertThat(outgoing.adminAlert().required()).isFalse();
+        assertThat(outgoing.actions()).containsExactly("RECOVERY", "PRESENCE");
+        assertThat(outgoing.text()).contains("Я здесь", "бронь", "меню");
+        org.mockito.Mockito.verifyNoInteractions(recoveryRetryService);
+    }
+
+    @Test
+    void courtesyInsideARealRequestStillCountsAsUnclear() {
+        IncomingMessage incoming = telegram("спасибо, а можно перенести мою бронь на субботу вечером");
+        when(recoveryRetryService.recordUnclear(incoming.chatId())).thenReturn(2L);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, incoming.text());
+
+        assertThat(outgoing.adminAlert().required()).isTrue();
+    }
+
     @Test
     void supportsOnlyOpenDialogStatesWithNonBlankText() {
         IncomingMessage incoming = telegram("непонятно");
