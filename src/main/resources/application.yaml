@@ -113,6 +113,11 @@ astor:
   # One visit ledger (negotiation plan, task 1): guest, Concierge, Butler, staff and Saby turns under one visit id.
   ledger:
     enabled: ${ASTOR_LEDGER_ENABLED:false}
+  # Closed board (negotiation plan, task 2): /api/board/** answers only with X-Astor-Board-Token (16+ characters).
+  board:
+    enabled: ${ASTOR_BOARD_ENABLED:false}
+    token: ${ASTOR_BOARD_TOKEN:}
+    concierge-health-url: ${ASTOR_BOARD_CONCIERGE_HEALTH_URL:http://astor-concierge:8080/readyz}
   # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): the visit ledger and guest message counter.
   guest-journey:
     enabled: ${ASTOR_GUEST_JOURNEY_ENABLED:false}
