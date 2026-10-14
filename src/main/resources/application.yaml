@@ -52,6 +52,9 @@ astor:
       timeout-ms: ${GIGACHAT_TIMEOUT_MS:15000}
       max-tokens: ${GIGACHAT_MAX_TOKENS:256}
       temperature: ${GIGACHAT_TEMPERATURE:0.1}
+  agent:
+    # Model name for agent chats with function calling (replaces the configured GigaChat model).
+    model: ${ASTOR_AGENT_MODEL:GigaChat-3-Pro}
   redis:
     fsm-ttl-seconds: ${FSM_REDIS_TTL_SECONDS:259200}
     idempotency-ttl-seconds: ${IDEMPOTENCY_REDIS_TTL_SECONDS:86400}
