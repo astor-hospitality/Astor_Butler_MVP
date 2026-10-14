@@ -121,6 +121,9 @@ services:
       SABY_PAYMENT_ENABLED: ${SABY_PAYMENT_ENABLED:-false}
       ASTOR_BILLING_ENABLED: ${ASTOR_BILLING_ENABLED:-false}
       ASTOR_SABY_CALL_LOG_ENABLED: ${ASTOR_SABY_CALL_LOG_ENABLED:-false}
+      # Unified call log (docs/operations/CALL_LOG.md); the salt must be at least 16 characters.
+      ASTOR_CALL_LOG_ENABLED: ${ASTOR_CALL_LOG_ENABLED:-false}
+      ASTOR_CALL_LOG_SALT: ${ASTOR_CALL_LOG_SALT:-}
       # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): visit ledger and guest message counter.
       ASTOR_GUEST_JOURNEY_ENABLED: ${ASTOR_GUEST_JOURNEY_ENABLED:-false}
       ASTOR_REPEAT_LUNCH_ENABLED: ${ASTOR_REPEAT_LUNCH_ENABLED:-false}
