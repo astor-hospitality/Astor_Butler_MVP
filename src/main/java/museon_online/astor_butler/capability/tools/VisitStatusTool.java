@@ -22,7 +22,8 @@ import java.util.Optional;
 
 /**
  * {@code visit_status{}}: the stage of the guest's visit, found by the context's visit id or else by the visit whose
- * window holds now for the chat. No visit is a fact too: {@code stage = null}. A visit of another chat is not shown.
+ * window holds now for the chat. No visit is a fact too: {@code stage = null}. The Butler's agent is not shown a visit of
+ * another chat.
  */
 @Component
 public class VisitStatusTool implements CapabilityTool {
@@ -83,7 +84,10 @@ public class VisitStatusTool implements CapabilityTool {
             return CapabilityResult.ok(facts);
         }
         GuestVisit visit = found.get();
-        if (ctx.chatId() != null && visit.chatId() != null && !Objects.equals(ctx.chatId(), visit.chatId())) {
+        // Only the Butler's agent shares the visit's chat-id namespace; the Concierge has its own chat ids and is
+        // trusted through the internal token.
+        if (ctx.butlerAgent() && ctx.chatId() != null && visit.chatId() != null
+                && !Objects.equals(ctx.chatId(), visit.chatId())) {
             return CapabilityResult.error(CapabilityResult.NOT_ALLOWED);
         }
         facts.put("stage", visit.stage() == null ? null : visit.stage().name());

@@ -72,10 +72,21 @@ class VisitStatusToolTest {
     }
 
     @Test
-    void anotherGuestsVisitIsNotAllowed() {
+    void anotherChatsVisitIsNotAllowedForTheButlerAgent() {
         when(visits.findById(7L)).thenReturn(Optional.of(VISIT));
 
-        assertThat(tool.invoke(context(999L, 7L), Map.of()).error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        CapabilityContext butler = new CapabilityContext("BUTLER_AGENT", 999L, null, 7L, null, null, null);
+        assertThat(tool.invoke(butler, Map.of()).error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+    }
+
+    @Test
+    void conciergeChatIdsAreAnotherNamespaceAndDoNotBlockTheVisit() {
+        when(visits.findById(7L)).thenReturn(Optional.of(VISIT));
+
+        CapabilityResult result = tool.invoke(context(999L, 7L), Map.of());
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("stage", "CONFIRMED");
     }
 
     private static CapabilityContext context(Long chatId, Long visitId) {

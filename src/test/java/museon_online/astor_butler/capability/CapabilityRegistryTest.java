@@ -14,6 +14,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -52,6 +54,44 @@ class CapabilityRegistryTest {
 
         assertThat(result.ok()).isFalse();
         assertThat(result.error()).isEqualTo(CapabilityResult.UNAVAILABLE);
+        ArgumentCaptor<VisitTurnDraft> drafts = ArgumentCaptor.forClass(VisitTurnDraft.class);
+        verify(ledger, times(2)).write(drafts.capture());
+        assertThat(drafts.getAllValues().get(0).kind()).isEqualTo(TurnKind.TOOL_CALL);
+        VisitTurnDraft answer = drafts.getAllValues().get(1);
+        assertThat(answer.kind()).isEqualTo(TurnKind.TOOL_RESULT);
+        assertThat(answer.payload()).containsEntry("tool", "broken").containsEntry("ok", false)
+                .containsEntry("error", CapabilityResult.UNAVAILABLE);
+    }
+
+    @Test
+    void failingLedgerNeverHidesTheResult() {
+        doThrow(new IllegalStateException("ledger is down")).when(ledger).write(any());
+
+        CapabilityResult result = registry(new EchoTool()).invoke("echo", CONCIERGE, Map.of("partySize", 2));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("seen", 1);
+        verify(ledger, times(2)).write(any());
+    }
+
+    @Test
+    void nestedPhonesAreMaskedInTheLedger() {
+        Map<String, Object> args = Map.of(
+                "guest", Map.of("phone", "+79120000060"),
+                "notes", List.of("позвоните +79120000060"));
+
+        registry(new EchoTool()).invoke("echo", CONCIERGE, args);
+
+        ArgumentCaptor<VisitTurnDraft> drafts = ArgumentCaptor.forClass(VisitTurnDraft.class);
+        verify(ledger, times(2)).write(drafts.capture());
+        Map<String, Object> payload = drafts.getAllValues().get(0).payload();
+        assertThat(payload.toString()).doesNotContainPattern("\\d{10}");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> arguments = (Map<String, Object>) payload.get("arguments");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> guest = (Map<String, Object>) arguments.get("guest");
+        assertThat(guest.get("phone")).isIn(null, "+7 912 ***-**-60");
+        assertThat(arguments.get("notes")).isEqualTo(List.of("позвоните +7 912 ***-**-60"));
     }
 
     @Test
