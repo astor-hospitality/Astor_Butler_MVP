@@ -1415,4 +1415,37 @@ class MessageGatewayServiceTest {
         verify(userEventProducer).publishIncomingMessage(eq(incoming), any(), eq(outgoing));
         verify(fsmTimelineWriter).append(any(FsmTimelineEvent.class));
     }
+
+    @Test
+    void ledgerHearsTheGuestAndTheReply() {
+        museon_online.astor_butler.domain.journey.talk.ButlerTalk talk = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.talk.ButlerTalk.class);
+        when(talk.answer(any(IncomingMessage.class), any())).thenReturn(java.util.Optional.of("Бесплатная парковка во дворе."));
+        service.setButlerTalk(talk);
+        museon_online.astor_butler.domain.ledger.LedgerWriter ledger = org.mockito.Mockito.mock(museon_online.astor_butler.domain.ledger.LedgerWriter.class);
+        when(ledger.enabled()).thenReturn(true);
+        service.setLedgerWriter(ledger);
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 1, 100, "где парковка?", null,
+                "Мария", null, "maria", "ru", false, "202");
+
+        service.handle(incoming);
+
+        verify(ledger).message(1773317437L, museon_online.astor_butler.domain.ledger.TurnSide.GUEST,
+                museon_online.astor_butler.domain.ledger.TurnChannel.BUTLER_TG, "где парковка?");
+        verify(ledger).message(1773317437L, museon_online.astor_butler.domain.ledger.TurnSide.BUTLER,
+                museon_online.astor_butler.domain.ledger.TurnChannel.BUTLER_TG, "Бесплатная парковка во дворе.");
+        org.mockito.Mockito.verify(ledger, org.mockito.Mockito.times(2)).message(any(), any(), any(), any());
+    }
+
+    @Test
+    void ledgerSkipsGroupChats() {
+        museon_online.astor_butler.domain.ledger.LedgerWriter ledger = org.mockito.Mockito.mock(museon_online.astor_butler.domain.ledger.LedgerWriter.class);
+        when(ledger.enabled()).thenReturn(true);
+        service.setLedgerWriter(ledger);
+        IncomingMessage incoming = IncomingMessage.telegram(-100777L, 1773317437L, 1, 100, "всем привет", null,
+                "Мария", null, "maria", "ru", false, "203");
+
+        service.handle(incoming);
+
+        org.mockito.Mockito.verify(ledger, never()).message(any(), any(), any(), any());
+    }
 }

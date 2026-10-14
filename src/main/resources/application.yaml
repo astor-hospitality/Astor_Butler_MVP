@@ -110,6 +110,9 @@ astor:
       provider: ${ASTOR_I18N_MT_PROVIDER:none}
       source-language: ${ASTOR_I18N_MT_SOURCE_LANGUAGE:ru}
       cache-max-entries: ${ASTOR_I18N_MT_CACHE_MAX_ENTRIES:5000}
+  # One visit ledger (negotiation plan, task 1): guest, Concierge, Butler, staff and Saby turns under one visit id.
+  ledger:
+    enabled: ${ASTOR_LEDGER_ENABLED:false}
   # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): the visit ledger and guest message counter.
   guest-journey:
     enabled: ${ASTOR_GUEST_JOURNEY_ENABLED:false}
