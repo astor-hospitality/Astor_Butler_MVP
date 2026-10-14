@@ -3,13 +3,22 @@ package museon_online.astor_butler.domain.summary;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import museon_online.astor_butler.domain.journey.GuestVisitRepository;
 import museon_online.astor_butler.domain.ledger.VisitTurnRepository;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import museon_online.astor_butler.model.ModelChatRequest;
+import museon_online.astor_butler.model.ModelChatResponse;
 import museon_online.astor_butler.model.ModelGateway;
 import museon_online.astor_butler.model.ModelTextRequest;
 import museon_online.astor_butler.model.ModelTextResponse;
+import museon_online.astor_butler.model.ModelUnavailableException;
+import museon_online.astor_butler.model.ToolCallingModel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -23,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -158,6 +168,83 @@ class VisitSummaryServiceTest {
         assertThat(summaries.find(first)).isEmpty();
         assertThat(summaries.find(second)).isPresent();
         assertThat(summaries.find(seated)).isEmpty();
+    }
+
+    @Test
+    void withAToolCallingModelTheSummaryAsksForItsOwnTokenBudget() {
+        long visit = finishedVisitWithTurns();
+        ToolCallingModel chat = mock(ToolCallingModel.class);
+        when(chat.chat(any())).thenReturn(new ModelChatResponse(SUMMARY_JSON, Optional.empty(), "stub", "stub", Duration.ZERO));
+        service.setChatModel(chat);
+
+        assertThat(service.summarize(visit)).isPresent();
+        properties.setModel("GigaChat-2-Max");
+        service.summarize(visit);
+
+        ArgumentCaptor<ModelChatRequest> request = ArgumentCaptor.forClass(ModelChatRequest.class);
+        verify(chat, times(2)).chat(request.capture());
+        assertThat(request.getAllValues()).allSatisfy(sent -> {
+            assertThat(sent.maxTokens()).isEqualTo(VisitSummaryService.MAX_TOKENS).isEqualTo(900);
+            assertThat(sent.tools()).isEmpty();
+            assertThat(sent.messages().getFirst().content()).contains("Ты аналитик ресторана");
+        });
+        assertThat(request.getAllValues().get(0).model()).isNull();
+        assertThat(request.getAllValues().get(1).model()).isEqualTo("GigaChat-2-Max");
+        verify(model, never()).generateText(any());
+    }
+
+    @Test
+    void aSmallTokenBudgetIsReportedOnlyWhenTheTextPathIsUsed() {
+        MockEnvironment small = new MockEnvironment().withProperty("astor.model.provider", "cloudru")
+                .withProperty("astor.model.cloudru.max-tokens", "256");
+        MockEnvironment large = new MockEnvironment().withProperty("astor.model.provider", "cloudru")
+                .withProperty("astor.model.cloudru.max-tokens", "1024");
+
+        assertThat(service.tokenBudgetTooSmall(small)).isTrue();
+        assertThat(service.tokenBudgetTooSmall(large)).isFalse();
+        service.setChatModel(mock(ToolCallingModel.class));
+        assertThat(service.tokenBudgetTooSmall(small)).isFalse();
+        properties.setEnabled(false);
+        service.setChatModel(null);
+        assertThat(service.tokenBudgetTooSmall(small)).isFalse();
+    }
+
+    @Test
+    void anOutageDoesNotParkTheVisit() {
+        long visit = finishedVisitWithTurns();
+        when(model.generateText(any())).thenThrow(new ModelUnavailableException("quota", null))
+                .thenThrow(new ModelUnavailableException("quota", null)).thenThrow(new ModelUnavailableException("quota", null))
+                .thenThrow(new IllegalStateException("timeout"))
+                .thenReturn(ModelTextResponse.text(SUMMARY_JSON, "stub", "stub", Duration.ZERO));
+
+        for (int run = 0; run < 5; run++) {
+            service.summarizeFinishedVisits();
+        }
+
+        verify(model, times(5)).generateText(any());
+        assertThat(summaries.find(visit)).isPresent();
+    }
+
+    @Test
+    void threeBrokenAnswersParkTheVisitWithOneWarning() {
+        long visit = finishedVisitWithTurns();
+        answer("не JSON");
+        Logger logger = (Logger) LoggerFactory.getLogger(VisitSummaryService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            for (int run = 0; run < 5; run++) {
+                service.summarizeFinishedVisits();
+            }
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        verify(model, times(VisitSummaryService.MAX_ATTEMPTS)).generateText(any());
+        assertThat(summaries.find(visit)).isEmpty();
+        assertThat(appender.list).filteredOn(event -> event.getFormattedMessage().contains("parked")).singleElement()
+                .satisfies(event -> assertThat(event.getFormattedMessage()).contains("visitId=" + visit));
     }
 
     private long finishedVisitWithTurns() {

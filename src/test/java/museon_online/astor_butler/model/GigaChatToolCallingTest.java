@@ -144,6 +144,28 @@ class GigaChatToolCallingTest {
     }
 
     @Test
+    void maxTokensOfTheRequestReplacesTheConfiguredOne() {
+        Fixture fixture = fixture();
+        fixture.expectToken();
+        fixture.server().expect(once(), requestTo(COMPLETIONS))
+                .andExpect(jsonPath("$.max_tokens").value(900))
+                .andRespond(withSuccess(reply("""
+                        {"role": "assistant", "content": "{}"}
+                        """), MediaType.APPLICATION_JSON));
+        fixture.server().expect(once(), requestTo(COMPLETIONS))
+                .andExpect(jsonPath("$.max_tokens").value(128))
+                .andRespond(withSuccess(reply("""
+                        {"role": "assistant", "content": "{}"}
+                        """), MediaType.APPLICATION_JSON));
+
+        fixture.gateway().chat(new ModelChatRequest(List.of(new ModelChatMessage("user", "Саммари", null, null)), List.of(),
+                ModelProfile.FRONTLINE, "visit-summary", Map.of(), null, 900));
+        fixture.gateway().chat(request(List.of(new ModelChatMessage("user", "Привет", null, null)), List.of()));
+
+        fixture.server().verify();
+    }
+
+    @Test
     void functionResultIsSentWithFunctionRole() {
         Fixture fixture = fixture();
         fixture.expectToken();

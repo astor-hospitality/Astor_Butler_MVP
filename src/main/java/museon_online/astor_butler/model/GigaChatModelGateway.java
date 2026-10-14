@@ -177,7 +177,8 @@ public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
     public ModelChatResponse chat(ModelChatRequest request) {
         String model = request.model() != null ? request.model().trim() : textModel(request.profile());
         Map<String, Object> body = completionBody(
-                model, request.messages().stream().map(GigaChatModelGateway::chatMessage).toList(), maxTokens);
+                model, request.messages().stream().map(GigaChatModelGateway::chatMessage).toList(),
+                request.maxTokens() != null ? request.maxTokens() : maxTokens);
         if (!request.tools().isEmpty()) {
             body.put("functions", request.tools().stream().map(GigaChatModelGateway::function).toList());
             body.put("function_call", "auto");

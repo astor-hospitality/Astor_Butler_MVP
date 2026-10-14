@@ -16,7 +16,9 @@ import museon_online.astor_butler.model.ModelGateway;
 import museon_online.astor_butler.model.ModelProfile;
 import museon_online.astor_butler.model.ModelTextRequest;
 import museon_online.astor_butler.model.ToolCallingModel;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -44,8 +46,15 @@ public class VisitSummaryService {
     static final String PURPOSE = "visit-summary";
     static final String SCENARIO = "VisitSummary";
     static final int BATCH = 20;
-    /** A visit whose summary failed this often is left until the service restarts, so it cannot clog the batch. */
+    /**
+     * A visit whose model answer was unusable this often is parked until the service restarts, so it cannot clog the
+     * batch. Model outages do not count: the visit is simply retried on the next poll.
+     */
     static final int MAX_ATTEMPTS = 3;
+    /** {@code max_tokens} of a summary answer; the gateways' default (256) cuts the JSON short. */
+    static final int MAX_TOKENS = 900;
+    /** Below this configured budget the text path (no per-request budget) is likely to cut answers. */
+    static final int MIN_TEXT_PATH_TOKENS = 700;
     static final int MAX_LINE = 400;
     static final int HEAD_LINES = 30;
     static final int TAIL_LINES = 120;
@@ -62,7 +71,8 @@ public class VisitSummaryService {
             {"guestWanted": "что хотел гость", "venueOffered": "что предложил ресторан", "outcome": "чем закончилось",
              "stuck": ["где разговор застрял"], "nextTimeGuest": ["что помнить о госте в следующий раз"],
              "nextTimeAgents": ["CONCIERGE: урок Консьержу", "BUTLER: урок Батлеру"]}
-            Каждая строка — коротко, до 20 слов; в каждом списке не больше 3 пунктов, пустой список, если сказать нечего.
+            Строго: каждое поле и каждый пункт — не больше 20 слов; в каждом списке не больше 3 пунктов;
+            пустой список, если сказать нечего.
             Каждый пункт nextTimeAgents начинается с CONCIERGE: или BUTLER: — кому урок.
             Не пиши телефоны, имена и скрытый текст.
             Лента (время ресторана, СТОРОНА/канал: текст):
@@ -78,6 +88,12 @@ public class VisitSummaryService {
     private final ZoneId zone;
     private final Map<Long, Integer> failures = new ConcurrentHashMap<>();
     private ToolCallingModel chatModel;
+    private Environment environment;
+
+    /** The outcome of one summary attempt: {@code badAnswer} is the only failure that counts toward parking. */
+    record Attempt(Optional<VisitSummary> summary, boolean badAnswer) {
+        static final Attempt NONE = new Attempt(Optional.empty(), false);
+    }
 
     @Autowired
     public VisitSummaryService(VisitTurnRepository turns, GuestVisitRepository visits, VisitSummaryRepository summaries,
@@ -99,10 +115,37 @@ public class VisitSummaryService {
         this.zone = zone;
     }
 
-    /** Only the chat API takes a model name per call: with {@code astor.summary.model} set, summaries go through it. */
+    /**
+     * The chat API takes the model name and {@code max_tokens} per call, so summaries go through it whenever the
+     * provider offers it; otherwise through {@link ModelGateway#generateText} with the gateway's own budget.
+     */
     @Autowired(required = false)
     public void setChatModel(ToolCallingModel chatModel) {
         this.chatModel = chatModel;
+    }
+
+    @Autowired(required = false)
+    public void setEnvironment(Environment environment) {
+        this.environment = environment;
+    }
+
+    @PostConstruct
+    void warnAboutTokenBudget() {
+        if (environment != null && tokenBudgetTooSmall(environment)) {
+            log.warn("Visit summaries use the text model path with max-tokens below {}: answers may be cut and dropped",
+                    MIN_TEXT_PATH_TOKENS);
+        }
+    }
+
+    /** Whether summaries are on, must use the text path, and the provider's configured max-tokens is below 700. */
+    boolean tokenBudgetTooSmall(Environment env) {
+        if (!properties.isEnabled() || chatModel != null) {
+            return false;
+        }
+        String provider = env.getProperty("astor.model.provider", "");
+        Integer configured = provider.isBlank() ? null
+                : env.getProperty("astor.model." + provider.trim() + ".max-tokens", Integer.class);
+        return configured != null && configured < MIN_TEXT_PATH_TOKENS;
     }
 
     public boolean enabled() {
@@ -118,13 +161,14 @@ public class VisitSummaryService {
                 .map(Map.Entry::getKey).collect(java.util.stream.Collectors.toSet());
         for (long visitId : summaries.awaitingSummary(skipped, BATCH)) {
             try {
-                if (summarize(visitId).isPresent()) {
+                Attempt attempt = attempt(visitId);
+                if (attempt.summary().isPresent()) {
                     failures.remove(visitId);
-                } else {
-                    failures.merge(visitId, 1, Integer::sum);
+                } else if (attempt.badAnswer() && failures.merge(visitId, 1, Integer::sum) == MAX_ATTEMPTS) {
+                    log.warn("Visit summary parked after {} unusable answers: visitId={}", MAX_ATTEMPTS, visitId);
                 }
             } catch (RuntimeException e) {
-                failures.merge(visitId, 1, Integer::sum);
+                // Storage or other transient errors: not the answer's fault, retried on the next poll.
                 log.warn("Visit summary failed: visitId={} error={}", visitId, e.getClass().getSimpleName());
             }
         }
@@ -132,24 +176,28 @@ public class VisitSummaryService {
 
     /** Builds (or rebuilds) the visit's summary; empty when off, without turns, or when the model answer is unusable. */
     public Optional<VisitSummary> summarize(long visitId) {
+        return attempt(visitId).summary();
+    }
+
+    Attempt attempt(long visitId) {
         if (!properties.isEnabled() || visits.findById(visitId).isEmpty()) {
-            return Optional.empty();
+            return Attempt.NONE;
         }
         List<VisitTurn> ledger = turns.ofVisit(visitId);
         if (ledger.isEmpty()) {
-            return Optional.empty();
+            return Attempt.NONE;
         }
         String answer;
         try {
             answer = ask(visitId, prompt(ledger));
         } catch (RuntimeException e) {
             log.warn("Visit summary model call failed: visitId={} error={}", visitId, e.getClass().getSimpleName());
-            return Optional.empty();
+            return Attempt.NONE;
         }
         Optional<VisitSummary> parsed = parse(visitId, answer);
         if (parsed.isEmpty()) {
             log.warn("Visit summary answer is not the expected JSON: visitId={}", visitId);
-            return Optional.empty();
+            return new Attempt(Optional.empty(), true);
         }
         VisitSummary fresh = parsed.get();
         // A rebuild keeps the notes already there (a manager's included) after the new ones.
@@ -164,7 +212,7 @@ public class VisitSummaryService {
                 lessons.propose(visitId, lesson.group(1).toUpperCase(Locale.ROOT), lesson.group(2).trim());
             }
         }
-        return summaries.find(visitId);
+        return new Attempt(summaries.find(visitId), false);
     }
 
     /**
@@ -226,10 +274,10 @@ public class VisitSummaryService {
 
     private String ask(long visitId, String prompt) {
         Map<String, Object> metadata = Map.of("visitId", visitId, "scenario", SCENARIO);
-        String override = properties.getModel();
-        if (override != null && !override.isBlank() && chatModel != null) {
+        if (chatModel != null) {
+            String override = properties.getModel();
             return chatModel.chat(new ModelChatRequest(List.of(ModelChatMessage.user(prompt)), List.of(), ModelProfile.FRONTLINE,
-                    PURPOSE, metadata, override.trim())).text();
+                    PURPOSE, metadata, override == null || override.isBlank() ? null : override.trim(), MAX_TOKENS)).text();
         }
         return model.generateText(new ModelTextRequest(prompt, SCENARIO, null, PURPOSE, ModelProfile.FRONTLINE, metadata)).text();
     }
