@@ -4,6 +4,7 @@ import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityRegistry;
 import museon_online.astor_butler.capability.CapabilityResult;
+import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.journey.GuestVisit;
 import museon_online.astor_butler.domain.journey.GuestVisitRepository;
 import museon_online.astor_butler.domain.journey.talk.VenueFactsCatalog;
@@ -20,6 +21,7 @@ import museon_online.astor_butler.model.ModelChatMessage;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -82,6 +84,14 @@ public class ButlerAgent {
         this.turns = turns;
         this.visits = visits;
         this.history = new AgentHistory(properties);
+    }
+
+    /** Warns at startup when the agent is on without the guest journey it reads visits from. */
+    @Autowired(required = false)
+    public void setGuestJourney(GuestJourneyProperties journey) {
+        if (journey != null) {
+            journey.prerequisiteWarning("ASTOR_AGENT_ENABLED", properties.isEnabled()).ifPresent(log::warn);
+        }
     }
 
     /** Whether the agent takes this chat of the Butler's own bot (flag on and the chat in the allowlist). */

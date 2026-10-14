@@ -1,5 +1,6 @@
 package museon_online.astor_butler.capability;
 
+import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.ledger.LedgerWriter;
 import museon_online.astor_butler.domain.ledger.PhoneMask;
 import museon_online.astor_butler.domain.ledger.TurnChannel;
@@ -58,6 +59,14 @@ public class CapabilityRegistry {
         this.ledger = ledger;
         this.properties = properties;
         this.idempotency = idempotency;
+    }
+
+    /** Warns at startup when the capabilities are on without the guest journey they read visits from. */
+    @Autowired(required = false)
+    public void setGuestJourney(GuestJourneyProperties journey) {
+        if (journey != null) {
+            journey.prerequisiteWarning("ASTOR_CAPABILITIES_ENABLED", properties.isEnabled()).ifPresent(log::warn);
+        }
     }
 
     public boolean enabled() {
