@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityRegistry;
 import museon_online.astor_butler.capability.CapabilityResult;
+import museon_online.astor_butler.domain.calllog.CallLogContext;
 import museon_online.astor_butler.model.ModelChatMessage;
 import museon_online.astor_butler.model.ModelChatRequest;
 import museon_online.astor_butler.model.ModelChatResponse;
@@ -118,7 +119,9 @@ public class AgentLoop {
         ModelChatRequest request = new ModelChatRequest(List.copyOf(messages), tools, ModelProfile.FRONTLINE, "butler_agent",
                 metadata(ctx), properties.getModel(), properties.getMaxTokens());
         ToolCallingModel current = model;
-        CompletableFuture<ModelChatResponse> answer = CompletableFuture.supplyAsync(() -> current.chat(request), MODEL_CALLS)
+        CompletableFuture<ModelChatResponse> answer = CompletableFuture.supplyAsync(
+                        // The call log names the guest and the message of the calling thread.
+                        CallLogContext.propagate(() -> current.chat(request)), MODEL_CALLS)
                 .orTimeout(timeout, TimeUnit.MILLISECONDS);
         try {
             ModelChatResponse response = answer.join();

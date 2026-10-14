@@ -3,6 +3,7 @@ package museon_online.astor_butler.domain.calllog;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 
 import museon_online.astor_butler.model.ModelGateway;
+import museon_online.astor_butler.model.ToolCallingModel;
 
 import java.util.function.Supplier;
 
@@ -23,7 +24,10 @@ public class CallLogModelGatewayPostProcessor implements BeanPostProcessor {
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) {
         if (bean instanceof ModelGateway gateway && !(bean instanceof CallLogModelGateway)) {
-            return new CallLogModelGateway(gateway, writer);
+            // GigaChat also calls tools: the wrapper must stay a ToolCallingModel, or the agent loses its model.
+            return bean instanceof ToolCallingModel
+                    ? new CallLogToolCallingModelGateway(gateway, writer)
+                    : new CallLogModelGateway(gateway, writer);
         }
         return bean;
     }

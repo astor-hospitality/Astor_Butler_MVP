@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import museon_online.astor_butler.agent.ButlerAgent;
 import museon_online.astor_butler.agent.NegotiationReply;
 import museon_online.astor_butler.agent.NegotiationTurn;
+import museon_online.astor_butler.domain.calllog.CallLogContext;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -38,6 +39,10 @@ public class NegotiationController {
         if (turn == null || turn.sessionId() == null || turn.sessionId().isBlank()) {
             return ResponseEntity.badRequest().build();
         }
-        return ResponseEntity.ok(agent.negotiate(turn));
+        // The call log counts the agent's model calls for this session (pseudonymized there), keyed by the turn.
+        String correlation = turn.turnId() == null || turn.turnId().isBlank() ? turn.sessionId().trim() : turn.turnId().trim();
+        try (CallLogContext.Scope ignored = CallLogContext.open("concierge", turn.sessionId().trim(), correlation)) {
+            return ResponseEntity.ok(agent.negotiate(turn));
+        }
     }
 }

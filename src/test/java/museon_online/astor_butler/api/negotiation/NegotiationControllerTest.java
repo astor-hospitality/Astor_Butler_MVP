@@ -85,4 +85,24 @@ class NegotiationControllerTest {
                 .andExpect(status().isBadRequest());
         verify(agent, never()).negotiate(any());
     }
+
+    @Test
+    void theTurnRunsUnderAConciergeCallLogContext() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<museon_online.astor_butler.domain.calllog.CallLogContext.Caller> seen =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        when(agent.negotiate(any())).thenAnswer(invocation -> {
+            seen.set(museon_online.astor_butler.domain.calllog.CallLogContext.current());
+            return new NegotiationReply("Ок.", null, List.of(), null, false);
+        });
+
+        mvc.perform(post("/api/negotiation/v1/turn").header(InternalApiGuardFilter.HEADER, TOKEN)
+                        .contentType("application/json").content(BODY))
+                .andExpect(status().isOk());
+
+        assertThat(seen.get()).isNotNull();
+        assertThat(seen.get().source()).isEqualTo("concierge");
+        assertThat(seen.get().rawUserId()).isEqualTo("c-1");
+        assertThat(seen.get().correlationId()).isEqualTo("t-1");
+        assertThat(museon_online.astor_butler.domain.calllog.CallLogContext.current()).isNull();
+    }
 }
