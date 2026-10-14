@@ -27,7 +27,10 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HexFormat;
@@ -57,6 +60,7 @@ public class ButlerAgent {
     /** Leaves room for {@code :<call>} under IdempotencyStore.MAX_KEY. */
     private static final int MAX_TURN_KEY = 76;
     private static final Logger log = LoggerFactory.getLogger(ButlerAgent.class);
+    private static final String DEFAULT_ZONE = "Asia/Yekaterinburg";
 
     private final AgentLoop loop;
     private final CapabilityRegistry registry;
@@ -69,6 +73,8 @@ public class ButlerAgent {
     private final VisitTurnRepository turns;
     private final GuestVisitRepository visits;
     private final AgentHistory history;
+    private Clock clock = Clock.systemUTC();
+    private ZoneId zone = ZoneId.of(DEFAULT_ZONE);
 
     public ButlerAgent(AgentLoop loop, CapabilityRegistry registry, AgentProperties properties, AgentLessonRepository lessons,
                        GuestMemory memory, VenueFactsCatalog venue, CapabilityProperties capabilities, LedgerWriter ledger,
@@ -91,7 +97,17 @@ public class ButlerAgent {
     public void setGuestJourney(GuestJourneyProperties journey) {
         if (journey != null) {
             journey.prerequisiteWarning("ASTOR_AGENT_ENABLED", properties.isEnabled()).ifPresent(log::warn);
+            try {
+                zone = ZoneId.of(journey.getZoneId());
+            } catch (RuntimeException e) {
+                log.warn("Butler agent keeps the zone {}: reason={}", DEFAULT_ZONE, e.getClass().getSimpleName());
+            }
         }
+    }
+
+    /** For tests: «today» in the prompt. */
+    void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /** Whether the agent takes this chat of the Butler's own bot (flag on and the chat in the allowlist). */
@@ -186,7 +202,7 @@ public class ButlerAgent {
             messages.add(ModelChatMessage.system(ButlerPrompt.system(
                     quietly(() -> lessons.accepted("BUTLER")),
                     quietly(() -> memory.of(blankToNull(phone), chatId)),
-                    venueFacts())));
+                    venueFacts(), LocalDate.now(clock.withZone(zone)))));
             messages.addAll(history.messages(key));
             messages.add(ModelChatMessage.user(said));
             AgentOutcome outcome = loop.run(messages, registry.asModelTools(), ctx, auditContent, turnTimeoutMs);

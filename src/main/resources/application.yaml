@@ -58,7 +58,7 @@ astor:
     enabled: ${ASTOR_AGENT_ENABLED:false}
     allowlist: ${ASTOR_AGENT_ALLOWLIST:}
     # Model name for agent chats with function calling (replaces the configured GigaChat model).
-    model: ${ASTOR_AGENT_MODEL:GigaChat-3-Pro}
+    model: ${ASTOR_AGENT_MODEL:GigaChat-2-Pro}
     # One negotiation turn (up to 5 tool calls, each model call at most 20 s) ends as a fallback after this long;
     # under the Concierge's BUTLER_NEGOTIATION_TIMEOUT_MS (30 s).
     turn-timeout-ms: ${ASTOR_AGENT_TURN_TIMEOUT_MS:25000}

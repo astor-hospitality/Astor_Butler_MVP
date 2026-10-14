@@ -25,7 +25,8 @@ public class AgentProperties {
 
     private boolean enabled = false;
     private String allowlist = "";
-    private String model = "GigaChat-3-Pro";
+    /** Probed 14.10 on the PERS scope: GigaChat-3-Pro is «No such model», GigaChat-2-Pro calls functions. */
+    private String model = "GigaChat-2-Pro";
     /** Under the Concierge's own wait for a negotiation turn (30 s), so it never gives up on a turn still running. */
     private long turnTimeoutMs = 25_000;
     /**

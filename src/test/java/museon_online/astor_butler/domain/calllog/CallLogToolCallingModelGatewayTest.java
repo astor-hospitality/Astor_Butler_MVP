@@ -102,7 +102,7 @@ class CallLogToolCallingModelGatewayTest {
             CapabilityRegistry registry = mock(CapabilityRegistry.class);
             when(registry.invoke(eq("table_availability"), any(), anyMap())).thenReturn(CapabilityResult.ok(Map.of("free", List.of())));
             AgentProperties properties = new AgentProperties();
-            properties.setModel("GigaChat-3-Pro");
+            properties.setModel("GigaChat-2-Pro");
             AgentLoop loop = new AgentLoop(model, registry, properties);
             AgentOutcome outcome;
             try (CallLogContext.Scope ignored = CallLogContext.open("concierge", "session-1", "t-1")) {
@@ -116,11 +116,11 @@ class CallLogToolCallingModelGatewayTest {
             verify(repository, times(2)).append(rows.capture());
             assertThat(rows.getAllValues()).allSatisfy(row -> {
                 assertThat(row.callType()).isEqualTo(CallLogEntry.TYPE_LLM);
-                assertThat(row.name()).isEqualTo("GigaChat-3-Pro");
+                assertThat(row.name()).isEqualTo("GigaChat-2-Pro");
                 assertThat(row.result()).isEqualTo("ok");
                 assertThat(row.tokensIn()).isEqualTo(1000);
                 assertThat(row.tokensOut()).isEqualTo(100);
-                assertThat(row.costRub()).isNotNull().isPositive();
+                assertThat(row.costRub()).isEqualByComparingTo("0.55");
                 assertThat(row.source()).isEqualTo("concierge");
                 assertThat(row.pseudoUserId()).isNotNull().doesNotContain("session-1");
                 assertThat(row.correlationId()).isEqualTo("t-1");
@@ -137,12 +137,12 @@ class CallLogToolCallingModelGatewayTest {
         CallLogToolCallingModelGateway gateway = new CallLogToolCallingModelGateway(
                 new FailingGateway(failing), this::writer);
 
-        assertThatThrownBy(() -> gateway.chat(new ModelChatRequest(List.of(), List.of(), null, "butler_agent", Map.of(), "GigaChat-3-Pro")))
+        assertThatThrownBy(() -> gateway.chat(new ModelChatRequest(List.of(), List.of(), null, "butler_agent", Map.of(), "GigaChat-2-Pro")))
                 .isInstanceOf(ModelUnavailableException.class);
         ArgumentCaptor<CallLogEntry> row = ArgumentCaptor.forClass(CallLogEntry.class);
         verify(rows).append(row.capture());
         assertThat(row.getValue().result()).isEqualTo("error");
-        assertThat(row.getValue().name()).isEqualTo("GigaChat-3-Pro");
+        assertThat(row.getValue().name()).isEqualTo("GigaChat-2-Pro");
         assertThat(row.getValue().errorCode()).isEqualTo("IllegalStateException");
     }
 

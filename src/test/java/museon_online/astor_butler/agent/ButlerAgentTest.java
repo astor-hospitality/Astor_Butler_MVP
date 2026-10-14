@@ -332,4 +332,16 @@ class ButlerAgentTest {
     private static IncomingMessage guest(long chatId, String text) {
         return IncomingMessage.telegram(chatId, chatId, 1, 100, text, null, "Мария", null, "maria", "ru", false, "c");
     }
+
+    @Test
+    void thePromptGivesTodayAndTheDateFormat() {
+        // 2026-10-14T20:00Z is already Thursday 15.10 in Yekaterinburg (UTC+5).
+        agent.setClock(java.time.Clock.fixed(java.time.Instant.parse("2026-10-14T20:00:00Z"), java.time.ZoneOffset.UTC));
+        loopAnswers(new AgentOutcome("Есть стол.", List.of(), false, 0));
+
+        agent.negotiate(turn(null, "стол на завтра"));
+
+        String system = histories.get(0).get(0).content();
+        assertThat(system).contains("Сегодня: 2026-10-15, четверг").contains("YYYY-MM-DD").contains("завтра");
+    }
 }

@@ -119,7 +119,7 @@ Telegram-дворецкий для HoReCa: гость ↔ персонал ↔ �
 - **Факт, а не текст.** Инструмент возвращает факт; бронь подтверждает только хостес или Presto. События брони Батлер отправляет Консьержу подписанным вебхуком (HMAC, `ASTOR_WEBHOOK_SECRET`).
 - **Лента визита** `visit_turns` — все реплики гостя, агентов, персонала и Saby под одним id визита; телефоны маскируются, текст Консьержа — только с согласия гостя. По закрытому визиту — саммари и уроки агентам.
 - **Табло** astor-ai.ru/board — визиты, переговоры и лампы здоровья; вход по `ASTOR_BOARD_TOKEN`.
-- **Флаги** (все `false`): `ASTOR_LEDGER_ENABLED`, `ASTOR_BOARD_ENABLED`, `ASTOR_VISIT_SUMMARY_ENABLED`, `ASTOR_CAPABILITIES_ENABLED`, `ASTOR_CONCIERGE_WEBHOOK_ENABLED`, `ASTOR_AGENT_ENABLED` + `ASTOR_AGENT_ALLOWLIST`; у Консьержа `LEDGER_ENABLED`, `AGENT_ENABLED` + `AGENT_ALLOWLIST`. Агенты — GigaChat-3-Pro, саммари — GigaChat-2-Max.
+- **Флаги** (все `false`): `ASTOR_LEDGER_ENABLED`, `ASTOR_BOARD_ENABLED`, `ASTOR_VISIT_SUMMARY_ENABLED`, `ASTOR_CAPABILITIES_ENABLED`, `ASTOR_CONCIERGE_WEBHOOK_ENABLED`, `ASTOR_AGENT_ENABLED` + `ASTOR_AGENT_ALLOWLIST`; у Консьержа `LEDGER_ENABLED`, `AGENT_ENABLED` + `AGENT_ALLOWLIST`. Агенты — GigaChat-2-Pro (GigaChat-3-Pro недоступна на скоупе PERS, проверено 14.10), саммари — GigaChat-2-Max.
 
 ## Архитектура в 10 строках
 

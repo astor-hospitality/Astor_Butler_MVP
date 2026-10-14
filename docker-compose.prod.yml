@@ -144,7 +144,7 @@ services:
       # The Butler's agent and the negotiation API (negotiation plan, task 8).
       ASTOR_AGENT_ENABLED: ${ASTOR_AGENT_ENABLED:-false}
       ASTOR_AGENT_ALLOWLIST: ${ASTOR_AGENT_ALLOWLIST:-}
-      ASTOR_AGENT_MODEL: ${ASTOR_AGENT_MODEL:-GigaChat-3-Pro}
+      ASTOR_AGENT_MODEL: ${ASTOR_AGENT_MODEL:-GigaChat-2-Pro}
       ASTOR_AGENT_TURN_TIMEOUT_MS: ${ASTOR_AGENT_TURN_TIMEOUT_MS:-25000}
       ASTOR_AGENT_BOT_TURN_TIMEOUT_MS: ${ASTOR_AGENT_BOT_TURN_TIMEOUT_MS:-12000}
       # Butler -> Concierge webhook (negotiation plan, task 9).

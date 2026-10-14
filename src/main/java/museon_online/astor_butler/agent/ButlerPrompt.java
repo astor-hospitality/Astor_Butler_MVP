@@ -2,6 +2,7 @@ package museon_online.astor_butler.agent;
 
 import museon_online.astor_butler.domain.ledger.PhoneMask;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /** The Butler agent's system prompt: the venue's goals, the rules of speech, lessons, what is known of the guest. */
@@ -10,7 +11,14 @@ public final class ButlerPrompt {
     private ButlerPrompt() {
     }
 
+    private static final String[] WEEKDAYS = {"понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"};
+
     public static String system(List<String> lessons, List<String> guestMemory, String venueFacts) {
+        return system(lessons, guestMemory, venueFacts, null);
+    }
+
+    /** @param today the venue's date: the model resolves «сегодня», «завтра», «в пятницу» from it */
+    public static String system(List<String> lessons, List<String> guestMemory, String venueFacts, LocalDate today) {
         StringBuilder prompt = new StringBuilder("""
                 Ты — Батлер ресторана AERIS, его голос и агент. Ты говоришь от имени ресторана с гостем или с Консьержем, \
                 который представляет гостя. Подпись «AERIS · Батлер» не пиши — её добавляют сами.
@@ -29,10 +37,15 @@ public final class ButlerPrompt {
                 - Перед lunch_order_place перечисли заказ и итоговую сумму и дождись от гостя «да» (Консьерж передаст его ответ). Без «да» заказ не оформляй.
                 - Оценку гостя (строка «оценка гостя» в позиции) запиши через review_submit (бронь из pendingReview — строка «ждём оценку»), \
                 затем коротко поблагодари.
+                - Даты в инструменты передавай только в формате YYYY-MM-DD, время — HH:mm. «Сегодня», «завтра», \
+                «в пятницу» считай от сегодняшней даты ниже.
                 - Один вопрос за раз.
                 - Отвечай коротко: не больше двух предложений, кроме перечня блюд меню.
                 - Пиши по-русски, вежливо и тепло, без канцелярита.
                 """);
+        if (today != null) {
+            prompt.append("\nСегодня: ").append(today).append(", ").append(WEEKDAYS[today.getDayOfWeek().getValue() - 1]).append(".\n");
+        }
         if (venueFacts != null && !venueFacts.isBlank()) {
             prompt.append("\nО ресторане:\n").append(PhoneMask.mask(venueFacts.trim())).append('\n');
         }

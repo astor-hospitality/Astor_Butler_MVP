@@ -58,7 +58,9 @@ ASTOR_CONCIERGE_WEBHOOK_URL=http://astor-concierge-concierge-1:8096
 ASTOR_WEBHOOK_SECRET=<openssl rand -hex 32; одинаковый в обоих сервисах>
 ASTOR_AGENT_ENABLED=true
 ASTOR_AGENT_ALLOWLIST=<chat id Михаила>,<chat id Тариэля>
-ASTOR_AGENT_MODEL=GigaChat-3-Pro
+# Проверено 14.10 на ключе скоупа GIGACHAT_API_PERS: GigaChat-3-Pro отвечает 404 «No such model»,
+# GigaChat-2-Pro возвращает корректный function_call. Перед шагом 6 — проверка ниже.
+ASTOR_AGENT_MODEL=GigaChat-2-Pro
 # Ход переговоров у Батлера короче ожидания Консьержа (BUTLER_NEGOTIATION_TIMEOUT_MS=30000): Консьерж не бросает ход,
 # который Батлер ещё делает. В боте Батлера свой бюджет — ASTOR_AGENT_BOT_TURN_TIMEOUT_MS (12000).
 ASTOR_AGENT_TURN_TIMEOUT_MS=25000
@@ -72,7 +74,7 @@ ASTOR_WEBHOOK_SECRET=<то же значение, что у Батлера>
 LLM_PROVIDER=gigachat
 AGENT_ENABLED=true
 AGENT_ALLOWLIST=<chat id Михаила>,<chat id Тариэля>
-AGENT_MODEL=GigaChat-3-Pro
+AGENT_MODEL=GigaChat-2-Pro
 AGENT_TIMEOUT_MS=20000
 AGENT_TURN_TIMEOUT_MS=60000
 # Сколько Консьерж ждёт ход Батлера; больше ASTOR_AGENT_TURN_TIMEOUT_MS Батлера (25000).
@@ -135,13 +137,14 @@ docker run --rm --network astor-butler_default curlimages/curl -sS -o /dev/null 
 - «не пишите мне» в чате Батлера отвечает агент, а не политика полезности (`ASTOR_USEFULNESS_POLICY_ENABLED`): отписку
   проверять в чате вне списка или с выключенным агентом.
 - У Консьержа чат из списка не получает ответов прежнего потока на свободный текст — только агент; при ошибке модели
-  или таймауте реплики (60 с) — запасной путь и строка `FALLBACK` в ленте.
+  или таймауте реплики (25 с в переговорах, 12 с в боте Батлера) — запасной путь и строка `FALLBACK` в ленте.
 
 ## Стоимость
 
-Агенты обоих сервисов — `GigaChat-3-Pro` (`ASTOR_AGENT_MODEL` / `AGENT_MODEL`); `GigaChat-2-Max` (`GIGACHAT_MODEL`) — только
+Агенты обоих сервисов — `GigaChat-2-Pro` (`ASTOR_AGENT_MODEL` / `AGENT_MODEL`; 500/500 ₽ за 1 млн токенов, `GigaChat-3-Pro`
+на скоупе PERS недоступна — проверено 14.10); `GigaChat-2-Max` (`GIGACHAT_MODEL`) — только
 для саммари визита, один вызов на закрытый визит. История в промпте агента ограничена ≈2k токенов, факты агент берёт
-инструментами. Оценка ≈10–40 ₽ на визит (на 2-Max было бы ≈300 ₽). Сверить с журналом вызовов после первого дня.
+инструментами. Оценка на 2-Pro ≈250–300 ₽ на визит (тариф почти как у 2-Max; на 3-Pro было бы ≈10–40 ₽). Сверить с журналом вызовов после первого дня.
 
 ## Откат
 
