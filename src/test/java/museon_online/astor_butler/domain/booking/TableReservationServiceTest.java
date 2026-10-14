@@ -1084,4 +1084,43 @@ class TableReservationServiceTest {
                 Instant.parse("2026-06-05T00:00:00Z")
         );
     }
+
+    @Test
+    void journeyHearsTheSeatingByStaff() {
+        museon_online.astor_butler.domain.journey.JourneyEvents journey = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.JourneyEvents.class);
+        service.setJourneyEvents(journey);
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationOrder confirmed = order(10L, table, TableReservationStatus.CONFIRMED);
+        TableReservationOrder seated = seated(order(10L, table, TableReservationStatus.SEATED));
+        when(repository.findOrder(10L)).thenReturn(Optional.of(confirmed), Optional.of(seated));
+        when(repository.seatIfConfirmed(10L)).thenReturn(true);
+
+        service.seatByStaff(10L, "@dasha");
+
+        verify(journey).onReservation(seated, museon_online.astor_butler.domain.journey.VisitEventKind.SEATED, museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
+    }
+
+    @Test
+    void journeyHearsEveryWayABookingEnds() {
+        museon_online.astor_butler.domain.journey.JourneyEvents journey = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.JourneyEvents.class);
+        service.setJourneyEvents(journey);
+        VenueTable table = table(5L, "5", 4, true, true);
+        TableReservationOrder rejected = order(12L, table, TableReservationStatus.REJECTED);
+        TableReservationOrder cancelled = order(13L, table, TableReservationStatus.CANCELLED);
+        TableReservationOrder expired = order(10L, table, TableReservationStatus.EXPIRED);
+        when(repository.findOrder(12L)).thenReturn(Optional.of(order(12L, table, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION)));
+        when(repository.reject(12L)).thenReturn(rejected);
+        when(repository.findOrder(13L)).thenReturn(Optional.of(order(13L, table, TableReservationStatus.CONFIRMED)));
+        when(repository.cancel(13L)).thenReturn(cancelled);
+        when(repository.findOrder(10L)).thenReturn(Optional.of(order(10L, table)), Optional.of(expired));
+        when(repository.expireIfAwaiting(10L)).thenReturn(true);
+
+        service.reject(12L);
+        service.cancelByGuest(13L);
+        service.expireHold(10L, 15);
+
+        verify(journey).onReservation(rejected, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
+        verify(journey).onReservation(cancelled, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+        verify(journey).onReservation(expired, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
+    }
 }

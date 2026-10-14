@@ -89,6 +89,65 @@ public class BusinessLunchScenario implements FsmScenario {
     private final BookingTimeProvider timeProvider;
     private final IdentityService identityService;
 
+    /** The guest journey ledger (spec 2026-10-13): optional, silent while the feature is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
+    /** «Как в прошлый раз» (spec 2026-10-13, ASTOR_REPEAT_LUNCH_ENABLED): optional, off by default. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.LastLunchService lastLunchService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.RepeatLunchProperties repeatLunchProperties;
+
+    private static final java.util.regex.Pattern REPEAT = java.util.regex.Pattern.compile(
+            "(как|так же,? как|то же,? что)\\s+в\\s+прошлый\\s+раз|как обычно|повтори(те|ть)?\\s+(заказ|ланч|прошлый)");
+    private static final java.util.regex.Pattern REPEAT_WISH = java.util.regex.Pattern.compile(",?\\s+но\\s+(.+)$");
+    private static final java.util.regex.Pattern AGAIN_LINK = java.util.regex.Pattern.compile("^/start(?:@\\w+)?\\s+lunch_[^\\s]*_again(?:_|$)",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    public void setRepeatLunch(museon_online.astor_butler.domain.journey.LastLunchService lastLunchService, museon_online.astor_butler.domain.journey.RepeatLunchProperties properties) {
+        this.lastLunchService = lastLunchService;
+        this.repeatLunchProperties = properties;
+    }
+
+    private boolean repeatOn() {
+        return lastLunchService != null && repeatLunchProperties != null && repeatLunchProperties.isEnabled();
+    }
+
+    private boolean asksToRepeat(String text) {
+        return repeatOn() && text != null && REPEAT.matcher(text.toLowerCase(java.util.Locale.ROOT)).find();
+    }
+
+    /** Fills the dishes of the guest's last lunch that are still on the menu, then asks only what is missing. */
+    private OutgoingMessage repeat(IncomingMessage incoming, Draft base, String text) {
+        Optional<BusinessLunchOffer> offer = catalog.find(base.venueCode());
+        if (offer.isEmpty()) {
+            return unavailable(incoming);
+        }
+        Optional<museon_online.astor_butler.domain.journey.LastLunch> last = offer.get().aLaCarte() ? lastLunchService.find(incoming.chatId(), offer.get()) : Optional.empty();
+        if (last.isEmpty()) {
+            return begin(incoming, base, "В прошлый раз ничего из нынешнего меню не было — соберём заново.");
+        }
+        Draft draft = base;
+        for (String code : last.get().dishCodes()) {
+            draft = draft.withPortion(code);
+        }
+        draft = draft.withCourseStep(offer.get().courses().size());
+        java.util.regex.Matcher wish = REPEAT_WISH.matcher(text == null ? "" : text.trim());
+        if (wish.find() && !wish.group(1).isBlank()) {
+            draft = draft.withWishes(wish.group(1).trim());
+        }
+        journey(incoming, museon_online.astor_butler.domain.journey.VisitEventKind.REPEAT_ACCEPTED, null);
+        return begin(incoming, draft, "Собрал как в прошлый раз: " + String.join(", ", last.get().titles()) + ".");
+    }
+
+    private void journey(IncomingMessage incoming, museon_online.astor_butler.domain.journey.VisitEventKind kind, String note) {
+        if (journeyEvents != null && incoming != null) {
+            journeyEvents.onChat(incoming.chatId(), kind, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, note);
+        }
+    }
+
     @Value("${astor.business-lunch.enabled:true}")
     private boolean enabled = true;
 
@@ -125,6 +184,9 @@ public class BusinessLunchScenario implements FsmScenario {
             return false;
         }
         BotState state = canonical(currentState);
+        if (asksToRepeat(text) && (owns(state) || isIdle(state))) {
+            return true;
+        }
         return owns(state) || isIdle(state) && (asksForLunch(normalized) || asksAboutALunchDish(normalized));
     }
 
@@ -132,9 +194,17 @@ public class BusinessLunchScenario implements FsmScenario {
     public OutgoingMessage handle(IncomingMessage incoming, BotState currentState, String text) {
         Optional<BusinessLunchHandoff> handoff = BusinessLunchHandoff.from(incoming, text);
         if (handoff.isPresent()) {
+            if (repeatOn() && AGAIN_LINK.matcher(text == null ? "" : text.trim()).find()) {
+                return repeat(incoming, draftFrom(handoff.get()), "");
+            }
             return begin(incoming, draftFrom(handoff.get()), "");
         }
         BotState state = canonical(currentState);
+        if (asksToRepeat(text)) {
+            Draft base = owns(state) ? draftStorage.find(incoming.chatId()).orElse(Draft.start(defaultVenueCode, "DIRECT", null))
+                    : Draft.start(defaultVenueCode, "DIRECT", null);
+            return repeat(incoming, base.withSet(base.setCode(), List.of()), text);
+        }
         Optional<Draft> stored = draftStorage.find(incoming.chatId());
         if (!owns(state) || stored.isEmpty()) {
             Optional<OutgoingMessage> aboutADish = answerAboutADish(incoming, text);
@@ -156,6 +226,7 @@ public class BusinessLunchScenario implements FsmScenario {
         if (wishesEnabled && asksComposition(normalized)) {
             List<BusinessLunchOffer.Dish> asked = dishesNamed(offer.get(), normalized);
             if (!asked.isEmpty()) {
+                journey(incoming, museon_online.astor_butler.domain.journey.VisitEventKind.DISH_QUESTION, normalized);
                 return advance(incoming, offer.get(), draft, composition(asked, normalized));
             }
             if (state != BotState.BUSINESS_LUNCH_COLLECT_WISHES) {
@@ -571,6 +642,7 @@ public class BusinessLunchScenario implements FsmScenario {
             return Optional.empty();
         }
         BusinessLunchOffer offer = catalog.find(defaultVenueCode).orElseThrow();
+        journey(incoming, museon_online.astor_butler.domain.journey.VisitEventKind.DISH_QUESTION, normalized);
         String answer = composition(dishesNamed(offer, normalized), normalized)
                 + "\n\nЕсли захотите заказать бизнес-ланч, напишите «ланч».";
         fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);

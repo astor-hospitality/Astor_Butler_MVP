@@ -64,6 +64,20 @@ class BusinessLunchCatalogTest {
         assertThat(catalog.find("NOWHERE")).isEmpty();
     }
 
+    /** The catalog reads every JSON in business-lunch/: a file there that is not an offer is logged as broken at start-up. */
+    @Test
+    void everyShippedFileInTheLunchFolderIsAUsableOffer() throws IOException {
+        org.springframework.core.io.Resource[] files = new org.springframework.core.io.support.PathMatchingResourcePatternResolver()
+                .getResources("classpath*:business-lunch/*.json");
+
+        assertThat(files).isNotEmpty();
+        for (org.springframework.core.io.Resource file : files) {
+            try (InputStream json = file.getInputStream()) {
+                assertThat(BusinessLunchCatalog.read(objectMapper, json)).as(file.getFilename()).isNotNull();
+            }
+        }
+    }
+
     /** Every dish in the shipped AERIS file can be shown to a guest and ordered: a title and a positive price. */
     @Test
     void everyShippedAerisDishHasATitleAndAPrice() throws IOException {

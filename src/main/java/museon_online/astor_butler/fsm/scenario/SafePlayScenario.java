@@ -33,6 +33,16 @@ public class SafePlayScenario implements FsmScenario {
     private final SemanticRetrievalService semanticRetrievalService;
     private final ScenarioReplyComposer replyComposer;
 
+    /** The guest journey ledger (spec 2026-10-13): optional, silent while the feature is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
+    private void journey(IncomingMessage incoming, museon_online.astor_butler.domain.journey.VisitEventKind kind, String note) {
+        if (journeyEvents != null && incoming != null) {
+            journeyEvents.onChat(incoming.chatId(), kind, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, note);
+        }
+    }
+
     @Value("${telegram.admin.chat-id:}")
     private String adminChatId;
 
@@ -73,6 +83,7 @@ public class SafePlayScenario implements FsmScenario {
             return sendTeamRequest(incoming, currentState, text, "SAFE_PLAY_DETAILS_RECEIVED");
         }
         if (isShortSafePlayCall(normalized)) {
+            journey(incoming, museon_online.astor_butler.domain.journey.VisitEventKind.CHOICE_THEATRE, null);
             fsmStorage.setState(incoming.chatId(), BotState.SAFE_PLAY_COLLECT_DETAILS);
             return OutgoingMessage.of(
                     incoming,

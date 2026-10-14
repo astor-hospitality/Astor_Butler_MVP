@@ -110,6 +110,23 @@ astor:
       provider: ${ASTOR_I18N_MT_PROVIDER:none}
       source-language: ${ASTOR_I18N_MT_SOURCE_LANGUAGE:ru}
       cache-max-entries: ${ASTOR_I18N_MT_CACHE_MAX_ENTRIES:5000}
+  # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): the visit ledger and guest message counter.
+  guest-journey:
+    enabled: ${ASTOR_GUEST_JOURNEY_ENABLED:false}
+    zone-id: ${ASTOR_GUEST_JOURNEY_ZONE_ID:Asia/Yekaterinburg}
+    repeat-lunch:
+      enabled: ${ASTOR_REPEAT_LUNCH_ENABLED:false}
+    usefulness:
+      enabled: ${ASTOR_USEFULNESS_POLICY_ENABLED:false}
+    weekly-report:
+      enabled: ${ASTOR_JOURNEY_WEEKLY_REPORT_ENABLED:false}
+    talk:
+      enabled: ${ASTOR_BUTLER_TALK_ENABLED:false}
+      staff-tenant: ${ASTOR_TIPS_PERSONAL_TENANT:astor}
+    return-loop:
+      enabled: ${ASTOR_RETURN_LOOP_ENABLED:false}
+      invite-after-days: ${ASTOR_RETURN_INVITE_AFTER_DAYS:7}
+      window-days: ${ASTOR_RETURN_WINDOW_DAYS:30}
   business-lunch:
     enabled: ${ASTOR_BUSINESS_LUNCH_ENABLED:true}
     default-venue-code: ${ASTOR_BUSINESS_LUNCH_VENUE:AERIS}
@@ -278,6 +295,12 @@ astor:
       enabled: ${ASTOR_SABY_ENABLED:false}
       write-enabled: ${SABY_WRITE_ENABLED:false}
       payment-enabled: ${SABY_PAYMENT_ENABLED:false}
+      # Guest-journey mirror into a Saby CRM funnel: a deal per visit, events move it (docs/operations/GUEST_JOURNEY_ROLLOUT.md).
+      crm:
+        enabled: ${ASTOR_SABY_CRM_MIRROR_ENABLED:false}
+        regulation-id: ${SABY_CRM_JOURNEY_REGULATION_ID:}
+        phase-directions: ${SABY_CRM_PHASE_DIRECTIONS:}
+        responsible-id: ${SABY_CRM_RESPONSIBLE_ID:}
       base-url: ${SABY_API_BASE_URL:https://api.sbis.ru}
       auth-url: ${SABY_AUTH_URL:https://online.sbis.ru/oauth/service/}
       app-client-id: ${SABY_APP_CLIENT_ID:}

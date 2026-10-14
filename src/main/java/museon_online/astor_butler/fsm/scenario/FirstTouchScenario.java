@@ -25,6 +25,14 @@ public class FirstTouchScenario implements FsmScenario {
     private final ChangeCancelDraftStorage changeCancelDraftStorage;
     private final AstorLinksProperties links;
 
+    /** The greeting that names the last lunch (spec 2026-10-13, ASTOR_REPEAT_LUNCH_ENABLED): optional, off by default. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.RepeatLunchGreeting repeatLunchGreeting;
+
+    public void setRepeatLunchGreeting(museon_online.astor_butler.domain.journey.RepeatLunchGreeting repeatLunchGreeting) {
+        this.repeatLunchGreeting = repeatLunchGreeting;
+    }
+
     /** {@code astor.staff-handoff.enabled} (#128): with it on, {@code /start h_<staff_id>[_t<стол>]} is a start like any other. */
     @Value("${astor.staff-handoff.enabled:false}")
     private boolean staffHandoffEnabled;
@@ -121,6 +129,12 @@ public class FirstTouchScenario implements FsmScenario {
         String text = incoming == null ? "" : incoming.text();
         if ("/restart".equalsIgnoreCase(text == null ? "" : text.trim())) {
             return "Перезапустил диалог и вернул главное меню. Можно начать заново: стол, меню, афиша, мероприятие или помощь команды.";
+        }
+        if (repeatLunchGreeting != null) {
+            java.util.Optional<String> lastLunch = repeatLunchGreeting.text(incoming);
+            if (lastLunch.isPresent()) {
+                return lastLunch.get();
+            }
         }
         // A known guest's /start must carry text: Telegram attaches the guest main menu only to a text message, and the
         // pinned preview card alone left the guest without buttons (live test 13.10).

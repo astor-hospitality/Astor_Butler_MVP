@@ -122,4 +122,16 @@ class BookingMorningCheckNotifierTest {
                 TableReservationStatus.CONFIRMED, "TELEGRAM", start, start.plusSeconds(7200), party, guest, "+79990000000",
                 null, null, null, hostessChatId, null, start.minusSeconds(86400), start.minusSeconds(86400));
     }
+
+    @Test
+    void askIsSilentWhenTheUsefulnessFilterSaysSo() throws Exception {
+        TelegramBot bot = mock(TelegramBot.class);
+        BookingMorningCheckNotifier notifier = enabled(bot, "staff-chat");
+        museon_online.astor_butler.domain.journey.UsefulnessPolicy policy = mock(museon_online.astor_butler.domain.journey.UsefulnessPolicy.class);
+        when(policy.permits(41L, 1001L, museon_online.astor_butler.domain.journey.ProactiveMessage.MORNING)).thenReturn(false);
+        notifier.setUsefulnessPolicy(policy);
+
+        assertThat(notifier.ask(order(41L, 1001L, 2, "Ирина", null), LocalTime.of(13, 0))).isFalse();
+        verify(bot, org.mockito.Mockito.never()).execute(any(SendMessage.class));
+    }
 }

@@ -53,6 +53,13 @@ export function createStubServer(world, { log = () => {}, publicUrl = "" } = {})
     // --- everything else needs the token header ---
     if (!world.validToken(req.headers["x-sbisaccesstoken"])) return send(res, 401, { message: "X-SBISAccessToken is missing or unknown" });
 
+    if (req.method === "POST" && (path === "/service" || path === "/service/")) {
+      const rpc = body || {};
+      const result = rpc.method === "CRMLead.insertRecord" ? world.crmInsertLead(rpc.params)
+        : rpc.method === "CRMEvent.AddEvent" ? world.crmAddEvent(rpc.params) : undefined;
+      if (result == null) return send(res, 200, { jsonrpc: "2.0", id: rpc.id ?? null, error: { message: `unsupported or unknown: ${rpc.method}` } });
+      return send(res, 200, { jsonrpc: "2.0", id: rpc.id ?? null, result });
+    }
     if (req.method === "GET" && path === "/retail/point/list") {
       const points = q.product && q.product !== "restaurant" ? [] : [world.point];
       return send(res, 200, { salesPoints: points, outcome: { hasMore: false } });

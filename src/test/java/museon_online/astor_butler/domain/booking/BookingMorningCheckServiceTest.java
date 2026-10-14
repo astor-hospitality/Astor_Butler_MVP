@@ -283,4 +283,16 @@ class BookingMorningCheckServiceTest {
             return now;
         }
     }
+
+    @Test
+    void journeyHearsTheMorningReconfirmation() {
+        museon_online.astor_butler.domain.journey.JourneyEvents journey = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.JourneyEvents.class);
+        service.setJourneyEvents(journey);
+        asked();
+        when(reservations.findOrder(41L)).thenReturn(Optional.of(confirmedAtOne));
+
+        service.handleCallback("morning_check:41:keep", GUEST_A);
+
+        verify(journey).onReservation(confirmedAtOne, museon_online.astor_butler.domain.journey.VisitEventKind.MORNING_CONFIRMED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+    }
 }

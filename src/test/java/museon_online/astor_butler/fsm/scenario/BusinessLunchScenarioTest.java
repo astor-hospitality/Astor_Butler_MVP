@@ -917,4 +917,60 @@ class BusinessLunchScenarioTest {
             return answer;
         }
     }
+
+    private void repeatOn(java.util.Optional<museon_online.astor_butler.domain.journey.LastLunch> last) {
+        museon_online.astor_butler.domain.journey.LastLunchService lastLunch = mock(museon_online.astor_butler.domain.journey.LastLunchService.class);
+        lenient().when(lastLunch.find(eq(CHAT), any())).thenReturn(last);
+        museon_online.astor_butler.domain.journey.RepeatLunchProperties properties = new museon_online.astor_butler.domain.journey.RepeatLunchProperties();
+        properties.setEnabled(true);
+        scenario.setRepeatLunch(lastLunch, properties);
+        ReflectionTestUtils.setField(scenario, "defaultVenueCode", "CARTE");
+    }
+
+    @Test
+    void repeatPhraseFillsLastDishesAndAsksOnlyWhatIsMissing() {
+        repeatOn(java.util.Optional.of(new museon_online.astor_butler.domain.journey.LastLunch(List.of("BORSCHT", "CAPPUCCINO"), List.of("Борщ со сметаной", "Капучино"))));
+
+        OutgoingMessage reply = say("давай как в прошлый раз");
+
+        assertThat(reply.text()).contains("Собрал как в прошлый раз: Борщ со сметаной, Капучино.");
+        assertThat(reply.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
+        assertThat(drafts.get(CHAT).dishCodes()).containsExactly("BORSCHT", "CAPPUCCINO");
+    }
+
+    @Test
+    void repeatWithChangeKeepsTheWish() {
+        repeatOn(java.util.Optional.of(new museon_online.astor_butler.domain.journey.LastLunch(List.of("BORSCHT"), List.of("Борщ со сметаной"))));
+
+        say("как в прошлый раз, но без сметаны");
+
+        assertThat(drafts.get(CHAT).wishes()).isEqualTo("без сметаны");
+    }
+
+    @Test
+    void deepLinkAgainReachesTheConfirmation() {
+        repeatOn(java.util.Optional.of(new museon_online.astor_butler.domain.journey.LastLunch(List.of("BORSCHT", "CAPPUCCINO"), List.of("Борщ со сметаной", "Капучино"))));
+
+        OutgoingMessage reply = say("/start lunch_carte_again_p2_d20261006_t1300");
+
+        assertThat(reply.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
+        assertThat(reply.text()).contains("Борщ со сметаной", "Капучино");
+    }
+
+    @Test
+    void withoutALastLunchTheGuestChoosesAsUsual() {
+        repeatOn(java.util.Optional.empty());
+
+        OutgoingMessage reply = say("как в прошлый раз");
+
+        assertThat(reply.text()).contains("В прошлый раз ничего из нынешнего меню не было — соберём заново.");
+        assertThat(reply.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
+    }
+
+    @Test
+    void repeatPhraseIsNotTakenWhenTheFlagIsOff() {
+        IncomingMessage incoming = telegram("как в прошлый раз", null);
+
+        assertThat(scenario.supports(incoming, BotState.READY_FOR_DIALOG, "как в прошлый раз")).isFalse();
+    }
 }

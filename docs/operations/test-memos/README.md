@@ -30,6 +30,9 @@
   (стол без ответа хостес держится бессрочно), направляющий вопрос, пометка кухне «⏱ Готовить ко времени»,
   «📊 Табло ланча» и `/табло`, карточка гостя официанту после посадки; в очках — короткий заказ по номерам (#184) и приоритет сообщений (#186):
   влиты в `main` 12.10 вечером, по умолчанию выключены, на ВМ образ очков с ними ещё не выложен (уточнить у Михаила).
+- Выключено и в откате остаётся выключенным: путь гостя (`ASTOR_GUEST_JOURNEY_ENABLED`, `ASTOR_REPEAT_LUNCH_ENABLED`,
+  `ASTOR_USEFULNESS_POLICY_ENABLED`, `ASTOR_BUTLER_TALK_ENABLED`, `ASTOR_RETURN_LOOP_ENABLED`, `ASTOR_JOURNEY_WEEKLY_REPORT_ENABLED`,
+  `ASTOR_SABY_CRM_MIRROR_ENABLED`). Включение по одному и откат — [GUEST_JOURNEY_ROLLOUT.md](../GUEST_JOURNEY_ROLLOUT.md).
 
 ## Общие правила для всех
 

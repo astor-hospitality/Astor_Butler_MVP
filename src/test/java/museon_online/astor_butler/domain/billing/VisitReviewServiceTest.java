@@ -137,4 +137,18 @@ class VisitReviewServiceTest {
         return bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), visitEndsAt));
     }
+
+    @Test
+    void journeyHearsTheReviewAndTheTip() {
+        museon_online.astor_butler.domain.journey.JourneyEvents journey = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.JourneyEvents.class);
+        reviews.setJourneyEvents(journey);
+        GuestBill bill = bill(78L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(bill);
+
+        reviews.handleCallback("visit_review:" + bill.id() + ":stars:5", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":tip", CHAT);
+
+        org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=5");
+        org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.TIP, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+    }
 }

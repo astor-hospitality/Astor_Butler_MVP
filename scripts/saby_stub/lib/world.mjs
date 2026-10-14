@@ -283,6 +283,32 @@ export function createWorld({ pointId = 206, hallId = 271, priceListId = 4, tabl
 
   function reset() {
     orders.clear();
+    deals.clear();
+  }
+
+  // Saby CRM (JSON-RPC on /service/): a deal per guest visit, events move it through the funnel.
+  const deals = new Map();
+  let nextDeal = 9000;
+
+  function crmInsertLead(params = {}) {
+    const id = nextDeal++;
+    deals.set(id, { id, regulation: params["Регламент"], contact: { ...(params["КонтактноеЛицо"] || {}) },
+      note: params["Примечание"] || null, phases: [], comments: [] });
+    return { "@Документ": id };
+  }
+
+  function crmAddEvent(params = {}) {
+    const d = params?.EventData?.d || [];
+    const deal = deals.get(d[1]);
+    if (!deal) return null;
+    if (d[7] != null) deal.phases.push(d[7]);
+    if (d[5] != null) deal.comments.push(d[5]);
+    return 1;
+  }
+
+  function crmDeal(id) {
+    const deal = deals.get(id);
+    return deal ? { ...deal, contact: { ...deal.contact }, phases: [...deal.phases], comments: [...deal.comments] } : null;
   }
 
   function publicOrder(order) {
@@ -291,7 +317,7 @@ export function createWorld({ pointId = 206, hallId = 271, priceListId = 4, tabl
       customer: { ...order.customer }, booking: { ...order.booking }, nomenclatures: order.nomenclatures.map((n) => ({ ...n })) };
   }
 
-  return { point, hallId, priceListId, tables, catalog, issueToken, validToken, hallList, calendar, create, get, state, update, cancel, confirm, seat, paymentLink, pay, close, total, priceList, nomenclatureList, list, reset };
+  return { point, hallId, priceListId, tables, catalog, issueToken, validToken, hallList, calendar, create, get, state, update, cancel, confirm, seat, paymentLink, pay, close, total, priceList, nomenclatureList, list, reset, crmInsertLead, crmAddEvent, crmDeal };
 }
 
 export function defaultTables() {

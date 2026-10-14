@@ -39,6 +39,28 @@ public class TableReservationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private GuestCardService guestCardService;
 
+    /** The guest journey ledger (spec 2026-10-13): optional so the constructor and its tests stay as they are. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
+
+    /** The useful message at seating (spec 2026-10-13): optional, silent while ASTOR_BUTLER_TALK_ENABLED is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.talk.SeatedHint seatedHint;
+
+    /** «Вернулся» on a new booking (spec 2026-10-13 §3.5): optional, silent while ASTOR_RETURN_LOOP_ENABLED is off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.domain.journey.ReturnMatcher returnMatcher;
+
+    public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
+        this.journeyEvents = journeyEvents;
+    }
+
+    private void journey(TableReservationOrder order, museon_online.astor_butler.domain.journey.VisitEventKind kind, String source) {
+        if (journeyEvents != null && order != null) {
+            journeyEvents.onReservation(order, kind, source);
+        }
+    }
+
     public List<VenueTable> listTables(String venueCode) {
         return repository.findTables(venueCode);
     }
@@ -117,6 +139,10 @@ public class TableReservationService {
         ExternalReservationResult sync = reserveExternally(order, command.venueCode());
         order = rememberExternalId(order, sync);
         notificationService.notifyHostessApprovalRequest(order, sync);
+        journey(order, museon_online.astor_butler.domain.journey.VisitEventKind.REQUESTED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
+        if (returnMatcher != null && order != null && order.id() != null) {
+            returnMatcher.onNewReservation(order.id(), order.guestPhone());
+        }
         return order;
     }
 
@@ -195,6 +221,7 @@ public class TableReservationService {
         notificationService.notifyHostessHoldExpired(expired, afterMinutes);
         notificationService.notifyManagerHoldExpired(expired, afterMinutes);
         notificationService.notifyGuestHoldExpired(expired, afterMinutes);
+        journey(expired, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
         return expired;
     }
 
@@ -250,6 +277,7 @@ public class TableReservationService {
                 List<VenueTable> alternatives = alternativesForRejected(current);
                 TableReservationOrder cancelled = repository.cancel(id);
                 notificationService.notifyGuestRejected(cancelled, alternatives);
+                journey(cancelled, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO);
                 yield cancelled;
             }
             default -> current;
@@ -305,6 +333,10 @@ public class TableReservationService {
         log.info("Table reservation {} seated by {}: table {}, seatedAt {}", id, who, seated.tableCode(), seated.seatedAt());
         notificationService.traceSeated(seated, who);
         sendGuestCard(seated);
+        if (seatedHint != null) {
+            seatedHint.send(seated);
+        }
+        journey(seated, museon_online.astor_butler.domain.journey.VisitEventKind.SEATED, "Presto".equals(who) ? museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO : museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
         return seated;
     }
 
@@ -341,6 +373,7 @@ public class TableReservationService {
             cancelExternally(rejected);
         }
         notificationService.notifyGuestRejected(rejected, alternatives);
+        journey(rejected, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, cancelInVenueSystem ? museon_online.astor_butler.domain.journey.JourneyEvents.STAFF : museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO);
         return rejected;
     }
 
@@ -357,6 +390,7 @@ public class TableReservationService {
         TableReservationOrder cancelled = repository.cancel(id);
         cancelExternally(cancelled);
         notificationService.notifyHostessGuestCancelled(cancelled);
+        journey(cancelled, museon_online.astor_butler.domain.journey.VisitEventKind.CANCELLED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
         return cancelled;
     }
 
@@ -377,6 +411,7 @@ public class TableReservationService {
                 : reserveExternally(changed, resolved.venueCode());
         changed = rememberExternalId(changed, sync);
         notificationService.notifyHostessApprovalRequest(changed, sync);
+        journey(changed, museon_online.astor_butler.domain.journey.VisitEventKind.MOVED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
         return changed;
     }
 
