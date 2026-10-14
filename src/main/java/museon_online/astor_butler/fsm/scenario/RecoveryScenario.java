@@ -42,6 +42,24 @@ public class RecoveryScenario implements FsmScenario {
 
     @Override
     public OutgoingMessage handle(IncomingMessage incoming, BotState currentState, String text) {
+        // «Спасибо», «жду», «ты меня слышишь» are not lost guests: answer them here and never wake the admin.
+        SmallTalk smallTalk = SmallTalk.of(text);
+        if (smallTalk != SmallTalk.NONE) {
+            fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+            return OutgoingMessage.of(
+                    incoming,
+                    smallTalk == SmallTalk.COURTESY
+                            ? "Пожалуйста! Если что-то понадобится, напишите: бронь, меню, афиша или менеджер."
+                            : "Я здесь. Чем помочь: бронь, меню, афиша, мероприятие или менеджер?",
+                    BotState.READY_FOR_DIALOG.name(),
+                    false,
+                    false,
+                    false,
+                    false,
+                    AdminAlert.none(),
+                    List.of("RECOVERY", smallTalk.name())
+            ).withMetadata(Map.of("scenario", id()));
+        }
         long attempts = recoveryRetryService.recordUnclear(incoming.chatId());
         if (attempts <= 1) {
             fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
@@ -167,5 +185,38 @@ public class RecoveryScenario implements FsmScenario {
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;");
+    }
+
+    /** Short replies that need no human: thanks/acknowledgements and «are you there?» checks. */
+    enum SmallTalk {
+        NONE, COURTESY, PRESENCE;
+
+        private static final java.util.Set<String> COURTESY_WORDS = java.util.Set.of(
+                "спасибо", "спасибочки", "благодарю", "благодарим", "пасиб", "спс", "ок", "окей", "ok", "okay", "хорошо",
+                "понял", "поняла", "поняли", "ясно", "жду", "ждем", "ждём", "ладно", "отлично", "супер", "класс", "круто",
+                "ага", "угу", "договорились", "принято", "большое", "огромное", "вам", "тебе", "и", "а", "все", "всё",
+                "thanks", "thank", "you", "👍", "🙏", "🙂", "😊", "❤️", "❤");
+        private static final java.util.Set<String> PRESENCE_WORDS = java.util.Set.of(
+                "алло", "ало", "слышишь", "слышите", "привет", "здравствуйте", "здравствуй", "добрый", "день", "вечер",
+                "ау", "тут", "здесь", "ты", "вы", "меня", "эй", "hello", "hi");
+
+        static SmallTalk of(String text) {
+            if (text == null) {
+                return NONE;
+            }
+            String[] words = text.toLowerCase(Locale.ROOT).replaceAll("[.,!?;:…\\-]+", " ").trim().split("\\s+");
+            if (words.length == 0 || words[0].isBlank() || words.length > 6) {
+                return NONE;
+            }
+            if (java.util.Arrays.stream(words).allMatch(COURTESY_WORDS::contains)) {
+                return COURTESY;
+            }
+            boolean presence = java.util.Arrays.stream(words)
+                    .anyMatch(w -> w.equals("слышишь") || w.equals("слышите") || w.equals("алло") || w.equals("ало")
+                            || w.equals("тут") || w.equals("здесь") || w.equals("привет") || w.startsWith("здравству"));
+            // Every other word must be filler, except one unknown word (a misheard name: «гудбай» for «батлер»).
+            long unknown = java.util.Arrays.stream(words).filter(w -> !PRESENCE_WORDS.contains(w)).count();
+            return presence && unknown <= 1 ? PRESENCE : NONE;
+        }
     }
 }
