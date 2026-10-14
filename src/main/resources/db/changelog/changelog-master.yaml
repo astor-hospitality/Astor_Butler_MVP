@@ -91,3 +91,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-14-guest-journey.yaml
   - include:
       file: db/changelog/2026-10-15-visit-turns.yaml
+  - include:
+      file: db/changelog/2026-10-15-visit-summaries.yaml

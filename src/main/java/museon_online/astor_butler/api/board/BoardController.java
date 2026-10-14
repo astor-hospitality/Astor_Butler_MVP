@@ -5,10 +5,19 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import museon_online.astor_butler.domain.ledger.PhoneMask;
 import museon_online.astor_butler.domain.ledger.VisitTurn;
 import museon_online.astor_butler.domain.ledger.VisitTurnRepository;
+import museon_online.astor_butler.domain.summary.AgentLesson;
+import museon_online.astor_butler.domain.summary.AgentLessonRepository;
+import museon_online.astor_butler.domain.summary.VisitSummary;
+import museon_online.astor_butler.domain.summary.VisitSummaryRepository;
+import museon_online.astor_butler.domain.summary.VisitSummaryService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -22,10 +31,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 /**
- * The closed board (read side): visits, each visit's turns, the figures and the health map, plus a live stream. Closed
- * by {@link BoardTokenFilter}; names and phones leave masked, hidden turns leave without text.
+ * The closed board: visits, each visit's turns, the figures and the health map, plus a live stream; visit summaries and
+ * the agents' lessons a manager accepts or rejects. Closed by {@link BoardTokenFilter}; names and phones leave masked,
+ * hidden turns leave without text.
  */
 @RestController
 @RequestMapping("/api/board/v1")
@@ -43,6 +55,9 @@ public class BoardController {
     private final BoardMetrics metrics;
     private final HealthMap healthMap;
     private final BoardStream stream;
+    private VisitSummaryService summaryService;
+    private VisitSummaryRepository summaries;
+    private AgentLessonRepository lessons;
 
     public BoardController(BoardQueries queries, VisitTurnRepository turns, BoardMetrics metrics, HealthMap healthMap,
                            BoardStream stream) {
@@ -53,7 +68,13 @@ public class BoardController {
         this.stream = stream;
     }
 
-    /** {@code hasSummary} stays false until visit summaries exist (negotiation plan, task 3). */
+    @Autowired(required = false)
+    public void setSummaries(VisitSummaryService summaryService, VisitSummaryRepository summaries, AgentLessonRepository lessons) {
+        this.summaryService = summaryService;
+        this.summaries = summaries;
+        this.lessons = lessons;
+    }
+
     public record BoardVisit(long id, long reservationId, String stage, String visitDay, String guest, String phone,
                              String table, int guestMessages, String lastTurnAt, boolean hasSummary) {
     }
@@ -67,11 +88,92 @@ public class BoardController {
     public List<BoardVisit> visits(@RequestParam(name = "from", required = false) String from,
                                    @RequestParam(name = "to", required = false) String to) {
         Instant[] window = window(from, to);
-        return queries.visits(window[0], window[1]).stream()
+        List<BoardQueries.VisitRow> rows = queries.visits(window[0], window[1]);
+        Set<Long> summarized = summaries == null || rows.isEmpty() ? Set.of()
+                : summaries.withSummary(rows.stream().map(BoardQueries.VisitRow::id).toList());
+        return rows.stream()
                 .map(row -> new BoardVisit(row.id(), row.reservationId(), row.stage(), text(row.visitDay()),
                         maskName(row.guestName()), maskPhone(row.guestPhone()), row.table(), row.guestMessages(),
-                        text(row.lastTurnAt()), false))
+                        text(row.lastTurnAt()), summarized.contains(row.id())))
                 .toList();
+    }
+
+    @GetMapping("/visits/{id}/summary")
+    @Operation(summary = "The visit's summary; 404 when it has none")
+    public ResponseEntity<VisitSummary> summary(@PathVariable("id") long id) {
+        if (summaries == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+        return ResponseEntity.of(summaries.find(id).map(BoardController::masked));
+    }
+
+    @PostMapping("/visits/{id}/summary")
+    @Operation(summary = "Rebuild the visit's summary; 503 while summaries are off, 422 when it could not be built")
+    public ResponseEntity<VisitSummary> rebuildSummary(@PathVariable("id") long id) {
+        if (summaryService == null || !summaryService.enabled()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+        Optional<VisitSummary> rebuilt = summaryService.summarize(id);
+        return rebuilt.map(summary -> ResponseEntity.ok(masked(summary)))
+                .orElseGet(() -> ResponseEntity.unprocessableEntity().build());
+    }
+
+    @PostMapping("/visits/{id}/next-time")
+    @Operation(summary = "A manager's note for next time (body {text}): an accepted Butler lesson and a summary line")
+    public ResponseEntity<VisitSummary> nextTime(@PathVariable("id") long id,
+                                                 @RequestBody(required = false) Map<String, String> body) {
+        String text = body == null ? null : body.get("text");
+        if (text == null || text.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        if (summaryService == null || summaries == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+        if (!summaryService.addNextTime(id, text)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.of(summaries.find(id).map(BoardController::masked));
+    }
+
+    @GetMapping("/lessons")
+    @Operation(summary = "The agents' lessons with this status (PROPOSED by default), newest first")
+    public List<AgentLesson> lessons(@RequestParam(name = "status", required = false, defaultValue = "PROPOSED") String status) {
+        if (lessons == null) {
+            return List.of();
+        }
+        AgentLesson.Status wanted;
+        try {
+            wanted = AgentLesson.Status.valueOf(status.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return List.of();
+        }
+        return lessons.withStatus(wanted).stream().map(BoardController::masked).toList();
+    }
+
+    @PostMapping("/lessons/{id}/accept")
+    @Operation(summary = "Accept a lesson; a non-blank body {text} replaces its text")
+    public ResponseEntity<AgentLesson> acceptLesson(@PathVariable("id") long id,
+                                                    @RequestBody(required = false) Map<String, String> body) {
+        if (lessons == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+        String text = body == null ? null : body.get("text");
+        if (!lessons.accept(id, text == null ? null : PhoneMask.mask(text))) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.of(lessons.find(id).map(BoardController::masked));
+    }
+
+    @PostMapping("/lessons/{id}/reject")
+    @Operation(summary = "Reject a lesson: it never reaches the agent")
+    public ResponseEntity<AgentLesson> rejectLesson(@PathVariable("id") long id) {
+        if (lessons == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+        if (!lessons.reject(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.of(lessons.find(id).map(BoardController::masked));
     }
 
     @GetMapping("/visits/{id}/turns")
@@ -123,6 +225,17 @@ public class BoardController {
             return (T) copy;
         }
         return value;
+    }
+
+    private static VisitSummary masked(VisitSummary summary) {
+        return new VisitSummary(summary.visitId(), PhoneMask.mask(summary.guestWanted()), PhoneMask.mask(summary.venueOffered()),
+                PhoneMask.mask(summary.outcome()), masked(summary.stuck()), masked(summary.nextTimeGuest()),
+                masked(summary.nextTimeAgents()), summary.createdAt());
+    }
+
+    private static AgentLesson masked(AgentLesson lesson) {
+        return new AgentLesson(lesson.id(), lesson.visitId(), lesson.side(), PhoneMask.mask(lesson.text()), lesson.status(),
+                lesson.createdAt(), lesson.decidedAt());
     }
 
     /** «Мария К.»: the first name and the surname's initial; one word as is; nothing (or digits) → «Гость». */

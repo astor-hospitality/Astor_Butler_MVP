@@ -43,7 +43,7 @@ public class LedgerController {
 
     @PostMapping("/sessions/{sessionId}/link")
     @Operation(summary = "Link a Concierge session's turns to a visit")
-    public ResponseEntity<Map<String, Object>> linkSession(@PathVariable String sessionId, @RequestBody LinkRequest request) {
+    public ResponseEntity<Map<String, Object>> linkSession(@PathVariable("sessionId") String sessionId, @RequestBody LinkRequest request) {
         if (request == null || request.visitId() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "visitId is required"));
         }

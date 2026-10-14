@@ -121,6 +121,12 @@ astor:
     enabled: ${ASTOR_BOARD_ENABLED:false}
     token: ${ASTOR_BOARD_TOKEN:}
     concierge-health-url: ${ASTOR_BOARD_CONCIERGE_HEALTH_URL:http://astor-concierge:8080/readyz}
+  # Visit summaries (negotiation plan, task 3): one model call per finished visit, every 10 minutes; lessons for the
+  # agents wait for a manager on the board. ASTOR_SUMMARY_MODEL blank = the gateway's configured model (GIGACHAT_MODEL).
+  summary:
+    enabled: ${ASTOR_VISIT_SUMMARY_ENABLED:false}
+    model: ${ASTOR_SUMMARY_MODEL:}
+    poll-ms: ${ASTOR_SUMMARY_POLL_MS:600000}
   # Capability API v1 (negotiation plan, task 6): tools for the Concierge (/api/capabilities/**, internal token) and the Butler's agent.
   capabilities:
     enabled: ${ASTOR_CAPABILITIES_ENABLED:false}

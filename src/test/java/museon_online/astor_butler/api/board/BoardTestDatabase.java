@@ -15,7 +15,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * The board reads five schemas: the journey, ledger and billing ones run from their real migrations; reservations and the
+ * The board reads six schemas: the journey, ledger, summary and billing ones run from their real migrations; reservations and the
  * model audit are reduced to the columns the board reads (their migrations use PostgreSQL-only SQL).
  */
 final class BoardTestDatabase implements AutoCloseable {
@@ -47,6 +47,7 @@ final class BoardTestDatabase implements AutoCloseable {
             Connection schema = dataSource.getConnection();
             ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-14-guest-journey.sql"));
             ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-15-visit-turns.sql"));
+            ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-15-visit-summaries.sql"));
             ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-07-guest-billing.sql"));
             ScriptUtils.executeSqlScript(schema, new ByteArrayResource(REDUCED.getBytes(StandardCharsets.UTF_8)));
             return new BoardTestDatabase(schema, new JdbcTemplate(dataSource));
