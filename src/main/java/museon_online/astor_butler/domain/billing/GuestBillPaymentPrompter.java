@@ -103,8 +103,9 @@ public class GuestBillPaymentPrompter {
         lastCheckedId = waiting.size() == BATCH ? waiting.getLast().id() : 0L;
         for (GuestBill bill : waiting) {
             // A bill without a chat (a Concierge booking) has no one to send the link to here: the agent asks for it
-            // through bill_request, so the venue is not asked for a link every ten minutes in vain.
-            if (bill.chatId() == null || !provider.get().providerId().equals(bill.externalProvider()) || !confirmed(bill)
+            // through bill_request, so the venue is not asked for a link every ten minutes in vain — unless the booking
+            // belongs to a Concierge session the webhook reaches (BILL_READY).
+            if ((bill.chatId() == null && !notifier.reachesConcierge(bill)) || !provider.get().providerId().equals(bill.externalProvider()) || !confirmed(bill)
                     || retryAfter.getOrDefault(bill.id(), Instant.MIN).isAfter(now)) {
                 skipped++;
                 continue;

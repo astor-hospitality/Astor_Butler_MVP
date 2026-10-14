@@ -136,6 +136,12 @@ astor:
   # Capability API v1 (negotiation plan, task 6): tools for the Concierge (/api/capabilities/**, internal token) and the Butler's agent.
   capabilities:
     enabled: ${ASTOR_CAPABILITIES_ENABLED:false}
+  # Butler -> Concierge webhook (negotiation plan, task 9): events of bookings made in a Concierge session, signed with
+  # HMAC-SHA256 (X-Astor-Signature: sha256=<hex>); a secret shorter than 16 characters sends nothing.
+  concierge-webhook:
+    enabled: ${ASTOR_CONCIERGE_WEBHOOK_ENABLED:false}
+    url: ${ASTOR_CONCIERGE_WEBHOOK_URL:http://astor-concierge-concierge-1:8096}
+    secret: ${ASTOR_WEBHOOK_SECRET:}
   # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): the visit ledger and guest message counter.
   guest-journey:
     enabled: ${ASTOR_GUEST_JOURNEY_ENABLED:false}

@@ -233,6 +233,19 @@ class GuestBillPaymentPrompterTest {
         verify(notifier, never()).paymentLink(any(), anyString());
     }
 
+    @Test
+    void aBillOfAConciergeSessionGetsItsLinkThroughTheConcierge() {
+        GuestBill bill = bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", 93L, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.plus(Duration.ofHours(2))));
+        bills.issued(bill.id(), "SABY", "order-9");
+        reservation(93L, TableReservationStatus.CONFIRMED);
+        when(notifier.reachesConcierge(any())).thenReturn(true);
+        when(provider.paymentLink("order-9")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/9", null)));
+
+        assertThat(prompter.run()).isEqualTo(new GuestBillPaymentPrompter.Report(1, 1, 0, 0));
+        verify(notifier).paymentLink(any(), eq("https://pay.test/9"));
+    }
+
     private GuestBill issued(long reservationId) {
         GuestBill bill = bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), NOW.plus(Duration.ofHours(2))));

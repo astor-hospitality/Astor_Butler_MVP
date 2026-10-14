@@ -336,6 +336,9 @@ public class TableReservationService {
         if (seatedHint != null) {
             seatedHint.send(seated);
         }
+        if (seated.chatId() == null) {
+            notificationService.notifyGuestSeated(seated);
+        }
         journey(seated, museon_online.astor_butler.domain.journey.VisitEventKind.SEATED, "Presto".equals(who) ? museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO : museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
         return seated;
     }

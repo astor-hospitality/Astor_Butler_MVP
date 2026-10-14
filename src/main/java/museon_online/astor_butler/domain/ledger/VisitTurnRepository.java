@@ -89,6 +89,13 @@ public class VisitTurnRepository {
         return found.stream().findFirst();
     }
 
+    /** A Concierge session linked to the visit (the latest turn that has one); empty when the visit has none. */
+    public Optional<String> sessionOf(long visitId) {
+        List<String> found = jdbc.queryForList("SELECT session_id FROM visit_turns WHERE visit_id = ? AND session_id IS NOT NULL "
+                + "ORDER BY id DESC LIMIT 1", String.class, visitId);
+        return found.stream().findFirst();
+    }
+
     public List<VisitTurn> ofVisit(long visitId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM visit_turns WHERE visit_id = ? ORDER BY at, id", turn(), visitId);
     }
