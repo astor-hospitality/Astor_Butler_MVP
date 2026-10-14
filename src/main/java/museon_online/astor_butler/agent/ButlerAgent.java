@@ -209,7 +209,11 @@ public class ButlerAgent {
         return clip(PhoneMask.mask(String.join("\n", lines)));
     }
 
-    /** «2026-10-15, 13:00, 2 гостя, бюджет 1500, без лука»; null when nothing is known. */
+    /**
+     * «2026-10-15, 13:00, 2 гостя, бюджет 1500, без лука»; null when nothing is known. After a REVIEW event the
+     * Concierge adds the guest's rating ({@code review}) and what it is about ({@code pendingReview}):
+     * «…; оценка гостя: 5 (комментарий); ждём оценку: бронь 41, счёт 77».
+     */
     static String position(Map<String, Object> position) {
         if (position == null || position.isEmpty()) {
             return null;
@@ -225,7 +229,35 @@ public class ButlerAgent {
         } else {
             text(constraints).ifPresent(parts::add);
         }
-        return parts.isEmpty() ? null : String.join(", ", parts);
+        List<String> sections = new ArrayList<>();
+        if (!parts.isEmpty()) {
+            sections.add(String.join(", ", parts));
+        }
+        review(position.get("review")).ifPresent(sections::add);
+        pendingReview(position.get("pendingReview")).ifPresent(sections::add);
+        return sections.isEmpty() ? null : String.join("; ", sections);
+    }
+
+    private static Optional<String> review(Object review) {
+        if (!(review instanceof Map<?, ?> map)) {
+            return Optional.empty();
+        }
+        Optional<String> stars = text(map.get("stars"));
+        if (stars.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("оценка гостя: " + stars.get() + text(map.get("comment")).map(comment -> " (" + comment + ")").orElse(""));
+    }
+
+    private static Optional<String> pendingReview(Object pending) {
+        if (!(pending instanceof Map<?, ?> map)) {
+            return Optional.empty();
+        }
+        Optional<String> reservation = text(map.get("reservationId"));
+        if (reservation.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of("ждём оценку: бронь " + reservation.get() + text(map.get("billId")).map(bill -> ", счёт " + bill).orElse(""));
     }
 
     private static String guests(String size) {
