@@ -51,6 +51,21 @@ public class TableReservationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.ReturnMatcher returnMatcher;
 
+    /** The unified call log (docs/operations/CALL_LOG.md): optional so the constructor and its tests stay as they are. */
+    private museon_online.astor_butler.domain.calllog.CallLogWriter callLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCallLog(museon_online.astor_butler.domain.calllog.CallLogWriter callLog) {
+        this.callLog = callLog;
+    }
+
+    private void callLog(String name, TableReservationOrder order) {
+        if (callLog != null && callLog.enabled() && order != null) {
+            callLog.targetAction(name, order.status() == null ? null : order.status().name(), order.source(),
+                    museon_online.astor_butler.domain.calllog.CallLogWriter.firstId(order.telegramUserId(), order.chatId()));
+        }
+    }
+
     public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
         this.journeyEvents = journeyEvents;
     }
@@ -140,6 +155,7 @@ public class TableReservationService {
         order = rememberExternalId(order, sync);
         notificationService.notifyHostessApprovalRequest(order, sync);
         journey(order, museon_online.astor_butler.domain.journey.VisitEventKind.REQUESTED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
+        callLog("reservation:create", order);
         if (returnMatcher != null && order != null && order.id() != null) {
             returnMatcher.onNewReservation(order.id(), order.guestPhone());
         }
@@ -169,6 +185,7 @@ public class TableReservationService {
         TableReservationOrder confirmed = repository.confirm(id);
         notificationService.notifyHostessConfirmed(confirmed);
         notificationService.notifyGuestConfirmed(confirmed);
+        callLog("reservation:confirm", confirmed);
         return confirmed;
     }
 
@@ -186,6 +203,7 @@ public class TableReservationService {
         TableReservationOrder confirmed = requireOrder(current.id());
         notificationService.notifyHostessConfirmed(confirmed);
         notificationService.notifyGuestConfirmed(confirmed);
+        callLog("reservation:confirm", confirmed);
         return confirmed;
     }
 
@@ -240,6 +258,7 @@ public class TableReservationService {
         TableReservationOrder confirmed = repository.confirm(id);
         notificationService.notifyHostessAutoConfirmed(confirmed, afterMinutes);
         notificationService.notifyGuestConfirmed(confirmed);
+        callLog("reservation:confirm", confirmed);
         return confirmed;
     }
 
@@ -261,6 +280,7 @@ public class TableReservationService {
         TableReservationOrder confirmed = repository.confirm(id);
         notificationService.notifyHostessConfirmed(confirmed);
         notificationService.notifyGuestConfirmed(confirmed);
+        callLog("reservation:confirm", confirmed);
         return confirmed;
     }
 
@@ -336,6 +356,7 @@ public class TableReservationService {
         if (seatedHint != null) {
             seatedHint.send(seated);
         }
+        callLog("reservation:seated", seated);
         journey(seated, museon_online.astor_butler.domain.journey.VisitEventKind.SEATED, "Presto".equals(who) ? museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO : museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
         return seated;
     }

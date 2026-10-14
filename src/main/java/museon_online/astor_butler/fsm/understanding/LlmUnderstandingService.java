@@ -95,7 +95,7 @@ public class LlmUnderstandingService {
         }
         try {
             return CompletableFuture
-                    .supplyAsync(() -> modelGateway.generateText(request))
+                    .supplyAsync(museon_online.astor_butler.domain.calllog.CallLogContext.propagate(() -> modelGateway.generateText(request)))
                     .orTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                     .join();
         } catch (CompletionException e) {

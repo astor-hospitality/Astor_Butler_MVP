@@ -83,6 +83,16 @@ public class MessageGatewayService {
     }
 
     public OutgoingMessage handle(IncomingMessage incoming) {
+        // Model calls made while this message is handled are logged for its channel and guest (docs/operations/CALL_LOG.md).
+        try (museon_online.astor_butler.domain.calllog.CallLogContext.Scope ignored = museon_online.astor_butler.domain.calllog.CallLogContext.open(
+                incoming == null || incoming.channel() == null ? null : incoming.channel().name(),
+                incoming == null ? null : museon_online.astor_butler.domain.calllog.CallLogWriter.firstId(incoming.telegramUserId(), incoming.chatId()),
+                incoming == null ? null : incoming.correlationId())) {
+            return handleMessage(incoming);
+        }
+    }
+
+    private OutgoingMessage handleMessage(IncomingMessage incoming) {
         if (incoming == null || incoming.chatId() == null) {
             throw new IllegalArgumentException("Incoming message must contain chatId for current MVP flow");
         }
@@ -364,7 +374,9 @@ public class MessageGatewayService {
                 error == null ? "" : error.getClass().getSimpleName(),
                 error == null ? "" : error.getMessage(),
                 modelResponse == null ? null : modelResponse.latency(),
-                java.util.Map.of("source", "MessageGatewayService")
+                modelResponse == null || modelResponse.metadata() == null || modelResponse.metadata().isEmpty()
+                        ? java.util.Map.of("source", "MessageGatewayService")
+                        : java.util.Map.of("source", "MessageGatewayService", "modelResponse", modelResponse.metadata())
         ));
     }
 

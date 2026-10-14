@@ -76,7 +76,7 @@ public class ScenarioReplyComposer {
                     draft.purpose()
             );
             ModelTextResponse response = CompletableFuture
-                    .supplyAsync(() -> modelGateway.generateText(request))
+                    .supplyAsync(museon_online.astor_butler.domain.calllog.CallLogContext.propagate(() -> modelGateway.generateText(request)))
                     .orTimeout(llmTimeoutMs, TimeUnit.MILLISECONDS)
                     .join();
             String text = normalizeGenerated(response.text());

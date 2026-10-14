@@ -46,6 +46,14 @@ public class WebChatController {
     private final MessageController messageController;
     private final ObjectMapper objectMapper;
 
+    /** The unified call log (docs/operations/CALL_LOG.md): optional so the constructor and its tests stay as they are. */
+    private museon_online.astor_butler.domain.calllog.CallLogWriter callLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCallLog(museon_online.astor_butler.domain.calllog.CallLogWriter callLog) {
+        this.callLog = callLog;
+    }
+
     public WebChatController(MessageController messageController, ObjectMapper objectMapper) {
         this.messageController = messageController;
         this.objectMapper = objectMapper;
@@ -111,6 +119,9 @@ public class WebChatController {
                 null,
                 payload
         );
+        if (callLog != null && callLog.enabled()) {
+            callLog.guestMessage("web", payload.get("sessionId") == null ? null : String.valueOf(payload.get("sessionId")), null);
+        }
         ResponseEntity<MessageController.MessageResponse> gateway = messageController.process(sanitized, request);
         MessageController.MessageResponse reply = gateway.getBody();
         if (reply == null) {

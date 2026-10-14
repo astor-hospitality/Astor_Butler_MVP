@@ -110,6 +110,14 @@ astor:
       provider: ${ASTOR_I18N_MT_PROVIDER:none}
       source-language: ${ASTOR_I18N_MT_SOURCE_LANGUAGE:ru}
       cache-max-entries: ${ASTOR_I18N_MT_CACHE_MAX_ENTRIES:5000}
+  # Unified call log for the accelerator report (docs/operations/CALL_LOG.md): LLM/Saby calls, guest messages, target actions.
+  call-log:
+    enabled: ${ASTOR_CALL_LOG_ENABLED:false}
+    # At least 16 characters, otherwise rows are written without pseudonymous user ids.
+    salt: ${ASTOR_CALL_LOG_SALT:}
+    # Overrides/additions to the built-in GigaChat tariffs, rubles per 1M tokens:
+    # "GigaChat-3-Pro=73,176;GigaChat/GigaChat-2-Max=569,569;yandexgpt-5-lite=40,40". Empty: the defaults of ModelTariff.
+    tariffs: ${ASTOR_CALL_LOG_TARIFFS:}
   # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): the visit ledger and guest message counter.
   guest-journey:
     enabled: ${ASTOR_GUEST_JOURNEY_ENABLED:false}
