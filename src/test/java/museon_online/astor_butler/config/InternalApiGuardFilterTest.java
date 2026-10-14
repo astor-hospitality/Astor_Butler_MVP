@@ -125,6 +125,8 @@ class InternalApiGuardFilterTest {
                 "/api/internal/anything",
                 "/api/concierge/requests/telegram/1",
                 "/api/ledger/v1/turns",
+                "/api/capabilities/v1/tools",
+                "/api/capabilities/v1/venue_info",
                 "/actuator/metrics",
                 "/actuator/env")) {
             mvc.perform(put(path).contentType("application/json").content("{}")).andExpect(status().isUnauthorized());

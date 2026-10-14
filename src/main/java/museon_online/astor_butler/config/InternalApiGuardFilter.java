@@ -73,6 +73,7 @@ public final class InternalApiGuardFilter extends OncePerRequestFilter {
             "/api/internal/**",   // service-to-service (the glasses relay subtree is excepted below)
             "/api/concierge/**",  // guest service requests listed by chat id
             "/api/ledger/**",     // visit ledger written by the Concierge
+            "/api/capabilities/**", // tools the Concierge calls (Capability API)
             "/actuator/**"        // env, loggers, threaddump (health and prometheus are excepted below)
     );
 
