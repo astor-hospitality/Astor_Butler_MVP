@@ -57,6 +57,24 @@ class LedgerControllerTest {
     }
 
     @Test
+    void conciergeJsonWithoutConsentIsStoredWithoutText() throws Exception {
+        org.springframework.test.web.servlet.MockMvc mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
+                .standaloneSetup(controller).build();
+
+        String body = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/ledger/v1/turns")
+                        .contentType("application/json")
+                        .content("{\"sessionId\":\"c-1\",\"side\":\"GUEST\",\"channel\":\"CONCIERGE_TG\",\"kind\":\"MESSAGE\","
+                                + "\"text\":\"хочу столик на двоих\",\"payload\":{\"hidden\":true}}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.id").isNumber())
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+
+        long id = new ObjectMapper().readTree(body).get("id").asLong();
+        assertThat(database.jdbc().queryForObject("SELECT text FROM visit_turns WHERE id = ?", String.class, id)).isNull();
+        assertThat(database.jdbc().queryForObject("SELECT session_id FROM visit_turns WHERE id = ?", String.class, id)).isEqualTo("c-1");
+    }
+
+    @Test
     void linksASessionToTheVisit() {
         controller.appendTurn(new VisitTurnDraft(null, "c-1", TurnSide.CONCIERGE, TurnChannel.CONCIERGE_TG, TurnKind.MESSAGE,
                 "уточню у ресторана", null, null));

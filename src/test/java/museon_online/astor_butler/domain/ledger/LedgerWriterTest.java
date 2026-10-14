@@ -58,6 +58,16 @@ class LedgerWriterTest {
     }
 
     @Test
+    void aListenerFailureNeverFailsTheWrite() {
+        when(turns.append(any())).thenReturn(41L);
+        when(turns.linkSession("c-1", 7L)).thenReturn(2);
+        org.mockito.Mockito.doThrow(new IllegalStateException("listener down")).when(events).publishEvent(any(Object.class));
+
+        assertThat(writer.append(draft(7L, "привет"))).hasValue(41L);
+        assertThat(writer.linkSession("c-1", 7L)).isEqualTo(2);
+    }
+
+    @Test
     void phonesAreMaskedBeforeWriting() {
         when(turns.append(any())).thenReturn(41L);
 

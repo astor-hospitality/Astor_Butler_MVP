@@ -1437,6 +1437,25 @@ class MessageGatewayServiceTest {
     }
 
     @Test
+    void ledgerFailureDoesNotChangeTheReply() {
+        museon_online.astor_butler.domain.journey.talk.ButlerTalk talk = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.talk.ButlerTalk.class);
+        when(talk.answer(any(IncomingMessage.class), any())).thenReturn(java.util.Optional.of("Бесплатная парковка во дворе."));
+        service.setButlerTalk(talk);
+        museon_online.astor_butler.domain.ledger.LedgerWriter ledger = org.mockito.Mockito.mock(museon_online.astor_butler.domain.ledger.LedgerWriter.class);
+        when(ledger.enabled()).thenReturn(true);
+        org.mockito.Mockito.doThrow(new IllegalStateException("ledger down")).when(ledger).message(any(), any(), any(), any());
+        service.setLedgerWriter(ledger);
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 1, 100, "где парковка?", null,
+                "Мария", null, "maria", "ru", false, "204");
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.text()).isEqualTo("Бесплатная парковка во дворе.");
+        verify(userEventProducer).publishIncomingMessage(eq(incoming), any(), eq(outgoing));
+        verify(fsmTimelineWriter).append(any(FsmTimelineEvent.class));
+    }
+
+    @Test
     void ledgerSkipsGroupChats() {
         museon_online.astor_butler.domain.ledger.LedgerWriter ledger = org.mockito.Mockito.mock(museon_online.astor_butler.domain.ledger.LedgerWriter.class);
         when(ledger.enabled()).thenReturn(true);

@@ -55,15 +55,16 @@ public class LedgerWriter {
         if (!properties.isEnabled() || draft == null) {
             return OptionalLong.empty();
         }
+        long id;
         try {
-            long id = turns.append(draft.withText(draft.hidden() ? null : PhoneMask.mask(draft.text())));
-            events.publishEvent(new VisitTurnAppended(draft.visitId()));
-            return OptionalLong.of(id);
+            id = turns.append(draft.withText(draft.hidden() ? null : PhoneMask.mask(draft.text())));
         } catch (RuntimeException e) {
             log.warn("Visit turn not written: visit={}, side={}, kind={}, reason={}", draft.visitId(), draft.side(), draft.kind(),
                     e.getClass().getSimpleName());
             return OptionalLong.empty();
         }
+        announce(draft.visitId());
+        return OptionalLong.of(id);
     }
 
     /** A chat message, written into the visit whose window holds now (or with no visit when there is none). */
@@ -79,15 +80,25 @@ public class LedgerWriter {
         if (!properties.isEnabled() || sessionId == null || sessionId.isBlank()) {
             return 0;
         }
+        int linked;
         try {
-            int linked = turns.linkSession(sessionId, visitId);
-            if (linked > 0) {
-                events.publishEvent(new VisitTurnAppended(visitId));
-            }
-            return linked;
+            linked = turns.linkSession(sessionId, visitId);
         } catch (RuntimeException e) {
             log.warn("Visit session not linked: visit={}, reason={}", visitId, e.getClass().getSimpleName());
             return 0;
+        }
+        if (linked > 0) {
+            announce(visitId);
+        }
+        return linked;
+    }
+
+    /** The row is already committed: a failing listener is logged and never turns the write into a failure. */
+    private void announce(Long visitId) {
+        try {
+            events.publishEvent(new VisitTurnAppended(visitId));
+        } catch (RuntimeException e) {
+            log.warn("Visit turn listener failed: visit={}, reason={}", visitId, e.getClass().getSimpleName());
         }
     }
 
