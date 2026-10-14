@@ -123,6 +123,8 @@ class InternalApiGuardFilterTest {
                 "/api/fsm/telegram/1/state",
                 "/api/admin/anything",
                 "/api/internal/anything",
+                "/api/internal/call-log/export",
+                "/api/internal/call-log/summary",
                 "/api/concierge/requests/telegram/1",
                 "/api/ledger/v1/turns",
                 "/api/capabilities/v1/tools",

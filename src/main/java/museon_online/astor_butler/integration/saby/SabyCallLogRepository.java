@@ -19,11 +19,22 @@ public class SabyCallLogRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /** The unified call log (docs/operations/CALL_LOG.md): optional so the constructor and its tests stay as they are. */
+    private museon_online.astor_butler.domain.calllog.CallLogWriter callLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCallLog(museon_online.astor_butler.domain.calllog.CallLogWriter callLog) {
+        this.callLog = callLog;
+    }
+
     /** How one operation has been doing: how often it was called, how often it failed and how long it took. */
     public record OperationSummary(String httpMethod, String operation, long calls, long failures, long averageMs, long maxMs) {
     }
 
     public void record(String httpMethod, String operation, int httpStatus, String outcome, long durationMs) {
+        if (callLog != null && callLog.enabled()) {
+            callLog.tool("saby:" + operation, outcome, httpStatus >= 400 ? String.valueOf(httpStatus) : null, durationMs);
+        }
         jdbcTemplate.update("""
                 INSERT INTO saby_call_log (http_method, operation, http_status, outcome, duration_ms, occurred_at)
                 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
