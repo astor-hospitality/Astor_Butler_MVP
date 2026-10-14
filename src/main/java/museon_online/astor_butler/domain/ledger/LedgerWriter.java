@@ -69,10 +69,15 @@ public class LedgerWriter {
 
     /** A chat message, written into the visit whose window holds now (or with no visit when there is none). */
     public void message(Long chatId, TurnSide side, TurnChannel channel, String text) {
+        message(chatId, side, channel, text, null);
+    }
+
+    /** The same with the speaker's goal (the Butler's agent speaks for the venue: {@code VENUE}). */
+    public void message(Long chatId, TurnSide side, TurnChannel channel, String text, String goal) {
         if (!properties.isEnabled()) {
             return;
         }
-        write(new VisitTurnDraft(activeVisit(chatId), null, side, channel, TurnKind.MESSAGE, text, null, null));
+        write(new VisitTurnDraft(activeVisit(chatId), null, side, channel, TurnKind.MESSAGE, text, null, goal));
     }
 
     /** Moves the Concierge session's earlier turns into the visit; 0 when off or on failure. */

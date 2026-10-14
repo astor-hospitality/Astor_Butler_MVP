@@ -25,6 +25,8 @@ import java.util.List;
 @Slf4j
 public class MessageGatewayService {
 
+    static final String BUTLER_AGENT_ACTION = "BUTLER_AGENT";
+
     private final FSMStorage fsmStorage;
     private final ModelGateway modelGateway;
     private final TelegramIntakeService telegramIntakeService;
@@ -78,6 +80,14 @@ public class MessageGatewayService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.ledger.LedgerWriter ledgerWriter;
 
+    /** The Butler's agent (negotiation plan, task 8): optional, answers only allowlisted chats while on. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private museon_online.astor_butler.agent.ButlerAgent butlerAgent;
+
+    public void setButlerAgent(museon_online.astor_butler.agent.ButlerAgent butlerAgent) {
+        this.butlerAgent = butlerAgent;
+    }
+
     public void setLedgerWriter(museon_online.astor_butler.domain.ledger.LedgerWriter ledgerWriter) {
         this.ledgerWriter = ledgerWriter;
     }
@@ -98,7 +108,12 @@ public class MessageGatewayService {
         String text = normalize(incoming.text());
         BotState currentState = resolveState(incoming.chatId());
         telegramIntakeService.capture(incoming);
-        ledger(incoming, museon_online.astor_butler.domain.ledger.TurnSide.GUEST, text);
+        ledger(incoming, museon_online.astor_butler.domain.ledger.TurnSide.GUEST, text, null);
+        java.util.Optional<String> agentReply = agentReply(incoming, text);
+        if (agentReply.isPresent()) {
+            return finish(incoming, currentState, OutgoingMessage.of(incoming, agentReply.get(), currentState.name(), false, false, false, false,
+                    museon_online.astor_butler.service.message.AdminAlert.none(), java.util.List.of(BUTLER_AGENT_ACTION)));
+        }
         if (optOutCommand != null) {
             java.util.Optional<String> optedOut = optOutCommand.tryHandle(incoming.chatId(), incoming.text());
             if (optedOut.isPresent()) {
@@ -409,20 +424,44 @@ public class MessageGatewayService {
         boolean kafkaOutboxQueued = userEventProducer.publishIncomingMessage(incoming, previousState, outgoing);
         fsmTimelineWriter.append(FsmTimelineEvent.from(incoming, previousState, outgoing));
         telegramSystemNotifier.sendTransition(incoming, previousState, outgoing, kafkaOutboxQueued);
-        ledger(incoming, museon_online.astor_butler.domain.ledger.TurnSide.BUTLER, outgoing.text());
+        ledger(incoming, museon_online.astor_butler.domain.ledger.TurnSide.BUTLER, outgoing.text(),
+                outgoing.actions() != null && outgoing.actions().contains(BUTLER_AGENT_ACTION) ? "VENUE" : null);
         return outgoing;
     }
 
+    /**
+     * The agent's answer for an allowlisted guest chat; empty for others, for commands like /start (their own
+     * handling runs) and when the agent falls back — then the message goes on down the usual path untouched.
+     */
+    private java.util.Optional<String> agentReply(IncomingMessage incoming, String text) {
+        if (butlerAgent == null || text.isEmpty() || text.startsWith("/") || isTelegramGroupChat(incoming.chatId())
+                || isServiceChat(incoming.chatId()) || !butlerAgent.answers(incoming.chatId())) {
+            return java.util.Optional.empty();
+        }
+        try {
+            java.util.Optional<String> reply = butlerAgent.reply(incoming, null);
+            return reply == null ? java.util.Optional.empty() : reply.filter(answer -> !answer.isBlank());
+        } catch (RuntimeException e) {
+            log.warn("Butler agent skipped: reason={}", e.getClass().getSimpleName());
+            return java.util.Optional.empty();
+        }
+    }
+
     /** Writes a guest's own chat line into the visit ledger; group and service chats and blank lines stay out. */
-    private void ledger(IncomingMessage incoming, museon_online.astor_butler.domain.ledger.TurnSide side, String text) {
+    private void ledger(IncomingMessage incoming, museon_online.astor_butler.domain.ledger.TurnSide side, String text, String goal) {
         if (ledgerWriter == null || !ledgerWriter.enabled() || text == null || text.isBlank()
                 || isTelegramGroupChat(incoming.chatId()) || isServiceChat(incoming.chatId())) {
             return;
         }
         try {
-            ledgerWriter.message(incoming.chatId(), side, incoming.channel() == MessageChannel.TELEGRAM
+            museon_online.astor_butler.domain.ledger.TurnChannel channel = incoming.channel() == MessageChannel.TELEGRAM
                     ? museon_online.astor_butler.domain.ledger.TurnChannel.BUTLER_TG
-                    : museon_online.astor_butler.domain.ledger.TurnChannel.INTERNAL, text);
+                    : museon_online.astor_butler.domain.ledger.TurnChannel.INTERNAL;
+            if (goal == null) {
+                ledgerWriter.message(incoming.chatId(), side, channel, text);
+            } else {
+                ledgerWriter.message(incoming.chatId(), side, channel, text, goal);
+            }
         } catch (RuntimeException e) {
             log.warn("Visit ledger skipped: reason={}", e.getClass().getSimpleName());
         }

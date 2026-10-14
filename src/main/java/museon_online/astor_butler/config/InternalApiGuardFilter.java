@@ -74,6 +74,7 @@ public final class InternalApiGuardFilter extends OncePerRequestFilter {
             "/api/concierge/**",  // guest service requests listed by chat id
             "/api/ledger/**",     // visit ledger written by the Concierge
             "/api/capabilities/**", // tools the Concierge calls (Capability API)
+            "/api/negotiation/**",  // the Concierge negotiates with the Butler's agent
             "/actuator/**"        // env, loggers, threaddump (health and prometheus are excepted below)
     );
 

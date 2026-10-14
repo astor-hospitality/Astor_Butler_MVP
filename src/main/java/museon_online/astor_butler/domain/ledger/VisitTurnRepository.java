@@ -17,6 +17,7 @@ import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * The visit ledger: every turn of a visit in time order. Every call runs in its own transaction, like the guest
@@ -76,6 +77,16 @@ public class VisitTurnRepository {
         Integer count = jdbc.queryForObject("SELECT count(*) FROM visit_turns WHERE visit_id = ? AND session_id = ?",
                 Integer.class, visitId, sessionId);
         return count != null && count > 0;
+    }
+
+    /** The visit the Concierge session was linked to (the latest one); empty while it has none. */
+    public Optional<Long> visitOfSession(String sessionId) {
+        if (sessionId == null) {
+            return Optional.empty();
+        }
+        List<Long> found = jdbc.queryForList("SELECT visit_id FROM visit_turns WHERE session_id = ? AND visit_id IS NOT NULL "
+                + "ORDER BY id DESC LIMIT 1", Long.class, sessionId);
+        return found.stream().findFirst();
     }
 
     public List<VisitTurn> ofVisit(long visitId) {

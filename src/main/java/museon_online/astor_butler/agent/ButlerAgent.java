@@ -1,0 +1,411 @@
+package museon_online.astor_butler.agent;
+
+import museon_online.astor_butler.capability.CapabilityContext;
+import museon_online.astor_butler.capability.CapabilityProperties;
+import museon_online.astor_butler.capability.CapabilityRegistry;
+import museon_online.astor_butler.capability.CapabilityResult;
+import museon_online.astor_butler.domain.journey.GuestVisit;
+import museon_online.astor_butler.domain.journey.GuestVisitRepository;
+import museon_online.astor_butler.domain.journey.talk.VenueFactsCatalog;
+import museon_online.astor_butler.domain.ledger.LedgerWriter;
+import museon_online.astor_butler.domain.ledger.PhoneMask;
+import museon_online.astor_butler.domain.ledger.TurnChannel;
+import museon_online.astor_butler.domain.ledger.TurnKind;
+import museon_online.astor_butler.domain.ledger.TurnSide;
+import museon_online.astor_butler.domain.ledger.VisitTurnDraft;
+import museon_online.astor_butler.domain.ledger.VisitTurnRepository;
+import museon_online.astor_butler.domain.summary.AgentLessonRepository;
+import museon_online.astor_butler.domain.summary.GuestMemory;
+import museon_online.astor_butler.model.ModelChatMessage;
+import museon_online.astor_butler.service.message.IncomingMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Supplier;
+
+/**
+ * The restaurant's AI agent. It negotiates with the Concierge for the venue ({@link #negotiate}) and, for allowlisted
+ * chats, answers guests in the Butler's own bot ({@link #reply}). Each turn: the system prompt with the venue's goals,
+ * accepted lessons and what is known of the guest, the conversation so far, then {@link AgentLoop} with the
+ * Capability tools. Any failure is a fallback: the Concierge gets {@code fallback=true}, the bot keeps its scenarios.
+ *
+ * <p>On the negotiation path the tools run on behalf of the Concierge session (caller {@code CONCIERGE}): its booking
+ * links the session to the new visit, and only that session reaches it later. The Butler writes the Concierge's
+ * message and its own reply to the ledger; the guest's own words are the Concierge's to record.
+ */
+@Component
+public class ButlerAgent {
+
+    static final String GOAL_VENUE = "VENUE";
+    static final String GOAL_GUEST = "GUEST";
+    private static final int MAX_SAID = 1_500;
+    private static final int MAX_KEY_SCOPE = 60;
+    private static final Logger log = LoggerFactory.getLogger(ButlerAgent.class);
+
+    private final AgentLoop loop;
+    private final CapabilityRegistry registry;
+    private final AgentProperties properties;
+    private final AgentLessonRepository lessons;
+    private final GuestMemory memory;
+    private final VenueFactsCatalog venue;
+    private final CapabilityProperties capabilities;
+    private final LedgerWriter ledger;
+    private final VisitTurnRepository turns;
+    private final GuestVisitRepository visits;
+    private final AgentHistory history;
+
+    public ButlerAgent(AgentLoop loop, CapabilityRegistry registry, AgentProperties properties, AgentLessonRepository lessons,
+                       GuestMemory memory, VenueFactsCatalog venue, CapabilityProperties capabilities, LedgerWriter ledger,
+                       VisitTurnRepository turns, GuestVisitRepository visits) {
+        this.loop = loop;
+        this.registry = registry;
+        this.properties = properties;
+        this.lessons = lessons;
+        this.memory = memory;
+        this.venue = venue;
+        this.capabilities = capabilities;
+        this.ledger = ledger;
+        this.turns = turns;
+        this.visits = visits;
+        this.history = new AgentHistory(properties);
+    }
+
+    /** Whether the agent takes this chat of the Butler's own bot (flag on and the chat in the allowlist). */
+    public boolean answers(Long chatId) {
+        return properties.allows(chatId);
+    }
+
+    public NegotiationReply negotiate(NegotiationTurn turn) {
+        String sessionId = turn == null || turn.sessionId() == null ? null : turn.sessionId().trim();
+        if (sessionId == null || sessionId.isEmpty()) {
+            return new NegotiationReply(null, null, List.of(), turn == null ? null : turn.visitId(), true);
+        }
+        String key = "s:" + sessionId;
+        Long visitId = turn.visitId() != null ? turn.visitId() : sessionVisit(key, sessionId);
+        if (!properties.isEnabled()) {
+            return new NegotiationReply(null, null, List.of(), visitId, true);
+        }
+        history.rememberVisit(key, visitId);
+        write(new VisitTurnDraft(visitId, sessionId, TurnSide.CONCIERGE, TurnChannel.CONCIERGE_TG, TurnKind.MESSAGE,
+                blankToNull(turn.conciergeMessage()), null, GOAL_GUEST), turn.conciergeMessage() != null && !turn.conciergeMessage().isBlank());
+
+        String said = negotiationMessage(turn);
+        CapabilityContext ctx = new CapabilityContext(CapabilityContext.CONCIERGE, null, sessionId, visitId,
+                turnKey(sessionId, history.nextTurn(key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()));
+        AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null);
+
+        Long newVisit = visitOf(outcome);
+        if (newVisit != null && !newVisit.equals(visitId)) {
+            visitId = newVisit;
+            history.rememberVisit(key, visitId);
+            safely(() -> ledger.linkSession(sessionId, newVisit));
+        }
+        List<Map<String, Object>> facts = facts(outcome);
+        if (outcome.fallback()) {
+            write(fallbackTurn(visitId, sessionId, TurnChannel.CONCIERGE_TG, outcome), true);
+            return new NegotiationReply(null, null, facts, visitId, true);
+        }
+        Map<String, Object> offer = offer(outcome);
+        history.add(key, said, outcome.text(), digest(outcome));
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (offer != null) {
+            payload.put("offerKind", offer.get("kind"));
+        }
+        write(new VisitTurnDraft(visitId, sessionId, TurnSide.BUTLER, TurnChannel.CONCIERGE_TG,
+                offer == null ? TurnKind.MESSAGE : TurnKind.OFFER,
+                outcome.text(), payload.isEmpty() ? null : payload, GOAL_VENUE), true);
+        return new NegotiationReply(outcome.text(), offer, facts, visitId, false);
+    }
+
+    /**
+     * The agent's answer in the Butler's own bot; empty when the chat is not allowlisted or on fallback (the
+     * scenarios answer then). The reply itself is written to the ledger by the message gateway.
+     */
+    public Optional<String> reply(IncomingMessage incoming, Long visitId) {
+        if (incoming == null || !answers(incoming.chatId())) {
+            return Optional.empty();
+        }
+        Long chatId = incoming.chatId();
+        String key = "c:" + chatId;
+        Long visit = visitId != null ? visitId : activeVisit(chatId);
+        String said = clip(PhoneMask.mask(incoming.text() == null ? "" : incoming.text().trim()));
+        if (said.isEmpty()) {
+            return Optional.empty();
+        }
+        CapabilityContext ctx = new CapabilityContext(CapabilityContext.BUTLER_AGENT, chatId, null, visit,
+                turnKey("tg:" + chatId, history.nextTurn(key)), blankToNull(incoming.firstName()), blankToNull(incoming.contactPhone()));
+        AgentOutcome outcome = run(key, said, ctx, incoming.contactPhone(), chatId);
+        if (outcome.fallback()) {
+            write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), true);
+            return Optional.empty();
+        }
+        history.add(key, said, outcome.text(), digest(outcome));
+        return Optional.of(outcome.text());
+    }
+
+    private AgentOutcome run(String key, String said, CapabilityContext ctx, String phone, Long chatId) {
+        try {
+            List<ModelChatMessage> messages = new ArrayList<>();
+            messages.add(ModelChatMessage.system(ButlerPrompt.system(
+                    quietly(() -> lessons.accepted("BUTLER")),
+                    quietly(() -> memory.of(blankToNull(phone), chatId)),
+                    venueFacts())));
+            messages.addAll(history.messages(key));
+            messages.add(ModelChatMessage.user(said));
+            AgentOutcome outcome = loop.run(messages, registry.asModelTools(), ctx);
+            return outcome == null ? AgentOutcome.fallback(List.of(), 0) : outcome;
+        } catch (RuntimeException e) {
+            log.warn("Butler agent turn failed: reason={}", e.getClass().getSimpleName());
+            return AgentOutcome.fallback(List.of(), 0);
+        }
+    }
+
+    /** What the venue hears this turn: the guest's position, the Concierge's words and the guest's own, phones masked. */
+    static String negotiationMessage(NegotiationTurn turn) {
+        List<String> lines = new ArrayList<>();
+        String position = position(turn.conciergePosition());
+        if (position != null) {
+            lines.add("Позиция гостя: " + position);
+        }
+        if (turn.guestName() != null && !turn.guestName().isBlank()) {
+            lines.add("Имя гостя: " + turn.guestName().trim());
+        }
+        if (turn.conciergeMessage() != null && !turn.conciergeMessage().isBlank()) {
+            lines.add("Консьерж: " + turn.conciergeMessage().trim());
+        }
+        if (turn.guestText() != null && !turn.guestText().isBlank()) {
+            lines.add("Гость: " + turn.guestText().trim());
+        }
+        return clip(PhoneMask.mask(String.join("\n", lines)));
+    }
+
+    /** «2026-10-15, 13:00, 2 гостя, бюджет 1500, без лука»; null when nothing is known. */
+    static String position(Map<String, Object> position) {
+        if (position == null || position.isEmpty()) {
+            return null;
+        }
+        List<String> parts = new ArrayList<>();
+        text(position.get("date")).ifPresent(parts::add);
+        text(position.get("time")).ifPresent(parts::add);
+        text(position.get("partySize")).ifPresent(size -> parts.add(size + " " + guests(size)));
+        text(position.get("budget")).ifPresent(budget -> parts.add("бюджет " + budget));
+        Object constraints = position.get("constraints");
+        if (constraints instanceof Collection<?> list) {
+            list.forEach(item -> text(item).ifPresent(parts::add));
+        } else {
+            text(constraints).ifPresent(parts::add);
+        }
+        return parts.isEmpty() ? null : String.join(", ", parts);
+    }
+
+    private static String guests(String size) {
+        try {
+            long n = Long.parseLong(size.trim());
+            long tens = n % 100;
+            long last = n % 10;
+            if (tens >= 11 && tens <= 14) {
+                return "гостей";
+            }
+            return last == 1 ? "гость" : last >= 2 && last <= 4 ? "гостя" : "гостей";
+        } catch (NumberFormatException e) {
+            return "гостей";
+        }
+    }
+
+    private static Optional<String> text(Object value) {
+        if (value == null) {
+            return Optional.empty();
+        }
+        String text = value instanceof Double number && number == Math.rint(number) ? String.valueOf(number.longValue())
+                : value.toString().trim();
+        return text.isEmpty() ? Optional.empty() : Optional.of(text);
+    }
+
+    /** The visit a booking of this turn opened: from the tool's facts, else by its reservation. */
+    private Long visitOf(AgentOutcome outcome) {
+        Long found = null;
+        for (AgentOutcome.ToolUse use : outcome.uses()) {
+            if (!"reservation_create".equals(use.tool()) || use.result() == null || !use.result().ok()) {
+                continue;
+            }
+            Map<String, Object> facts = use.result().facts();
+            Long visitId = number(facts.get("visitId"));
+            if (visitId == null) {
+                Long reservationId = number(facts.get("reservationId"));
+                if (reservationId != null) {
+                    visitId = quietlyOptional(() -> visits.findByReservation(reservationId)).map(GuestVisit::id).orElse(null);
+                }
+            }
+            if (visitId != null) {
+                found = visitId;
+            }
+        }
+        return found;
+    }
+
+    /** The facts of the turn's last successful availability check, booking or lunch order, with its kind. */
+    static Map<String, Object> offer(AgentOutcome outcome) {
+        for (int i = outcome.uses().size() - 1; i >= 0; i--) {
+            AgentOutcome.ToolUse use = outcome.uses().get(i);
+            String kind = switch (use.tool() == null ? "" : use.tool()) {
+                case "table_availability" -> "ALTERNATIVE_TIME";
+                case "reservation_create" -> "RESERVATION";
+                case "lunch_order_place" -> "LUNCH_ORDER";
+                default -> null;
+            };
+            if (kind != null && use.result() != null && use.result().ok()) {
+                Map<String, Object> offer = new LinkedHashMap<>(use.result().facts());
+                offer.put("kind", kind);
+                return offer;
+            }
+        }
+        return null;
+    }
+
+    private static List<Map<String, Object>> facts(AgentOutcome outcome) {
+        List<Map<String, Object>> facts = new ArrayList<>();
+        for (AgentOutcome.ToolUse use : outcome.uses()) {
+            CapabilityResult result = use.result();
+            Map<String, Object> fact = new LinkedHashMap<>();
+            fact.put("tool", use.tool());
+            fact.put("ok", result != null && result.ok());
+            fact.put("error", result == null ? CapabilityResult.UNAVAILABLE : result.error());
+            fact.put("facts", result == null ? Map.of() : result.facts());
+            facts.add(fact);
+        }
+        return facts;
+    }
+
+    /** A one-line memory of the turn for the «Ранее» line: the tools' scalar facts, or the start of what was said. */
+    private static String digest(AgentOutcome outcome) {
+        List<String> parts = new ArrayList<>();
+        for (AgentOutcome.ToolUse use : outcome.uses()) {
+            if (use.result() == null) {
+                continue;
+            }
+            List<String> values = new ArrayList<>();
+            use.result().facts().forEach((name, value) -> {
+                if (values.size() < 4 && (value instanceof String || value instanceof Number || value instanceof Boolean)) {
+                    values.add(name + "=" + PhoneMask.mask(value.toString()));
+                }
+            });
+            parts.add(use.tool() + (use.result().ok() ? "" : " " + use.result().error())
+                    + (values.isEmpty() ? "" : " " + String.join(", ", values)));
+        }
+        return parts.isEmpty() ? null : AgentHistory.shorten(String.join("; ", parts));
+    }
+
+    private Long sessionVisit(String key, String sessionId) {
+        Long remembered = history.visit(key);
+        if (remembered != null) {
+            return remembered;
+        }
+        return quietlyOptional(() -> turns.visitOfSession(sessionId)).orElse(null);
+    }
+
+    private Long activeVisit(long chatId) {
+        return quietlyOptional(() -> visits.activeByChat(chatId, Instant.now())).map(GuestVisit::id).orElse(null);
+    }
+
+    private String venueFacts() {
+        List<String> lines = new ArrayList<>();
+        lines.add(capabilities.getVenueName() + ", " + capabilities.getVenueAddress() + ".");
+        for (VenueFactsCatalog.Topic topic : List.of(VenueFactsCatalog.Topic.PARKING, VenueFactsCatalog.Topic.KIDS,
+                VenueFactsCatalog.Topic.WINE)) {
+            venue.fact(topic).ifPresent(lines::add);
+        }
+        return String.join("\n", lines);
+    }
+
+    private static VisitTurnDraft fallbackTurn(Long visitId, String sessionId, TurnChannel channel, AgentOutcome outcome) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("reason", "agent_fallback");
+        payload.put("toolCalls", outcome.toolCalls());
+        return new VisitTurnDraft(visitId, sessionId, TurnSide.BUTLER, channel, TurnKind.FALLBACK, null, payload, GOAL_VENUE);
+    }
+
+    private void write(VisitTurnDraft draft, boolean wanted) {
+        if (wanted) {
+            safely(() -> ledger.write(draft));
+        }
+    }
+
+    private static void safely(Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException e) {
+            log.warn("Butler agent ledger write skipped: reason={}", e.getClass().getSimpleName());
+        }
+    }
+
+    private static List<String> quietly(Supplier<List<String>> source) {
+        try {
+            List<String> lines = source.get();
+            return lines == null ? List.of() : lines;
+        } catch (RuntimeException e) {
+            log.warn("Butler agent context skipped: reason={}", e.getClass().getSimpleName());
+            return List.of();
+        }
+    }
+
+    private static <T> Optional<T> quietlyOptional(Supplier<Optional<T>> source) {
+        try {
+            Optional<T> value = source.get();
+            return value == null ? Optional.empty() : value;
+        } catch (RuntimeException e) {
+            log.warn("Butler agent lookup skipped: reason={}", e.getClass().getSimpleName());
+            return Optional.empty();
+        }
+    }
+
+    private static Long number(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            try {
+                return Long.parseLong(text.trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * {@code <scope>:<turn>}; the loop adds {@code :<call>}. A scope too long for the idempotency store (80 characters
+     * with the suffixes) is replaced by its SHA-256 prefix.
+     */
+    static String turnKey(String scope, int turn) {
+        String prefix = scope;
+        if (scope.length() > MAX_KEY_SCOPE) {
+            try {
+                byte[] hash = MessageDigest.getInstance("SHA-256").digest(scope.getBytes(StandardCharsets.UTF_8));
+                prefix = "h" + HexFormat.of().formatHex(hash).substring(0, 40);
+            } catch (NoSuchAlgorithmException e) {
+                prefix = scope.substring(0, MAX_KEY_SCOPE);
+            }
+        }
+        return prefix + ":" + turn;
+    }
+
+    private static String clip(String text) {
+        return text.length() <= MAX_SAID ? text : text.substring(0, MAX_SAID);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+}

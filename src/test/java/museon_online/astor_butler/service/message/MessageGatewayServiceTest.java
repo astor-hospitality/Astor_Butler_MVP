@@ -1467,4 +1467,80 @@ class MessageGatewayServiceTest {
 
         org.mockito.Mockito.verify(ledger, never()).message(any(), any(), any(), any());
     }
+
+    private museon_online.astor_butler.domain.journey.talk.ButlerTalk talkAnswering(String text) {
+        museon_online.astor_butler.domain.journey.talk.ButlerTalk talk = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.talk.ButlerTalk.class);
+        lenient().when(talk.answer(any(IncomingMessage.class), any())).thenReturn(java.util.Optional.of(text));
+        service.setButlerTalk(talk);
+        return talk;
+    }
+
+    private museon_online.astor_butler.agent.ButlerAgent agentFor(long chatId, java.util.Optional<String> reply) {
+        museon_online.astor_butler.agent.ButlerAgent agent = org.mockito.Mockito.mock(museon_online.astor_butler.agent.ButlerAgent.class);
+        lenient().when(agent.answers(any())).thenAnswer(invocation -> Long.valueOf(chatId).equals(invocation.getArgument(0)));
+        lenient().when(agent.reply(any(IncomingMessage.class), any())).thenReturn(reply);
+        service.setButlerAgent(agent);
+        return agent;
+    }
+
+    @Test
+    void allowlistedChatIsAnsweredByTheAgent() {
+        museon_online.astor_butler.domain.journey.talk.ButlerTalk talk = talkAnswering("Бесплатная парковка во дворе.");
+        museon_online.astor_butler.agent.ButlerAgent agent = agentFor(1773317437L, java.util.Optional.of("Есть стол у окна в 13:00."));
+        museon_online.astor_butler.domain.ledger.LedgerWriter ledger = org.mockito.Mockito.mock(museon_online.astor_butler.domain.ledger.LedgerWriter.class);
+        when(ledger.enabled()).thenReturn(true);
+        service.setLedgerWriter(ledger);
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 1, 100, "стол на двоих в 13", null,
+                "Мария", null, "maria", "ru", false, "301");
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.text()).isEqualTo("Есть стол у окна в 13:00.");
+        assertThat(outgoing.actions()).containsExactly("BUTLER_AGENT");
+        verify(agent).reply(incoming, null);
+        verify(talk, never()).answer(any(IncomingMessage.class), any());
+        verify(userEventProducer).publishIncomingMessage(eq(incoming), any(), eq(outgoing));
+        verify(fsmTimelineWriter).append(any(FsmTimelineEvent.class));
+        verify(ledger).message(1773317437L, museon_online.astor_butler.domain.ledger.TurnSide.BUTLER,
+                museon_online.astor_butler.domain.ledger.TurnChannel.BUTLER_TG, "Есть стол у окна в 13:00.", "VENUE");
+    }
+
+    @Test
+    void otherChatsKeepTheScenarios() {
+        talkAnswering("Бесплатная парковка во дворе.");
+        museon_online.astor_butler.agent.ButlerAgent agent = agentFor(501L, java.util.Optional.of("агент"));
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 1, 100, "где парковка?", null,
+                "Мария", null, "maria", "ru", false, "302");
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.text()).isEqualTo("Бесплатная парковка во дворе.");
+        verify(agent, never()).reply(any(IncomingMessage.class), any());
+    }
+
+    @Test
+    void agentFallbackGoesToTheScenarios() {
+        talkAnswering("Бесплатная парковка во дворе.");
+        museon_online.astor_butler.agent.ButlerAgent agent = agentFor(1773317437L, java.util.Optional.empty());
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 1, 100, "где парковка?", null,
+                "Мария", null, "maria", "ru", false, "303");
+
+        OutgoingMessage outgoing = service.handle(incoming);
+
+        assertThat(outgoing.text()).isEqualTo("Бесплатная парковка во дворе.");
+        assertThat(outgoing.actions()).containsExactly("BUTLER_TALK");
+        verify(agent).reply(incoming, null);
+    }
+
+    @Test
+    void commandsAreNotTakenByTheAgent() {
+        talkAnswering("Бесплатная парковка во дворе.");
+        museon_online.astor_butler.agent.ButlerAgent agent = agentFor(1773317437L, java.util.Optional.of("агент"));
+        IncomingMessage incoming = IncomingMessage.telegram(1773317437L, 1773317437L, 1, 100, "/start", null,
+                "Мария", null, "maria", "ru", false, "304");
+
+        service.handle(incoming);
+
+        verify(agent, never()).reply(any(IncomingMessage.class), any());
+    }
 }

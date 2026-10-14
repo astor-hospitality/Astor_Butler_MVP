@@ -52,9 +52,15 @@ astor:
       timeout-ms: ${GIGACHAT_TIMEOUT_MS:15000}
       max-tokens: ${GIGACHAT_MAX_TOKENS:256}
       temperature: ${GIGACHAT_TEMPERATURE:0.1}
+  # The Butler's agent (negotiation plan, task 8): POST /api/negotiation/v1/turn for the Concierge and, in the
+  # Butler's own bot, chats from ASTOR_AGENT_ALLOWLIST (comma-separated chat ids; empty — nobody). Off by default.
   agent:
+    enabled: ${ASTOR_AGENT_ENABLED:false}
+    allowlist: ${ASTOR_AGENT_ALLOWLIST:}
     # Model name for agent chats with function calling (replaces the configured GigaChat model).
     model: ${ASTOR_AGENT_MODEL:GigaChat-3-Pro}
+    # One guest turn (up to 5 tool calls, each model call at most 20 s) ends as a fallback after this long.
+    turn-timeout-ms: ${ASTOR_AGENT_TURN_TIMEOUT_MS:60000}
   redis:
     fsm-ttl-seconds: ${FSM_REDIS_TTL_SECONDS:259200}
     idempotency-ttl-seconds: ${IDEMPOTENCY_REDIS_TTL_SECONDS:86400}
