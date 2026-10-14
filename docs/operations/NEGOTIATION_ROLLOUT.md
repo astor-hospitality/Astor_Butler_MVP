@@ -1,0 +1,148 @@
+# Консьерж ⇄ Батлер: включение, проверка, откат
+
+Спецификация: [2026-10-14-astor-negotiation-design.md](../superpowers/specs/2026-10-14-astor-negotiation-design.md) §7.
+Все флаги по умолчанию `false`. Включаем по одному, в обоих сервисах: следующий — только после проверки предыдущего.
+Решение о каждом флаге на проде — Михаил. Гостям вне списка тестовых чатов ничего не меняется до шага 6.
+
+## Как переключить флаг
+
+**Батлер.** На ВМ, в `/opt/astor-butler/.env.production`. Перед правкой —
+`cp .env.production .env.production.bak-negotiation-$(date +%Y%m%d-%H%M)`. Затем пересоздать только контейнер AERIS
+(как в [GUEST_JOURNEY_ROLLOUT.md](GUEST_JOURNEY_ROLLOUT.md)):
+
+```bash
+docker compose --env-file ../.env.production --env-file images.env -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.cloudru.yml --profile frontend --profile telegram up -d --no-deps --no-build aeris-astor-butler-bot
+```
+
+**Консьерж.** На ВМ, в `/opt/astor-concierge/.env` (копия: `cp .env .env.bak-negotiation-$(date +%Y%m%d-%H%M)`), затем
+`cd /opt/astor-concierge && docker compose -p astor-concierge up -d --force-recreate concierge`.
+Консьерж на ВМ выложен архивом от 11.10, а не из git: сначала выложить ветку `feat/negotiation-agent`
+(`scripts/deploy-vm.sh`, [DEPLOY_VM.md](https://github.com/astor-hospitality/Astor_Concierge/blob/main/docs/operations/DEPLOY_VM.md)),
+в его `.env` ещё нет ключей `LEDGER_*` / `AGENT_*`.
+
+SQL ниже — через `docker exec -i astor_postgres_test sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`.
+
+## Порядок
+
+| # | Батлер (`.env.production`) | Консьерж (`.env`) | Что меняется для гостя | Проверка после |
+| --- | --- | --- | --- | --- |
+| 1 | `ASTOR_LEDGER_ENABLED=true` | `LEDGER_ENABLED=true` | ничего: лента визита пишется | пробное сообщение Батлеру и Консьержу: `SELECT side, channel, kind, left(text, 40) FROM visit_turns ORDER BY id DESC LIMIT 10;` — есть `GUEST`/`BUTLER` и `GUEST`/`CONCIERGE`; телефоны в `text`/`payload` вида `+7 912 ***-**-60`; без согласия гостя у строк Консьержа `text` пуст и `payload` содержит `"hidden":true` |
+| 2 | `ASTOR_BOARD_ENABLED=true`, `ASTOR_BOARD_TOKEN`, `ASTOR_BOARD_CONCIERGE_HEALTH_URL` | — | ничего: табло astor-ai.ru/board | `curl -sS -H "X-Astor-Board-Token: $T" https://astor-ai.ru/api/board/v1/health-map` — 200 и JSON; без заголовка — 401; лампа Kafka всегда жёлтая (нет health-контрибьютора) — это не ошибка; SSE: `curl -N "https://astor-ai.ru/api/board/v1/stream?t=$T"` — события приходят сразу, а не пачкой (gzip на edge не копит поток) |
+| 3 | `ASTOR_VISIT_SUMMARY_ENABLED=true`, `GIGACHAT_MAX_TOKENS` ≥ 700 | — | ничего: саммари визита и уроки агентам ждут менеджера на табло | через ≤10 мин после закрытого визита: `SELECT visit_id, left(outcome, 60), created_at FROM visit_summaries ORDER BY created_at DESC LIMIT 5;`; `SELECT side, status, left(text, 60) FROM agent_lessons ORDER BY id DESC LIMIT 5;` — `PROPOSED`; в логах нет `Visit summary parked` и `not the expected JSON` |
+| 4 | `ASTOR_CAPABILITIES_ENABLED=true` | — | ничего: новые эндпоинты | `docker run --rm --network edge curlimages/curl -sS -H "X-Astor-Internal-Token: $I" http://astor-api-gateway:8080/api/capabilities/v1/tools` — список инструментов; без токена — 404 от шлюза; `SELECT count(*) FROM capability_calls;` растёт только при вызовах |
+| 5 | `ASTOR_CONCIERGE_WEBHOOK_ENABLED=true`, `ASTOR_WEBHOOK_SECRET` | `ASTOR_WEBHOOK_SECRET` (то же значение) | ничего, пока нет брони из чата Консьержа | тестовое событие (ниже): подписанное — `404` (бронь неизвестна, подпись принята), без подписи — `401`, без секрета у Консьержа — `503` |
+| 6 | `ASTOR_AGENT_ENABLED=true`, `ASTOR_AGENT_ALLOWLIST=<id>,<id>` | `AGENT_ENABLED=true`, `AGENT_ALLOWLIST=<id>,<id>`, `LLM_PROVIDER=gigachat` | только чаты из списка: Консьерж договаривается с Батлером, в чате два голоса (`AERIS · Батлер: …`) | тестовый чат пишет Консьержу «где пообедать у Мамина-Сибиряка» → ответ с вариантами; бронь → строка `AERIS · Батлер: …`, карточка у хостес; в ленте `TOOL_CALL`/`TOOL_RESULT` по каждому вызову; чат вне списка — прежний поток |
+
+Шаг 6 у Консьержа без `LLM_PROVIDER=gigachat` не включится (в логе `AGENT_ENABLED needs LLM_PROVIDER=gigachat`).
+Батлер должен включить шаги 1, 4 и 6 раньше Консьержа: Консьерж ходит в `/api/ledger/v1/turns`, `/api/capabilities/v1/*`
+и `/api/negotiation/v1/turn` с `X-Astor-Internal-Token` (`ASTOR_INTERNAL_API_TOKEN` в обоих `.env`, уже заведён).
+
+## Строки для `.env`
+
+Батлер, `/opt/astor-butler/.env.production`:
+
+```bash
+ASTOR_LEDGER_ENABLED=true
+ASTOR_BOARD_ENABLED=true
+ASTOR_BOARD_TOKEN=<openssl rand -hex 24; не короче 16 символов, иначе 401 на всё>
+# Имя контейнера Консьержа в сети astor-butler_default; алиас astor-concierge есть только в сети edge.
+ASTOR_BOARD_CONCIERGE_HEALTH_URL=http://astor-concierge-concierge-1:8080/readyz
+ASTOR_VISIT_SUMMARY_ENABLED=true
+# Не меньше 700: 256 по умолчанию обрезает JSON саммари; три неразобранных ответа — визит пропускается до перезапуска.
+GIGACHAT_MAX_TOKENS=900
+# ASTOR_SUMMARY_MODEL=   пусто = GIGACHAT_MODEL (GigaChat-2-Max)
+ASTOR_CAPABILITIES_ENABLED=true
+ASTOR_CONCIERGE_WEBHOOK_ENABLED=true
+ASTOR_CONCIERGE_WEBHOOK_URL=http://astor-concierge-concierge-1:8096
+ASTOR_WEBHOOK_SECRET=<openssl rand -hex 32; одинаковый в обоих сервисах>
+ASTOR_AGENT_ENABLED=true
+ASTOR_AGENT_ALLOWLIST=<chat id Михаила>,<chat id Тариэля>
+ASTOR_AGENT_MODEL=GigaChat-3-Pro
+ASTOR_AGENT_TURN_TIMEOUT_MS=60000
+```
+
+Консьерж, `/opt/astor-concierge/.env`:
+
+```bash
+LEDGER_ENABLED=true
+ASTOR_WEBHOOK_SECRET=<то же значение, что у Батлера>
+LLM_PROVIDER=gigachat
+AGENT_ENABLED=true
+AGENT_ALLOWLIST=<chat id Михаила>,<chat id Тариэля>
+AGENT_MODEL=GigaChat-3-Pro
+AGENT_TIMEOUT_MS=20000
+AGENT_TURN_TIMEOUT_MS=60000
+```
+
+`WEB_ENABLED=true` у Консьержа обязателен для вебхука: маршрут `/api/concierge/v1/events` живёт на `WEB_PORT` 8096.
+Наружу он не опубликован (edge отдаёт Консьержу только `/api/concierge/messages`), подпись HMAC — второй рубеж.
+
+## Edge и шлюз: `/api/board/*`
+
+- Шлюз: `location /api/board/` в `docker/nginx/nginx.conf.template` стоит перед общим `location /api/` (тот без
+  `X-Astor-Internal-Token` отвечает 404). Табло закрыто только `BoardTokenFilter`; `proxy_buffering off` и
+  `proxy_read_timeout 1h` — для SSE. Применяется пересозданием `api-gateway` (`up -d api-gateway`, релиз через workflow
+  делает это сам; если шаблон правили на месте — `--force-recreate`).
+- Edge: файл `/opt/edge/sites.d/astor.caddy` на ВМ должен совпадать с `infra/astor-site/astor.caddy` этой ветки — в нём
+  блок `@board path /api/board/*` с `flush_interval -1` перед общим `@backend`. Скопировать и проверить
+  ([infra/astor-site/README.md](../../infra/astor-site/README.md) §3):
+
+```bash
+sudo install -m 644 /opt/astor-site/infra/astor-site/astor.caddy /opt/edge/sites.d/astor.caddy
+docker exec vedal-proxy caddy validate --config /etc/caddy/Caddyfile
+docker exec vedal-proxy caddy reload   --config /etc/caddy/Caddyfile
+```
+
+  Без `validate` не перезагружать: общий Caddyfile обслуживает vedal-med.ru и c3ag.ru.
+- Страница `/board` — статика `astor-site` (`frontend/astor-butler/board/`): после выкладки ветки пересоздать `astor-site`.
+- Токен стрима идёт в `?t=` (EventSource не умеет заголовки). У сайта нет директивы `log`; если её добавить — вырезать
+  `t` из query. Журнал доступа Батлера на этот путь проверить: токена в нём быть не должно.
+
+## Тестовое событие вебхука (шаг 5)
+
+С ВМ, секрет читается из `.env` в переменную, на экран не выводится:
+
+```bash
+S=$(grep '^ASTOR_WEBHOOK_SECRET=' /opt/astor-butler/.env.production | cut -d= -f2-)
+B='{"type":"CONFIRMED","reservationId":0,"visitId":null,"sessionId":"probe","butlerText":"probe","facts":{}}'
+SIG=$(printf '%s' "$B" | openssl dgst -sha256 -hmac "$S" -hex | sed 's/^.* //')
+docker run --rm --network astor-butler_default curlimages/curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H 'Content-Type: application/json' -H "X-Astor-Signature: sha256=$SIG" -d "$B" \
+  http://astor-concierge-concierge-1:8096/api/concierge/v1/events
+```
+
+Ожидается `404` (подпись верна, брони 0 нет). Hex подписи — строчными буквами: Консьерж сравнивает с учётом регистра.
+Живое событие Батлер шлёт только по брони, у визита которой есть связанная сессия Консьержа; остальные брони — прежним путём.
+
+## Тестовые чаты (шаг 6)
+
+1. Chat id личного чата в Telegram = id пользователя. Ids Михаила и Тариэля, скорее всего, уже есть в
+   `TEAM_TELEGRAM_IDS` Консьержа; иначе — после их `/start` боту Батлера:
+   `SELECT DISTINCT chat_id FROM guest_visits WHERE chat_id IS NOT NULL ORDER BY 1;` и сверить с ними.
+2. Вписать оба id через запятую в `ASTOR_AGENT_ALLOWLIST` (Батлер) и `AGENT_ALLOWLIST` (Консьерж), пересоздать оба
+   контейнера. Пустой список — агент не отвечает никому, даже с `*_AGENT_ENABLED=true`.
+3. Прогон — [scripts/e2e/negotiation-run.txt](../../scripts/e2e/negotiation-run.txt), 40 реплик гостя в чате **Консьержа**
+   (не бота Батлера); строки `# хостес: …` — действия в рабочей группе между репликами.
+4. Расширять список — только после прогона без `FALLBACK` в ленте:
+   `SELECT kind, count(*) FROM visit_turns WHERE at > now() - interval '1 hour' GROUP BY kind;`.
+
+Особенности чатов из списка:
+- «не пишите мне» в чате Батлера отвечает агент, а не политика полезности (`ASTOR_USEFULNESS_POLICY_ENABLED`): отписку
+  проверять в чате вне списка или с выключенным агентом.
+- У Консьержа чат из списка не получает ответов прежнего потока на свободный текст — только агент; при ошибке модели
+  или таймауте реплики (60 с) — запасной путь и строка `FALLBACK` в ленте.
+
+## Стоимость
+
+Агенты обоих сервисов — `GigaChat-3-Pro` (`ASTOR_AGENT_MODEL` / `AGENT_MODEL`); `GigaChat-2-Max` (`GIGACHAT_MODEL`) — только
+для саммари визита, один вызов на закрытый визит. История в промпте агента ограничена ≈2k токенов, факты агент берёт
+инструментами. Оценка ≈10–40 ₽ на визит (на 2-Max было бы ≈300 ₽). Сверить с журналом вызовов после первого дня.
+
+## Откат
+
+Выключить флаг (`=false`) в обратном порядке (агент → вебхук → инструменты → саммари → табло → лента) и пересоздать
+контейнер той же командой; для мгновенного отката агента достаточно очистить `ASTOR_AGENT_ALLOWLIST` / `AGENT_ALLOWLIST`.
+Данные остаются: `visit_turns`, `visit_summaries`, `agent_lessons`, `capability_calls` при выключенных флагах никто не
+пишет и не читает, при повторном включении они продолжаются. Брони, сделанные агентом, — обычные брони: хостес видит и
+подтверждает их как раньше. Без вебхука Консьерж узнаёт статус брони прежним опросом. Edge-блок `@board` можно
+оставить: при `ASTOR_BOARD_ENABLED=false` весь `/api/board/**` отвечает 404.

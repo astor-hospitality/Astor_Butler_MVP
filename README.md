@@ -110,6 +110,17 @@ Telegram-дворецкий для HoReCa: гость ↔ персонал ↔ �
   #100 техдолг; #88–#92 карточки, FSM viewer, документы.
 - Открытый PR: #146 кнопки процента чаевых.
 
+## Как устроен Astor: Консьерж ⇄ Батлер
+
+Спецификация — [2026-10-14-astor-negotiation-design.md](docs/superpowers/specs/2026-10-14-astor-negotiation-design.md),
+включение и откат — [NEGOTIATION_ROLLOUT.md](docs/operations/NEGOTIATION_ROLLOUT.md).
+
+- **Два голоса.** Консьерж ([Astor_Concierge](https://github.com/astor-hospitality/Astor_Concierge)) — на стороне гостя, Батлер — на стороне ресторана. Агент Консьержа договаривается с агентом Батлера через `/api/negotiation/v1/turn` и инструменты Capability API v1 (`/api/capabilities/v1/*`); ответ ресторана приходит в чат Консьержа с подписью `AERIS · Батлер:`.
+- **Факт, а не текст.** Инструмент возвращает факт; бронь подтверждает только хостес или Presto. События брони Батлер отправляет Консьержу подписанным вебхуком (HMAC, `ASTOR_WEBHOOK_SECRET`).
+- **Лента визита** `visit_turns` — все реплики гостя, агентов, персонала и Saby под одним id визита; телефоны маскируются, текст Консьержа — только с согласия гостя. По закрытому визиту — саммари и уроки агентам.
+- **Табло** astor-ai.ru/board — визиты, переговоры и лампы здоровья; вход по `ASTOR_BOARD_TOKEN`.
+- **Флаги** (все `false`): `ASTOR_LEDGER_ENABLED`, `ASTOR_BOARD_ENABLED`, `ASTOR_VISIT_SUMMARY_ENABLED`, `ASTOR_CAPABILITIES_ENABLED`, `ASTOR_CONCIERGE_WEBHOOK_ENABLED`, `ASTOR_AGENT_ENABLED` + `ASTOR_AGENT_ALLOWLIST`; у Консьержа `LEDGER_ENABLED`, `AGENT_ENABLED` + `AGENT_ALLOWLIST`. Агенты — GigaChat-3-Pro, саммари — GigaChat-2-Max.
+
 ## Архитектура в 10 строках
 
 ```text
