@@ -410,14 +410,19 @@ class TableReservationNotificationServiceTest {
     }
 
     @Test
-    void aConciergeTableRequestTellsTheConciergeTheWaiterIsComing() {
+    void aConciergeTableRequestSendsNoWebhookEventSinceTheToolResultCarriesTheLine() {
         ConciergeWebhook webhook = mock(ConciergeWebhook.class);
         TableReservationNotificationService wired = wired(mock(TelegramBot.class), webhook);
         TableReservationOrder concierge = conciergeOrder();
+        // The wiring of ButlerTalkConfiguration: the capability tool's router sends the staff card through this service.
+        museon_online.astor_butler.domain.journey.talk.TableRequestRouter router = new museon_online.astor_butler.domain.journey.talk.TableRequestRouter(
+                id -> Optional.of(concierge), (table, day) -> Optional.of("Ольга"), wired::notifyStaffGuestRequest,
+                java.time.Clock.systemUTC(), "Asia/Yekaterinburg");
 
-        wired.notifyStaffGuestRequest(concierge, museon_online.astor_butler.domain.journey.talk.TableRequest.WATER, "принесите воды", "Ольга");
+        String answer = router.route(44L, museon_online.astor_butler.domain.journey.talk.TableRequest.WATER, "воду");
 
-        verify(webhook).announce(eq("STAFF_COMING"), eq(concierge), argThat(facts -> "Ольга".equals(facts.get("waiter"))));
+        assertThat(answer).isEqualTo("Передал. Ольга скоро подойдёт.");
+        org.mockito.Mockito.verifyNoInteractions(webhook);
     }
 
     @SuppressWarnings("unchecked")

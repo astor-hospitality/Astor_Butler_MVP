@@ -136,7 +136,7 @@ public class BookingMorningCheckService {
             }
             try {
                 boolean asked = viaConcierge
-                        ? conciergeWebhook.announce(museon_online.astor_butler.integration.concierge.ConciergeEvent.MORNING, order)
+                        ? conciergeWebhook.announceNow(museon_online.astor_butler.integration.concierge.ConciergeEvent.MORNING, order)
                         : notifier.ask(order, startTime(order, zone));
                 if (asked) {
                     checks.markSent(order.id(), now);

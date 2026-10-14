@@ -64,8 +64,9 @@ public class GuestBillNotifier {
     public boolean paymentLink(GuestBill bill, String url) {
         if (bill != null && bill.chatId() == null) {
             // A Concierge booking has no chat here: the total and the link go only through the Concierge (BILL_READY).
+            // Delivered on the prompter's thread, so the link is marked sent only once the Concierge took it.
             return conciergeWebhook != null && bill.tableReservationId() != null
-                    && conciergeWebhook.announce(ConciergeEvent.BILL_READY, bill.tableReservationId(), null, billFacts(bill, url));
+                    && conciergeWebhook.announceNow(ConciergeEvent.BILL_READY, bill.tableReservationId(), null, billFacts(bill, url));
         }
         if (usefulnessPolicy != null && bill != null && !usefulnessPolicy.permits(bill.tableReservationId(), bill.chatId(), museon_online.astor_butler.domain.journey.ProactiveMessage.BILL_READY)) {
             return false;
@@ -111,6 +112,16 @@ public class GuestBillNotifier {
     }
 
     public boolean reviewPrompt(GuestBill bill) {
+        if (bill != null && bill.chatId() == null) {
+            // A Concierge booking: the question goes only through the Concierge (REVIEW), answered with one digit there.
+            if (conciergeWebhook == null || bill.tableReservationId() == null) {
+                return false;
+            }
+            Map<String, Object> facts = new LinkedHashMap<>();
+            facts.put("billId", bill.id());
+            facts.put("reservationId", bill.tableReservationId());
+            return conciergeWebhook.announceNow(ConciergeEvent.REVIEW, bill.tableReservationId(), null, facts);
+        }
         String text = """
                 <b>Как прошёл обед?</b>
 

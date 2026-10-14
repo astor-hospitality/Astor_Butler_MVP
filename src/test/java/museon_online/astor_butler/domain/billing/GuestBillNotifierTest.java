@@ -33,11 +33,11 @@ class GuestBillNotifierTest {
     @Test
     void billReadyCarriesTheTotalTheLinkAndTheBill() {
         notifier.setConciergeWebhook(webhook);
-        when(webhook.announce(anyString(), anyLong(), any(), any())).thenReturn(true);
+        when(webhook.announceNow(anyString(), anyLong(), any(), any())).thenReturn(true);
 
         assertThat(notifier.paymentLink(bill(null, 245050L), "https://pay.test/9")).isTrue();
 
-        verify(webhook).announce(eq("BILL_READY"), eq(93L), isNull(), argThat(facts ->
+        verify(webhook).announceNow(eq("BILL_READY"), eq(93L), isNull(), argThat(facts ->
                 new BigDecimal("2450.50").equals(facts.get("totalRub"))
                         && "https://pay.test/9".equals(facts.get("paymentUrl"))
                         && Long.valueOf(5L).equals(facts.get("billId"))));
@@ -50,7 +50,7 @@ class GuestBillNotifierTest {
 
         notifier.paymentLink(bill(null, 245000L), "https://pay.test/9");
 
-        verify(webhook).announce(eq("BILL_READY"), eq(93L), isNull(), argThat(facts -> Long.valueOf(2450L).equals(facts.get("totalRub"))));
+        verify(webhook).announceNow(eq("BILL_READY"), eq(93L), isNull(), argThat(facts -> Long.valueOf(2450L).equals(facts.get("totalRub"))));
     }
 
     @Test
@@ -60,6 +60,27 @@ class GuestBillNotifierTest {
         notifier.paymentLink(bill(1773317437L, 245050L), "https://pay.test/9");
 
         verify(webhook, never()).announce(anyString(), anyLong(), any(), any());
+    }
+
+    @Test
+    void aConciergeBillIsAskedForItsReviewThroughTheConcierge() {
+        notifier.setConciergeWebhook(webhook);
+        when(webhook.announceNow(anyString(), anyLong(), any(), any())).thenReturn(true);
+
+        assertThat(notifier.reviewPrompt(bill(null, 245050L))).isTrue();
+
+        verify(webhook).announceNow(eq("REVIEW"), eq(93L), isNull(), argThat(facts ->
+                Long.valueOf(5L).equals(facts.get("billId")) && Long.valueOf(93L).equals(facts.get("reservationId"))));
+        verify(bot, never()).getIfAvailable();
+    }
+
+    @Test
+    void aTelegramReviewPromptDoesNotGoToTheConcierge() {
+        notifier.setConciergeWebhook(webhook);
+
+        notifier.reviewPrompt(bill(1773317437L, 245050L));
+
+        verify(webhook, never()).announceNow(anyString(), anyLong(), any(), any());
     }
 
     @Test

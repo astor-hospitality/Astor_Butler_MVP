@@ -164,6 +164,26 @@ class VisitReviewServiceTest {
         assertThat(reviews.prompt(bill)).isEmpty();
     }
 
+    @Test
+    void aConciergeBillIsAskedOnceThroughTheConciergeAndATelegramOneAsBefore() {
+        GuestBill concierge = bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", 93L, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.minus(Duration.ofHours(2))));
+        org.mockito.Mockito.when(notifier.reachesConcierge(concierge)).thenReturn(true);
+
+        assertThat(reviews.prompt(concierge)).isPresent();
+        assertThat(reviews.prompt(concierge)).isPresent();
+        verify(notifier, times(1)).reviewPrompt(concierge);
+
+        GuestBill orphan = bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", 94L, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.minus(Duration.ofHours(2))));
+        assertThat(reviews.prompt(orphan)).isEmpty();
+        verify(notifier, never()).reviewPrompt(orphan);
+
+        GuestBill telegram = bill(77L, NOW.minus(Duration.ofHours(2)));
+        assertThat(reviews.prompt(telegram)).isPresent();
+        verify(notifier).reviewPrompt(telegram);
+    }
+
     private GuestBill bill(long reservationId, Instant visitEndsAt) {
         return bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), visitEndsAt));

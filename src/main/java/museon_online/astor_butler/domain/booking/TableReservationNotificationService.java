@@ -293,15 +293,8 @@ public class TableReservationNotificationService {
                 <b>Официант:</b> %s
                 """.formatted(escape(tableName(order)), escape(request.what()), escape(blank(order.guestName(), "гость из Telegram")),
                 escape(guestText == null ? "" : guestText), escape(blank(waiterName, "не назначен")));
+        // No STAFF_COMING to the Concierge: its table requests come through the capability tool, whose result says it.
         send(hostessChatId(order), text, null, "staff-guest-request");
-        if (order.chatId() == null) {
-            Map<String, Object> facts = new LinkedHashMap<>();
-            facts.put("request", request.what());
-            if (waiterName != null && !waiterName.isBlank()) {
-                facts.put("waiter", waiterName);
-            }
-            toConcierge(ConciergeEvent.STAFF_COMING, order, facts);
-        }
     }
 
     /** The guest of a Concierge booking sat down (#151): the Concierge hears it; a Butler chat hears the seated hint instead. */

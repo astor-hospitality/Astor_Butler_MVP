@@ -8,7 +8,8 @@ import java.util.Map;
  * What the Butler tells the Concierge about a booking made in the Concierge's chat. {@code butlerText} is the Butler's own
  * short line for the guest; {@code facts} carry the values it was built from (time, table, total, link...).
  *
- * @param type CONFIRMED | REJECTED | EXPIRED | MOVED | MORNING | SEATED | BILL_READY | STAFF_COMING | CANCELLED
+ * @param type CONFIRMED | REJECTED | EXPIRED | MOVED | MORNING | SEATED | BILL_READY | STAFF_COMING | CANCELLED | REVIEW;
+ *             STAFF_COMING is part of the contract but not sent (the capability tool's result already carries the line)
  */
 public record ConciergeEvent(String type, long reservationId, Long visitId, String sessionId, String butlerText,
                              Map<String, Object> facts) {
@@ -22,6 +23,8 @@ public record ConciergeEvent(String type, long reservationId, Long visitId, Stri
     public static final String BILL_READY = "BILL_READY";
     public static final String STAFF_COMING = "STAFF_COMING";
     public static final String CANCELLED = "CANCELLED";
+    /** After the bill: one digit from 1 to 5, once per bill. */
+    public static final String REVIEW = "REVIEW";
 
     public ConciergeEvent {
         facts = facts == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(facts));
@@ -47,6 +50,7 @@ public record ConciergeEvent(String type, long reservationId, Long visitId, Stri
             case STAFF_COMING -> facts.get("waiter") == null
                     ? "Передал команде, скоро подойдут."
                     : "Передал. " + facts.get("waiter") + " скоро подойдёт.";
+            case REVIEW -> "Как вам сегодня? Оцените от 1 до 5 одной цифрой — передам команде.";
             case CANCELLED -> "Бронь на " + time + " отменена. Если захотите выбрать другое время — просто напишите.";
             default -> throw new IllegalArgumentException("Unknown Concierge event type: " + type);
         };

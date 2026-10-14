@@ -22,6 +22,7 @@ import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -29,6 +30,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -175,6 +179,84 @@ class ConciergeWebhookTest {
                 Map.of("totalRub", new BigDecimal("2450.5"), "paymentUrl", "https://pay.test/1", "billId", 9L))).isTrue();
 
         server.verify();
+    }
+
+    @Test
+    void aNetworkErrorIsRetriedAndAnyOtherFailureIsNot() {
+        server.expect(times(3), requestTo(URL)).andRespond(request -> {
+            throw new IOException("connection refused");
+        });
+
+        assertThat(webhook.deliver(event("CONFIRMED", Map.of()))).isFalse();
+        server.verify();
+        assertThat(ledgerRow().payload()).containsEntry("attempts", 3).containsEntry("status", "NETWORK");
+
+        server.reset();
+        org.mockito.Mockito.clearInvocations(ledger);
+        server.expect(once(), requestTo(URL)).andRespond(request -> {
+            throw new IllegalStateException("broken converter");
+        });
+
+        assertThat(webhook.deliver(event("CONFIRMED", Map.of()))).isFalse();
+        server.verify();
+        assertThat(ledgerRow().payload()).containsEntry("attempts", 1).containsEntry("status", "ERROR");
+    }
+
+    @Test
+    void theQueueHoldsAtMost256EventsAndTheNextOneIsRecordedAsRejected() throws InterruptedException {
+        ThreadPoolExecutor executor = ConciergeWebhook.boundedExecutor();
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            for (int busy = 0; busy < 2; busy++) {
+                executor.execute(() -> {
+                    try {
+                        release.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                });
+            }
+            for (int queued = 0; queued < 256; queued++) {
+                executor.execute(() -> { });
+            }
+            ConciergeWebhook full = new ConciergeWebhook(properties, new RestTemplate(), new ObjectMapper(), ledger, turns, visits,
+                    executor, sleeps::add);
+
+            assertThat(full.send(event("CONFIRMED", Map.of()))).isFalse();
+
+            assertThat(ledgerRow().payload()).containsEntry("attempts", 0).containsEntry("status", "QUEUE_FULL");
+        } finally {
+            release.countDown();
+            executor.shutdown();
+            executor.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    @Test
+    void announceNowDeliversOnTheCallingThreadAndReportsTheOutcome() {
+        when(visits.findByReservation(44L)).thenReturn(Optional.of(visit()));
+        when(turns.sessionOf(7L)).thenReturn(Optional.of("s-1"));
+        ConciergeWebhook now = new ConciergeWebhook(properties, restBoundTo(), new ObjectMapper(), ledger, turns, visits,
+                runnable -> { throw new AssertionError("must not queue"); }, sleeps::add);
+        server.expect(once(), requestTo(URL)).andExpect(jsonPath("$.type").value("MORNING")).andRespond(withSuccess());
+        server.expect(times(3), requestTo(URL)).andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        assertThat(now.announceNow("MORNING", concierge(AT))).isTrue();
+        assertThat(now.announceNow("MORNING", concierge(AT))).isFalse();
+
+        server.verify();
+    }
+
+    @Test
+    void reviewAsksForOneDigit() {
+        assertThat(ConciergeEvent.butlerText("REVIEW", Map.of("billId", 5L)))
+                .isEqualTo("Как вам сегодня? Оцените от 1 до 5 одной цифрой — передам команде.");
+    }
+
+    private RestTemplate restBoundTo() {
+        RestTemplate rest = new RestTemplate();
+        server = MockRestServiceServer.bindTo(rest).build();
+        return rest;
     }
 
     private VisitTurnDraft ledgerRow() {

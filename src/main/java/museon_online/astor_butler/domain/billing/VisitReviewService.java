@@ -73,7 +73,8 @@ public class VisitReviewService {
      * @param trigger journal detail such as {@code trigger=payment-link}; null for the close and the clock, as before
      */
     public synchronized Optional<VisitReview> prompt(GuestBill bill, String trigger) {
-        if (bill == null || bill.chatId() == null || bill.status() == GuestBillStatus.CANCELLED) {
+        // A bill without a chat is asked only when its booking belongs to a Concierge session (REVIEW through the webhook).
+        if (bill == null || bill.status() == GuestBillStatus.CANCELLED || (bill.chatId() == null && !notifier.reachesConcierge(bill))) {
             return Optional.empty();
         }
         Optional<VisitReview> existing = reviews.findByBill(bill.id());

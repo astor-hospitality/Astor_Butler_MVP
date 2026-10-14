@@ -211,8 +211,6 @@ class BookingSeatedJdbcTest {
     void aConciergeGuestWhoSatDownIsAnnouncedAndATelegramGuestIsNot() {
         confirmed(62L, TABLE_4, null);
         confirmed(63L, TABLE_5, null);
-        // A Concierge booking has no Butler chat (the production column is nullable since the Concierge channel).
-        jdbc.execute("ALTER TABLE table_reservation_orders ALTER COLUMN chat_id SET NULL");
         jdbc.update("UPDATE table_reservation_orders SET chat_id = NULL, telegram_user_id = NULL, source = 'CONCIERGE' WHERE id = 62");
 
         TableReservationOrder concierge = reservations.seatByStaff(62L, "@dasha");

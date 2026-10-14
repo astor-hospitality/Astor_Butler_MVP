@@ -256,15 +256,15 @@ class BookingMorningCheckServiceTest {
         museon_online.astor_butler.integration.concierge.ConciergeWebhook webhook =
                 mock(museon_online.astor_butler.integration.concierge.ConciergeWebhook.class);
         when(webhook.reaches(50L)).thenReturn(true);
-        when(webhook.announce("MORNING", concierge)).thenReturn(true);
+        when(webhook.announceNow("MORNING", concierge)).thenReturn(true);
         service.setConciergeWebhook(webhook);
 
         asked();
         clock.advance(Duration.ofMinutes(5));
         service.run();
 
-        verify(webhook, times(1)).announce("MORNING", concierge);
-        verify(webhook, never()).announce(eq("MORNING"), eq(orphan));
+        verify(webhook, times(1)).announceNow("MORNING", concierge);
+        verify(webhook, never()).announceNow(eq("MORNING"), eq(orphan));
         verifyNoInteractions(notifier);
         assertThat(checks.find(50L)).hasValueSatisfying(check -> assertThat(check.sentAt()).isNotNull());
         assertThat(checks.find(51L)).isEmpty();

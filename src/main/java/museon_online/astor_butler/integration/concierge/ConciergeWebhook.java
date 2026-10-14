@@ -26,6 +26,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
@@ -42,9 +43,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -52,13 +56,18 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code {url}/api/concierge/v1/events} instead of a Telegram message, since such a booking has no chat of the Butler's
  * bot. Only a booking whose visit is linked to a Concierge session is announced; others are left as they are.
  *
- * <p>Delivery runs on its own executor (after the surrounding transaction commits), never on the guest's thread:
- * up to 3 attempts (at once, after 1 s, after 4 s), repeated only on a 5xx answer or a network error; a 4xx answer is
- * final. Every outcome is one ledger row (BUTLER / INTERNAL / MESSAGE). The signature is {@code sha256=} plus the lowercase
+ * <p>{@link #announce} delivers on its own executor (after the surrounding transaction commits), never on the guest's
+ * thread; the queue holds at most {@value #QUEUE_CAPACITY} events and a rejected one is recorded. {@link #announceNow}
+ * delivers on the calling (scheduler) thread, so its result is the delivery itself and "sent" marks stay truthful.
+ * Up to 3 attempts (at once, after 1 s, after 4 s), repeated only on a 5xx answer or a network error; a 4xx answer or
+ * any other failure is final. Every outcome is one ledger row (BUTLER / INTERNAL / MESSAGE). The signature is {@code sha256=} plus the lowercase
  * hex HMAC-SHA256 of the exact UTF-8 bytes sent, keyed with {@code ASTOR_WEBHOOK_SECRET}.
  *
  * <p>The Concierge drops a repeated {@code type:reservationId} for 24 h, so a second move of the same booking would be
  * swallowed there; MOVED is therefore sent at most once per distinct start time (deduplicated here, in memory).
+ *
+ * <p>STAFF_COMING stays in the contract but is not sent: a Concierge booking makes a table request only through the
+ * capability tool, whose result already carries «Передал. … скоро подойдёт.», so a webhook would say it twice.
  */
 @Component
 public class ConciergeWebhook {
@@ -66,6 +75,7 @@ public class ConciergeWebhook {
     public static final String PATH = "/api/concierge/v1/events";
     public static final String SIGNATURE_HEADER = "X-Astor-Signature";
     static final long[] PAUSES_MS = {0L, 1000L, 4000L};
+    static final int QUEUE_CAPACITY = 256;
 
     private static final Logger log = LoggerFactory.getLogger(ConciergeWebhook.class);
     private static final ZoneId ZONE = ZoneId.of("Asia/Yekaterinburg");
@@ -92,7 +102,7 @@ public class ConciergeWebhook {
                             LedgerWriter ledger, VisitTurnRepository turns, GuestVisitRepository visits) {
         this(properties, builder.connectTimeout(Duration.ofMillis(Math.max(1, properties.getTimeoutMs())))
                         .readTimeout(Duration.ofMillis(Math.max(1, properties.getTimeoutMs()))).build(),
-                mapper, ledger, turns, visits, newExecutor(), Thread::sleep);
+                mapper, ledger, turns, visits, boundedExecutor(), Thread::sleep);
     }
 
     ConciergeWebhook(ConciergeWebhookProperties properties, RestTemplate rest, ObjectMapper mapper, LedgerWriter ledger,
@@ -146,17 +156,38 @@ public class ConciergeWebhook {
 
     /** The same for a reservation known by id; {@code order}, when given, adds its time, table and party to the facts. */
     public boolean announce(String type, long reservationId, TableReservationOrder order, Map<String, Object> facts) {
-        if (!ready()) {
+        return event(type, reservationId, order, facts).map(this::send).orElse(false);
+    }
+
+    /** {@link #announceNow(String, long, TableReservationOrder, Map)} for a Concierge booking (no Butler chat). */
+    public boolean announceNow(String type, TableReservationOrder order) {
+        if (order == null || order.id() == null || order.chatId() != null
+                || !TableReservationCommand.CHANNEL_CONCIERGE.equals(order.source())) {
             return false;
+        }
+        return announceNow(type, order.id(), order, Map.of());
+    }
+
+    /**
+     * The same, delivered on the calling thread (a scheduler's, never the guest's): true only when the Concierge
+     * accepted the event, so the caller may mark it sent.
+     */
+    public boolean announceNow(String type, long reservationId, TableReservationOrder order, Map<String, Object> facts) {
+        return event(type, reservationId, order, facts).map(this::deliver).orElse(false);
+    }
+
+    private Optional<ConciergeEvent> event(String type, long reservationId, TableReservationOrder order, Map<String, Object> facts) {
+        if (!ready()) {
+            return Optional.empty();
         }
         try {
             Optional<GuestVisit> visit = visits.findByReservation(reservationId);
             if (visit.isEmpty()) {
-                return false;
+                return Optional.empty();
             }
             Optional<String> session = turns.sessionOf(visit.get().id());
             if (session.isEmpty()) {
-                return false;
+                return Optional.empty();
             }
             Map<String, Object> all = new LinkedHashMap<>(bookingFacts(order));
             if (facts != null) {
@@ -164,12 +195,12 @@ public class ConciergeWebhook {
             }
             if (ConciergeEvent.MOVED.equals(type) && !firstMoveTo(reservationId, order)) {
                 log.debug("Concierge MOVED already sent for this time: reservation={}", reservationId);
-                return false;
+                return Optional.empty();
             }
-            return send(ConciergeEvent.of(type, reservationId, visit.get().id(), session.get(), all));
+            return Optional.of(ConciergeEvent.of(type, reservationId, visit.get().id(), session.get(), all));
         } catch (RuntimeException e) {
             log.warn("Concierge event not announced: type={}, reservation={}, reason={}", type, reservationId, e.getClass().getSimpleName());
-            return false;
+            return Optional.empty();
         }
     }
 
@@ -208,9 +239,14 @@ public class ConciergeWebhook {
         try {
             executor.execute(delivery);
             return true;
+        } catch (RejectedExecutionException e) {
+            log.warn("Concierge event not queued, the queue is full: type={}, reservation={}", event.type(), event.reservationId());
+            record(event, 0, "QUEUE_FULL");
+            return false;
         } catch (RuntimeException e) {
             log.warn("Concierge event not queued: type={}, reservation={}, reason={}", event.type(), event.reservationId(),
                     e.getClass().getSimpleName());
+            record(event, 0, "NOT_QUEUED");
             return false;
         }
     }
@@ -248,8 +284,11 @@ public class ConciergeWebhook {
                 if (!e.getStatusCode().is5xxServerError()) {
                     break;
                 }
-            } catch (RuntimeException e) {
+            } catch (ResourceAccessException e) {
                 status = "NETWORK";
+            } catch (RuntimeException e) {
+                status = "ERROR";
+                break;
             }
         }
         if (delivered) {
@@ -348,12 +387,13 @@ public class ConciergeWebhook {
         return order.tableCode() == null || order.tableCode().isBlank() ? null : "стол " + order.tableCode();
     }
 
-    private static ExecutorService newExecutor() {
+    /** Two daemon threads and a queue of {@value #QUEUE_CAPACITY}; a full queue rejects the event instead of growing. */
+    static ThreadPoolExecutor boundedExecutor() {
         AtomicInteger count = new AtomicInteger();
-        return Executors.newFixedThreadPool(2, runnable -> {
+        return new ThreadPoolExecutor(2, 2, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(QUEUE_CAPACITY), runnable -> {
             Thread thread = new Thread(runnable, "concierge-webhook-" + count.incrementAndGet());
             thread.setDaemon(true);
             return thread;
-        });
+        }, new ThreadPoolExecutor.AbortPolicy());
     }
 }
