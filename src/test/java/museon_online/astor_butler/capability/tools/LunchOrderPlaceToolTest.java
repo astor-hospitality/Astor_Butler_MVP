@@ -113,6 +113,20 @@ class LunchOrderPlaceToolTest {
     }
 
     @Test
+    void aReservationThatNoLongerHoldsATableGetsNoOrder() {
+        for (TableReservationStatus status : List.of(TableReservationStatus.CANCELLED, TableReservationStatus.REJECTED,
+                TableReservationStatus.EXPIRED)) {
+            when(orders.findOrder(41L)).thenReturn(Optional.of(CapabilityFixtures.order(41L, CapabilityFixtures.BUTLER_CHAT, status, LUNCH)));
+
+            CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), args(true, List.of("BORSCHT")));
+
+            assertThat(result.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+            assertThat(result.facts()).containsEntry("reason", "not_active");
+        }
+        verifyNoInteractions(lunch);
+    }
+
+    @Test
     void notALunchTimeIsNotAllowed() {
         when(orders.findOrder(41L)).thenReturn(Optional.of(CapabilityFixtures.order(41L, CapabilityFixtures.BUTLER_CHAT,
                 TableReservationStatus.CONFIRMED, CapabilityFixtures.START)));

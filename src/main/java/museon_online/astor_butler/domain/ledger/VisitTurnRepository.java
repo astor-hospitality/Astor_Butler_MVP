@@ -68,10 +68,14 @@ public class VisitTurnRepository {
         return jdbc.update("UPDATE visit_turns SET visit_id = ? WHERE session_id = ? AND visit_id IS NULL", visitId, sessionId);
     }
 
-    /** The Concierge session linked to the visit: the session of any of its turns that has one. */
-    public java.util.Optional<String> sessionOf(long visitId) {
-        return jdbc.queryForList("SELECT session_id FROM visit_turns WHERE visit_id = ? AND session_id IS NOT NULL "
-                + "ORDER BY at, id LIMIT 1", String.class, visitId).stream().findFirst();
+    /** Whether the Concierge session has a turn in the visit, i.e. was linked to it. */
+    public boolean existsLink(long visitId, String sessionId) {
+        if (sessionId == null) {
+            return false;
+        }
+        Integer count = jdbc.queryForObject("SELECT count(*) FROM visit_turns WHERE visit_id = ? AND session_id = ?",
+                Integer.class, visitId, sessionId);
+        return count != null && count > 0;
     }
 
     public List<VisitTurn> ofVisit(long visitId) {

@@ -82,11 +82,8 @@ public class TipCreateTool implements CapabilityTool {
         if (waiter.isEmpty()) {
             return ReservationAccess.withReason(CapabilityResult.NOT_FOUND, "no_waiter");
         }
-        if (order.chatId() == null) {
-            // Tip drafts live in the Butler's bot chat; a Concierge booking has none yet.
-            return ReservationAccess.withReason(CapabilityResult.UNAVAILABLE, "no_butler_chat");
-        }
-        TipOrder draft = tips.createDraft(new TipOrderCommand(order.chatId(), order.telegramUserId(), null, venueCode, null,
+        // A Concierge booking has no chat of the Butler's bot: the draft is made for the reservation without one.
+        TipOrder draft = tips.createDraftFor(order, new TipOrderCommand(order.chatId(), order.telegramUserId(), null, venueCode, null,
                 waiter.get(), amount * 100L, "RUB", order.guestName(), null));
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("draftId", draft.id());

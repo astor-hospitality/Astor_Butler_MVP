@@ -102,6 +102,9 @@ public class LunchOrderPlaceTool implements CapabilityTool {
             return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
         }
         TableReservationOrder reservation = checked.order();
+        if (!BusinessLunchService.holdsATable(reservation)) {
+            return ReservationAccess.withReason(CapabilityResult.NOT_ALLOWED, "not_active");
+        }
         if (reservation.requestedStartAt() == null) {
             return CapabilityResult.error(CapabilityResult.UNAVAILABLE);
         }
@@ -112,10 +115,15 @@ public class LunchOrderPlaceTool implements CapabilityTool {
             return ReservationAccess.withReason(CapabilityResult.NOT_ALLOWED, issue.get().name());
         }
         int guests = reservation.partySize() == null || reservation.partySize() < 1 ? 1 : reservation.partySize();
-        BusinessLunchService.Placement placement = lunch.placeFor(reservation, new BusinessLunchService.Request(
-                reservation.chatId(), reservation.telegramUserId(), offer, setCode, codes, guests, start.toLocalDate(),
-                start.toLocalTime(), reservation.guestName(), reservation.guestPhone(), null,
-                ctx.butlerAgent() ? "TELEGRAM" : CapabilityContext.CONCIERGE, null));
+        BusinessLunchService.Placement placement;
+        try {
+            placement = lunch.placeFor(reservation, new BusinessLunchService.Request(
+                    reservation.chatId(), reservation.telegramUserId(), offer, setCode, codes, guests, start.toLocalDate(),
+                    start.toLocalTime(), reservation.guestName(), reservation.guestPhone(), null,
+                    ctx.butlerAgent() ? "TELEGRAM" : CapabilityContext.CONCIERGE, null));
+        } catch (IllegalStateException e) {
+            return ReservationAccess.withReason(CapabilityResult.NOT_ALLOWED, "not_active");
+        }
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("orderId", reservation.id());
         facts.put("totalRub", BusinessLunchService.totalRub(offer, setCode, codes, guests));

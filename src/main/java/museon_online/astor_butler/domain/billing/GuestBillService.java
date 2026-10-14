@@ -24,8 +24,10 @@ public class GuestBillService {
     /** Opens the bill for an order, or returns the one already opened for the same reservation. */
     @Transactional
     public GuestBill open(BillDraft draft) {
-        if (draft == null || draft.chatId() == null || draft.kind() == null || draft.estimate() == null) {
-            throw new IllegalArgumentException("A bill needs a chat, a kind and an estimate");
+        // A Concierge booking has no chat of the Butler's bot: its bill is found by the reservation instead.
+        if (draft == null || (draft.chatId() == null && draft.tableReservationId() == null) || draft.kind() == null
+                || draft.estimate() == null) {
+            throw new IllegalArgumentException("A bill needs a chat or a reservation, a kind and an estimate");
         }
         if (draft.tableReservationId() != null) {
             Optional<GuestBill> existing = bills.findByReservation(draft.kind(), draft.tableReservationId());

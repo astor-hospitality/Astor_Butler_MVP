@@ -166,7 +166,7 @@ public class TipRepository {
     private RowMapper<TipOrder> orderMapper() {
         return (rs, rowNum) -> new TipOrder(
                 rs.getLong("id"),
-                rs.getLong("chat_id"),
+                nullableLong(rs, "chat_id"),
                 nullableLong(rs, "telegram_user_id"),
                 nullableLong(rs, "user_id"),
                 rs.getString("venue_code"),

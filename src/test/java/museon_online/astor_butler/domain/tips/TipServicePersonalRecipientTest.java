@@ -83,6 +83,27 @@ class TipServicePersonalRecipientTest {
         verify(repository, org.mockito.Mockito.times(3)).createDraft(any(), eq(team));
     }
 
+    @Test
+    void aDraftForAReservationNeedsNoChatAndTakesTheWaiterOfItsTable() {
+        service.setRecipientResolver(resolver);
+        when(resolver.enabled()).thenReturn(true);
+        museon_online.astor_butler.domain.booking.TableReservationOrder reservation =
+                org.mockito.Mockito.mock(museon_online.astor_butler.domain.booking.TableReservationOrder.class);
+        when(resolver.forOrder(reservation, "AERIS")).thenReturn(new TipRecipient("Даниил", "https://example.test/tip/daniil", true, "daniil"));
+        when(repository.createDraft(any(), isNull(), eq("https://example.test/tip/daniil"))).thenReturn(order("Даниил", "https://example.test/tip/daniil"));
+        TipOrderCommand withoutChat = new TipOrderCommand(null, null, null, "AERIS", null, "Даниил", 50_000L, "RUB", "Наталья", null);
+
+        service.createDraftFor(reservation, withoutChat);
+
+        ArgumentCaptor<TipOrderCommand> stored = ArgumentCaptor.forClass(TipOrderCommand.class);
+        verify(repository).createDraft(stored.capture(), isNull(), eq("https://example.test/tip/daniil"));
+        assertThat(stored.getValue().chatId()).isNull();
+        verify(resolver, never()).forChat(any(), any());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.createDraftFor(reservation,
+                        new TipOrderCommand(null, null, null, "AERIS", null, "Даниил", 0L, "RUB", "Наталья", null)))
+                .isInstanceOf(museon_online.astor_butler.api.common.ApiException.class);
+    }
+
     private static TipOrderCommand command(Long staffId) {
         return new TipOrderCommand(42L, 42L, null, "AERIS", staffId, null, 50_000L, "RUB", "Наталья", "500");
     }

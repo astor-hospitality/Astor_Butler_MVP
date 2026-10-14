@@ -10,9 +10,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Optional;
 
 /**
- * The results of commitment calls by their {@code Idempotency-Key}: a key seen before gets its saved result back and
- * the tool is not run again. Every call runs in its own transaction, so a saved result outlives whatever the caller
- * rolls back. A second save of a key is a unique-key violation the registry answers with the first result.
+ * Commitment calls by their {@code Idempotency-Key}. A call first claims its key (a row without a result), then runs
+ * the tool and completes the row; a second call with the key finds the row and gets its result back, or is refused
+ * while the first is still running. Every call runs in its own transaction, so a claim or a result outlives whatever
+ * the caller rolls back. A second claim of a key is a unique-key violation the registry turns into the first result.
  */
 @Repository
 @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -28,12 +29,34 @@ public class IdempotencyStore {
         this.mapper = mapper;
     }
 
-    public Optional<CapabilityResult> find(String key) {
-        return jdbc.queryForList("SELECT result FROM capability_calls WHERE idempotency_key = ?", String.class, key)
-                .stream().findFirst().map(this::read);
+    /** A claimed key: the tool that claimed it and its result, null while the call is in progress. */
+    public record Call(String tool, CapabilityResult result) {
+        public boolean inProgress() {
+            return result == null;
+        }
     }
 
-    /** @throws org.springframework.dao.DuplicateKeyException when the key was saved already */
+    public Optional<Call> lookup(String key) {
+        return jdbc.query("SELECT tool, result FROM capability_calls WHERE idempotency_key = ?",
+                (rs, row) -> new Call(rs.getString("tool"), read(rs.getString("result"))), key).stream().findFirst();
+    }
+
+    /** The finished result of the key; empty when the key is unknown or still in progress. */
+    public Optional<CapabilityResult> find(String key) {
+        return lookup(key).map(Call::result);
+    }
+
+    /** @throws org.springframework.dao.DuplicateKeyException when the key was claimed already */
+    public void claim(String key, String tool) {
+        jdbc.update("INSERT INTO capability_calls(idempotency_key, tool) VALUES (?, ?)", key, tool);
+    }
+
+    /** Writes the result of a claimed key. */
+    public void complete(String key, CapabilityResult result) {
+        jdbc.update("UPDATE capability_calls SET result = ? WHERE idempotency_key = ?", write(result), key);
+    }
+
+    /** Claims and completes at once. @throws org.springframework.dao.DuplicateKeyException when the key was claimed already */
     public void save(String key, String tool, CapabilityResult result) {
         jdbc.update("INSERT INTO capability_calls(idempotency_key, tool, result) VALUES (?, ?, ?)", key, tool, write(result));
     }
@@ -47,6 +70,9 @@ public class IdempotencyStore {
     }
 
     private CapabilityResult read(String json) {
+        if (json == null) {
+            return null;
+        }
         try {
             return mapper.readValue(json, CapabilityResult.class);
         } catch (JsonProcessingException e) {

@@ -27,7 +27,9 @@ import java.util.Set;
  *
  * <p>A commitment tool (a booking, an order) runs only with an idempotency key, at most once per key: the result,
  * a failure included, is saved and a repeated key gets it back without running the tool ({@code replayed = true} in
- * the ledger). A missing key is a {@code BAD_ARGUMENT}; without the store no commitment runs.
+ * the ledger). The key is claimed before the tool runs, so two concurrent calls never both run it: the second is
+ * refused with {@code reason = in_progress}. A missing key, or a key another tool used, is a {@code BAD_ARGUMENT};
+ * without the store no commitment runs.
  */
 @Component
 public class CapabilityRegistry {
@@ -77,23 +79,21 @@ public class CapabilityRegistry {
         }
         Map<String, Object> arguments = args == null ? Map.of() : args;
         CapabilityTool tool = name == null ? null : tools.get(name);
-        String key = tool != null && tool.commitment() ? key(ctx) : null;
-        Optional<CapabilityResult> saved = key == null ? Optional.empty() : saved(key);
-        boolean replayed = saved.isPresent() && saved.get() != UNREADABLE;
+        Decision decision = tool != null && tool.commitment() ? decide(tool, ctx) : Decision.RUN;
 
         Map<String, Object> callPayload = new LinkedHashMap<>();
         callPayload.put("tool", name);
         callPayload.put("arguments", masked(arguments));
-        if (replayed) {
+        if (decision.replayed()) {
             callPayload.put("replayed", true);
         }
         record(ctx, TurnKind.TOOL_CALL, name, callPayload);
 
         CapabilityResult result;
-        if (replayed) {
-            result = saved.get();
-        } else if (tool != null && tool.commitment()) {
-            result = commit(tool, key, saved.isPresent(), ctx, arguments);
+        if (decision.result() != null) {
+            result = decision.result();
+        } else if (decision.key() != null) {
+            result = commit(tool, decision.key(), ctx, arguments);
         } else {
             result = run(tool, ctx, arguments);
         }
@@ -103,59 +103,81 @@ public class CapabilityRegistry {
         resultPayload.put("ok", result.ok());
         resultPayload.put("error", result.error());
         resultPayload.put("facts", masked(result.facts() == null ? Map.of() : result.facts()));
-        if (replayed) {
+        if (decision.replayed()) {
             resultPayload.put("replayed", true);
         }
         record(ctx, TurnKind.TOOL_RESULT, name, resultPayload);
         return result;
     }
 
-    /** Marks a store that could not be read: the commitment does not run blind. */
-    private static final CapabilityResult UNREADABLE = CapabilityResult.error(CapabilityResult.UNAVAILABLE);
+    /**
+     * What to do with a call: answer at once ({@code result}; a replay when {@code replayed}), run a commitment whose
+     * key this call has claimed ({@code key}), or just run the tool.
+     */
+    private record Decision(CapabilityResult result, boolean replayed, String key) {
+        static final Decision RUN = new Decision(null, false, null);
 
-    private static String key(CapabilityContext ctx) {
-        String key = ctx == null ? null : ctx.idempotencyKey();
-        return key == null || key.isBlank() ? null : key.trim();
+        static Decision answer(CapabilityResult result) {
+            return new Decision(result, false, null);
+        }
     }
 
-    private Optional<CapabilityResult> saved(String key) {
-        if (idempotency == null || key.length() > IdempotencyStore.MAX_KEY) {
-            return Optional.empty();
+    /** Claims the key of a commitment before it runs; a key already claimed gives its result, never a second run. */
+    private Decision decide(CapabilityTool tool, CapabilityContext ctx) {
+        String key = ctx == null || ctx.idempotencyKey() == null || ctx.idempotencyKey().isBlank() ? null : ctx.idempotencyKey().trim();
+        if (key == null || key.length() > IdempotencyStore.MAX_KEY) {
+            return Decision.answer(CapabilityResult.error(CapabilityResult.BAD_ARGUMENT));
+        }
+        if (idempotency == null) {
+            return Decision.answer(CapabilityResult.error(CapabilityResult.UNAVAILABLE));
         }
         try {
-            return idempotency.find(key);
+            Optional<IdempotencyStore.Call> known = idempotency.lookup(key);
+            if (known.isEmpty()) {
+                try {
+                    idempotency.claim(key, tool.name());
+                    return new Decision(null, false, key);
+                } catch (DataIntegrityViolationException e) {
+                    // Another call claimed the key between the lookup and the claim.
+                    known = idempotency.lookup(key);
+                }
+            }
+            if (known.isEmpty()) {
+                return Decision.answer(CapabilityResult.error(CapabilityResult.UNAVAILABLE));
+            }
+            IdempotencyStore.Call call = known.get();
+            if (!tool.name().equals(call.tool())) {
+                return Decision.answer(withReason(CapabilityResult.BAD_ARGUMENT, "key_used_by_another_tool"));
+            }
+            if (call.inProgress()) {
+                return Decision.answer(withReason(CapabilityResult.BAD_ARGUMENT, "in_progress"));
+            }
+            return new Decision(call.result(), true, null);
         } catch (RuntimeException e) {
-            log.warn("Idempotency key not checked: reason={}", e.getClass().getSimpleName());
-            return Optional.of(UNREADABLE);
+            log.warn("Idempotency key not claimed: tool={}, reason={}", tool.name(), e.getClass().getSimpleName());
+            return Decision.answer(CapabilityResult.error(CapabilityResult.UNAVAILABLE));
         }
     }
 
     /**
-     * Runs a commitment once for its key and saves what came of it. The result handed back is the saved one, so the
-     * first answer and every replay are the same; a concurrent call that saved first wins.
+     * Runs a commitment whose key this call claimed and writes what came of it. The result handed back is the stored
+     * one, so the first answer and every replay are the same.
      */
-    private CapabilityResult commit(CapabilityTool tool, String key, boolean storeUnreadable, CapabilityContext ctx,
-                                    Map<String, Object> arguments) {
-        if (key == null || key.length() > IdempotencyStore.MAX_KEY) {
-            return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
-        }
-        if (idempotency == null || storeUnreadable) {
-            return CapabilityResult.error(CapabilityResult.UNAVAILABLE);
-        }
+    private CapabilityResult commit(CapabilityTool tool, String key, CapabilityContext ctx, Map<String, Object> arguments) {
         CapabilityResult result = run(tool, ctx, arguments);
         try {
-            idempotency.save(key, tool.name(), result);
-        } catch (DataIntegrityViolationException e) {
-            log.info("Commitment saved concurrently under the same key: tool={}", tool.name());
+            idempotency.complete(key, result);
+            return idempotency.find(key).orElse(result);
         } catch (RuntimeException e) {
             log.warn("Commitment result not saved: tool={}, reason={}", tool.name(), e.getClass().getSimpleName());
             return result;
         }
-        try {
-            return idempotency.find(key).orElse(result);
-        } catch (RuntimeException e) {
-            return result;
-        }
+    }
+
+    private static CapabilityResult withReason(String error, String reason) {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("reason", reason);
+        return new CapabilityResult(false, facts, error);
     }
 
     private CapabilityResult run(CapabilityTool tool, CapabilityContext ctx, Map<String, Object> arguments) {

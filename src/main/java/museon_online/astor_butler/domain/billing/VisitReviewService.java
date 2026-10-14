@@ -170,7 +170,8 @@ public class VisitReviewService {
     /**
      * The guest's stars given through an agent instead of the buttons: recorded on the latest bill of the reservation
      * as the stars button records them, journey REVIEW event included. The guest's words are not kept here, as with
-     * the buttons. False when the reservation has no bill, the bill is cancelled, or the visit was rated already.
+     * the buttons. False when the reservation has no bill, the bill is cancelled, or the visit was rated already. Works
+     * for a bill without a chat (a Concierge booking); no thanks is sent, the agent answers.
      */
     public synchronized boolean submit(long reservationId, int stars, String text) {
         if (stars < 1 || stars > 5) {
@@ -186,9 +187,7 @@ public class VisitReviewService {
             return false;
         }
         if (existing.isEmpty()) {
-            if (bill.chatId() == null) {
-                return false;
-            }
+            // A bill of a Concierge booking has no chat: the review row has none either.
             reviews.open(bill.id(), bill.chatId());
         }
         VisitReview review = reviews.rate(bill.id(), stars);

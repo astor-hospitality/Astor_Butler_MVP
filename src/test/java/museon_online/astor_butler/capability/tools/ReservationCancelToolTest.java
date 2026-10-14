@@ -45,7 +45,7 @@ class ReservationCancelToolTest {
         when(orders.findOrder(41L)).thenReturn(Optional.of(CapabilityFixtures.order(41L, 999L, TableReservationStatus.CONFIRMED)));
         when(orders.findOrder(42L)).thenReturn(Optional.of(CapabilityFixtures.order(42L, null, TableReservationStatus.CONFIRMED)));
         when(visits.findByReservation(42L)).thenReturn(Optional.of(CapabilityFixtures.visit(8L, 42L, null, JourneyStage.CONFIRMED)));
-        when(turns.sessionOf(8L)).thenReturn(Optional.of("c-other"));
+        when(turns.existsLink(8L, CapabilityFixtures.SESSION)).thenReturn(false);
 
         CapabilityResult otherChat = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41));
         CapabilityResult otherSession = tool.invoke(CapabilityFixtures.concierge("k2"), Map.of("reservationId", 42));
@@ -61,7 +61,7 @@ class ReservationCancelToolTest {
     void theGuestsOwnReservationIsCancelled() {
         when(orders.findOrder(42L)).thenReturn(Optional.of(CapabilityFixtures.order(42L, null, TableReservationStatus.CONFIRMED)));
         when(visits.findByReservation(42L)).thenReturn(Optional.of(CapabilityFixtures.visit(8L, 42L, null, JourneyStage.CONFIRMED)));
-        when(turns.sessionOf(8L)).thenReturn(Optional.of(CapabilityFixtures.SESSION));
+        when(turns.existsLink(8L, CapabilityFixtures.SESSION)).thenReturn(true);
         when(reservations.cancelByGuest(42L)).thenReturn(CapabilityFixtures.order(42L, null, TableReservationStatus.CANCELLED));
 
         CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1"), Map.of("reservationId", 42));

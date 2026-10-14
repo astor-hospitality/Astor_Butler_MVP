@@ -31,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -103,20 +104,68 @@ class IdempotencyStoreTest {
     }
 
     @Test
-    void aConcurrentDuplicateGetsTheStoredResult() {
+    void theKeyIsClaimedBeforeTheToolRuns() {
+        TableReservationService reservations = mock(TableReservationService.class);
+        when(reservations.createReservation(any())).thenAnswer(invocation -> {
+            // While the booking is being made the key is taken but has no result yet.
+            assertThat(store.lookup("k6")).hasValueSatisfying(call -> {
+                assertThat(call.tool()).isEqualTo("reservation_create");
+                assertThat(call.inProgress()).isTrue();
+            });
+            return CapabilityFixtures.order(41L, null, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+        });
+        CapabilityRegistry registry = new CapabilityRegistry(List.of(ReservationCreateToolTest.tool(reservations)), ledger,
+                properties, store);
+
+        CapabilityResult result = registry.invoke("reservation_create", CapabilityFixtures.concierge("k6"), ReservationCreateToolTest.args());
+
+        assertThat(result.ok()).isTrue();
+        assertThat(store.lookup("k6").orElseThrow().result()).isEqualTo(result);
+        assertThatThrownBy(() -> store.claim("k6", "reservation_create")).isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void aCallWhoseKeyIsStillInProgressDoesNotRunTheTool() {
+        store.claim("k7", "reservation_create");
+        TableReservationService reservations = mock(TableReservationService.class);
+        CapabilityRegistry registry = new CapabilityRegistry(List.of(ReservationCreateToolTest.tool(reservations)), ledger,
+                properties, store);
+
+        CapabilityResult result = registry.invoke("reservation_create", CapabilityFixtures.concierge("k7"), ReservationCreateToolTest.args());
+
+        assertThat(result.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+        assertThat(result.facts()).containsEntry("reason", "in_progress");
+        verify(reservations, never()).createReservation(any());
+    }
+
+    @Test
+    void aConcurrentClaimGetsTheWinnersResultWithoutRunningTheTool() {
         IdempotencyStore racing = mock(IdempotencyStore.class);
         CapabilityResult winner = CapabilityResult.ok(new LinkedHashMap<>(Map.of("reservationId", 40)));
-        when(racing.find("k5")).thenReturn(Optional.empty(), Optional.of(winner));
-        doThrow(new DuplicateKeyException("capability_calls_pkey")).when(racing).save(eq("k5"), anyString(), any());
+        when(racing.lookup("k5")).thenReturn(Optional.empty(), Optional.of(new IdempotencyStore.Call("reservation_create", winner)));
+        doThrow(new DuplicateKeyException("capability_calls_pkey")).when(racing).claim(eq("k5"), anyString());
         TableReservationService reservations = mock(TableReservationService.class);
-        when(reservations.createReservation(any())).thenReturn(CapabilityFixtures.order(41L, null,
-                TableReservationStatus.AWAITING_MANAGER_CONFIRMATION));
         CapabilityRegistry registry = new CapabilityRegistry(List.of(ReservationCreateToolTest.tool(reservations)), ledger,
                 properties, racing);
 
         CapabilityResult result = registry.invoke("reservation_create", CapabilityFixtures.concierge("k5"), ReservationCreateToolTest.args());
 
         assertThat(result).isEqualTo(winner);
+        verify(reservations, never()).createReservation(any());
+    }
+
+    @Test
+    void aKeyUsedByAnotherToolIsABadArgument() {
+        store.save("k8", "reservation_cancel", CapabilityResult.ok(Map.of("reservationId", 41, "status", "CANCELLED")));
+        TableReservationService reservations = mock(TableReservationService.class);
+        CapabilityRegistry registry = new CapabilityRegistry(List.of(ReservationCreateToolTest.tool(reservations)), ledger,
+                properties, store);
+
+        CapabilityResult result = registry.invoke("reservation_create", CapabilityFixtures.concierge("k8"), ReservationCreateToolTest.args());
+
+        assertThat(result.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+        assertThat(result.facts()).containsEntry("reason", "key_used_by_another_tool");
+        verify(reservations, never()).createReservation(any());
     }
 
     @Test

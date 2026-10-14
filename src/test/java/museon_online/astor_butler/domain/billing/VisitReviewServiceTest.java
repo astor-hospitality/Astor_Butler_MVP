@@ -150,6 +150,20 @@ class VisitReviewServiceTest {
         assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type).contains(BillOperationType.REVIEW_RECEIVED);
     }
 
+    @Test
+    void submitWorksForABillWithoutAChat() {
+        GuestBill bill = bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", 92L, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.minus(Duration.ofHours(1))));
+
+        assertThat(reviews.submit(92L, 5, null)).isTrue();
+        assertThat(reviews.submit(92L, 4, null)).isFalse();
+
+        VisitReview review = reviews.reviewOf(bill.id()).orElseThrow();
+        assertThat(review.stars()).isEqualTo(5);
+        assertThat(review.chatId()).isNull();
+        assertThat(reviews.prompt(bill)).isEmpty();
+    }
+
     private GuestBill bill(long reservationId, Instant visitEndsAt) {
         return bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), visitEndsAt));

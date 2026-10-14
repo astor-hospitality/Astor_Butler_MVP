@@ -115,7 +115,7 @@ public class VisitReviewRepository {
         return (rs, rowNum) -> new VisitReview(
                 rs.getLong("id"),
                 rs.getLong("bill_id"),
-                rs.getLong("chat_id"),
+                nullableLong(rs, "chat_id"),
                 instant(rs, "prompted_at"),
                 nullableInt(rs, "stars"),
                 rs.getString("thumb") == null ? null : VisitReview.Thumb.valueOf(rs.getString("thumb")),
@@ -129,6 +129,11 @@ public class VisitReviewRepository {
     private Instant instant(ResultSet rs, String column) throws SQLException {
         Timestamp timestamp = rs.getTimestamp(column);
         return timestamp == null ? null : timestamp.toInstant();
+    }
+
+    private Long nullableLong(ResultSet rs, String column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
     }
 
     private Integer nullableInt(ResultSet rs, String column) throws SQLException {

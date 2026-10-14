@@ -211,8 +211,14 @@ public class BusinessLunchService {
      * The lunch ordered into a reservation the guest already holds (the agents' {@code lunch_order_place}): no second
      * table is held, the order is handed to the venue's system and to the listeners as {@link #place} does. The
      * reservation's time must fall on a lunch day within the lunch hours; the hostess still confirms the reservation.
+     *
+     * @throws IllegalStateException when the reservation no longer holds a table (see {@link #holdsATable})
      */
     public Placement placeFor(TableReservationOrder reservation, Request request) {
+        if (!holdsATable(reservation)) {
+            throw new IllegalStateException("Business lunch cannot be placed into a reservation that holds no table: "
+                    + (reservation == null ? null : reservation.status()));
+        }
         BusinessLunchOffer offer = request.offer();
         BusinessLunchOffer.LunchSet set = offer.aLaCarte() ? null : offer.set(request.setCode())
                 .orElseThrow(() -> new IllegalArgumentException("Unknown business lunch set: " + request.setCode()));
@@ -233,6 +239,17 @@ public class BusinessLunchService {
         ExternalLunchOrderProvider.Result external = provider.map(ready -> submit(ready, order)).orElseGet(ExternalLunchOrderProvider.Result::manualEntry);
         notifyListeners(request, order, external);
         return new Placement(reservation, false, order, external);
+    }
+
+    /** A reservation still waiting for the hostess, confirmed or seated: the only ones a lunch may be ordered into. */
+    public static boolean holdsATable(TableReservationOrder reservation) {
+        if (reservation == null || reservation.status() == null) {
+            return false;
+        }
+        return switch (reservation.status()) {
+            case AWAITING_MANAGER_CONFIRMATION, CONFIRMED, SEATED -> true;
+            default -> false;
+        };
     }
 
     /** Whether a held reservation's time can carry a lunch: the day and the hours only, the time may have begun. */

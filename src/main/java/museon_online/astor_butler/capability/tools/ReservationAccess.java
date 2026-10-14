@@ -80,7 +80,7 @@ public class ReservationAccess {
         if (visit.isEmpty() || visit.get().id() == null) {
             return false;
         }
-        return turns.sessionOf(visit.get().id()).filter(ctx.sessionId()::equals).isPresent();
+        return turns.existsLink(visit.get().id(), ctx.sessionId());
     }
 
     /** The status as the agents read it: the hostess has not answered yet is {@code AWAITING_HOSTESS}. */

@@ -37,7 +37,7 @@ class ReviewSubmitToolTest {
 
     @Test
     void secondReviewIsNotAllowed() {
-        when(reviews.submit(41L, 5, "Всё было прекрасно")).thenReturn(true, false);
+        when(reviews.submit(41L, 5, null)).thenReturn(true, false);
 
         CapabilityResult first = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41, "stars", 5, "text", "Всё было прекрасно"));
         CapabilityResult second = tool.invoke(CapabilityFixtures.butler("k2"), Map.of("reservationId", 41, "stars", 5, "text", "Всё было прекрасно"));
@@ -45,6 +45,14 @@ class ReviewSubmitToolTest {
         assertThat(first.ok()).isTrue();
         assertThat(first.facts()).containsEntry("accepted", true);
         assertThat(second.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+    }
+
+    @Test
+    void theSchemaPromisesNoStoredWords() {
+        assertThat(tool.description()).doesNotContain("словами");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) tool.parameters().get("properties");
+        assertThat(properties).containsOnlyKeys("reservationId", "stars");
     }
 
     @Test

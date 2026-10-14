@@ -221,6 +221,18 @@ class GuestBillPaymentPrompterTest {
         verify(notifier, never()).reviewPrompt(any());
     }
 
+    @Test
+    void aBillWithoutAChatIsLeftToTheAgentAndTheVenueIsNotAsked() {
+        GuestBill bill = bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", 93L, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.plus(Duration.ofHours(2))));
+        bills.issued(bill.id(), "SABY", "order-9");
+        reservation(93L, TableReservationStatus.CONFIRMED);
+
+        assertThat(prompter.run()).isEqualTo(new GuestBillPaymentPrompter.Report(1, 0, 1, 0));
+        verify(provider, never()).paymentLink(anyString());
+        verify(notifier, never()).paymentLink(any(), anyString());
+    }
+
     private GuestBill issued(long reservationId) {
         GuestBill bill = bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), NOW.plus(Duration.ofHours(2))));

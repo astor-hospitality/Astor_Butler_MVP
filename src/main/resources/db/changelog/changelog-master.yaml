@@ -95,3 +95,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-15-visit-summaries.yaml
   - include:
       file: db/changelog/2026-10-15-capability-calls.yaml
+  - include:
+      file: db/changelog/2026-10-15-concierge-reservations.yaml

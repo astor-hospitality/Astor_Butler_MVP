@@ -68,8 +68,13 @@ class VisitTurnRepositoryTest {
         repository.append(new VisitTurnDraft(null, "c-1", TurnSide.GUEST, TurnChannel.CONCIERGE_TG, TurnKind.MESSAGE, "хочу ужин", null, null));
         repository.linkSession("c-1", 7L);
 
-        assertThat(repository.sessionOf(7L)).contains("c-1");
-        assertThat(repository.sessionOf(8L)).isEmpty();
+        repository.append(new VisitTurnDraft(null, "c-2", TurnSide.GUEST, TurnChannel.CONCIERGE_TG, TurnKind.MESSAGE, "второй", null, null));
+        repository.linkSession("c-2", 7L);
+
+        assertThat(repository.existsLink(7L, "c-1")).isTrue();
+        assertThat(repository.existsLink(7L, "c-2")).isTrue();
+        assertThat(repository.existsLink(7L, "c-3")).isFalse();
+        assertThat(repository.existsLink(8L, "c-1")).isFalse();
     }
 
     @Test

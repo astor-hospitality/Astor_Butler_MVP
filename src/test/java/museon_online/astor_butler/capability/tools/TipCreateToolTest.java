@@ -19,6 +19,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -46,16 +47,41 @@ class TipCreateToolTest {
         when(router.waiterName(order)).thenReturn(Optional.of("Ольга"));
         TipOrder draft = mock(TipOrder.class);
         when(draft.id()).thenReturn(12L);
-        when(tips.createDraft(any())).thenReturn(draft);
+        when(tips.createDraftFor(eq(order), any())).thenReturn(draft);
 
         CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41, "amountRub", 500));
 
         ArgumentCaptor<TipOrderCommand> command = ArgumentCaptor.forClass(TipOrderCommand.class);
-        verify(tips).createDraft(command.capture());
+        verify(tips).createDraftFor(eq(order), command.capture());
         assertThat(command.getValue().amountMinor()).isEqualTo(50_000L);
         assertThat(command.getValue().staffDisplayName()).isEqualTo("Ольга");
         assertThat(command.getValue().chatId()).isEqualTo(CapabilityFixtures.BUTLER_CHAT);
         assertThat(result.facts()).containsEntry("draftId", 12L).containsEntry("waiter", "Ольга");
+    }
+
+    @Test
+    void aConciergeBookingGetsADraftWithoutAChat() {
+        TableReservationRepository orders = mock(TableReservationRepository.class);
+        GuestVisitRepository visits = mock(GuestVisitRepository.class);
+        VisitTurnRepository turns = mock(VisitTurnRepository.class);
+        TableReservationOrder concierge = CapabilityFixtures.order(42L, null, TableReservationStatus.SEATED);
+        when(orders.findOrder(42L)).thenReturn(Optional.of(concierge));
+        when(visits.findByReservation(42L)).thenReturn(Optional.of(CapabilityFixtures.visit(8L, 42L, null,
+                museon_online.astor_butler.domain.journey.JourneyStage.SEATED)));
+        when(turns.existsLink(8L, CapabilityFixtures.SESSION)).thenReturn(true);
+        when(router.waiterName(concierge)).thenReturn(Optional.of("Ольга"));
+        TipOrder draft = mock(TipOrder.class);
+        when(draft.id()).thenReturn(13L);
+        when(tips.createDraftFor(eq(concierge), any())).thenReturn(draft);
+        TipCreateTool conciergeTool = new TipCreateTool(tips, router, new ReservationAccess(orders, visits, turns));
+
+        CapabilityResult result = conciergeTool.invoke(CapabilityFixtures.concierge("k1"), Map.of("reservationId", 42, "amountRub", 300));
+
+        ArgumentCaptor<TipOrderCommand> command = ArgumentCaptor.forClass(TipOrderCommand.class);
+        verify(tips).createDraftFor(eq(concierge), command.capture());
+        assertThat(command.getValue().chatId()).isNull();
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("draftId", 13L).containsEntry("waiter", "Ольга");
     }
 
     @Test
