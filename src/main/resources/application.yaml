@@ -609,6 +609,13 @@ spring:
   application:
     name: astor-butler
 
+  # Fifteen @Scheduled jobs share Spring's scheduler (one thread by default): a slow one (a visit summary's model call,
+  # a Saby poll) would delay the rest, the review clock and the Concierge webhook retries included.
+  task:
+    scheduling:
+      pool:
+        size: 2
+
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.cassandra.CassandraAutoConfiguration

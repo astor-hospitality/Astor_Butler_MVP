@@ -34,6 +34,34 @@ SQL ниже — через `docker exec -i astor_postgres_test sh -c 'psql -U "
 | 5 | `ASTOR_CONCIERGE_WEBHOOK_ENABLED=true`, `ASTOR_WEBHOOK_SECRET` | `ASTOR_WEBHOOK_SECRET` (то же значение) | ничего, пока нет брони из чата Консьержа | тестовое событие (ниже): подписанное — `404` (бронь неизвестна, подпись принята), без подписи — `401`, без секрета у Консьержа — `503` |
 | 6 | `ASTOR_AGENT_ENABLED=true`, `ASTOR_AGENT_ALLOWLIST=<id>,<id>` | `AGENT_ENABLED=true`, `AGENT_ALLOWLIST=<id>,<id>`, `LLM_PROVIDER=gigachat` | только чаты из списка: Консьерж договаривается с Батлером, в чате два голоса (`AERIS · Батлер: …`) | тестовый чат пишет Консьержу «где пообедать у Мамина-Сибиряка» → ответ с вариантами; бронь → строка `AERIS · Батлер: …`, карточка у хостес; в ленте `TOOL_CALL`/`TOOL_RESULT` по каждому вызову; чат вне списка — прежний поток |
 
+### Перед шагом 6: модель агента умеет функции на нашем ключе
+
+Проверено 14.10 на ключе скоупа `GIGACHAT_API_PERS`: `GigaChat-3-Pro` — 404 «No such model», `GigaChat-2-Pro` и
+`GigaChat-2` — корректный `function_call` (дата в ISO, когда системный промпт требует `YYYY-MM-DD`). Повторить перед
+шагом 6 одним запросом — с ВМ, ключ берётся из `.env.production` и в консоль не печатается:
+
+```bash
+cd /opt/astor-butler && set -a && . ./.env.production && set +a
+TOKEN=$(curl -sS -X POST "${GIGACHAT_OAUTH_URL:-https://ngw.devices.sberbank.ru:9443/api/v2/oauth}" \
+  -H "Authorization: Basic $GIGACHAT_AUTH_KEY" -H "RqUID: $(uuidgen)" \
+  -H 'Content-Type: application/x-www-form-urlencoded' -d "scope=${GIGACHAT_SCOPE:-GIGACHAT_API_PERS}" | jq -r .access_token)
+curl -sS "${GIGACHAT_API_URL:-https://gigachat.devices.sberbank.ru/api/v1}/chat/completions" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{
+    "model": "'"${ASTOR_AGENT_MODEL:-GigaChat-2-Pro}"'",
+    "messages": [{"role": "system", "content": "Сегодня 2026-10-14. Даты передавай в формате YYYY-MM-DD."},
+                 {"role": "user", "content": "Есть стол на двоих завтра в 19:00?"}],
+    "functions": [{"name": "table_availability", "description": "Свободные столы",
+      "parameters": {"type": "object", "properties": {"date": {"type": "string"}, "time": {"type": "string"},
+        "partySize": {"type": "integer"}}, "required": ["date", "time", "partySize"]}}],
+    "function_call": "auto"}' | jq '.choices[0].message.function_call, .error // .message'
+```
+
+Если curl не доверяет сертификату Сбера — добавить к обоим вызовам `--cacert <путь к russian_trusted_root_ca.pem>`.
+Ожидается `{"name": "table_availability", "arguments": {"date": "2026-10-15", "time": "19:00", "partySize": 2}}`.
+Если ответ 404 «No such model», 4xx про `functions` или `function_call` пуст — поставить в `ASTOR_AGENT_MODEL` (и
+`AGENT_MODEL` у Консьержа) модель, которая на этом ключе отвечает `function_call` (`GigaChat-2-Pro`, запасной —
+`GigaChat-2`), и повторить запрос. С моделью без функций каждый ход агента уходит в запасной путь.
+
 Шаг 6 у Консьержа без `LLM_PROVIDER=gigachat` не включится (в логе `AGENT_ENABLED needs LLM_PROVIDER=gigachat`).
 Батлер должен включить шаги 1, 4 и 6 раньше Консьержа: Консьерж ходит в `/api/ledger/v1/turns`, `/api/capabilities/v1/*`
 и `/api/negotiation/v1/turn` с `X-Astor-Internal-Token` (`ASTOR_INTERNAL_API_TOKEN` в обоих `.env`, уже заведён).
@@ -137,7 +165,7 @@ docker run --rm --network astor-butler_default curlimages/curl -sS -o /dev/null 
 - «не пишите мне» в чате Батлера отвечает агент, а не политика полезности (`ASTOR_USEFULNESS_POLICY_ENABLED`): отписку
   проверять в чате вне списка или с выключенным агентом.
 - У Консьержа чат из списка не получает ответов прежнего потока на свободный текст — только агент; при ошибке модели
-  или таймауте реплики (25 с в переговорах, 12 с в боте Батлера) — запасной путь и строка `FALLBACK` в ленте.
+  или таймауте реплики (60 с, `AGENT_TURN_TIMEOUT_MS` Консьержа) — запасной путь и строка `FALLBACK` в ленте.
 
 ## Стоимость
 
