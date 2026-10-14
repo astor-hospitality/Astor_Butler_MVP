@@ -21,7 +21,7 @@ public class StartupAdminNotifier {
     private final Environment environment;
     private final AstorLinksProperties links;
 
-    @Value("${astor.startup.admin-notification-enabled:true}")
+    @Value("${astor.startup.admin-notification-enabled:false}")
     private boolean enabled;
 
     @EventListener(ApplicationReadyEvent.class)
