@@ -22,6 +22,8 @@ public record CallLogEntry(
         Integer latencyMs
 ) {
     public static final String TYPE_LLM = "llm";
+    public static final String TYPE_LLM_VISION = "llm:vision";
+    public static final String TYPE_LLM_EMBEDDING = "llm:embedding";
     public static final String TYPE_TOOL = "tool";
     public static final String TYPE_GUEST_MESSAGE = "guest_message";
     public static final String TYPE_TARGET_ACTION = "target_action";

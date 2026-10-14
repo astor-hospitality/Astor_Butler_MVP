@@ -83,7 +83,7 @@ public class CallLogRepository {
     /** Totals over {@code from <= ts < to}. */
     public CallLogSummary summary(Instant from, Instant to) {
         return jdbcTemplate.queryForObject("""
-                SELECT SUM(CASE WHEN call_type = 'llm' THEN 1 ELSE 0 END) AS llm_calls,
+                SELECT SUM(CASE WHEN call_type = 'llm' OR call_type LIKE 'llm:%' THEN 1 ELSE 0 END) AS llm_calls,
                        SUM(CASE WHEN call_type = 'tool' THEN 1 ELSE 0 END) AS tool_calls,
                        SUM(CASE WHEN call_type = 'guest_message' THEN 1 ELSE 0 END) AS guest_messages,
                        SUM(CASE WHEN call_type = 'target_action' THEN 1 ELSE 0 END) AS target_actions,

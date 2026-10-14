@@ -1,11 +1,9 @@
 package museon_online.astor_butler.domain.calllog;
 
-import museon_online.astor_butler.model.ModelInteractionAuditRecord;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,7 +49,7 @@ class CallLogWriterTest {
         writer.guestMessage("telegram", "1", null);
         writer.tool("saby:/order", "OK", null, 10L);
         writer.targetAction("bill:open", "ESTIMATED", "direct", "1");
-        writer.llm(record(true, false, Map.of()));
+        writer.llmCall("llm", "GigaChat", "ok", null, 1, 1, 5L);
 
         assertThat(writer.enabled()).isFalse();
         verifyNoInteractions(repository);
@@ -64,38 +62,48 @@ class CallLogWriterTest {
 
         assertThatCode(() -> {
             writer.guestMessage("telegram", "1", null);
-            writer.llm(record(true, false, Map.of("usage", Map.of("prompt_tokens", 1))));
+            writer.llmCall("llm", "GigaChat", "ok", null, 1, 1, 5L);
         }).doesNotThrowAnyException();
     }
 
     @Test
-    void anLlmCallCarriesTokensCostLatencyAndChannel() {
+    void anLlmCallCarriesTokensCostLatencyAndTheCallerOfTheMessage() {
         CallLogWriter writer = writer(true, SALT);
 
-        writer.llm(record(true, false, Map.of("usage", Map.of("prompt_tokens", 1200, "completion_tokens", 300, "total_tokens", 1500))));
+        try (CallLogContext.Scope ignored = CallLogContext.open("TELEGRAM", "42", "corr")) {
+            writer.llmCall("llm", "GigaChat-3-Pro", "ok", null, 1200, 300, 850L);
+        }
 
         CallLogEntry entry = captured();
         assertThat(entry.callType()).isEqualTo("llm");
         assertThat(entry.name()).isEqualTo("GigaChat-3-Pro");
-        assertThat(entry.result()).isEqualTo("ok");
         assertThat(entry.source()).isEqualTo("telegram");
-        assertThat(entry.tokensIn()).isEqualTo(1200);
-        assertThat(entry.tokensOut()).isEqualTo(300);
+        assertThat(entry.correlationId()).isEqualTo("corr");
         assertThat(entry.costRub()).isEqualByComparingTo(new BigDecimal("0.1404"));
         assertThat(entry.latencyMs()).isEqualTo(850);
         assertThat(entry.pseudoUserId()).isEqualTo(writer.pseudonym("42"));
     }
 
     @Test
-    void readsTheUsageNestedUnderTheModelResponseAndMarksFallbacksAndErrors() {
+    void noUsageMeansNullTokensAndNullCost() {
         CallLogWriter writer = writer(true, SALT);
 
-        writer.llm(record(false, true, Map.of("modelResponse", Map.of("usage", Map.of("input_tokens", 10, "output_tokens", 5)))));
-        CallLogEntry fallback = captured();
-        assertThat(fallback.result()).isEqualTo("fallback");
-        assertThat(fallback.errorCode()).isEqualTo("TimeoutException");
-        assertThat(fallback.tokensIn()).isEqualTo(10);
-        assertThat(fallback.tokensOut()).isEqualTo(5);
+        writer.llmCall("llm", "GigaChat-3-Pro", "fallback", null, null, null, 10L);
+
+        CallLogEntry entry = captured();
+        assertThat(entry.tokensIn()).isNull();
+        assertThat(entry.tokensOut()).isNull();
+        assertThat(entry.costRub()).isNull();
+        assertThat(entry.source()).isEqualTo("internal");
+    }
+
+    @Test
+    void readsTheUsageOfAnAnswerOrOfAnAuditedModelResponse() {
+        assertThat(CallLogWriter.integer(CallLogWriter.usage(Map.of("usage", Map.of("prompt_tokens", 3))), "prompt_tokens")).isEqualTo(3);
+        assertThat(CallLogWriter.integer(CallLogWriter.usage(Map.of("modelResponse", Map.of("usage", Map.of("input_tokens", 10)))),
+                "prompt_tokens", "input_tokens")).isEqualTo(10);
+        assertThat(CallLogWriter.integer(Map.of("output_tokens", "5"), "completion_tokens", "output_tokens")).isEqualTo(5);
+        assertThat(CallLogWriter.usage(null).isEmpty()).isTrue();
     }
 
     private CallLogEntry captured() {
@@ -109,11 +117,5 @@ class CallLogWriterTest {
         properties.setEnabled(enabled);
         properties.setSalt(salt);
         return new CallLogWriter(properties, repository, new ModelTariff());
-    }
-
-    static ModelInteractionAuditRecord record(boolean success, boolean fallback, Map<String, Object> metadata) {
-        return new ModelInteractionAuditRecord("AERIS", "TELEGRAM", 7L, 42L, "corr", "scenario", "STATE", "purpose",
-                "gigachat", "GigaChat-3-Pro", "", "prompt text", "guest text", "", "reply", success && !fallback, fallback, success,
-                success ? "" : "TimeoutException", success ? "" : "slow", Duration.ofMillis(850), metadata);
     }
 }

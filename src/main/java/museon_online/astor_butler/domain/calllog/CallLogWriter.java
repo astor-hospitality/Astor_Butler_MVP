@@ -1,13 +1,11 @@
 package museon_online.astor_butler.domain.calllog;
 
 import lombok.extern.slf4j.Slf4j;
-import museon_online.astor_butler.model.ModelInteractionAuditRecord;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Locale;
@@ -51,23 +49,24 @@ public class CallLogWriter {
         return properties.isEnabled();
     }
 
-    /** One model call, as audited in {@code model_interaction_audit}. */
-    public void llm(ModelInteractionAuditRecord record) {
-        if (!enabled() || record == null) {
+    /**
+     * One model call ({@code llm}, {@code llm:vision}, {@code llm:embedding}), written by {@link CallLogModelGateway}.
+     * Channel, guest and correlation come from {@link CallLogContext}; without one the source is {@code internal}.
+     */
+    public void llmCall(String callType, String model, String result, String errorCode, Integer tokensIn, Integer tokensOut, Long latencyMs) {
+        if (!enabled()) {
             return;
         }
         try {
-            Map<?, ?> usage = usage(record.metadata());
-            Integer tokensIn = integer(usage, "prompt_tokens", "input_tokens");
-            Integer tokensOut = integer(usage, "completion_tokens", "output_tokens");
-            String model = blank(record.model()) ? record.provider() : record.model();
-            String result = record.success() && !record.fallbackUsed() ? "ok" : record.fallbackUsed() ? "fallback" : "error";
-            Long userId = record.telegramUserId() != null ? record.telegramUserId() : record.chatId();
-            append(new CallLogEntry(Instant.now(), lower(record.channel()), pseudonym(userId == null ? null : userId.toString()),
-                    record.correlationId(), CallLogEntry.TYPE_LLM, blankToNull(model), result, blankToNull(record.errorType()),
-                    tokensIn, tokensOut, tariff.cost(model, tokensIn, tokensOut), millis(record.latency())));
+            CallLogContext.Caller caller = CallLogContext.current();
+            append(new CallLogEntry(Instant.now(),
+                    caller == null || blank(caller.source()) ? "internal" : lower(caller.source()),
+                    caller == null ? null : pseudonym(caller.rawUserId()),
+                    caller == null ? null : blankToNull(caller.correlationId()),
+                    callType, blankToNull(model), nonBlank(result), blankToNull(errorCode),
+                    tokensIn, tokensOut, tariff.cost(model, tokensIn, tokensOut), millis(latencyMs)));
         } catch (RuntimeException e) {
-            log.warn("Call log LLM row was not written: {}", e.getClass().getSimpleName());
+            log.warn("Call log model row was not written: {}", e.getClass().getSimpleName());
         }
     }
 
@@ -77,7 +76,7 @@ public class CallLogWriter {
             return;
         }
         append(new CallLogEntry(Instant.now(), null, null, null, CallLogEntry.TYPE_TOOL, name, nonBlank(result),
-                errorCode, null, null, null, latencyMs == null ? null : (int) Math.min(Integer.MAX_VALUE, Math.max(0, latencyMs))));
+                errorCode, null, null, null, millis(latencyMs)));
     }
 
     /** One message from a guest. */
@@ -130,7 +129,8 @@ public class CallLogWriter {
         }
     }
 
-    private static Map<?, ?> usage(Map<String, Object> metadata) {
+    /** The token usage of a model answer: {@code usage}, or {@code modelResponse.usage} of an audit record. */
+    static Map<?, ?> usage(Map<String, Object> metadata) {
         if (metadata == null) {
             return Map.of();
         }
@@ -143,7 +143,7 @@ public class CallLogWriter {
         return Map.of();
     }
 
-    private static Integer integer(Map<?, ?> map, String... keys) {
+    static Integer integer(Map<?, ?> map, String... keys) {
         for (String key : keys) {
             Object value = map.get(key);
             if (value instanceof Number number) {
@@ -160,8 +160,8 @@ public class CallLogWriter {
         return null;
     }
 
-    private static Integer millis(Duration latency) {
-        return latency == null ? null : (int) Math.min(Integer.MAX_VALUE, Math.max(0, latency.toMillis()));
+    private static Integer millis(Long latencyMs) {
+        return latencyMs == null ? null : (int) Math.min(Integer.MAX_VALUE, Math.max(0, latencyMs));
     }
 
     private static String lower(String value) {
