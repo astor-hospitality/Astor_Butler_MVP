@@ -132,20 +132,26 @@ public class SabyLunchOrderProvider implements ExternalLunchOrderProvider {
 
         try {
             JsonNode existing = client.get(SabyReservationProvider.ORDER_PATH + bookingId, Map.of());
+            // Live Presto (13.10) answers GET order/{id} without product and pointId and with "nomenclatures": {} when the
+            // booking has no dishes. Absent fields are fine; present ones must still match this point.
             if (!(existing instanceof ObjectNode snapshot)
                     || !snapshot.path("booking").isObject()
                     || !snapshot.path("customer").isObject()
-                    || !"restaurant".equals(snapshot.path("product").asText())
-                    || !snapshot.path("pointId").asText().equals(properties.getPointId().trim())) {
+                    || snapshot.hasNonNull("product") && !"restaurant".equals(snapshot.path("product").asText())
+                    || snapshot.hasNonNull("pointId") && !snapshot.path("pointId").asText().equals(properties.getPointId().trim())) {
                 return new Result(false, providerId(), SabyReservationProvider.RESULT_UNKNOWN, "",
                         "Cannot safely read the complete booking; staff must check the lunch order in Presto.");
             }
             JsonNode existingDishes = snapshot.get("nomenclatures");
-            if (existingDishes != null && (!existingDishes.isArray() || !existingDishes.isEmpty())) {
+            boolean noDishes = existingDishes == null || existingDishes.isNull()
+                    || (existingDishes.isArray() || existingDishes.isObject()) && existingDishes.isEmpty();
+            if (!noDishes) {
                 return new Result(false, providerId(), "EXISTING_DISHES_REQUIRE_REVIEW", "",
                         "Presto already has dishes or an unknown dish format; staff must reconcile the lunch without overwriting or duplicating items.");
             }
             ObjectNode update = snapshot.deepCopy();
+            update.put("product", "restaurant");
+            update.set("pointId", new ObjectMapper().valueToTree(SabyOrderPayload.idValue(properties.getPointId())));
             update.set("nomenclatures", new ObjectMapper().valueToTree(nomenclatures));
             if (preorderMark != null) {
                 preorderMark.sabyLine(order.startAt(), order.guests()).ifPresent(line -> withPreorderMark(update, line));

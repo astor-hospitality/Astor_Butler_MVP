@@ -355,6 +355,34 @@ class SabyLunchOrderProviderTest {
         assertThat(noMarker.get("comment").asText()).startsWith(line + " · zzz").endsWith("…").hasSize(SabyOrderPayload.MAX_GUEST_COMMENT);
     }
 
+    @Test
+    void attachesDishesToALiveShapedBookingWithoutProductPointAndWithEmptyDishObject() {
+        Fixture fixture = fixture(writable());
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo(containsString("/retail/nomenclature/price-list")))
+                .andRespond(withSuccess(PRICE_LISTS, MediaType.APPLICATION_JSON));
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andRespond(withSuccess("[{\"id\": 31, \"name\": \"Борщ со сметаной\", \"cost\": 270}]", MediaType.APPLICATION_JSON));
+        fixture.server().expect(once(), requestTo("https://api.saby.test/retail/order/" + BOOKING_ID))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"datetime":"2026-10-07 13:00:00","comment":"Astor Butler #77","externalId":"x",
+                         "booking":{"hall":1,"table":null,"visitors":2,"woTable":true},
+                         "customer":{"phone":"79990000000"},"nomenclatures":{}}
+                        """, MediaType.APPLICATION_JSON));
+        fixture.server().expect(once(), requestTo(UPDATE_URL))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.product").value("restaurant"))
+                .andExpect(jsonPath("$.pointId").value(206))
+                .andExpect(jsonPath("$.nomenclatures[0].id").value(31))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 1))), "astor-lunch-78");
+
+        assertThat(result.accepted()).isTrue();
+        fixture.server().verify();
+    }
+
     private static void expectBooking(MockRestServiceServer server, String dishes) {
         server.expect(once(), requestTo("https://api.saby.test/retail/order/" + BOOKING_ID))
                 .andExpect(method(HttpMethod.GET))
