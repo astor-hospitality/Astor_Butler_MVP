@@ -783,7 +783,8 @@ public class TableReservationService {
         if (command == null) {
             throw badRequest("Request body is required");
         }
-        if (command.chatId() == null) {
+        // A booking from the Concierge's chat has no chat of the Butler's bot; one from the bot always has.
+        if (command.chatId() == null && !command.concierge()) {
             throw badRequest("chatId is required");
         }
         validateWindow(command.requestedStartAt(), command.requestedEndAt());

@@ -133,6 +133,23 @@ class VisitReviewServiceTest {
         verify(notifier, times(2)).reviewPrompt(due);
     }
 
+    @Test
+    void submitRecordsTheStarsOnceWithTheJourneyEvent() {
+        museon_online.astor_butler.domain.journey.JourneyEvents journey = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.JourneyEvents.class);
+        reviews.setJourneyEvents(journey);
+        GuestBill bill = bill(79L, NOW.minus(Duration.ofHours(2)));
+
+        assertThat(reviews.submit(79L, 4, "Очень вкусно")).isTrue();
+        assertThat(reviews.submit(79L, 5, null)).isFalse();
+        assertThat(reviews.submit(80L, 5, null)).isFalse();
+
+        assertThat(reviews.reviewOf(bill.id()).orElseThrow().stars()).isEqualTo(4);
+        verify(journey).onReservationId(79L, museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW,
+                museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=4");
+        verify(notifier, never()).reviewPrompt(any());
+        assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type).contains(BillOperationType.REVIEW_RECEIVED);
+    }
+
     private GuestBill bill(long reservationId, Instant visitEndsAt) {
         return bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), visitEndsAt));

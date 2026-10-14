@@ -9,18 +9,25 @@ import museon_online.astor_butler.domain.ledger.VisitTurnDraft;
 import museon_online.astor_butler.model.ModelTool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * The catalog of tools both agents call. An unknown name is {@code NOT_FOUND}, a failing tool {@code UNAVAILABLE}:
  * the caller always gets an answer. Every call is written to the visit ledger as a TOOL_CALL and a TOOL_RESULT, with
  * phone arguments masked. With {@code ASTOR_CAPABILITIES_ENABLED} off it lists nothing and touches nothing.
+ *
+ * <p>A commitment tool (a booking, an order) runs only with an idempotency key, at most once per key: the result,
+ * a failure included, is saved and a repeated key gets it back without running the tool ({@code replayed = true} in
+ * the ledger). A missing key is a {@code BAD_ARGUMENT}; without the store no commitment runs.
  */
 @Component
 public class CapabilityRegistry {
@@ -31,8 +38,16 @@ public class CapabilityRegistry {
     private final Map<String, CapabilityTool> tools = new LinkedHashMap<>();
     private final LedgerWriter ledger;
     private final CapabilityProperties properties;
+    private final IdempotencyStore idempotency;
 
+    /** Without the idempotency store: read tools only, every commitment answers {@code UNAVAILABLE}. */
     public CapabilityRegistry(List<CapabilityTool> tools, LedgerWriter ledger, CapabilityProperties properties) {
+        this(tools, ledger, properties, null);
+    }
+
+    @Autowired
+    public CapabilityRegistry(List<CapabilityTool> tools, LedgerWriter ledger, CapabilityProperties properties,
+                              IdempotencyStore idempotency) {
         for (CapabilityTool tool : tools) {
             if (this.tools.putIfAbsent(tool.name(), tool) != null) {
                 throw new IllegalStateException("Two capability tools are named " + tool.name());
@@ -40,6 +55,7 @@ public class CapabilityRegistry {
         }
         this.ledger = ledger;
         this.properties = properties;
+        this.idempotency = idempotency;
     }
 
     public boolean enabled() {
@@ -60,24 +76,89 @@ public class CapabilityRegistry {
             return CapabilityResult.error(CapabilityResult.UNAVAILABLE);
         }
         Map<String, Object> arguments = args == null ? Map.of() : args;
+        CapabilityTool tool = name == null ? null : tools.get(name);
+        String key = tool != null && tool.commitment() ? key(ctx) : null;
+        Optional<CapabilityResult> saved = key == null ? Optional.empty() : saved(key);
+        boolean replayed = saved.isPresent() && saved.get() != UNREADABLE;
+
         Map<String, Object> callPayload = new LinkedHashMap<>();
         callPayload.put("tool", name);
         callPayload.put("arguments", masked(arguments));
+        if (replayed) {
+            callPayload.put("replayed", true);
+        }
         record(ctx, TurnKind.TOOL_CALL, name, callPayload);
 
-        CapabilityResult result = run(name, ctx, arguments);
+        CapabilityResult result;
+        if (replayed) {
+            result = saved.get();
+        } else if (tool != null && tool.commitment()) {
+            result = commit(tool, key, saved.isPresent(), ctx, arguments);
+        } else {
+            result = run(tool, ctx, arguments);
+        }
 
         Map<String, Object> resultPayload = new LinkedHashMap<>();
         resultPayload.put("tool", name);
         resultPayload.put("ok", result.ok());
         resultPayload.put("error", result.error());
         resultPayload.put("facts", masked(result.facts() == null ? Map.of() : result.facts()));
+        if (replayed) {
+            resultPayload.put("replayed", true);
+        }
         record(ctx, TurnKind.TOOL_RESULT, name, resultPayload);
         return result;
     }
 
-    private CapabilityResult run(String name, CapabilityContext ctx, Map<String, Object> arguments) {
-        CapabilityTool tool = name == null ? null : tools.get(name);
+    /** Marks a store that could not be read: the commitment does not run blind. */
+    private static final CapabilityResult UNREADABLE = CapabilityResult.error(CapabilityResult.UNAVAILABLE);
+
+    private static String key(CapabilityContext ctx) {
+        String key = ctx == null ? null : ctx.idempotencyKey();
+        return key == null || key.isBlank() ? null : key.trim();
+    }
+
+    private Optional<CapabilityResult> saved(String key) {
+        if (idempotency == null || key.length() > IdempotencyStore.MAX_KEY) {
+            return Optional.empty();
+        }
+        try {
+            return idempotency.find(key);
+        } catch (RuntimeException e) {
+            log.warn("Idempotency key not checked: reason={}", e.getClass().getSimpleName());
+            return Optional.of(UNREADABLE);
+        }
+    }
+
+    /**
+     * Runs a commitment once for its key and saves what came of it. The result handed back is the saved one, so the
+     * first answer and every replay are the same; a concurrent call that saved first wins.
+     */
+    private CapabilityResult commit(CapabilityTool tool, String key, boolean storeUnreadable, CapabilityContext ctx,
+                                    Map<String, Object> arguments) {
+        if (key == null || key.length() > IdempotencyStore.MAX_KEY) {
+            return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
+        }
+        if (idempotency == null || storeUnreadable) {
+            return CapabilityResult.error(CapabilityResult.UNAVAILABLE);
+        }
+        CapabilityResult result = run(tool, ctx, arguments);
+        try {
+            idempotency.save(key, tool.name(), result);
+        } catch (DataIntegrityViolationException e) {
+            log.info("Commitment saved concurrently under the same key: tool={}", tool.name());
+        } catch (RuntimeException e) {
+            log.warn("Commitment result not saved: tool={}, reason={}", tool.name(), e.getClass().getSimpleName());
+            return result;
+        }
+        try {
+            return idempotency.find(key).orElse(result);
+        } catch (RuntimeException e) {
+            return result;
+        }
+    }
+
+    private CapabilityResult run(CapabilityTool tool, CapabilityContext ctx, Map<String, Object> arguments) {
         if (tool == null) {
             return CapabilityResult.error(CapabilityResult.NOT_FOUND);
         }
@@ -87,7 +168,7 @@ public class CapabilityRegistry {
         } catch (CapabilityArguments.BadArgument e) {
             return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
         } catch (RuntimeException e) {
-            log.warn("Capability tool failed: tool={}, reason={}", name, e.getClass().getSimpleName());
+            log.warn("Capability tool failed: tool={}, reason={}", tool.name(), e.getClass().getSimpleName());
             return CapabilityResult.error(CapabilityResult.UNAVAILABLE);
         }
     }

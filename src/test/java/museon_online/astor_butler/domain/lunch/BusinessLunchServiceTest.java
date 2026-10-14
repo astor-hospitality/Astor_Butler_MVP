@@ -116,6 +116,23 @@ class BusinessLunchServiceTest {
     }
 
     @Test
+    void placesIntoAHeldReservationWithoutHoldingASecondTable() {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-502", ""));
+        BusinessLunchService service = service(List.of(saby));
+        var reservation = BusinessLunchFixtures.reservation(79, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+
+        BusinessLunchService.Placement placement = service.placeFor(reservation, request("CONCIERGE", null));
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(placement.reservation()).isEqualTo(reservation);
+        assertThat(placement.order().tableReservationId()).isEqualTo(79L);
+        assertThat(placement.external().status()).isEqualTo("ACCEPTED");
+        assertThat(BusinessLunchService.lunchTimeIssue(offer, TODAY.plusDays(1), LocalTime.of(17, 0)))
+                .contains(BusinessLunchService.WindowIssue.OUTSIDE_LUNCH_HOURS);
+        assertThat(BusinessLunchService.lunchTimeIssue(offer, TODAY, LocalTime.of(13, 0))).isEmpty();
+    }
+
+    @Test
     void handsTheStructuredOrderToTheExternalSystemAndKeepsItsNumber() {
         FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-501", ""));
         BusinessLunchService service = service(List.of(saby));

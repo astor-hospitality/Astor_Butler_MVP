@@ -63,6 +63,16 @@ class VisitTurnRepositoryTest {
     }
 
     @Test
+    void theSessionOfAVisitIsTheOneLinkedToIt() {
+        repository.append(new VisitTurnDraft(7L, null, TurnSide.STAFF, TurnChannel.STAFF_GROUP, TurnKind.STAFF_ACTION, "SEATED", null, null));
+        repository.append(new VisitTurnDraft(null, "c-1", TurnSide.GUEST, TurnChannel.CONCIERGE_TG, TurnKind.MESSAGE, "хочу ужин", null, null));
+        repository.linkSession("c-1", 7L);
+
+        assertThat(repository.sessionOf(7L)).contains("c-1");
+        assertThat(repository.sessionOf(8L)).isEmpty();
+    }
+
+    @Test
     void countsOnlyGuestMessages() {
         repository.append(new VisitTurnDraft(7L, null, TurnSide.GUEST, TurnChannel.BUTLER_TG, TurnKind.MESSAGE, "раз", null, null));
         repository.append(new VisitTurnDraft(7L, null, TurnSide.GUEST, TurnChannel.CONCIERGE_TG, TurnKind.MESSAGE, null, Map.of("hidden", true), null));

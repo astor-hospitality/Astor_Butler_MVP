@@ -115,6 +115,11 @@ public class HostessBillRequestService {
         return ReviewAsk.NOT_DELIVERED;
     }
 
+    /** The newest bill of the reservation, whatever its state. */
+    public Optional<GuestBill> billOf(long orderId) {
+        return bills.findByReservation(orderId);
+    }
+
     void setHostessChatId(String hostessChatId) {
         this.hostessChatId = hostessChatId;
     }

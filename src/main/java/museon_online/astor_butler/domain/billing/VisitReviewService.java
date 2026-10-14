@@ -167,6 +167,38 @@ public class VisitReviewService {
         return new CallbackResult(true, "Сейчас предложу, как оставить чаевые.", TIP_PHRASE);
     }
 
+    /**
+     * The guest's stars given through an agent instead of the buttons: recorded on the latest bill of the reservation
+     * as the stars button records them, journey REVIEW event included. The guest's words are not kept here, as with
+     * the buttons. False when the reservation has no bill, the bill is cancelled, or the visit was rated already.
+     */
+    public synchronized boolean submit(long reservationId, int stars, String text) {
+        if (stars < 1 || stars > 5) {
+            return false;
+        }
+        Optional<GuestBill> found = bills.findByReservation(reservationId);
+        if (found.isEmpty() || found.get().status() == GuestBillStatus.CANCELLED) {
+            return false;
+        }
+        GuestBill bill = found.get();
+        Optional<VisitReview> existing = reviews.findByBill(bill.id());
+        if (existing.isPresent() && (existing.get().stars() != null || existing.get().ratedAt() != null)) {
+            return false;
+        }
+        if (existing.isEmpty()) {
+            if (bill.chatId() == null) {
+                return false;
+            }
+            reviews.open(bill.id(), bill.chatId());
+        }
+        VisitReview review = reviews.rate(bill.id(), stars);
+        if (journeyEvents != null) {
+            journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=" + review.stars());
+        }
+        bills.reviewNoted(bill.id(), BillOperationType.REVIEW_RECEIVED, "stars=" + review.stars());
+        return true;
+    }
+
     public Optional<VisitReview> reviewOf(Long billId) {
         return billId == null ? Optional.empty() : reviews.findByBill(billId);
     }

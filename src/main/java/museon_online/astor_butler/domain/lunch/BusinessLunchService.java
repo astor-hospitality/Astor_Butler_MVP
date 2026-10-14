@@ -207,6 +207,64 @@ public class BusinessLunchService {
         return new Placement(reservation, false, order, external);
     }
 
+    /**
+     * The lunch ordered into a reservation the guest already holds (the agents' {@code lunch_order_place}): no second
+     * table is held, the order is handed to the venue's system and to the listeners as {@link #place} does. The
+     * reservation's time must fall on a lunch day within the lunch hours; the hostess still confirms the reservation.
+     */
+    public Placement placeFor(TableReservationOrder reservation, Request request) {
+        BusinessLunchOffer offer = request.offer();
+        BusinessLunchOffer.LunchSet set = offer.aLaCarte() ? null : offer.set(request.setCode())
+                .orElseThrow(() -> new IllegalArgumentException("Unknown business lunch set: " + request.setCode()));
+        if (request.guests() < 1 || request.guests() > MAX_GUESTS) {
+            throw new IllegalArgumentException("Business lunch is for 1 to " + MAX_GUESTS + " guests");
+        }
+        lunchTimeIssue(offer, request.date(), request.time()).ifPresent(issue -> {
+            throw new IllegalArgumentException("Business lunch cannot be placed: " + issue);
+        });
+        List<BusinessLunchOrder.Item> dishes = items(offer, request.dishCodes(), set == null ? 1 : request.guests());
+        if (dishes.isEmpty()) {
+            throw new IllegalArgumentException("Business lunch order has no dishes");
+        }
+        Optional<ExternalLunchOrderProvider> provider = externalProviders.stream()
+                .filter(candidate -> isReady(candidate.status()))
+                .findFirst();
+        BusinessLunchOrder order = order(request, set, dishes, reservation, reservation.requestedStartAt(), reservation.requestedEndAt());
+        ExternalLunchOrderProvider.Result external = provider.map(ready -> submit(ready, order)).orElseGet(ExternalLunchOrderProvider.Result::manualEntry);
+        notifyListeners(request, order, external);
+        return new Placement(reservation, false, order, external);
+    }
+
+    /** Whether a held reservation's time can carry a lunch: the day and the hours only, the time may have begun. */
+    public static Optional<WindowIssue> lunchTimeIssue(BusinessLunchOffer offer, LocalDate date, LocalTime time) {
+        if (date == null || time == null) {
+            return Optional.empty();
+        }
+        if (!offer.days().contains(date.getDayOfWeek())) {
+            return Optional.of(WindowIssue.NOT_A_LUNCH_DAY);
+        }
+        if (time.isBefore(offer.from()) || !time.isBefore(offer.to())) {
+            return Optional.of(WindowIssue.OUTSIDE_LUNCH_HOURS);
+        }
+        return Optional.empty();
+    }
+
+    /** What the guest pays for these dishes by the offer's prices; null when a price is not published. */
+    public static Integer totalRub(BusinessLunchOffer offer, String setCode, List<String> dishCodes, int guests) {
+        if (!offer.aLaCarte()) {
+            return offer.set(setCode).map(BusinessLunchOffer.LunchSet::priceRub).map(price -> price * guests).orElse(null);
+        }
+        int total = 0;
+        for (String code : dishCodes) {
+            Integer price = offer.dish(code).map(BusinessLunchOffer.Dish::priceRub).orElse(null);
+            if (price == null) {
+                return null;
+            }
+            total += price;
+        }
+        return total;
+    }
+
     private void notifyListeners(Request request, BusinessLunchOrder order, ExternalLunchOrderProvider.Result external) {
         for (BusinessLunchOrderListener listener : listeners) {
             try {

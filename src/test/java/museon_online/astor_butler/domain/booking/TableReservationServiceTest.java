@@ -966,6 +966,25 @@ class TableReservationServiceTest {
         verify(notificationService).notifyGuestRejected(eq(rejected), any());
     }
 
+    @Test
+    void aConciergeBookingNeedsNoChatButATelegramOneDoes() {
+        Instant start = Instant.parse("2026-06-06T17:00:00Z");
+        Instant end = Instant.parse("2026-06-06T19:00:00Z");
+        VenueTable table = table(1L, "5", 4, true, true);
+        TableReservationCommand concierge = new TableReservationCommand(null, null, null, "AERIS", "5", null, null, start, end, 3,
+                "Наталья", "+79990000000", null, null, null, TableReservationCommand.CHANNEL_CONCIERGE);
+        TableReservationCommand telegram = new TableReservationCommand(null, null, null, "AERIS", "5", null, null, start, end, 3,
+                "Наталья", "+79990000000", null, null, null);
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table));
+        when(repository.createAwaitingManagerOrder(concierge, table)).thenReturn(order(10L, table));
+
+        service.createReservation(concierge);
+
+        verify(repository).createAwaitingManagerOrder(concierge, table);
+        assertThat(telegram.channel()).isEqualTo(TableReservationCommand.CHANNEL_TELEGRAM);
+        assertThatThrownBy(() -> service.createReservation(telegram)).isInstanceOf(ApiException.class);
+    }
+
     private TableReservationCommand command(String tableCode, Instant start, Instant end, int partySize) {
         return new TableReservationCommand(
                 1773317437L,

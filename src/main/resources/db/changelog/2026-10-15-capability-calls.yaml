@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-15-capability-calls
+      author: astor-butler
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-15-capability-calls.sql
+  # A booking the Concierge makes has no chat of the Butler's bot: its guest talks in the Concierge's chat.
+  - changeSet:
+      id: 2026-10-15-concierge-reservations-without-chat
+      author: astor-butler
+      changes:
+        - dropNotNullConstraint:
+            tableName: table_reservation_orders
+            columnName: chat_id
+            columnDataType: BIGINT
