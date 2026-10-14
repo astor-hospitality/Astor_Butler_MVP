@@ -71,6 +71,14 @@ public class AgentLoop {
     }
 
     public AgentOutcome run(List<ModelChatMessage> history, List<ModelTool> tools, CapabilityContext ctx) {
+        return run(history, tools, ctx, true);
+    }
+
+    /**
+     * @param auditContent false when the guest has not agreed to keep the words: the model audit then stores only
+     *                     the roles and tool names of each call ({@code auditContent=false} in the request metadata)
+     */
+    public AgentOutcome run(List<ModelChatMessage> history, List<ModelTool> tools, CapabilityContext ctx, boolean auditContent) {
         if (model == null) {
             return AgentOutcome.fallback(List.of(), 0);
         }
@@ -84,7 +92,7 @@ public class AgentLoop {
             boolean toolsAllowed = calls < properties.getMaxToolCalls() && !offered.isEmpty();
             ModelChatResponse response;
             try {
-                response = ask(messages, toolsAllowed ? offered : List.of(), ctx, deadline);
+                response = ask(messages, toolsAllowed ? offered : List.of(), ctx, deadline, auditContent);
             } catch (RuntimeException e) {
                 log.warn("Agent turn falls back: calls={}, reason={}", calls, reason(e));
                 return AgentOutcome.fallback(uses, calls);
@@ -110,14 +118,15 @@ public class AgentLoop {
     }
 
     /** One model call bounded by the per-call timeout and what is left of the turn. */
-    private ModelChatResponse ask(List<ModelChatMessage> messages, List<ModelTool> tools, CapabilityContext ctx, long deadline) {
+    private ModelChatResponse ask(List<ModelChatMessage> messages, List<ModelTool> tools, CapabilityContext ctx, long deadline,
+                                  boolean auditContent) {
         long left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
         if (left <= 0) {
             throw new IllegalStateException("turn_timeout");
         }
         long timeout = Math.min(Math.max(1, properties.getModelTimeoutMs()), left);
         ModelChatRequest request = new ModelChatRequest(List.copyOf(messages), tools, ModelProfile.FRONTLINE, "butler_agent",
-                metadata(ctx), properties.getModel(), properties.getMaxTokens());
+                metadata(ctx, auditContent), properties.getModel(), properties.getMaxTokens());
         ToolCallingModel current = model;
         CompletableFuture<ModelChatResponse> answer = CompletableFuture.supplyAsync(
                         // The call log names the guest and the message of the calling thread.
@@ -154,9 +163,12 @@ public class AgentLoop {
                 ctx.guestPhone());
     }
 
-    private static Map<String, Object> metadata(CapabilityContext ctx) {
+    private static Map<String, Object> metadata(CapabilityContext ctx, boolean auditContent) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("scenario", "BUTLER_AGENT");
+        if (!auditContent) {
+            metadata.put("auditContent", false);
+        }
         if (ctx != null) {
             metadata.put("channel", CapabilityContext.BUTLER_AGENT.equals(ctx.caller()) ? "TELEGRAM" : "CONCIERGE");
             if (ctx.chatId() != null) {

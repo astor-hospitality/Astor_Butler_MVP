@@ -63,6 +63,9 @@ import java.util.UUID;
 @ConditionalOnProperty(prefix = "astor.model", name = "provider", havingValue = "gigachat", matchIfMissing = false)
 public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
 
+    /** What the audit keeps of a text the guest has not agreed to store. */
+    static final String HIDDEN = "[скрыто]";
+
     static final String PROVIDER = "gigachat";
     static final String DEFAULT_OAUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth";
     static final String DEFAULT_BASE_URL = "https://gigachat.devices.sberbank.ru/api/v1";
@@ -286,7 +289,9 @@ public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
 
     /**
      * Same record as the generateText callers write. The prompt keeps the roles and texts that were sent;
-     * tool arguments are never stored, only the called tool's name.
+     * tool arguments are never stored, only the called tool's name. A request whose metadata says
+     * {@code auditContent=false} (a guest who has not consented) keeps only roles and tool names: every text is
+     * {@value #HIDDEN}.
      */
     private void auditChat(ModelChatRequest request, String model, ModelChatResponse response, Duration latency,
                            RuntimeException error) {
@@ -295,6 +300,7 @@ public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
         }
         try {
             Map<String, Object> context = request.metadata();
+            boolean content = auditContent(context);
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("capability", ModelCapability.TOOL_CALLING.name());
             metadata.put("tools", request.tools().stream().map(ModelTool::name).toList());
@@ -315,10 +321,10 @@ public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
                     PROVIDER,
                     model,
                     request.profile().name(),
-                    auditPrompt(request.messages()),
-                    contextString(context, "guestText"),
+                    auditPrompt(request.messages(), content),
+                    content ? contextString(context, "guestText") : "",
                     "",
-                    response == null ? "" : (toolCall.isEmpty() ? response.text() : "function_call:" + toolCall),
+                    response == null ? "" : (!toolCall.isEmpty() ? "function_call:" + toolCall : content ? response.text() : HIDDEN),
                     response != null,
                     false,
                     error == null,
@@ -332,7 +338,13 @@ public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
         }
     }
 
-    private static String auditPrompt(List<ModelChatMessage> messages) {
+    /** Only an explicit {@code false} hides the texts: callers that never set it keep the full audit. */
+    private static boolean auditContent(Map<String, Object> context) {
+        Object value = context.get("auditContent");
+        return !(Boolean.FALSE.equals(value) || "false".equalsIgnoreCase(String.valueOf(value)));
+    }
+
+    private static String auditPrompt(List<ModelChatMessage> messages, boolean content) {
         StringBuilder prompt = new StringBuilder();
         for (ModelChatMessage message : messages) {
             prompt.append(message.role()).append(": ");
@@ -342,7 +354,7 @@ public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
                 if (message.name() != null && !message.name().isBlank()) {
                     prompt.append('[').append(message.name()).append("] ");
                 }
-                prompt.append(nullToEmpty(message.content()));
+                prompt.append(content ? nullToEmpty(message.content()) : HIDDEN);
             }
             prompt.append('\n');
         }

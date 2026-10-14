@@ -30,6 +30,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -74,7 +75,7 @@ class ButlerAgentTest {
 
     @SuppressWarnings("unchecked")
     private void loopAnswers(AgentOutcome outcome) {
-        when(loop.run(anyList(), anyList(), any())).thenAnswer(invocation -> {
+        when(loop.run(anyList(), anyList(), any(), anyBoolean())).thenAnswer(invocation -> {
             histories.add(List.copyOf((List<ModelChatMessage>) invocation.getArgument(0)));
             contexts.add(invocation.getArgument(2));
             return outcome;
@@ -234,7 +235,7 @@ class ButlerAgentTest {
     @SuppressWarnings("unchecked")
     private void loopAnswersInTurn(AgentOutcome... outcomes) {
         java.util.concurrent.atomic.AtomicInteger next = new java.util.concurrent.atomic.AtomicInteger();
-        when(loop.run(anyList(), anyList(), any())).thenAnswer(invocation -> {
+        when(loop.run(anyList(), anyList(), any(), anyBoolean())).thenAnswer(invocation -> {
             histories.add(List.copyOf((List<ModelChatMessage>) invocation.getArgument(0)));
             contexts.add(invocation.getArgument(2));
             return outcomes[Math.min(next.getAndIncrement(), outcomes.length - 1)];
