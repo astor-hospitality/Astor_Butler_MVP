@@ -82,6 +82,7 @@ class FirstTouchScenarioTest {
 
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
         assertThat(outgoing.text()).isEqualTo("AERIS · Батлер. Я на связи за столом: меню, вино, счёт, позвать официанта. Что подать?");
+        assertThat(outgoing.metadata().get("replyKeyboardRows")).isEqualTo(FirstTouchScenario.SHORT_GREETING_BUTTONS);
         assertThat(outgoing.actions()).containsExactly("SAFE_RESTART", "SHORT_GREETING", "OPEN_MENU");
         verify(fsmStorage).clear(incoming.chatId());
         verify(tableBookingDraftStorage).clear(incoming.chatId());
@@ -257,7 +258,7 @@ class FirstTouchScenarioTest {
     }
 
     @Test
-    void knownGuestStartKeepsTheUsualGreetingWithoutALastLunch() {
+    void knownGuestStartWithoutALastLunchGetsTheShortFirstScreen() {
         IncomingMessage incoming = telegram("/start", null);
         when(consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())).thenReturn(true);
         museon_online.astor_butler.domain.journey.RepeatLunchGreeting greeting = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.RepeatLunchGreeting.class);
@@ -286,11 +287,16 @@ class FirstTouchScenarioTest {
 
     @Test
     void theThreeButtonsSpeakWordsTheExistingFlowsAlreadyTake() {
-        // «Меню ланча» → BusinessLunchScenario (any idle text with «ланч»); «Позвать официанта» → the seated table request;
-        // «Счёт» → the guest bill flow, decided before any scenario.
+        // «Меню ланча» → BusinessLunchScenario (any idle text with «ланч»); «Счёт» → the guest bill flow, decided before
+        // any scenario. «Позвать официанта»: seated → ButlerTalk's table request to the waiter; not seated → the deterministic
+        // understanding gives UNKNOWN and ScenarioRouter's ordered list reaches ManagerHelpScenario («позвать») before
+        // ConciergeScenario: a team request with an alert to the staff chat, not the generic fallback.
         assertThat(FirstTouchScenario.SHORT_GREETING_BUTTONS.get(0).get(0).toLowerCase()).contains("ланч");
         assertThat(museon_online.astor_butler.domain.journey.talk.TableRequest.recognise("Позвать официанта"))
                 .contains(museon_online.astor_butler.domain.journey.talk.TableRequest.WAITER);
+        ManagerHelpScenario managerHelp = new ManagerHelpScenario(fsmStorage,
+                org.mockito.Mockito.mock(museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository.class));
+        assertThat(managerHelp.supports(telegram("Позвать официанта", null), BotState.READY_FOR_DIALOG, "Позвать официанта")).isTrue();
         assertThat(museon_online.astor_butler.domain.billing.GuestBillIntent.matches("Счёт")).isTrue();
     }
 
