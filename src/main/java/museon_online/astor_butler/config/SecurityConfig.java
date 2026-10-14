@@ -1,5 +1,7 @@
 package museon_online.astor_butler.config;
 
+import museon_online.astor_butler.api.board.BoardProperties;
+import museon_online.astor_butler.api.board.BoardTokenFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,7 +22,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            @Value("${" + InternalApiGuardFilter.PROPERTY + ":}") String internalApiToken
+            @Value("${" + InternalApiGuardFilter.PROPERTY + ":}") String internalApiToken,
+            BoardProperties board
     ) throws Exception {
         http
                 .cors(Customizer.withDefaults())
@@ -29,6 +32,8 @@ public class SecurityConfig {
                 // need X-Astor-Internal-Token; /api/messages needs it for every channel except WEB. After the CORS
                 // filter so browser preflights are answered first. See InternalApiGuardFilter.
                 .addFilterAfter(new InternalApiGuardFilter(internalApiToken), CorsFilter.class)
+                // The closed board (/api/board/**) needs X-Astor-Board-Token; see BoardTokenFilter.
+                .addFilterAfter(new BoardTokenFilter(board), InternalApiGuardFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         // Разрешаем Swagger
                         .requestMatchers(

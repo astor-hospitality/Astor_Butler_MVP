@@ -18,6 +18,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -62,7 +64,8 @@ public class BoardController {
 
     @GetMapping("/visits")
     @Operation(summary = "Visits of the window (by visit day), masked")
-    public List<BoardVisit> visits(@RequestParam(required = false) String from, @RequestParam(required = false) String to) {
+    public List<BoardVisit> visits(@RequestParam(name = "from", required = false) String from,
+                                   @RequestParam(name = "to", required = false) String to) {
         Instant[] window = window(from, to);
         return queries.visits(window[0], window[1]).stream()
                 .map(row -> new BoardVisit(row.id(), row.reservationId(), row.stage(), text(row.visitDay()),
@@ -73,13 +76,14 @@ public class BoardController {
 
     @GetMapping("/visits/{id}/turns")
     @Operation(summary = "The visit's turns in time order")
-    public List<BoardTurn> turns(@PathVariable long id) {
+    public List<BoardTurn> turns(@PathVariable("id") long id) {
         return turns.ofVisit(id).stream().map(BoardController::turn).toList();
     }
 
     @GetMapping("/metrics")
     @Operation(summary = "Figures of the window")
-    public BoardMetrics.Metrics metrics(@RequestParam(required = false) String from, @RequestParam(required = false) String to) {
+    public BoardMetrics.Metrics metrics(@RequestParam(name = "from", required = false) String from,
+                                        @RequestParam(name = "to", required = false) String to) {
         Instant[] window = window(from, to);
         return metrics.metrics(window[0], window[1]);
     }
@@ -99,7 +103,26 @@ public class BoardController {
     private static BoardTurn turn(VisitTurn turn) {
         String text = turn.text() == null ? HIDDEN_TEXT : PhoneMask.mask(turn.text());
         return new BoardTurn(text(turn.at()), turn.side().name(), turn.channel().name(), turn.kind().name(), text,
-                turn.payload(), turn.goal());
+                masked(turn.payload()), turn.goal());
+    }
+
+    /** The ledger masks only the text; payloads (tool arguments, results) are masked here, every string at any depth. */
+    @SuppressWarnings("unchecked")
+    static <T> T masked(T value) {
+        if (value instanceof String text) {
+            return (T) PhoneMask.mask(text);
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<Object, Object> copy = new LinkedHashMap<>();
+            map.forEach((key, item) -> copy.put(key, masked(item)));
+            return (T) copy;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list.size());
+            list.forEach(item -> copy.add(masked(item)));
+            return (T) copy;
+        }
+        return value;
     }
 
     /** «Мария К.»: the first name and the surname's initial; one word as is; nothing (or digits) → «Гость». */

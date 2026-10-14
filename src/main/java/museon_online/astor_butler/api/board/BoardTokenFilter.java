@@ -7,7 +7,8 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -18,15 +19,16 @@ import java.security.MessageDigest;
  * Closes {@code /api/board/**}: every request carries {@value #HEADER} equal to {@code ASTOR_BOARD_TOKEN}; the live
  * stream alone may pass it as the query parameter {@value #QUERY_PARAM}, because a browser EventSource cannot set headers.
  * A token shorter than 16 characters closes everything. With the board off every board path answers 404. Other paths
- * are not touched. Registered by Boot as a plain servlet filter, so it runs after the Spring Security firewall.
+ * are not touched. Paths are matched the way Spring MVC routes them (decoded segments), so {@code /api/%62oard} is
+ * guarded too. Registered inside the Spring Security chain after {@code InternalApiGuardFilter} (see
+ * {@code SecurityConfig}); not a {@code @Component}, or Boot would also register it as a plain servlet filter.
  */
-@Component
-public class BoardTokenFilter extends OncePerRequestFilter {
+public final class BoardTokenFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-Astor-Board-Token";
     static final String QUERY_PARAM = "t";
     static final String ENV_VAR = "ASTOR_BOARD_TOKEN";
-    static final String PREFIX = "/api/board";
+    static final String PATHS = "/api/board/**";
     static final String STREAM = "/api/board/v1/stream";
     static final int MIN_TOKEN_LENGTH = 16;
     private static final int MAX_PRESENTED_LENGTH = 512;
@@ -35,6 +37,8 @@ public class BoardTokenFilter extends OncePerRequestFilter {
 
     private final boolean enabled;
     private final byte[] token;
+    private final RequestMatcher board;
+    private final RequestMatcher stream;
 
     public BoardTokenFilter(BoardProperties properties) {
         this.enabled = properties.isEnabled();
@@ -48,12 +52,14 @@ public class BoardTokenFilter extends OncePerRequestFilter {
         } else {
             this.token = value.getBytes(StandardCharsets.UTF_8);
         }
+        PathPatternRequestMatcher.Builder paths = PathPatternRequestMatcher.withDefaults();
+        this.board = paths.matcher(PATHS);
+        this.stream = paths.matcher(STREAM);
     }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = path(request);
-        return !(path.equals(PREFIX) || path.startsWith(PREFIX + "/"));
+        return !board.matches(request);
     }
 
     @Override
@@ -75,18 +81,12 @@ public class BoardTokenFilter extends OncePerRequestFilter {
         if (header != null) {
             return header;
         }
-        return STREAM.equals(path(request)) ? request.getParameter(QUERY_PARAM) : null;
+        return stream.matches(request) ? request.getParameter(QUERY_PARAM) : null;
     }
 
     private boolean valid(String presented) {
         return token != null && presented != null && !presented.isBlank() && presented.length() <= MAX_PRESENTED_LENGTH
                 && MessageDigest.isEqual(token, presented.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static String path(HttpServletRequest request) {
-        String uri = request.getRequestURI() == null ? "" : request.getRequestURI();
-        String context = request.getContextPath();
-        return context != null && !context.isEmpty() && uri.startsWith(context) ? uri.substring(context.length()) : uri;
     }
 
     private static void deny(HttpServletResponse response, int status, String error) throws IOException {

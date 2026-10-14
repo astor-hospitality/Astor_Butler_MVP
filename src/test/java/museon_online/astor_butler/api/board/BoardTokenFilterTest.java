@@ -57,6 +57,14 @@ class BoardTokenFilterTest {
     }
 
     @Test
+    void percentEncodedBoardPathIsGuardedToo() throws Exception {
+        MockHttpServletRequest request = get("/api/%62oard/v1/visits");
+        request.setServletPath("/api/board/v1/visits");
+
+        assertThat(run(filter(TOKEN), request).getStatus()).isEqualTo(401);
+    }
+
+    @Test
     void otherPathsAreNotTouched() throws Exception {
         MockFilterChain chain = new MockFilterChain();
         filter(TOKEN).doFilter(get("/api/web/chat"), new MockHttpServletResponse(), chain);

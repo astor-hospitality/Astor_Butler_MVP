@@ -77,4 +77,20 @@ class BoardControllerTest {
         assertThat(turns.getFirst().side()).isEqualTo("GUEST");
         assertThat(turns.getFirst().payload()).containsEntry("hidden", true);
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void phonesInPayloadsAreMasked() {
+        long reservation = database.reservation("Мария Кузнецова", null, null, NOW);
+        long visit = database.visit(reservation, null, "REQUESTED", NOW, 0);
+        database.turn(visit, "CONCIERGE", "TOOL_CALL", null, "{\"phone\":\"+79120000060\",\"guest\":{\"phones\":"
+                + "[\"8 912 000-00-61\"],\"party\":2}}", NOW);
+
+        java.util.Map<String, Object> payload = controller.turns(visit).getFirst().payload();
+
+        assertThat(payload).containsEntry("phone", "+7 912 ***-**-60");
+        assertThat((java.util.Map<String, Object>) payload.get("guest")).containsEntry("phones", List.of("+7 912 ***-**-61"))
+                .containsEntry("party", 2);
+        assertThat(payload.toString()).doesNotContainPattern("\\d{3}-\\d{2}-\\d{2}").doesNotContain("0000060");
+    }
 }

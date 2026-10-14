@@ -67,7 +67,8 @@ class InternalApiGuardFilterTest {
         @Bean Stub stub() { return new Stub(); }
         @Bean CorsConfigurationSource cors() { return new SecurityConfig().corsConfigurationSource("http://localhost:3001"); }
         @Bean SecurityFilterChain chain(HttpSecurity http) throws Exception {
-            return new SecurityConfig().securityFilterChain(http, configuredToken);
+            return new SecurityConfig().securityFilterChain(http, configuredToken,
+                    new museon_online.astor_butler.api.board.BoardProperties());
         }
     }
 
