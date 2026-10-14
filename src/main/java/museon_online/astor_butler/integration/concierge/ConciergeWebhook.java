@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import museon_online.astor_butler.domain.billing.VisitReviewRepository;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.journey.GuestVisit;
@@ -96,6 +97,7 @@ public class ConciergeWebhook {
     private final Executor executor;
     private final Sleeper sleeper;
     private final Map<Long, String> movedSent = new ConcurrentHashMap<>();
+    private VisitReviewRepository reviews;
 
     @Autowired
     public ConciergeWebhook(ConciergeWebhookProperties properties, RestTemplateBuilder builder, ObjectMapper mapper,
@@ -115,6 +117,12 @@ public class ConciergeWebhook {
         this.visits = visits;
         this.executor = executor;
         this.sleeper = sleeper;
+    }
+
+    /** Frees a REVIEW question whose queued delivery failed, so the review clock asks again. */
+    @Autowired(required = false)
+    public void setReviews(VisitReviewRepository reviews) {
+        this.reviews = reviews;
     }
 
     @PostConstruct
@@ -223,12 +231,19 @@ public class ConciergeWebhook {
         if (!ready() || event == null) {
             return false;
         }
-        Runnable delivery = () -> deliver(event);
+        Runnable delivery = () -> {
+            if (!deliver(event)) {
+                undelivered(event);
+            }
+        };
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    dispatch(delivery, event);
+                    // The caller was already told "handed over": a failure here is the queued delivery's own.
+                    if (!dispatch(delivery, event)) {
+                        undelivered(event);
+                    }
                 }
             });
             return true;
@@ -249,6 +264,26 @@ public class ConciergeWebhook {
                     e.getClass().getSimpleName());
             record(event, 0, "NOT_QUEUED");
             return false;
+        }
+    }
+
+    /**
+     * A queued event the Concierge never got. For REVIEW the question was reserved (an unanswered visit_reviews row)
+     * when it was handed over; dropping it lets the review clock ask again, as a synchronous failure does.
+     */
+    private void undelivered(ConciergeEvent event) {
+        if (!ConciergeEvent.REVIEW.equals(event.type()) || reviews == null) {
+            return;
+        }
+        Object billId = event.facts().get("billId");
+        Long bill = billId instanceof Number number ? Long.valueOf(number.longValue()) : null;
+        if (bill == null) {
+            return;
+        }
+        try {
+            reviews.dropUnanswered(bill);
+        } catch (RuntimeException e) {
+            log.warn("Undelivered review question not freed: bill={}, reason={}", bill, e.getClass().getSimpleName());
         }
     }
 

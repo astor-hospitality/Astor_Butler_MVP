@@ -248,6 +248,39 @@ class ConciergeWebhookTest {
     }
 
     @Test
+    void aQueuedReviewThatIsNotDeliveredFreesTheQuestionForTheReviewClock() {
+        when(visits.findByReservation(44L)).thenReturn(Optional.of(visit()));
+        when(turns.sessionOf(7L)).thenReturn(Optional.of("s-1"));
+        museon_online.astor_butler.domain.billing.VisitReviewRepository reviews =
+                mock(museon_online.astor_butler.domain.billing.VisitReviewRepository.class);
+        webhook.setReviews(reviews);
+        server.expect(times(3), requestTo(URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+
+        // Queued: true means handed over; the delivery itself fails on the webhook's thread.
+        assertThat(webhook.announce("REVIEW", 44L, null, Map.of("billId", 91L, "reservationId", 44L))).isTrue();
+
+        server.verify();
+        verify(reviews).dropUnanswered(91L);
+    }
+
+    @Test
+    void aDeliveredReviewOrAnotherFailedEventKeepsTheQuestion() {
+        when(visits.findByReservation(44L)).thenReturn(Optional.of(visit()));
+        when(turns.sessionOf(7L)).thenReturn(Optional.of("s-1"));
+        museon_online.astor_butler.domain.billing.VisitReviewRepository reviews =
+                mock(museon_online.astor_butler.domain.billing.VisitReviewRepository.class);
+        webhook.setReviews(reviews);
+        server.expect(once(), requestTo(URL)).andRespond(withSuccess());
+        server.expect(once(), requestTo(URL)).andRespond(withStatus(HttpStatus.UNAUTHORIZED));
+
+        assertThat(webhook.announce("REVIEW", 44L, null, Map.of("billId", 91L))).isTrue();
+        assertThat(webhook.announce("BILL_READY", 44L, null, Map.of("billId", 91L))).isTrue();
+
+        server.verify();
+        org.mockito.Mockito.verifyNoInteractions(reviews);
+    }
+
+    @Test
     void reviewAsksForOneDigit() {
         assertThat(ConciergeEvent.butlerText("REVIEW", Map.of("billId", 5L)))
                 .isEqualTo("Как вам сегодня? Оцените от 1 до 5 одной цифрой — передам команде.");
