@@ -81,12 +81,18 @@ public class GuestVisitRepository {
     }
 
     public GuestVisit open(long reservationId, Long chatId, String guestPhone, String venueCode, Instant visitDay) {
+        return open(reservationId, chatId, guestPhone, venueCode, visitDay, Instant.now());
+    }
+
+    /** {@code openedAt} comes from the caller's clock: {@link #activeByChat} compares it with that same clock. */
+    public GuestVisit open(long reservationId, Long chatId, String guestPhone, String venueCode, Instant visitDay,
+                           Instant openedAt) {
         // Not a caught duplicate: on PostgreSQL a failed insert aborts this transaction. A concurrent open of the same
         // reservation still fails on the unique key; the recorder reads the winner in a fresh transaction.
-        jdbc.update("INSERT INTO guest_visits(reservation_id, chat_id, guest_phone, venue_code, stage, visit_day) "
-                        + "SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM guest_visits WHERE reservation_id = ?)",
+        jdbc.update("INSERT INTO guest_visits(reservation_id, chat_id, guest_phone, venue_code, stage, visit_day, opened_at) "
+                        + "SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM guest_visits WHERE reservation_id = ?)",
                 reservationId, chatId, guestPhone, venueCode, JourneyStage.REQUESTED.name(),
-                visitDay == null ? null : Timestamp.from(visitDay), reservationId);
+                visitDay == null ? null : Timestamp.from(visitDay), Timestamp.from(openedAt), reservationId);
         return findByReservation(reservationId).orElseThrow();
     }
 
