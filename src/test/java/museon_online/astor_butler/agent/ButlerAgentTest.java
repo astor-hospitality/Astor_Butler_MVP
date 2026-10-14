@@ -211,6 +211,16 @@ class ButlerAgentTest {
     }
 
     @Test
+    void withAStarAllowlistTheDirectBotAnswersAnUnlistedPrivateChat() {
+        properties.setAllowlist("*");
+        loopAnswers(new AgentOutcome("Добрый день! Чем помочь?", List.of(), false, 0));
+
+        assertThat(agent.reply(guest(777L, "привет"), null)).contains("Добрый день! Чем помочь?");
+        assertThat(agent.reply(guest(-1001234567890L, "привет"), null)).isEmpty();
+        assertThat(contexts).singleElement().satisfies(ctx -> assertThat(ctx.chatId()).isEqualTo(777L));
+    }
+
+    @Test
     void directBotFallbackIsEmptyAndWritten() {
         loopAnswers(AgentOutcome.fallback(List.of(), 0));
 

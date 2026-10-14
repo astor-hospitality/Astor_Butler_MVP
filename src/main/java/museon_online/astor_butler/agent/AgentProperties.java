@@ -12,7 +12,8 @@ import java.util.stream.Collectors;
 
 /**
  * The Butler's agent, switched by {@code ASTOR_AGENT_ENABLED} (off by default). In the Butler's own bot it answers
- * only chats in {@code ASTOR_AGENT_ALLOWLIST} (comma-separated chat ids; empty — nobody). {@code model}
+ * only chats in {@code ASTOR_AGENT_ALLOWLIST} (comma-separated chat ids; empty — nobody; {@code *} or {@code all} —
+ * every private chat). Group chats (negative ids) are never the agent's. {@code model}
  * ({@code ASTOR_AGENT_MODEL}) names the model of agent chats; one model call waits {@code modelTimeoutMs} at most, a
  * whole negotiation turn {@code turnTimeoutMs} ({@code ASTOR_AGENT_TURN_TIMEOUT_MS}), a turn in the bot
  * {@code botTurnTimeoutMs} ({@code ASTOR_AGENT_BOT_TURN_TIMEOUT_MS}).
@@ -52,9 +53,25 @@ public class AgentProperties {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** Whether the agent answers this chat of the Butler's own bot. */
+    /** {@code *} or {@code all} (any case, anywhere in the list) — every private chat. */
+    public boolean allowsAll() {
+        if (allowlist == null || allowlist.isBlank()) {
+            return false;
+        }
+        return Arrays.stream(allowlist.split(","))
+                .map(String::trim)
+                .anyMatch(value -> value.equals("*") || value.equalsIgnoreCase("all"));
+    }
+
+    /**
+     * Whether the agent answers this chat of the Butler's own bot: the flag on, a private chat (positive id; groups
+     * are never the agent's, even with {@code *}), and the chat in the allowlist or the allowlist {@code *}.
+     */
     public boolean allows(Long chatId) {
-        return enabled && chatId != null && allowedChats().contains(chatId);
+        if (!enabled || chatId == null || chatId <= 0) {
+            return false;
+        }
+        return allowsAll() || allowedChats().contains(chatId);
     }
 
     private static Long parse(String value) {

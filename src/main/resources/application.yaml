@@ -53,7 +53,7 @@ astor:
       max-tokens: ${GIGACHAT_MAX_TOKENS:256}
       temperature: ${GIGACHAT_TEMPERATURE:0.1}
   # The Butler's agent (negotiation plan, task 8): POST /api/negotiation/v1/turn for the Concierge and, in the
-  # Butler's own bot, chats from ASTOR_AGENT_ALLOWLIST (comma-separated chat ids; empty — nobody). Off by default.
+  # Butler's own bot, chats from ASTOR_AGENT_ALLOWLIST (comma-separated chat ids; empty — nobody; * or all — every private chat). Off by default.
   agent:
     enabled: ${ASTOR_AGENT_ENABLED:false}
     allowlist: ${ASTOR_AGENT_ALLOWLIST:}
