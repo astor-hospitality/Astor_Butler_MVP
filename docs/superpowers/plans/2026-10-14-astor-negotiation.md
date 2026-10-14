@@ -360,3 +360,12 @@ SQL: `visit_turns(id BIGSERIAL PK, visit_id BIGINT NULL, session_id VARCHAR(64) 
 - Батлер: Task 1 → (Task 2 ∥ Task 5) → Task 3 → Task 4; Task 5 → Task 6 → Task 7 → Task 8 → Task 9.
 - Консьерж: Task 10 ∥ Task 11 → Task 12 → Task 13 (Task 12 ждёт API Task 8, Task 13 — формат Task 9; тесты Консьержа идут на заглушках, поэтому писать можно параллельно с Батлером).
 - Task 14 — последним.
+
+## Task 15: Короткие приветствия двух голосов (оба репозитория; одобрено Михаилом 14.10)
+
+**Files:**
+- Butler: `fsm/scenario/FirstTouchScenario.java` (+ тест) — `/start` без deep link и без истории: текст «AERIS · Батлер. Я на связи за столом: меню, вино, счёт, позвать официанта. Что подать?», кнопки «Меню ланча», «Позвать официанта», «Счёт»; визитка-картинка из `/start` убирается (остаётся в закреплённом сообщении); приветствие с историей (`RepeatLunchGreeting`, #202) и deep-link-входы не меняются.
+- Concierge: `src/agent/agent.ts` / `src/telegram/bot.ts` (+ тест) — для чатов агента `/start`: «Я Консьерж Astor — подберу место и договорюсь с рестораном за вас. Куда и когда хотите пойти?», кнопки «Обед сегодня», «Ужин», «Мини-апп»; имя/телефон/согласие не спрашиваются до первого предложения ресторана, телефон — один раз, когда ресторан готов подтвердить; старый поток для чатов вне списка не меняется.
+
+- [ ] **Step 1:** Failing tests: `FirstTouchScenarioTest.startWithoutContextIsShortWithThreeButtons`, Concierge `test/agent.test.ts` «start greeting for an allowlisted chat is one question with three buttons».
+- [ ] **Step 2: Run** — FAIL. **Step 3:** Implement. **Step 4: Run** — PASS (full suites). **Step 5: Commit** `feat(greeting): one short first screen per voice` in each repo.
