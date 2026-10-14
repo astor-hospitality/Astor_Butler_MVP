@@ -55,6 +55,21 @@ astor-ai.ru, astor.176-123-165-162.nip.io {
 			header_up X-Forwarded-Host {host}
 		}
 	}
+	# Табло /board (страница - статика astor-site, frontend/astor-butler/board/):
+	#   /api/board/*            Astor Butler через api-gateway (свой location /api/board/ в docker/nginx/nginx.conf.template,
+	#                           без X-Astor-Internal-Token); закрыто токеном табло X-Astor-Board-Token (BoardTokenFilter).
+	#   /api/board/v1/stream    SSE: flush_interval -1, чтобы события не копились в буфере. EventSource не умеет заголовки,
+	#                           поэтому токен идёт в ?t= - у этого сайта нет директивы log; если её добавить, query этого
+	#                           пути не должен попадать в журнал (log { format filter { request>uri query { delete t } } }).
+	@board path /api/board/*
+	handle @board {
+		reverse_proxy astor-api-gateway:8080 {
+			flush_interval -1
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
 	@backend path /api/*
 	handle @backend {
 		reverse_proxy astor-api-gateway:8080 {

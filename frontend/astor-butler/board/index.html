@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Astor — табло</title>
+<meta name="description" content="Закрытое табло Astor: визиты, переговоры агентов, метрики и здоровье систем.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0e1216">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=20260707-aa">
+<link rel="stylesheet" href="../css/brand-typography.css">
+<link rel="stylesheet" href="../css/board.css">
+<script type="module" src="../js/board.js"></script>
+</head>
+<body class="locked">
+
+<div class="login" id="login">
+  <form class="login-box" id="loginForm" autocomplete="off">
+    <h1>Astor · Табло</h1>
+    <p>Табло закрыто. Введите токен табло.</p>
+    <label for="token">Токен</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" spellcheck="false" required>
+    <p class="error" id="loginError" role="alert"></p>
+    <button class="btn primary" type="submit">Войти</button>
+  </form>
+</div>
+
+<div class="frame">
+  <header class="topbar">
+    <div class="brand">Astor · Табло <small>AERIS · <span id="today"></span> · <span id="status" role="status">—</span></small></div>
+    <nav class="nav" role="tablist" aria-label="Разделы табло">
+      <button type="button" role="tab" data-tab="visits" aria-selected="true">Визиты</button>
+      <button type="button" role="tab" data-tab="metrics" aria-selected="false">Метрики</button>
+      <button type="button" role="tab" data-tab="arch" aria-selected="false">Архитектура</button>
+      <button type="button" role="tab" data-tab="lessons" aria-selected="false">Уроки</button>
+    </nav>
+    <div class="tools">
+      <button type="button" class="btn small" id="theme">Светлая</button>
+      <button type="button" class="btn small" id="logout">Выйти</button>
+    </div>
+  </header>
+
+  <main class="grid" id="tab-visits" role="tabpanel">
+    <div class="kanban" id="kanban" aria-label="Визиты по этапам"></div>
+    <p class="empty" id="noVisit">Визитов в окне нет.</p>
+    <section class="visit" id="visit" hidden>
+      <header><h2 id="visitTitle"></h2><span class="meta" id="visitMeta"></span></header>
+      <div class="summary" id="summary"></div>
+      <div class="summary-actions">
+        <form id="nextTimeForm" class="next-time">
+          <label class="sr-only" for="nextTime">В следующий раз</label>
+          <input id="nextTime" type="text" maxlength="500" placeholder="В следующий раз: заметка для агентов">
+          <button class="btn" type="submit">Добавить</button>
+        </form>
+        <button class="btn" type="button" id="rebuild">Пересобрать</button>
+        <span class="note" id="summaryNote" role="status"></span>
+      </div>
+      <div class="lanes" id="lanes"></div>
+    </section>
+    <div class="metrics" id="todayTiles" aria-label="Метрики за сегодня"></div>
+    <div class="health" id="health" aria-label="Здоровье систем"></div>
+  </main>
+
+  <main class="grid" id="tab-metrics" role="tabpanel" hidden>
+    <div class="picker" role="group" aria-label="Окно метрик">
+      <button type="button" class="btn small" data-window="today" aria-pressed="true">Сегодня</button>
+      <button type="button" class="btn small" data-window="7d" aria-pressed="false">7 дней</button>
+      <button type="button" class="btn small" data-window="30d" aria-pressed="false">30 дней</button>
+    </div>
+    <div class="metrics" id="metricTiles"></div>
+  </main>
+
+  <main class="grid" id="tab-arch" role="tabpanel" hidden>
+    <p class="note">Цвет узла — из карты здоровья, обновляется каждые 30 секунд · <span id="archUpdated"></span></p>
+    <div class="arch">
+      <svg viewBox="0 0 640 410" role="img" aria-label="Архитектура Astor: гость, Консьерж и Батлер, системы">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+          </marker>
+        </defs>
+        <g class="edges">
+          <path d="M140 178 C170 178 170 78 198 78"/>
+          <path d="M280 108 L280 248" marker-start="url(#arrow)"/>
+          <path d="M360 270 C410 270 410 48 458 48"/>
+          <path d="M360 280 C420 280 420 128 458 128"/>
+          <path d="M360 78 C410 78 410 200 458 200"/>
+          <path d="M360 290 C430 290 430 216 458 216"/>
+          <path d="M268 306 L192 338"/>
+          <path d="M280 306 L360 338"/>
+          <path d="M292 306 L528 338"/>
+        </g>
+        <text class="edge-label" x="290" y="182">переговоры</text>
+        <g class="anode" data-node="guest" transform="translate(20 150)"><rect width="120" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Гость</text><text class="detail" x="16" y="44">Telegram, сайт</text></g>
+        <g class="anode" data-health="concierge" transform="translate(200 50)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Консьерж</text><text class="detail" x="16" y="44">—</text></g>
+        <g class="anode" data-health="butler" transform="translate(200 250)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Батлер</text><text class="detail" x="16" y="44">—</text></g>
+        <g class="anode" data-health="saby" transform="translate(460 20)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Saby</text><text class="detail" x="16" y="44">—</text></g>
+        <g class="anode" data-node="staff" transform="translate(460 100)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Персонал · очки</text><text class="detail" x="16" y="44">без проверки</text></g>
+        <g class="anode" data-health="gigachat" transform="translate(460 180)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">GigaChat</text><text class="detail" x="16" y="44">—</text></g>
+        <g class="anode" data-health="postgres" transform="translate(130 340)"><rect width="124" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Postgres</text><text class="detail" x="16" y="44">—</text></g>
+        <g class="anode" data-health="redis" transform="translate(298 340)"><rect width="124" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Redis</text><text class="detail" x="16" y="44">—</text></g>
+        <g class="anode" data-health="kafka" transform="translate(466 340)"><rect width="124" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Kafka</text><text class="detail" x="16" y="44">—</text></g>
+      </svg>
+    </div>
+    <p class="legend"><span><i class="dot" style="background:var(--good)"></i>работает</span><span><i class="dot" style="background:var(--warn)"></i>есть ошибки</span><span><i class="dot" style="background:var(--bad)"></i>не отвечает</span><span><i class="dot" style="background:var(--idle)"></i>нет данных</span></p>
+  </main>
+
+  <main class="grid" id="tab-lessons" role="tabpanel" hidden>
+    <p class="note">Уроки, которые агенты предложили после визитов. Принятый урок (текст можно поправить) агент учитывает дальше; отклонённый до агента не доходит.</p>
+    <p class="empty" id="lessonsEmpty" hidden>Новых уроков нет.</p>
+    <div class="lessons" id="lessons"></div>
+  </main>
+</div>
+
+</body>
+</html>
