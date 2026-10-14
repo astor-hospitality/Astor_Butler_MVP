@@ -52,6 +52,8 @@ public class ButlerAgent {
     static final String GOAL_GUEST = "GUEST";
     private static final int MAX_SAID = 1_500;
     private static final int MAX_KEY_SCOPE = 60;
+    /** Leaves room for {@code :<call>} under IdempotencyStore.MAX_KEY. */
+    private static final int MAX_TURN_KEY = 76;
     private static final Logger log = LoggerFactory.getLogger(ButlerAgent.class);
 
     private final AgentLoop loop;
@@ -98,12 +100,15 @@ public class ButlerAgent {
             return new NegotiationReply(null, null, List.of(), visitId, true);
         }
         history.rememberVisit(key, visitId);
+        // Without the guest's consent the Concierge's words stay out of the ledger: the row only says it spoke.
+        boolean consent = Boolean.TRUE.equals(turn.guestConsent());
         write(new VisitTurnDraft(visitId, sessionId, TurnSide.CONCIERGE, TurnChannel.CONCIERGE_TG, TurnKind.MESSAGE,
-                blankToNull(turn.conciergeMessage()), null, GOAL_GUEST), turn.conciergeMessage() != null && !turn.conciergeMessage().isBlank());
+                consent ? blankToNull(turn.conciergeMessage()) : null, consent ? null : Map.of("hidden", true), GOAL_GUEST),
+                turn.conciergeMessage() != null && !turn.conciergeMessage().isBlank());
 
         String said = negotiationMessage(turn);
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.CONCIERGE, null, sessionId, visitId,
-                turnKey(sessionId, history.nextTurn(key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()));
+                turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()));
         AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null);
 
         Long newVisit = visitOf(outcome);
@@ -170,6 +175,12 @@ public class ButlerAgent {
             log.warn("Butler agent turn failed: reason={}", e.getClass().getSimpleName());
             return AgentOutcome.fallback(List.of(), 0);
         }
+    }
+
+    /** The Concierge's turn id when it sent one (a retry repeats it), else the session's own turn counter. */
+    private Object turnOf(NegotiationTurn turn, String key) {
+        String turnId = blankToNull(turn.turnId());
+        return turnId != null ? turnId : history.nextTurn(key);
     }
 
     /** What the venue hears this turn: the guest's position, the Concierge's words and the guest's own, phones masked. */
@@ -385,20 +396,23 @@ public class ButlerAgent {
     }
 
     /**
-     * {@code <scope>:<turn>}; the loop adds {@code :<call>}. A scope too long for the idempotency store (80 characters
-     * with the suffixes) is replaced by its SHA-256 prefix.
+     * {@code <scope>:<turn>}; the loop adds {@code :<call>}. A part too long for the idempotency store (80 characters
+     * with the suffixes) is replaced by its SHA-256 prefix: a long scope alone, or the whole key when a long turn id
+     * still makes it too long.
      */
-    static String turnKey(String scope, int turn) {
-        String prefix = scope;
-        if (scope.length() > MAX_KEY_SCOPE) {
-            try {
-                byte[] hash = MessageDigest.getInstance("SHA-256").digest(scope.getBytes(StandardCharsets.UTF_8));
-                prefix = "h" + HexFormat.of().formatHex(hash).substring(0, 40);
-            } catch (NoSuchAlgorithmException e) {
-                prefix = scope.substring(0, MAX_KEY_SCOPE);
-            }
+    static String turnKey(String scope, Object turn) {
+        String prefix = scope.length() > MAX_KEY_SCOPE ? hashed(scope) : scope;
+        String key = prefix + ":" + turn;
+        return key.length() > MAX_TURN_KEY ? hashed(scope + ":" + turn) : key;
+    }
+
+    private static String hashed(String value) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return "h" + HexFormat.of().formatHex(hash).substring(0, 40);
+        } catch (NoSuchAlgorithmException e) {
+            return value.substring(0, MAX_KEY_SCOPE);
         }
-        return prefix + ":" + turn;
     }
 
     private static String clip(String text) {

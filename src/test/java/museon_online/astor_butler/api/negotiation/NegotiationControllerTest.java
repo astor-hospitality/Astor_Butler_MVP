@@ -29,7 +29,7 @@ class NegotiationControllerTest {
     private static final String BODY = """
             {"sessionId":"c-1","visitId":null,"guestText":"стол на двоих в 13:00",
              "conciergePosition":{"time":"13:00","partySize":2},"guestName":"Мария","guestPhone":null,
-             "conciergeMessage":"Гостья хочет обед на двоих."}
+             "conciergeMessage":"Гостья хочет обед на двоих.","turnId":"t-1","guestConsent":true}
             """;
 
     private ButlerAgent agent;
@@ -74,6 +74,8 @@ class NegotiationControllerTest {
         assertThat(turn.getValue().sessionId()).isEqualTo("c-1");
         assertThat(turn.getValue().conciergeMessage()).isEqualTo("Гостья хочет обед на двоих.");
         assertThat(turn.getValue().conciergePosition()).containsEntry("partySize", 2);
+        assertThat(turn.getValue().turnId()).isEqualTo("t-1");
+        assertThat(turn.getValue().guestConsent()).isTrue();
     }
 
     @Test

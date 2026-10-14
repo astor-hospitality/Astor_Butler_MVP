@@ -5,8 +5,11 @@ import java.util.Map;
 /**
  * One turn of the Concierge's talk with the venue. {@code guestText} is the guest's own words, {@code conciergeMessage}
  * what the Concierge says to the venue, {@code conciergePosition} the guest's goals (date, time, partySize, budget,
- * constraints). {@code visitId} is null until the session has a visit.
+ * constraints). {@code visitId} is null until the session has a visit. {@code turnId}, when given, names the turn: a
+ * retry with the same id replays its commitments instead of repeating them. {@code guestConsent} — only {@code true}
+ * lets the Concierge's message keep its text in the ledger.
  */
 public record NegotiationTurn(String sessionId, Long visitId, String guestText, Map<String, Object> conciergePosition,
-                              String guestName, String guestPhone, String conciergeMessage) {
+                              String guestName, String guestPhone, String conciergeMessage, String turnId,
+                              Boolean guestConsent) {
 }

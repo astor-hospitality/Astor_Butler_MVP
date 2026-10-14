@@ -88,7 +88,7 @@ class ButlerAgentTest {
         position.put("budget", 1500);
         position.put("constraints", List.of("без лука"));
         return new NegotiationTurn("c-1", visitId, guestText, position, "Мария", "+79120000060",
-                "Гостья хочет обед на двоих в 13:00.");
+                "Гостья хочет обед на двоих в 13:00.", null, true);
     }
 
     @Test
@@ -244,6 +244,44 @@ class ButlerAgentTest {
         assertThat(key).endsWith(":3");
         assertThat((key + ":5").length()).isLessThanOrEqualTo(80);
         assertThat(ButlerAgent.turnKey("s".repeat(200), 3)).isEqualTo(key);
+        assertThat(ButlerAgent.turnKey("c-1", "t-7")).isEqualTo("c-1:t-7");
+        String longTurn = ButlerAgent.turnKey("c-1", "t".repeat(120));
+        assertThat((longTurn + ":5").length()).isLessThanOrEqualTo(80);
+        assertThat(ButlerAgent.turnKey("c-1", "t".repeat(120))).isEqualTo(longTurn).isNotEqualTo(ButlerAgent.turnKey("c-1", "u".repeat(120)));
+    }
+
+    @Test
+    void withoutConsentTheConciergeRowIsHidden() {
+        loopAnswers(new AgentOutcome("Есть стол у окна.", List.of(), false, 0));
+        NegotiationTurn given = turn(null, "стол");
+        agent.negotiate(new NegotiationTurn(given.sessionId(), null, given.guestText(), given.conciergePosition(), given.guestName(),
+                given.guestPhone(), given.conciergeMessage(), null, false));
+        agent.negotiate(new NegotiationTurn(given.sessionId(), null, given.guestText(), given.conciergePosition(), given.guestName(),
+                given.guestPhone(), given.conciergeMessage(), null, null));
+
+        ArgumentCaptor<VisitTurnDraft> drafts = ArgumentCaptor.forClass(VisitTurnDraft.class);
+        verify(ledger, org.mockito.Mockito.times(4)).write(drafts.capture());
+        for (int i : new int[]{0, 2}) {
+            VisitTurnDraft concierge = drafts.getAllValues().get(i);
+            assertThat(concierge.side()).isEqualTo(TurnSide.CONCIERGE);
+            assertThat(concierge.text()).isNull();
+            assertThat(concierge.hidden()).isTrue();
+        }
+        assertThat(drafts.getAllValues().get(1).text()).isEqualTo("Есть стол у окна.");
+        assertThat(drafts.getAllValues().get(3).text()).isEqualTo("Есть стол у окна.");
+    }
+
+    @Test
+    void theTurnIdMakesTheKey() {
+        loopAnswers(new AgentOutcome("Слушаю.", List.of(), false, 0));
+        NegotiationTurn given = turn(null, "стол");
+        NegotiationTurn withId = new NegotiationTurn(given.sessionId(), null, given.guestText(), given.conciergePosition(),
+                given.guestName(), given.guestPhone(), given.conciergeMessage(), "t-7", true);
+
+        agent.negotiate(withId);
+        agent.negotiate(withId);
+
+        assertThat(contexts).extracting(CapabilityContext::idempotencyKey).containsExactly("c-1:t-7", "c-1:t-7");
     }
 
     private static IncomingMessage guest(long chatId, String text) {

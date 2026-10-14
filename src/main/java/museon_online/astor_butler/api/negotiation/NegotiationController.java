@@ -14,6 +14,12 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Internal: the Concierge talks to the venue (guarded by the internal token). A turn without a session is a 400; an
  * agent that cannot answer is still a 200 with {@code fallback = true}.
+ *
+ * <p>Safe retries: send a {@code turnId} and repeat it when retrying the same turn (e.g. after a lost response). The
+ * tool calls of the turn are keyed {@code <sessionId>:<turnId>:<callNo>}, so a booking or an order made by the first
+ * attempt is replayed, not made again. Without {@code turnId} the key uses the session's own turn counter, which only
+ * protects retries of turns that failed. {@code guestConsent} must be {@code true} for the Concierge's message to keep
+ * its text in the ledger; otherwise the row is written hidden, without text.
  */
 @RestController
 @RequestMapping("/api/negotiation/v1")
