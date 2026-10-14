@@ -110,7 +110,112 @@ Telegram-дворецкий для HoReCa: гость ↔ персонал ↔ �
   #100 техдолг; #88–#92 карточки, FSM viewer, документы.
 - Открытый PR: #146 кнопки процента чаевых.
 
-## Архитектура в 10 строках
+## Архитектура (октябрь 2026)
+
+Схема собрана по `docker-compose.yml` + `docker-compose.prod.yml` + `docker-compose.cloudru.yml` (так стек запущен на ВМ
+Cloud.ru) и маршрутам edge-Caddy ([infra/cloudru/edge/c3ag.caddy](infra/cloudru/edge/c3ag.caddy),
+[infra/astor-site/astor.caddy](infra/astor-site/astor.caddy)). Пунктир — есть в compose, но на ВМ выключено профилем или флагом.
+
+```mermaid
+flowchart LR
+  subgraph guests["Гости"]
+    TG["Telegram<br/>@aeris_butler_bot"]
+    WEB["Веб-чат c3ag.ru<br/>и виджет astor-ai.ru"]
+    CONC_IN["Astor Concierge<br/>бот + Mini App astor-ai.ru/app/"]
+  end
+  subgraph staff["Персонал AERIS"]
+    HOST["Группа хостес / staff-чаты<br/>Telegram"]
+    PORTAL["Кабинет персонала<br/>c3ag.ru/astor/staff/ (выкл., JWT)"]
+    GLASS["Очки Astor Glass<br/>+ iPhone"]
+  end
+
+  subgraph vm["ВМ Cloud.ru (общая с Vedal)"]
+    CADDY["edge Caddy<br/>TLS, allow-list /api"]
+    TGPROXY["прокси Telegram<br/>astor-tg-awg"]
+    GW["astor-api-gateway<br/>nginx"]
+    FRONT["c3ag-frontend<br/>Next.js"]
+    SITE["astor-site<br/>nginx"]
+    GLAPI["astor_glasses_api<br/>runtime очков"]
+    subgraph butler["Butler — Spring Boot (aeris_astor_butler_bot)"]
+      MG["Message Gateway → Scenario Router<br/>FSM + сценарии (бронь, ланч, счёт, чаевые)"]
+      MODEL["Model Gateway<br/>понимание и черновики, без решений"]
+      SABYA["Saby-адаптер<br/>за флагами"]
+    end
+    CONC["Astor Concierge<br/>Node.js 22 + SQLite"]
+    PG[("PostgreSQL 16 + pgvector")]
+    RD[("Redis")]
+    KF[("Kafka / Redpanda")]
+    MO[("MongoDB")]
+    S3[("MinIO")]
+    SC[("ScyllaDB")]
+  end
+
+  SABY["Saby Presto API<br/>(СБИС)"]
+  GIGA["GigaChat / Cloud.ru FM"]
+  YA["Yandex AI Studio<br/>SpeechKit"]
+
+  TG <--> TGPROXY <--> MG
+  WEB --> CADDY
+  CONC_IN --> CADDY
+  CADDY -->|"/api/messages, /api/astor/*, /api/chat/*, /api/staff/*"| GW --> MG
+  CADDY --> FRONT
+  CADDY --> SITE
+  CADDY -->|"/app, /api/concierge/messages"| CONC
+  CADDY -->|"/api/glasses/*"| GLAPI
+  CONC -->|"внутренний API, X-Astor-Internal-Token"| MG
+  GLASS --> CADDY
+  GLAPI --> MG
+  PORTAL -.-> CADDY
+  MG --> HOST
+  MG --> MODEL
+  MG --> SABYA
+  MODEL --> GIGA
+  MODEL --> YA
+  SABYA --> SABY
+  MG --> PG
+  MG --> RD
+  MG --> KF
+  MG --> MO
+  MG --> S3
+  MG -.-> SC
+```
+
+Хранилища: PostgreSQL — факты (брони, счета, согласия, outbox, журналы `model_interaction_audit`, `saby_call_log`),
+Redis — горячее состояние FSM, Kafka — события и аналитика, MongoDB — документы и медиа-манифесты, MinIO — медиа и
+фото-подтверждения. ScyllaDB (таймлайн) и Neo4j есть в compose, но на ВМ выключены (профиль `graph-timeline`);
+Prometheus / Grafana — профиль `observability`. Наружу смотрит только edge-Caddy; базы — только в приватной docker-сети.
+
+### Публичные точки входа
+
+| Точка | Что это | Состояние |
+| --- | --- | --- |
+| [t.me/aeris_butler_bot](https://t.me/aeris_butler_bot) | гостевой бот AERIS (Butler): бронь, бизнес-ланч `?start=lunch_aeris`, счёт, отзыв | живой, используется на тесте 15.10 |
+| [t.me/astor_butler_bot](https://t.me/astor_butler_bot) | прежнее имя того же Butler (дефолт `AERIS_ASTOR_BUTLER_BOT_USERNAME` в compose, старые ссылки в docs и в каталоге Консьержа) | legacy; живой гостевой бот — @aeris_butler_bot |
+| [astor-ai.ru](https://astor-ai.ru) | сайт Astor с виджетом чата (`/api/astor/messages` → Butler) | живой |
+| [astor-ai.ru/app/](https://astor-ai.ru/app/) | Mini App Консьержа (открывается из Telegram, вход по подписи Telegram) | живой |
+| [c3ag.ru](https://c3ag.ru) | веб-чат Butler (канал WEB, `POST /api/messages`) | живой |
+| [c3ag.ru/astor/staff/](https://c3ag.ru/astor/staff/) | кабинет персонала (OIDC Keycloak) | выключен (`astor.staff.enabled=false`) |
+| [c3ag.ru/actuator/health](https://c3ag.ru/actuator/health) | liveness Butler через шлюз | живой |
+
+**Как проверить в инкогнито:** открыть `https://astor-ai.ru` и `https://c3ag.ru` в приватном окне без входа — страницы и
+чат отвечают; `https://c3ag.ru/actuator/health` → 200; любой закрытый путь (например `https://c3ag.ru/api/bookings`)
+→ 404; `t.me/aeris_butler_bot` открыть с тестового аккаунта Telegram и нажать «Старт».
+
+### Наблюдаемость и логи
+
+Единый журнал вызовов собирается из уже существующих таблиц PostgreSQL, без изменения схемы:
+`model_interaction_audit` (каждый вызов модели: провайдер, модель, успех / фолбэк / ошибка, задержка, токены в
+`metadata.usage`), `saby_call_log` (каждый HTTP-вызов Saby: метод, операция, статус, длительность — без тел и токенов),
+`telegram_messages` (входящие сообщения гостей), `table_reservation_orders` и `guest_bills` (целевые действия: бронь и счёт).
+Выгрузка для жюри — [`scripts/sber500/`](scripts/sber500/): `SBER500_SALT=… scripts/sber500/export_calls.sh OUT_DIR [SINCE]`
+пишет `sber500_calls_<дата>.csv` (ts, source, pseudo_user_id, call_type, provider_or_system, result, error_code, tokens_in,
+tokens_out, cost_rub, latency_ms, correlation_id) и `sber500_users_<дата>.csv` (уникальные пользователи по дням и
+источникам, сколько дошли до брони / счёта). Идентификаторы гостей заменены на `md5(соль || id)`; телефоны, имена и тексты
+промптов не выгружаются. Стоимость считается по тарифам GigaChat в начале `export_calls.sql`; для Yandex — пусто.
+SQL сверен с миграциями `src/main/resources/db/changelog` по каждой колонке, но на живой базе ещё не запускался.
+Логи контейнеров — `json-file` с ротацией (20 МБ × 5), ночной бэкап базы — [infra/cloudru/host/](infra/cloudru/host/README.md).
+
+### Архитектура в 10 строках
 
 ```text
 Telegram · WEB-виджет · MAX · Astor Glass (iPhone → runtime очков) · REST
