@@ -27,8 +27,16 @@ public class TelegramSystemNotifier {
     @Value("${telegram.system.notifications-enabled:false}")
     private boolean notificationsEnabled;
 
+    /** Copy of every guest message into the system chat — a debugging aid, off unless asked for. */
+    @Value("${telegram.system.trace-enabled:false}")
+    private boolean traceEnabled;
+
     public void sendTransition(IncomingMessage incoming, BotState previousState, OutgoingMessage outgoing, boolean kafkaOutboxQueued) {
-        if (!telegramEnabled || !notificationsEnabled || systemChatId == null || systemChatId.isBlank()) {
+        if (!telegramEnabled || !notificationsEnabled || !traceEnabled || systemChatId == null || systemChatId.isBlank()) {
+            return;
+        }
+        // Group chats (staff, management) are not guest dialogs: never echo them back into the system chat.
+        if (incoming == null || incoming.chatId() == null || incoming.chatId() < 0) {
             return;
         }
 
