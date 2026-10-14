@@ -2,6 +2,8 @@ package museon_online.astor_butler.domain.billing;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import museon_online.astor_butler.integration.concierge.ConciergeEvent;
+import museon_online.astor_butler.integration.concierge.ConciergeWebhook;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,8 +13,11 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboard;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * What the guest hears about their bill, in the calm voice of the rest of the bot: the venue's payment page,
@@ -42,7 +47,27 @@ public class GuestBillNotifier {
         this.usefulnessPolicy = usefulnessPolicy;
     }
 
+    /** The Butler → Concierge webhook (negotiation plan, task 9): optional so the constructor and its tests stay as they are. */
+    private ConciergeWebhook conciergeWebhook;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setConciergeWebhook(ConciergeWebhook conciergeWebhook) {
+        this.conciergeWebhook = conciergeWebhook;
+    }
+
+    /** A bill without a Butler chat whose booking belongs to a Concierge session: its link goes through the Concierge. */
+    public boolean reachesConcierge(GuestBill bill) {
+        return conciergeWebhook != null && bill != null && bill.chatId() == null && bill.tableReservationId() != null
+                && conciergeWebhook.reaches(bill.tableReservationId());
+    }
+
     public boolean paymentLink(GuestBill bill, String url) {
+        if (bill != null && bill.chatId() == null) {
+            // A Concierge booking has no chat here: the total and the link go only through the Concierge (BILL_READY).
+            // Delivered on the prompter's thread, so the link is marked sent only once the Concierge took it.
+            return conciergeWebhook != null && bill.tableReservationId() != null
+                    && conciergeWebhook.announceNow(ConciergeEvent.BILL_READY, bill.tableReservationId(), null, billFacts(bill, url));
+        }
         if (usefulnessPolicy != null && bill != null && !usefulnessPolicy.permits(bill.tableReservationId(), bill.chatId(), museon_online.astor_butler.domain.journey.ProactiveMessage.BILL_READY)) {
             return false;
         }
@@ -87,6 +112,13 @@ public class GuestBillNotifier {
     }
 
     public boolean reviewPrompt(GuestBill bill) {
+        if (bill != null && bill.chatId() == null) {
+            // A Concierge booking: the question goes only through the Concierge (REVIEW), answered with one digit there.
+            if (conciergeWebhook == null || bill.tableReservationId() == null) {
+                return false;
+            }
+            return conciergeWebhook.announceNow(ConciergeEvent.REVIEW, bill.tableReservationId(), null, reviewFacts(bill));
+        }
         String text = """
                 <b>Как прошёл обед?</b>
 
@@ -117,6 +149,38 @@ public class GuestBillNotifier {
         }
         InlineKeyboardMarkup keyboard = rows.isEmpty() ? null : InlineKeyboardMarkup.builder().keyboard(rows).build();
         return send(bill.chatId(), text, keyboard, "guest-visit-review-thanks");
+    }
+
+    /**
+     * The review question for a Telegram update or request thread: a Concierge bill's REVIEW is only queued (delivered on
+     * the webhook's own thread); a Telegram bill is asked as by {@link #reviewPrompt}.
+     */
+    public boolean reviewPromptQueued(GuestBill bill) {
+        if (bill != null && bill.chatId() == null) {
+            return conciergeWebhook != null && bill.tableReservationId() != null
+                    && conciergeWebhook.announce(ConciergeEvent.REVIEW, bill.tableReservationId(), null, reviewFacts(bill));
+        }
+        return reviewPrompt(bill);
+    }
+
+    private static Map<String, Object> reviewFacts(GuestBill bill) {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("billId", bill.id());
+        facts.put("reservationId", bill.tableReservationId());
+        return facts;
+    }
+
+    static Map<String, Object> billFacts(GuestBill bill, String url) {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        Long minor = bill.venueAmountMinor() != null ? bill.venueAmountMinor() : bill.estimateMinor();
+        if (minor != null) {
+            facts.put("totalRub", minor % 100 == 0 ? (Object) (minor / 100) : BigDecimal.valueOf(minor, 2));
+        }
+        if (url != null && !url.isBlank()) {
+            facts.put("paymentUrl", url);
+        }
+        facts.put("billId", bill.id());
+        return facts;
     }
 
     static String rubles(long minor) {

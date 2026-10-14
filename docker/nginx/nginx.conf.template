@@ -143,6 +143,46 @@ http {
             proxy_pass $astor_backend;
         }
 
+        # The closed board (astor-ai.ru/board): browsers cannot carry X-Astor-Internal-Token, so no internal-token
+        # check here; Butler's BoardTokenFilter requires X-Astor-Board-Token on every /api/board/** request.
+        # Unbuffered for the live stream (SSE); a long read timeout keeps the stream open between pings.
+        location /api/board/ {
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 1h;
+            proxy_http_version 1.1;
+            # Any proxy_set_header here drops the server-level ones, so all of them are repeated.
+            proxy_set_header Host $host;
+            proxy_set_header X-Request-Id $request_id;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $astor_forwarded_proto;
+            proxy_set_header Connection "";
+            proxy_pass $astor_backend;
+        }
+
+        # EventSource cannot send headers: the board token travels as ?t= on this route only, so this
+        # location must never write the request line (query string included) to the access log.
+        location = /api/board/v1/stream {
+            access_log off;
+            # error-level lines (upstream failures, limit_req rejections) quote the request line too.
+            error_log /var/log/nginx/error.log crit;
+            limit_req zone=api_limit burst=30 nodelay;
+            proxy_buffering off;
+            proxy_cache off;
+            proxy_read_timeout 1h;
+            proxy_http_version 1.1;
+            # Any proxy_set_header here drops the server-level ones, so all of them are repeated.
+            proxy_set_header Host $host;
+            proxy_set_header X-Request-Id $request_id;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $astor_forwarded_proto;
+            proxy_set_header Connection "";
+            proxy_pass $astor_backend;
+        }
+
         location /api/ {
             if ($http_x_astor_internal_token = "") {
                 return 404;

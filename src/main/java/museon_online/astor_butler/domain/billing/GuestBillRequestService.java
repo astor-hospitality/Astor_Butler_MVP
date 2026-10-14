@@ -90,6 +90,10 @@ public class GuestBillRequestService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
 
+    /** The venue's payment page for {@link #requestByReservation}: optional, absent or off means no link. */
+    @Autowired(required = false)
+    private List<ExternalPaymentProvider> paymentProviders = List.of();
+
     @Autowired
     public GuestBillRequestService(GuestBillRequestProperties properties, ReviewProperties reviewProperties,
                                    HostessBillRequestService billRequests, TableReservationRepository reservations,
@@ -134,19 +138,14 @@ public class GuestBillRequestService {
             return Optional.of(reply(incoming, state, REPLY_NO_VISIT, List.of(ACTION, "NO_ACTIVE_VISIT"), Map.of()));
         }
         TableReservationOrder order = visit.get();
-        if (!firstAskWithinWindow(order.id())) {
+        BillRequestOutcome.Status told = tellTheTeam(order, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+        if (told == BillRequestOutcome.Status.ALREADY_SENT) {
             log.info("Guest {} asked for the bill of reservation {} again within the window: nothing re-sent", incoming.chatId(), order.id());
             return Optional.of(reply(incoming, state, REPLY_REPEATED, List.of(ACTION, "ALREADY_SENT"),
                     Map.of("reservationId", (Object) order.id())));
         }
-
-        boolean cardSent = notifications.notifyHostessGuestAskedForBill(order);
-        if (cardSent && journeyEvents != null) {
-            journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.BILL_REQUESTED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
-        }
-        if (!cardSent) {
+        if (told == BillRequestOutcome.Status.STAFF_NOT_REACHED) {
             log.warn("Guest {} asked for the bill of reservation {}, but the staff chat could not be reached", incoming.chatId(), order.id());
-            forget(order.id());
             return Optional.of(reply(incoming, state, REPLY_NOT_DELIVERED, List.of(ACTION, "STAFF_NOT_REACHED"),
                     Map.of("reservationId", (Object) order.id())));
         }
@@ -164,6 +163,81 @@ public class GuestBillRequestService {
             log.info("Guest {} asked for the bill of reservation {}: review {}", incoming.chatId(), order.id(), review);
         }
         return Optional.of(reply(incoming, state, replied ? "" : REPLY_SENT, actions, metadata));
+    }
+
+    /**
+     * The same request made by an agent for a reservation (the Capability API's {@code bill_request}): the team gets
+     * the card once per repeat window and the review is asked at the bill as in the bot; the agent answers the guest
+     * itself, so nothing is sent to the guest's chat here. Only a reservation with a visit today is served.
+     *
+     * @param source who asked, for the journey ledger, such as {@code GUEST}
+     */
+    public BillRequestOutcome requestByReservation(long reservationId, String source) {
+        if (!properties.isEnabled()) {
+            return new BillRequestOutcome(BillRequestOutcome.Status.OFF, reservationId, null, null, null);
+        }
+        if (butlerPause != null && butlerPause.paused()) {
+            return new BillRequestOutcome(BillRequestOutcome.Status.PAUSED, reservationId, null, null, null);
+        }
+        Optional<TableReservationOrder> found = reservations.findOrder(reservationId).filter(this::visitIsToday);
+        if (found.isEmpty()) {
+            return new BillRequestOutcome(BillRequestOutcome.Status.NO_VISIT, reservationId, null, null, null);
+        }
+        TableReservationOrder order = found.get();
+        BillRequestOutcome.Status told = tellTheTeam(order, source == null ? museon_online.astor_butler.domain.journey.JourneyEvents.GUEST : source);
+        if (told == BillRequestOutcome.Status.STAFF_NOTIFIED && reviewProperties.onBill()) {
+            HostessBillRequestService.ReviewAsk review = billRequests.askReview(order.id(), TRIGGER);
+            log.info("Bill of reservation {} asked for by an agent: review {}", order.id(), review);
+        }
+        Optional<GuestBill> bill = billRequests.billOf(order.id()).filter(candidate -> candidate.status() != GuestBillStatus.CANCELLED);
+        if (bill.isEmpty()) {
+            return new BillRequestOutcome(told, order.id(), null, null, null);
+        }
+        Long minor = bill.get().venueAmountMinor() != null ? bill.get().venueAmountMinor() : bill.get().estimateMinor();
+        return new BillRequestOutcome(told, order.id(), bill.get().id(), minor == null ? null : Math.round(minor / 100.0),
+                told == BillRequestOutcome.Status.STAFF_NOT_REACHED ? null : paymentUrl(bill.get()));
+    }
+
+    /** Tells the team once per repeat window; the journey hears the request when the card went out. */
+    private BillRequestOutcome.Status tellTheTeam(TableReservationOrder order, String source) {
+        if (!firstAskWithinWindow(order.id())) {
+            return BillRequestOutcome.Status.ALREADY_SENT;
+        }
+        boolean cardSent = notifications.notifyHostessGuestAskedForBill(order);
+        if (cardSent && journeyEvents != null) {
+            journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.BILL_REQUESTED, source);
+        }
+        if (!cardSent) {
+            forget(order.id());
+            return BillRequestOutcome.Status.STAFF_NOT_REACHED;
+        }
+        return BillRequestOutcome.Status.STAFF_NOTIFIED;
+    }
+
+    private boolean visitIsToday(TableReservationOrder order) {
+        LocalDate today = clock.instant().atZone(zone()).toLocalDate();
+        return (order.status() == TableReservationStatus.CONFIRMED || order.status() == TableReservationStatus.SEATED
+                || order.status() == TableReservationStatus.AWAITING_MANAGER_CONFIRMATION)
+                && order.requestedStartAt() != null && order.requestedStartAt().atZone(zone()).toLocalDate().equals(today);
+    }
+
+    /** The venue's payment page for the bill, when its provider is on and holds the order; null otherwise. */
+    private String paymentUrl(GuestBill bill) {
+        if (bill.externalOrderId() == null || bill.externalOrderId().isBlank() || paymentProviders == null) {
+            return null;
+        }
+        for (ExternalPaymentProvider provider : paymentProviders) {
+            if (!provider.enabled() || !provider.providerId().equals(bill.externalProvider())) {
+                continue;
+            }
+            try {
+                return provider.paymentLink(bill.externalOrderId()).map(ExternalPaymentProvider.PaymentLink::url).orElse(null);
+            } catch (RuntimeException e) {
+                log.warn("Payment link for bill {} was not had: {}", bill.id(), e.getClass().getSimpleName());
+                return null;
+            }
+        }
+        return null;
     }
 
     /** The guest's reservation whose time falls on today's date at the venue; a confirmed one first, then the nearest. */

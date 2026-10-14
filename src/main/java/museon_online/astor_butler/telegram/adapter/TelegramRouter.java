@@ -157,7 +157,8 @@ public class TelegramRouter {
             }
 
             OutgoingMessage outgoing = messageGatewayService.handle(incoming);
-            ensurePreview(incoming, sender, isStartCommand(incoming));
+            // The visiting card is sent once and stays pinned; /start no longer re-sends it (Task 15: short first screen).
+            ensurePreview(incoming, sender);
             telegramMediaSender.sendDocumentIfPresent(outgoing.chatId(), outgoing.metadata(), sender);
             telegramMediaSender.sendVideoIfPresent(outgoing.chatId(), outgoing.metadata(), sender);
             IncomingMessage request = incoming;
@@ -559,13 +560,13 @@ public class TelegramRouter {
                 && !outgoing.requestContact();
     }
 
-    private void ensurePreview(IncomingMessage incoming, AbsSender sender, boolean force) {
+    void ensurePreview(IncomingMessage incoming, AbsSender sender) {
         if (!previewEnabled
                 || incoming == null
                 || incoming.chatId() == null
                 || incoming.telegramUserId() == null
                 || incoming.chatId() < 0
-                || (!force && chatViewService.findPreviewMessageId(incoming.telegramUserId(), previewVersion) != null)) {
+                || chatViewService.findPreviewMessageId(incoming.telegramUserId(), previewVersion) != null) {
             return;
         }
 
@@ -600,10 +601,6 @@ public class TelegramRouter {
         } catch (Exception e) {
             log.debug("Telegram preview pin skipped: {}", e.getMessage());
         }
-    }
-
-    private boolean isStartCommand(IncomingMessage incoming) {
-        return incoming != null && incoming.text() != null && "/start".equalsIgnoreCase(incoming.text().trim());
     }
 
     private boolean isAdminChat(Long chatId) {

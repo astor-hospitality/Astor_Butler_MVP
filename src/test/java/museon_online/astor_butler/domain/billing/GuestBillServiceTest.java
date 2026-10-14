@@ -200,9 +200,18 @@ class GuestBillServiceTest {
     }
 
     @Test
+    void aConciergeBookingGetsABillKeyedByItsReservationWithoutAChat() {
+        GuestBill bill = service.open(draft(null, 91L, twoDishes()));
+
+        assertThat(bill.chatId()).isNull();
+        assertThat(service.findByReservation(91L)).map(GuestBill::id).contains(bill.id());
+        assertThat(service.open(draft(null, 91L, twoDishes())).id()).isEqualTo(bill.id());
+    }
+
+    @Test
     void refusesADraftThatCannotBeABill() {
         assertThatThrownBy(() -> service.open(null)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> service.open(draft(null, 77L, twoDishes()))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.open(draft(null, null, twoDishes()))).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.venueSubmitFailed(404L, SABY, "X")).isInstanceOf(IllegalArgumentException.class);
     }
 

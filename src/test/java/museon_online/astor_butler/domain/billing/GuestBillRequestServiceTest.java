@@ -269,6 +269,36 @@ class GuestBillRequestServiceTest {
         assertThat(service.visitToday(CHAT)).isEqualTo(Optional.of(order(84L, TableReservationStatus.CONFIRMED, lateTonight)));
     }
 
+    @Test
+    void byReservationTheTeamIsToldOnceAndTheBillComesBack() {
+        when(reservations.findOrder(77L)).thenReturn(Optional.of(order(77L, TableReservationStatus.SEATED, NOW.minus(Duration.ofMinutes(30)))));
+        GuestBill bill = bill(77L);
+        when(values.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true, false);
+
+        BillRequestOutcome first = service.requestByReservation(77L, "GUEST");
+        BillRequestOutcome second = service.requestByReservation(77L, "GUEST");
+
+        assertThat(first.status()).isEqualTo(BillRequestOutcome.Status.STAFF_NOTIFIED);
+        assertThat(first.billId()).isEqualTo(bill.id());
+        assertThat(first.totalRub()).isEqualTo(540L);
+        assertThat(first.paymentUrl()).isNull();
+        assertThat(second.status()).isEqualTo(BillRequestOutcome.Status.ALREADY_SENT);
+        verify(notifications, times(1)).notifyHostessGuestAskedForBill(any());
+        verify(notifier, never()).billRequestReply(any(), anyString());
+    }
+
+    @Test
+    void byReservationOnlyAVisitOfToday() {
+        when(reservations.findOrder(78L)).thenReturn(Optional.of(order(78L, TableReservationStatus.CONFIRMED, NOW.plus(Duration.ofDays(2)))));
+        when(reservations.findOrder(79L)).thenReturn(Optional.empty());
+
+        assertThat(service.requestByReservation(78L, "GUEST").status()).isEqualTo(BillRequestOutcome.Status.NO_VISIT);
+        assertThat(service.requestByReservation(79L, "GUEST").status()).isEqualTo(BillRequestOutcome.Status.NO_VISIT);
+        properties.setEnabled(false);
+        assertThat(service.requestByReservation(78L, "GUEST").status()).isEqualTo(BillRequestOutcome.Status.OFF);
+        verify(notifications, never()).notifyHostessGuestAskedForBill(any());
+    }
+
     private GuestBill bill(long reservationId) {
         return bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), NOW.plus(Duration.ofHours(1))));

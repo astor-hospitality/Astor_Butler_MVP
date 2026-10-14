@@ -40,6 +40,14 @@ check() {
   viavar=$(grep -cF 'proxy_pass $astor_backend;' <<<"$conf")
   [[ $total -gt 0 && $total -eq $viavar ]] || fail "every proxy_pass must be 'proxy_pass \$astor_backend;' ($viavar of $total)"
   grep -qF 'proxy_set_header Host $host;' <<<"$conf" || fail 'nginx $variables were eaten by envsubst'
+  # The board (/api/board/) is public behind its own token: its block must precede the internal /api/ block,
+  # stay unbuffered for SSE, and the stream (token in ?t=) must not reach the access log.
+  board=$(grep -nF 'location /api/board/ {' <<<"$conf" | cut -d: -f1)
+  internal=$(grep -nF 'location /api/ {' <<<"$conf" | cut -d: -f1)
+  [[ -n $board && -n $internal && $board -lt $internal ]] || fail 'location /api/board/ must exist before location /api/'
+  sed -n "/location \/api\/board\/ {/,/}/p" <<<"$conf" | grep -qF 'proxy_buffering off;' || fail '/api/board/ must not buffer (SSE)'
+  sed -n "/location = \/api\/board\/v1\/stream {/,/}/p" <<<"$conf" | grep -qF 'access_log off;' \
+    || fail 'the board stream location must not write its query string (?t=token) to the access log'
   echo "validate: ok: $viavar proxy_pass via \$astor_backend -> http://$expect"
 }
 

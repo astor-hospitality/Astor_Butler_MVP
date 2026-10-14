@@ -25,6 +25,9 @@ public class FirstTouchScenario implements FsmScenario {
     private final ChangeCancelDraftStorage changeCancelDraftStorage;
     private final AstorLinksProperties links;
 
+    static final String SHORT_GREETING = "AERIS · Батлер. Я на связи за столом: меню, вино, счёт, позвать официанта. Что подать?";
+    static final List<List<String>> SHORT_GREETING_BUTTONS = List.of(List.of("Меню ланча"), List.of("Позвать официанта", "Счёт"));
+
     /** The greeting that names the last lunch (spec 2026-10-13, ASTOR_REPEAT_LUNCH_ENABLED): optional, off by default. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.RepeatLunchGreeting repeatLunchGreeting;
@@ -87,6 +90,9 @@ public class FirstTouchScenario implements FsmScenario {
         changeCancelDraftStorage.clear(incoming.chatId());
         if (hasGrantedPrivacyPolicy(incoming)) {
             fsmStorage.setState(incoming.chatId(), BotState.READY_FOR_DIALOG);
+            if (isPlainStart(incoming) && lastLunchGreeting(incoming).isEmpty()) {
+                return shortGreeting(incoming);
+            }
             return OutgoingMessage.of(
                     incoming,
                     restartText(incoming),
@@ -130,15 +136,42 @@ public class FirstTouchScenario implements FsmScenario {
         if ("/restart".equalsIgnoreCase(text == null ? "" : text.trim())) {
             return "Перезапустил диалог и вернул главное меню. Можно начать заново: стол, меню, афиша, мероприятие или помощь команды.";
         }
-        if (repeatLunchGreeting != null) {
-            java.util.Optional<String> lastLunch = repeatLunchGreeting.text(incoming);
-            if (lastLunch.isPresent()) {
-                return lastLunch.get();
-            }
+        java.util.Optional<String> lastLunch = lastLunchGreeting(incoming);
+        if (lastLunch.isPresent()) {
+            return lastLunch.get();
         }
         // A known guest's /start must carry text: Telegram attaches the guest main menu only to a text message, and the
         // pinned preview card alone left the guest without buttons (live test 13.10).
         return "С возвращением! Чем помочь: стол, бизнес-ланч, меню, афиша или помощь команды. Выберите кнопкой или напишите.";
+    }
+
+    private java.util.Optional<String> lastLunchGreeting(IncomingMessage incoming) {
+        return repeatLunchGreeting == null ? java.util.Optional.empty() : repeatLunchGreeting.text(incoming);
+    }
+
+    /** A bare {@code /start}: no deep link (lunch, staff handoff) and not {@code /restart}. */
+    private static boolean isPlainStart(IncomingMessage incoming) {
+        String text = incoming == null || incoming.text() == null ? "" : incoming.text().trim();
+        return "/start".equalsIgnoreCase(text);
+    }
+
+    /**
+     * The one short first screen of a known guest without history (Task 15): one line and three buttons whose labels
+     * are words the existing flows already take — the lunch scenario («ланч»), the table request when seated
+     * («официанта»), the guest bill flow («счёт»). No picture: the visiting card stays in the pinned message.
+     */
+    private OutgoingMessage shortGreeting(IncomingMessage incoming) {
+        return OutgoingMessage.of(
+                incoming,
+                SHORT_GREETING,
+                BotState.READY_FOR_DIALOG.name(),
+                false,
+                false,
+                false,
+                false,
+                AdminAlert.none(),
+                List.of("SAFE_RESTART", "SHORT_GREETING", "OPEN_MENU")
+        ).withMetadata(java.util.Map.of("replyKeyboardRows", SHORT_GREETING_BUTTONS));
     }
 
     private OutgoingMessage handleContact(IncomingMessage incoming) {

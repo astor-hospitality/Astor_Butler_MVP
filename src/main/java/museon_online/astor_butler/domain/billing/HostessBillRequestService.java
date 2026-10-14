@@ -55,7 +55,7 @@ public class HostessBillRequestService {
         ALREADY_ASKED,
         /** The question went out now. */
         SENT,
-        /** Telegram did not take the question; nothing is recorded, so it can be tried again. */
+        /** The question could not be delivered; nothing is recorded, so it can be tried again. */
         NOT_DELIVERED;
 
         public boolean asked() {
@@ -83,7 +83,7 @@ public class HostessBillRequestService {
             case CANCELLED -> "Счёт по брони #" + orderId + " отменён, вопрос гостю не отправлен";
             case ALREADY_ASKED -> "Гостю по брони #" + orderId + " вопрос об оценке уже задан";
             case SENT -> "Гостю по брони #" + orderId + " отправлен вопрос об оценке";
-            case NOT_DELIVERED -> "Гостю по брони #" + orderId + " не удалось отправить вопрос: Telegram недоступен, попробуйте ещё раз";
+            case NOT_DELIVERED -> "Гостю по брони #" + orderId + " не удалось доставить вопрос, попробуйте ещё раз";
         });
     }
 
@@ -108,11 +108,17 @@ public class HostessBillRequestService {
         if (reviews.reviewOf(bill.id()).isPresent()) {
             return ReviewAsk.ALREADY_ASKED;
         }
-        if (reviews.prompt(bill, trigger).isPresent()) {
+        // Called on the Telegram update thread or a request thread: the Concierge's question is only queued here.
+        if (reviews.promptQueued(bill, trigger).isPresent()) {
             return ReviewAsk.SENT;
         }
         log.warn("Review of bill {} (reservation {}) was asked for ({}), but the guest could not be reached", bill.id(), orderId, trigger);
         return ReviewAsk.NOT_DELIVERED;
+    }
+
+    /** The newest bill of the reservation, whatever its state. */
+    public Optional<GuestBill> billOf(long orderId) {
+        return bills.findByReservation(orderId);
     }
 
     void setHostessChatId(String hostessChatId) {

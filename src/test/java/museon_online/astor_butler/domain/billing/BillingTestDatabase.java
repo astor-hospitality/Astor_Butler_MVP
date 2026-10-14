@@ -21,6 +21,7 @@ public final class BillingTestDatabase {
         try (Connection connection = dataSource.getConnection()) {
             ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/changelog/2026-10-07-guest-billing.sql"));
             ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/changelog/2026-10-08-guest-billing-payment-review.sql"));
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/changelog/2026-10-15-concierge-reservations.sql"));
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot build the billing test database", e);
         }

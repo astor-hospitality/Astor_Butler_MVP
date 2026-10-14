@@ -216,7 +216,7 @@ public class TableReservationRepository {
                     created_at, updated_at
                 )
                 VALUES (
-                    ?, ?, ?, ?, ?, 'TELEGRAM', ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                     COALESCE(
                         NULLIF(TRIM(?), ''),
                         (
@@ -244,6 +244,7 @@ public class TableReservationRepository {
                 command.userId(),
                 table.id(),
                 TableReservationStatus.AWAITING_MANAGER_CONFIRMATION.name(),
+                command.channel(),
                 timestamp(command.requestedStartAt()),
                 timestamp(command.requestedEndAt()),
                 command.partySize(),
@@ -689,7 +690,7 @@ public class TableReservationRepository {
     private RowMapper<TableReservationOrder> orderMapper() {
         return (rs, rowNum) -> new TableReservationOrder(
                 rs.getLong("id"),
-                rs.getLong("chat_id"),
+                nullableLong(rs, "chat_id"),
                 nullableLong(rs, "telegram_user_id"),
                 nullableLong(rs, "user_id"),
                 nullableLong(rs, "table_id"),

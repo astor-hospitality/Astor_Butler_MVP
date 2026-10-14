@@ -80,7 +80,7 @@ public class CallLogModelGateway implements ModelGateway {
         return response;
     }
 
-    private void answered(String type, String model, boolean fallback, Map<String, Object> metadata, long started) {
+    void answered(String type, String model, boolean fallback, Map<String, Object> metadata, long started) {
         try {
             Map<?, ?> usage = CallLogWriter.usage(metadata);
             writer.get().llmCall(type, model, fallback ? "fallback" : "ok", null,
@@ -92,7 +92,7 @@ public class CallLogModelGateway implements ModelGateway {
         }
     }
 
-    private void failed(String type, String model, RuntimeException error, long started) {
+    void failed(String type, String model, RuntimeException error, long started) {
         try {
             writer.get().llmCall(type, model, "error", rootCause(error), null, null, elapsed(started));
         } catch (RuntimeException e) {

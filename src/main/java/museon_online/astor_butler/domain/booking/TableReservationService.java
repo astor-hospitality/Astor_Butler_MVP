@@ -356,6 +356,9 @@ public class TableReservationService {
         if (seatedHint != null) {
             seatedHint.send(seated);
         }
+        if (seated.chatId() == null) {
+            notificationService.notifyGuestSeated(seated);
+        }
         callLog("reservation:seated", seated);
         journey(seated, museon_online.astor_butler.domain.journey.VisitEventKind.SEATED, "Presto".equals(who) ? museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO : museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
         return seated;
@@ -804,7 +807,8 @@ public class TableReservationService {
         if (command == null) {
             throw badRequest("Request body is required");
         }
-        if (command.chatId() == null) {
+        // A booking from the Concierge's chat has no chat of the Butler's bot; one from the bot always has.
+        if (command.chatId() == null && !command.concierge()) {
             throw badRequest("chatId is required");
         }
         validateWindow(command.requestedStartAt(), command.requestedEndAt());

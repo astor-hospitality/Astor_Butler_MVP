@@ -116,6 +116,40 @@ class BusinessLunchServiceTest {
     }
 
     @Test
+    void placeForRefusesAReservationThatNoLongerHoldsATable() {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-503", ""));
+        BusinessLunchService service = service(List.of(saby));
+        var held = BusinessLunchFixtures.reservation(80, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+        var cancelled = new museon_online.astor_butler.domain.booking.TableReservationOrder(held.id(), held.chatId(), held.telegramUserId(),
+                held.userId(), held.tableId(), held.tableCode(), held.tableDisplayName(), held.preferredZone(), held.seatingPreference(),
+                museon_online.astor_butler.domain.booking.TableReservationStatus.CANCELLED, held.source(), held.requestedStartAt(),
+                held.requestedEndAt(), held.partySize(), held.guestName(), held.guestPhone(), held.guestComment(), held.managerTelegramId(),
+                held.managerUserId(), held.hostessChatId(), held.sbisExternalId(), held.createdAt(), held.updatedAt());
+
+        assertThatThrownBy(() -> service.placeFor(cancelled, request("CONCIERGE", null))).isInstanceOf(IllegalStateException.class);
+        assertThat(saby.order).isNull();
+        assertThat(BusinessLunchService.holdsATable(held)).isTrue();
+        assertThat(BusinessLunchService.holdsATable(cancelled)).isFalse();
+    }
+
+    @Test
+    void placesIntoAHeldReservationWithoutHoldingASecondTable() {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-502", ""));
+        BusinessLunchService service = service(List.of(saby));
+        var reservation = BusinessLunchFixtures.reservation(79, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+
+        BusinessLunchService.Placement placement = service.placeFor(reservation, request("CONCIERGE", null));
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(placement.reservation()).isEqualTo(reservation);
+        assertThat(placement.order().tableReservationId()).isEqualTo(79L);
+        assertThat(placement.external().status()).isEqualTo("ACCEPTED");
+        assertThat(BusinessLunchService.lunchTimeIssue(offer, TODAY.plusDays(1), LocalTime.of(17, 0)))
+                .contains(BusinessLunchService.WindowIssue.OUTSIDE_LUNCH_HOURS);
+        assertThat(BusinessLunchService.lunchTimeIssue(offer, TODAY, LocalTime.of(13, 0))).isEmpty();
+    }
+
+    @Test
     void handsTheStructuredOrderToTheExternalSystemAndKeepsItsNumber() {
         FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-501", ""));
         BusinessLunchService service = service(List.of(saby));

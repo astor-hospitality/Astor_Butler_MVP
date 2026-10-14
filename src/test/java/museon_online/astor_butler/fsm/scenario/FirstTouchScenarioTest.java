@@ -81,9 +81,9 @@ class FirstTouchScenarioTest {
         OutgoingMessage outgoing = scenario.handle(incoming, BotState.TABLE_BOOKING_WAIT_TABLE_SELECTION, "/start");
 
         assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
-        assertThat(outgoing.removeKeyboard()).isTrue();
-        assertThat(outgoing.text()).contains("С возвращением", "бизнес-ланч");
-        assertThat(outgoing.actions()).containsExactly("SAFE_RESTART", "PREVIEW_REFRESHED", "OPEN_MENU");
+        assertThat(outgoing.text()).isEqualTo("AERIS · Батлер. Я на связи за столом: меню, вино, счёт, позвать официанта. Что подать?");
+        assertThat(outgoing.metadata().get("replyKeyboardRows")).isEqualTo(FirstTouchScenario.SHORT_GREETING_BUTTONS);
+        assertThat(outgoing.actions()).containsExactly("SAFE_RESTART", "SHORT_GREETING", "OPEN_MENU");
         verify(fsmStorage).clear(incoming.chatId());
         verify(tableBookingDraftStorage).clear(incoming.chatId());
         verify(changeCancelDraftStorage).clear(incoming.chatId());
@@ -258,13 +258,85 @@ class FirstTouchScenarioTest {
     }
 
     @Test
-    void knownGuestStartKeepsTheUsualGreetingWithoutALastLunch() {
+    void knownGuestStartWithoutALastLunchGetsTheShortFirstScreen() {
         IncomingMessage incoming = telegram("/start", null);
         when(consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())).thenReturn(true);
         museon_online.astor_butler.domain.journey.RepeatLunchGreeting greeting = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.RepeatLunchGreeting.class);
         when(greeting.text(incoming)).thenReturn(java.util.Optional.empty());
         scenario.setRepeatLunchGreeting(greeting);
 
-        assertThat(scenario.handle(incoming, BotState.READY_FOR_DIALOG, "/start").text()).contains("С возвращением", "бизнес-ланч");
+        assertThat(scenario.handle(incoming, BotState.READY_FOR_DIALOG, "/start").text()).isEqualTo("AERIS · Батлер. Я на связи за столом: меню, вино, счёт, позвать официанта. Что подать?");
+    }
+
+    @Test
+    void startWithoutContextIsShortWithThreeButtons() {
+        IncomingMessage incoming = telegram("/start", null);
+        when(consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())).thenReturn(true);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, "/start");
+
+        assertThat(outgoing.text()).isEqualTo("AERIS · Батлер. Я на связи за столом: меню, вино, счёт, позвать официанта. Что подать?");
+        assertThat(outgoing.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
+        assertThat(outgoing.requestContact()).isFalse();
+        assertThat(outgoing.metadata().get("replyKeyboardRows"))
+                .isEqualTo(java.util.List.of(java.util.List.of("Меню ланча"), java.util.List.of("Позвать официанта", "Счёт")));
+        // No picture or file rides on the short first screen: the visiting card lives in the pinned message only.
+        assertThat(outgoing.metadata()).doesNotContainKeys("documentUrl", "videoUrl", "photoUrl");
+        assertThat(outgoing.actions()).doesNotContain("PREVIEW_REFRESHED");
+    }
+
+    @Test
+    void theThreeButtonsSpeakWordsTheExistingFlowsAlreadyTake() {
+        // «Меню ланча» → BusinessLunchScenario (any idle text with «ланч»); «Счёт» → the guest bill flow, decided before
+        // any scenario. «Позвать официанта»: seated → ButlerTalk's table request to the waiter; not seated → the deterministic
+        // understanding gives UNKNOWN and ScenarioRouter's ordered list reaches ManagerHelpScenario («позвать») before
+        // ConciergeScenario: a team request with an alert to the staff chat, not the generic fallback.
+        assertThat(FirstTouchScenario.SHORT_GREETING_BUTTONS.get(0).get(0).toLowerCase()).contains("ланч");
+        assertThat(museon_online.astor_butler.domain.journey.talk.TableRequest.recognise("Позвать официанта"))
+                .contains(museon_online.astor_butler.domain.journey.talk.TableRequest.WAITER);
+        ManagerHelpScenario managerHelp = new ManagerHelpScenario(fsmStorage,
+                org.mockito.Mockito.mock(museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository.class));
+        assertThat(managerHelp.supports(telegram("Позвать официанта", null), BotState.READY_FOR_DIALOG, "Позвать официанта")).isTrue();
+        assertThat(museon_online.astor_butler.domain.billing.GuestBillIntent.matches("Счёт")).isTrue();
+    }
+
+    @Test
+    void startForAGuestWithALastLunchStillGetsTheWelcomeBack() {
+        IncomingMessage incoming = telegram("/start", null);
+        when(consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())).thenReturn(true);
+        museon_online.astor_butler.domain.journey.RepeatLunchGreeting greeting = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.RepeatLunchGreeting.class);
+        when(greeting.text(incoming)).thenReturn(java.util.Optional.of("С возвращением, Наталья! В прошлый раз у вас был Борщ. Повторить или собрать заново?"));
+        scenario.setRepeatLunchGreeting(greeting);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, "/start");
+
+        assertThat(outgoing.text()).startsWith("С возвращением");
+        assertThat(outgoing.metadata()).doesNotContainKey("replyKeyboardRows");
+    }
+
+    @Test
+    void lunchDeepLinkStartIsUntouched() {
+        // A known guest whose state expired arrives by the lunch link: the first touch answers as before and the lunch
+        // scenario takes the draft over (ScenarioRouter.continueAfterFirstTouch); no short screen, no extra buttons.
+        IncomingMessage incoming = telegram("/start lunch_aeris_s2_p2", null);
+        when(consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())).thenReturn(true);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.UNKNOWN, "/start lunch_aeris_s2_p2");
+
+        assertThat(outgoing.text()).isEqualTo("С возвращением! Чем помочь: стол, бизнес-ланч, меню, афиша или помощь команды. Выберите кнопкой или напишите.");
+        assertThat(outgoing.metadata()).doesNotContainKey("replyKeyboardRows");
+        assertThat(outgoing.actions()).containsExactly("SAFE_RESTART", "PREVIEW_REFRESHED", "OPEN_MENU");
+    }
+
+    @Test
+    void staffHandoffStartIsUntouched() {
+        scenario.setStaffHandoffEnabled(true);
+        IncomingMessage incoming = telegram("/start h_anna_t5", null);
+        when(consentVaultService.hasGrantedPrivacyPolicy(incoming.telegramUserId())).thenReturn(true);
+
+        OutgoingMessage outgoing = scenario.handle(incoming, BotState.READY_FOR_DIALOG, "/start h_anna_t5");
+
+        assertThat(outgoing.text()).startsWith("С возвращением! Чем помочь");
+        assertThat(outgoing.metadata()).doesNotContainKey("replyKeyboardRows");
     }
 }
