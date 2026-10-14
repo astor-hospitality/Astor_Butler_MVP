@@ -120,7 +120,7 @@ public class ButlerAgent {
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.CONCIERGE, null, sessionId, visitId,
                 turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()));
         // Without consent the model audit keeps no words of this turn either.
-        AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null, consent);
+        AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null, consent, properties.getTurnTimeoutMs());
 
         Long newVisit = visitOf(outcome);
         if (newVisit != null && !newVisit.equals(visitId)) {
@@ -166,7 +166,8 @@ public class ButlerAgent {
         }
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.BUTLER_AGENT, chatId, null, visit,
                 turnKey("tg:" + chatId, history.nextTurn(key)), blankToNull(incoming.firstName()), blankToNull(incoming.contactPhone()));
-        AgentOutcome outcome = run(key, said, ctx, incoming.contactPhone(), chatId, true);
+        // The bot's single update thread waits the bot budget at most; on expiry the scenarios answer.
+        AgentOutcome outcome = run(key, said, ctx, incoming.contactPhone(), chatId, true, properties.getBotTurnTimeoutMs());
         if (outcome.fallback()) {
             // The bot has no client retries: the next guest message is always a new turn with new keys.
             history.skipTurn(key);
@@ -178,7 +179,8 @@ public class ButlerAgent {
         return Optional.of(outcome.text());
     }
 
-    private AgentOutcome run(String key, String said, CapabilityContext ctx, String phone, Long chatId, boolean auditContent) {
+    private AgentOutcome run(String key, String said, CapabilityContext ctx, String phone, Long chatId, boolean auditContent,
+                             long turnTimeoutMs) {
         try {
             List<ModelChatMessage> messages = new ArrayList<>();
             messages.add(ModelChatMessage.system(ButlerPrompt.system(
@@ -187,7 +189,7 @@ public class ButlerAgent {
                     venueFacts())));
             messages.addAll(history.messages(key));
             messages.add(ModelChatMessage.user(said));
-            AgentOutcome outcome = loop.run(messages, registry.asModelTools(), ctx, auditContent);
+            AgentOutcome outcome = loop.run(messages, registry.asModelTools(), ctx, auditContent, turnTimeoutMs);
             return outcome == null ? AgentOutcome.fallback(List.of(), 0) : outcome;
         } catch (RuntimeException e) {
             log.warn("Butler agent turn failed: reason={}", e.getClass().getSimpleName());

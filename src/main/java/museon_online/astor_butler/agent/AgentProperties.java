@@ -14,7 +14,8 @@ import java.util.stream.Collectors;
  * The Butler's agent, switched by {@code ASTOR_AGENT_ENABLED} (off by default). In the Butler's own bot it answers
  * only chats in {@code ASTOR_AGENT_ALLOWLIST} (comma-separated chat ids; empty — nobody). {@code model}
  * ({@code ASTOR_AGENT_MODEL}) names the model of agent chats; one model call waits {@code modelTimeoutMs} at most, a
- * whole guest turn {@code turnTimeoutMs} ({@code ASTOR_AGENT_TURN_TIMEOUT_MS}).
+ * whole negotiation turn {@code turnTimeoutMs} ({@code ASTOR_AGENT_TURN_TIMEOUT_MS}), a turn in the bot
+ * {@code botTurnTimeoutMs} ({@code ASTOR_AGENT_BOT_TURN_TIMEOUT_MS}).
  */
 @Component
 @ConfigurationProperties(prefix = "astor.agent")
@@ -27,6 +28,11 @@ public class AgentProperties {
     private String model = "GigaChat-3-Pro";
     /** Under the Concierge's own wait for a negotiation turn (30 s), so it never gives up on a turn still running. */
     private long turnTimeoutMs = 25_000;
+    /**
+     * A turn in the Butler's own bot ({@code ASTOR_AGENT_BOT_TURN_TIMEOUT_MS}): the bot has a single update thread,
+     * so the agent holds it this long at most, then the scenarios answer.
+     */
+    private long botTurnTimeoutMs = 12_000;
     private long modelTimeoutMs = 20_000;
     private int maxToolCalls = 5;
     private int maxTokens = 512;

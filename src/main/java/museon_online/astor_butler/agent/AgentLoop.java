@@ -79,6 +79,12 @@ public class AgentLoop {
      *                     the roles and tool names of each call ({@code auditContent=false} in the request metadata)
      */
     public AgentOutcome run(List<ModelChatMessage> history, List<ModelTool> tools, CapabilityContext ctx, boolean auditContent) {
+        return run(history, tools, ctx, auditContent, properties.getTurnTimeoutMs());
+    }
+
+    /** @param turnTimeoutMs the whole turn's budget, e.g. the shorter one of the Butler's own bot */
+    public AgentOutcome run(List<ModelChatMessage> history, List<ModelTool> tools, CapabilityContext ctx, boolean auditContent,
+                            long turnTimeoutMs) {
         if (model == null) {
             return AgentOutcome.fallback(List.of(), 0);
         }
@@ -86,7 +92,7 @@ public class AgentLoop {
         Set<String> names = offered.stream().map(ModelTool::name).collect(Collectors.toSet());
         List<ModelChatMessage> messages = new ArrayList<>(history == null ? List.of() : history);
         List<AgentOutcome.ToolUse> uses = new ArrayList<>();
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(1, properties.getTurnTimeoutMs()));
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(Math.max(1, turnTimeoutMs));
         int calls = 0;
         while (true) {
             boolean toolsAllowed = calls < properties.getMaxToolCalls() && !offered.isEmpty();
