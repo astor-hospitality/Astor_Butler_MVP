@@ -26,8 +26,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * {@code table_availability{date, time, partySize}}: free tables for a 90-minute slot in venue time, and up to three
- * later times the same day with a free table. Reads only: nothing is held or booked.
+ * {@code table_availability{date, time, partySize}}: free tables for a 90-minute slot in venue time and, only when none
+ * is free, up to three later times the same day with a free table. Reads only: nothing is held or booked.
  */
 @Component
 public class TableAvailabilityTool implements CapabilityTool {
@@ -36,8 +36,11 @@ public class TableAvailabilityTool implements CapabilityTool {
     static final Duration SLOT = Duration.ofMinutes(90);
     static final Duration STEP = Duration.ofMinutes(15);
     static final int MAX_ALTERNATIVES = 3;
-    /** Each probe asks the restaurant system too, so the search looks at most three hours ahead. */
-    static final int MAX_PROBES = 12;
+    /**
+     * Each probe asks the restaurant system too (a Saby round trip), so the search looks at most 90 minutes ahead:
+     * the whole turn must fit the Concierge's wait.
+     */
+    static final int MAX_PROBES = 6;
     static final int MAX_PARTY = 50;
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
 
@@ -70,7 +73,8 @@ public class TableAvailabilityTool implements CapabilityTool {
     @Override
     public String description() {
         return "Свободные столы на дату и время (время ресторана, слот 90 минут) для заданного числа гостей. "
-                + "free — свободные столы, alternatives — до трёх более поздних времён в тот же день со свободным столом, "
+                + "free — свободные столы; если free пуст, alternatives — до трёх более поздних времён (в пределах полутора часов) "
+                + "в тот же день со свободным столом, "
                 + "open=false — ресторан в это время закрыт. Ничего не бронирует.";
     }
 
@@ -125,7 +129,8 @@ public class TableAvailabilityTool implements CapabilityTool {
         facts.put("partySize", partySize);
         facts.put("open", open);
         facts.put("free", free);
-        facts.put("alternatives", alternatives(date, time, zone, partySize));
+        // Alternatives only for a full slot: with a free table they would only cost more calls to the restaurant system.
+        facts.put("alternatives", free.isEmpty() ? alternatives(date, time, zone, partySize) : List.of());
         return CapabilityResult.ok(facts);
     }
 

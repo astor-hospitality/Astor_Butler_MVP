@@ -25,7 +25,8 @@ public class AgentProperties {
     private boolean enabled = false;
     private String allowlist = "";
     private String model = "GigaChat-3-Pro";
-    private long turnTimeoutMs = 60_000;
+    /** Under the Concierge's own wait for a negotiation turn (30 s), so it never gives up on a turn still running. */
+    private long turnTimeoutMs = 25_000;
     private long modelTimeoutMs = 20_000;
     private int maxToolCalls = 5;
     private int maxTokens = 512;

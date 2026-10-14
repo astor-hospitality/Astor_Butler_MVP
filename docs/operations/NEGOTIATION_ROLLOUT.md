@@ -58,7 +58,9 @@ ASTOR_WEBHOOK_SECRET=<openssl rand -hex 32; одинаковый в обоих �
 ASTOR_AGENT_ENABLED=true
 ASTOR_AGENT_ALLOWLIST=<chat id Михаила>,<chat id Тариэля>
 ASTOR_AGENT_MODEL=GigaChat-3-Pro
-ASTOR_AGENT_TURN_TIMEOUT_MS=60000
+# Ход переговоров у Батлера короче ожидания Консьержа (BUTLER_NEGOTIATION_TIMEOUT_MS=30000): Консьерж не бросает ход,
+# который Батлер ещё делает. В боте Батлера свой бюджет — ASTOR_AGENT_BOT_TURN_TIMEOUT_MS (12000).
+ASTOR_AGENT_TURN_TIMEOUT_MS=25000
 ```
 
 Консьерж, `/opt/astor-concierge/.env`:
@@ -72,6 +74,8 @@ AGENT_ALLOWLIST=<chat id Михаила>,<chat id Тариэля>
 AGENT_MODEL=GigaChat-3-Pro
 AGENT_TIMEOUT_MS=20000
 AGENT_TURN_TIMEOUT_MS=60000
+# Сколько Консьерж ждёт ход Батлера; больше ASTOR_AGENT_TURN_TIMEOUT_MS Батлера (25000).
+BUTLER_NEGOTIATION_TIMEOUT_MS=30000
 ```
 
 `WEB_ENABLED=true` у Консьержа обязателен для вебхука: маршрут `/api/concierge/v1/events` живёт на `WEB_PORT` 8096.

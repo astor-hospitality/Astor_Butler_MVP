@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -65,29 +66,49 @@ class TableAvailabilityToolTest {
     }
 
     @Test
-    void freeTablesAndAlternatives() {
+    void freeTablesNeedNoAlternatives() {
         // 19:00 local on 2026-10-15 is 14:00Z; the slot lasts 90 minutes.
         when(reservations.availability(eq("AERIS"), eq(Instant.parse("2026-10-15T14:00:00Z")),
                 eq(Instant.parse("2026-10-15T15:30:00Z")), eq(4)))
                 .thenReturn(List.of(TableAvailability.available(table("T1", "Стол у окна", 4))));
-        when(reservations.availability(eq("AERIS"), eq(Instant.parse("2026-10-15T14:30:00Z")), any(), eq(4)))
-                .thenReturn(List.of(TableAvailability.available(table("T5", "Пятый", 6))));
-        when(reservations.availability(eq("AERIS"), eq(Instant.parse("2026-10-15T14:45:00Z")), any(), eq(4)))
-                .thenReturn(List.of(TableAvailability.available(table("T5", "Пятый", 6))));
-        when(reservations.availability(eq("AERIS"), eq(Instant.parse("2026-10-15T15:30:00Z")), any(), eq(4)))
-                .thenReturn(List.of(TableAvailability.available(table("T7", "Седьмой", 4))));
-        when(reservations.availability(eq("AERIS"), eq(Instant.parse("2026-10-15T15:45:00Z")), any(), eq(4)))
-                .thenReturn(List.of(TableAvailability.available(table("T8", "Восьмой", 4))));
 
         CapabilityResult result = tool.invoke(null, Map.of("date", "2026-10-15", "time", "19:00", "partySize", 4));
 
         assertThat(result.ok()).isTrue();
         assertThat(result.facts().get("free")).isEqualTo(List.of(
                 Map.of("tableCode", "T1", "name", "Стол у окна", "capacity", 4)));
+        assertThat(result.facts().get("alternatives")).isEqualTo(List.of());
+        verify(reservations, times(1)).availability(anyString(), any(), any(), anyInt());
+    }
+
+    @Test
+    void noFreeTableLooksForAlternativesWithinSixProbes() {
+        when(reservations.availability(anyString(), any(), any(), anyInt())).thenReturn(List.of());
+        when(reservations.availability(eq("AERIS"), eq(Instant.parse("2026-10-15T14:30:00Z")), any(), eq(4)))
+                .thenReturn(List.of(TableAvailability.available(table("T5", "Пятый", 6))));
+        when(reservations.availability(eq("AERIS"), eq(Instant.parse("2026-10-15T14:45:00Z")), any(), eq(4)))
+                .thenReturn(List.of(TableAvailability.available(table("T5", "Пятый", 6))));
+        when(reservations.availability(eq("AERIS"), eq(Instant.parse("2026-10-15T15:30:00Z")), any(), eq(4)))
+                .thenReturn(List.of(TableAvailability.available(table("T7", "Седьмой", 4))));
+
+        CapabilityResult result = tool.invoke(null, Map.of("date", "2026-10-15", "time", "19:00", "partySize", 4));
+
+        assertThat(result.facts().get("free")).isEqualTo(List.of());
         assertThat(result.facts().get("alternatives")).isEqualTo(List.of(
                 Map.of("time", "19:30", "tableCode", "T5"),
                 Map.of("time", "19:45", "tableCode", "T5"),
                 Map.of("time", "20:30", "tableCode", "T7")));
+    }
+
+    @Test
+    void probesStopAfterSix() {
+        when(reservations.availability(anyString(), any(), any(), anyInt())).thenReturn(List.of());
+
+        CapabilityResult result = tool.invoke(null, Map.of("date", "2026-10-15", "time", "19:00", "partySize", 4));
+
+        assertThat(result.facts().get("alternatives")).isEqualTo(List.of());
+        // The asked slot plus at most six later probes (19:15 .. 20:30).
+        verify(reservations, times(7)).availability(anyString(), any(), any(), anyInt());
     }
 
     @Test
