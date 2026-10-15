@@ -6,6 +6,7 @@ import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.CapabilityTool;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
@@ -33,6 +34,11 @@ import java.util.Optional;
  * {@code reservation_create{date, time, partySize, guestName, guestPhone?, wish?}}: a request for a table that waits for
  * the hostess. It never confirms: the status is always {@code AWAITING_HOSTESS}. A Concierge booking is made in the
  * {@code CONCIERGE} channel without a chat of the Butler's bot, and its session is linked to the new visit.
+ *
+ * <p>Only after the guest's yes, whatever the model decides: the turn's {@link GuestAgreement} must cover this very
+ * day, time and party size, offered to the guest in the venue's previous answer. Otherwise nothing is booked and the
+ * answer is {@code NOT_ALLOWED} with {@code reason = needs_guest_yes} and the table to put to the guest. The same holds
+ * in the Butler's own bot; a REST call carries no agreement and is always refused.
  */
 @Component
 public class ReservationCreateTool implements CapabilityTool {
@@ -64,8 +70,10 @@ public class ReservationCreateTool implements CapabilityTool {
 
     @Override
     public String description() {
-        return "Создать заявку на стол. Бронь ждёт подтверждения хостес (status=AWAITING_HOSTESS) — не обещай гостю, "
-                + "что стол подтверждён. Возвращает номер брони (reservationId), стол (table), дату и время.";
+        return "Создать заявку на стол — только после «да» гостя на день, время и число гостей, которые ты назвал ему "
+                + "в прошлом ответе. Без этого заявки не будет: NOT_ALLOWED, reason=needs_guest_yes, с днём, временем и числом "
+                + "гостей — назови их гостю и спроси, бронировать ли. Бронь ждёт подтверждения хостес (status=AWAITING_HOSTESS) — "
+                + "не обещай гостю, что стол подтверждён. Возвращает номер брони (reservationId), стол (table), дату и время.";
     }
 
     @Override
@@ -94,6 +102,10 @@ public class ReservationCreateTool implements CapabilityTool {
         String guestPhone = firstOf(CapabilityArguments.text(args, "guestPhone"), ctx == null ? null : ctx.guestPhone());
         if (ctx == null || date == null || time == null || partySize == null || partySize < 1 || guestName == null) {
             return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
+        }
+        GuestAgreement.Table table = new GuestAgreement.Table(date, time, partySize);
+        if (ctx.agreement() == null || !ctx.agreement().covers(table)) {
+            return GuestAgreement.refusal(table);
         }
         boolean butler = ctx.butlerAgent();
         Instant start = date.atTime(time).atZone(zone()).toInstant();

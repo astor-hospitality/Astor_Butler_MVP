@@ -4,6 +4,7 @@ import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityRegistry;
 import museon_online.astor_butler.capability.CapabilityResult;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.journey.GuestVisit;
 import museon_online.astor_butler.domain.journey.GuestVisitRepository;
@@ -49,6 +50,10 @@ import java.util.function.Supplier;
  * <p>On the negotiation path the tools run on behalf of the Concierge session (caller {@code CONCIERGE}): its booking
  * links the session to the new visit, and only that session reaches it later. The Butler writes the Concierge's
  * message and its own reply to the ledger; the guest's own words are the Concierge's to record.
+ *
+ * <p>Each turn carries the guest's {@link GuestAgreement}: whether the guest's own words (the Concierge's
+ * {@code guestText}, the bot's message) say yes, and the tables the previous answered turn put to the guest
+ * ({@link #proposed}). The tools, not the model, decide with it whether a table request or a lunch order may run.
  */
 @Component
 public class ButlerAgent {
@@ -134,7 +139,8 @@ public class ButlerAgent {
 
         String said = negotiationMessage(turn);
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.CONCIERGE, null, sessionId, visitId,
-                turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()));
+                turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()),
+                GuestAgreement.of(turn.guestText(), history.proposed(key)));
         // Without consent the model audit keeps no words of this turn either.
         AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null, consent, properties.getTurnTimeoutMs());
 
@@ -150,11 +156,12 @@ public class ButlerAgent {
             if (blankToNull(turn.turnId()) == null && outcome.toolCalls() > 0) {
                 history.skipTurn(key);
             }
+            history.withdrawProposals(key);
             write(fallbackTurn(visitId, sessionId, TurnChannel.CONCIERGE_TG, outcome), true);
             return new NegotiationReply(null, null, facts, visitId, true);
         }
         Map<String, Object> offer = offer(outcome);
-        history.add(key, said, outcome.text(), digest(outcome));
+        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome));
         Map<String, Object> payload = new LinkedHashMap<>();
         if (offer != null) {
             payload.put("offerKind", offer.get("kind"));
@@ -181,17 +188,19 @@ public class ButlerAgent {
             return Optional.empty();
         }
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.BUTLER_AGENT, chatId, null, visit,
-                turnKey("tg:" + chatId, history.nextTurn(key)), blankToNull(incoming.firstName()), blankToNull(incoming.contactPhone()));
+                turnKey("tg:" + chatId, history.nextTurn(key)), blankToNull(incoming.firstName()), blankToNull(incoming.contactPhone()),
+                GuestAgreement.of(incoming.text(), history.proposed(key)));
         // The bot's single update thread waits the bot budget at most; on expiry the scenarios answer.
         AgentOutcome outcome = run(key, said, ctx, incoming.contactPhone(), chatId, true, properties.getBotTurnTimeoutMs());
         if (outcome.fallback()) {
             // The bot has no client retries: the next guest message is always a new turn with new keys.
             history.skipTurn(key);
+            history.withdrawProposals(key);
             // Without a visit the row would belong to nothing on the board; the loop has logged the fallback.
             write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), visit != null);
             return Optional.empty();
         }
-        history.add(key, said, outcome.text(), digest(outcome));
+        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome));
         return Optional.of(outcome.text());
     }
 
@@ -351,6 +360,34 @@ public class ButlerAgent {
             }
         }
         return null;
+    }
+
+    /**
+     * The tables this turn put to the guest: the free time and the later times of an availability check, and a table
+     * request refused for want of the guest's yes (the model is to ask for it).
+     */
+    static List<GuestAgreement.Table> proposed(AgentOutcome outcome) {
+        List<GuestAgreement.Table> tables = new ArrayList<>();
+        for (AgentOutcome.ToolUse use : outcome.uses()) {
+            CapabilityResult result = use.result();
+            Map<String, Object> facts = result == null || result.facts() == null ? Map.of() : result.facts();
+            if ("table_availability".equals(use.tool()) && result != null && result.ok()) {
+                if (facts.get("free") instanceof Collection<?> free && !free.isEmpty()) {
+                    GuestAgreement.Table.of(facts.get("date"), facts.get("time"), facts.get("partySize")).ifPresent(tables::add);
+                }
+                if (facts.get("alternatives") instanceof Collection<?> alternatives) {
+                    for (Object alternative : alternatives) {
+                        if (alternative instanceof Map<?, ?> later) {
+                            GuestAgreement.Table.of(facts.get("date"), later.get("time"), facts.get("partySize")).ifPresent(tables::add);
+                        }
+                    }
+                }
+            } else if ("reservation_create".equals(use.tool()) && result != null && !result.ok()
+                    && GuestAgreement.NEEDS_GUEST_YES.equals(facts.get("reason"))) {
+                GuestAgreement.Table.of(facts.get("date"), facts.get("time"), facts.get("partySize")).ifPresent(tables::add);
+            }
+        }
+        return tables;
     }
 
     private static List<Map<String, Object>> facts(AgentOutcome outcome) {

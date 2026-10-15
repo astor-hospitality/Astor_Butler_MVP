@@ -88,6 +88,8 @@ class ButlerAgentRetryTest {
                 mock(AgentLessonRepository.class), mock(GuestMemory.class), new VenueFactsCatalog(VenueFacts.none()), capabilities,
                 mock(LedgerWriter.class), turns, mock(GuestVisitRepository.class));
         NegotiationTurn turn = new NegotiationTurn("c-1", null, "бронируйте", null, "Анна", null, "Бронируем?", "t-1", true);
+        // The table is put to the guest first: a booking needs the guest's yes to the table offered just before.
+        agent.negotiate(new NegotiationTurn("c-1", null, "Есть стол на 20-е в 19?", null, "Анна", null, null, "t-0", true));
 
         NegotiationReply first = agent.negotiate(turn);
         NegotiationReply retry = agent.negotiate(turn);

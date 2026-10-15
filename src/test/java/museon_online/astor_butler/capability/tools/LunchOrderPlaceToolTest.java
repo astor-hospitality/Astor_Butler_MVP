@@ -2,6 +2,7 @@ package museon_online.astor_butler.capability.tools;
 
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityResult;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
@@ -82,6 +83,20 @@ class LunchOrderPlaceToolTest {
         assertThat(missing.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
         assertThat(refused.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
         assertThat(saidInWords.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        verifyNoInteractions(lunch);
+    }
+
+    @Test
+    void confirmedByGuestIsNotEnoughWithoutTheGuestsOwnYes() {
+        for (GuestAgreement agreement : java.util.Arrays.asList(null, GuestAgreement.NONE, GuestAgreement.of("Борщ и щуку", List.of()))) {
+            CapabilityResult concierge = tool.invoke(CapabilityFixtures.concierge("k1", agreement), args(true, List.of("BORSCHT")));
+            CapabilityResult butler = tool.invoke(CapabilityFixtures.butler("k1", agreement), args(true, List.of("BORSCHT")));
+
+            for (CapabilityResult result : List.of(concierge, butler)) {
+                assertThat(result.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+                assertThat(result.facts()).containsEntry("reason", GuestAgreement.NEEDS_GUEST_YES);
+            }
+        }
         verifyNoInteractions(lunch);
     }
 

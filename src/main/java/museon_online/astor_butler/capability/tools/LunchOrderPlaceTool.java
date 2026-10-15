@@ -5,6 +5,7 @@ import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.CapabilityTool;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
@@ -23,7 +24,9 @@ import java.util.Optional;
 /**
  * {@code lunch_order_place{reservationId, dishCodes, confirmedByGuest, setCode?}}: the business lunch the guest chose,
  * ordered into their reservation. Only after the guest said yes to the summary: {@code confirmedByGuest} must be the
- * boolean {@code true}. Dish codes come from {@code lunch_menu}; an unknown code is named back as a bad argument.
+ * boolean {@code true}, and the guest's own words this turn must say yes ({@link GuestAgreement#yes}), else
+ * {@code NOT_ALLOWED} with {@code reason = needs_guest_yes}. Dish codes come from {@code lunch_menu}; an unknown code
+ * is named back as a bad argument.
  */
 @Component
 public class LunchOrderPlaceTool implements CapabilityTool {
@@ -50,8 +53,9 @@ public class LunchOrderPlaceTool implements CapabilityTool {
 
     @Override
     public String description() {
-        return "Оформить бизнес-ланч к брони гостя. Вызывай только после того, как гость подтвердил состав заказа: "
-                + "confirmedByGuest=true. Коды блюд — из lunch_menu. Возвращает номер заказа (orderId), сумму в рублях "
+        return "Оформить бизнес-ланч к брони гостя. Вызывай только после того, как гость ответил «да» на перечень заказа: "
+                + "confirmedByGuest=true. Без «да» гостя в этом ходе — NOT_ALLOWED, reason=needs_guest_yes: перечисли заказ "
+                + "и спроси подтверждение. Коды блюд — из lunch_menu. Возвращает номер заказа (orderId), сумму в рублях "
                 + "(totalRub, если цены известны) и статус передачи в Saby (sabyStatus; MANUAL_ENTRY — внесут вручную).";
     }
 
@@ -77,6 +81,9 @@ public class LunchOrderPlaceTool implements CapabilityTool {
     public CapabilityResult invoke(CapabilityContext ctx, Map<String, Object> args) {
         if (args == null || !Boolean.TRUE.equals(args.get("confirmedByGuest"))) {
             return ReservationAccess.withReason(CapabilityResult.NOT_ALLOWED, "not_confirmed_by_guest");
+        }
+        if (ctx == null || ctx.agreement() == null || !ctx.agreement().yes()) {
+            return ReservationAccess.withReason(CapabilityResult.NOT_ALLOWED, GuestAgreement.NEEDS_GUEST_YES);
         }
         List<String> codes = dishCodes(args.get("dishCodes"));
         if (codes == null || codes.isEmpty()) {
