@@ -260,9 +260,14 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
         }
         long startedAt = System.nanoTime();
         try {
-            Map<?, ?> response = chatExchange(body);
+            ResponseEntity<Map> exchanged = chatExchange(body);
+            Map<?, ?> response = exchanged.getBody() == null ? Map.of() : exchanged.getBody();
             Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
             Map<String, Object> metadata = completionMetadata(response);
+            Double cost = charged(exchanged);
+            if (cost != null) {
+                metadata.put("costRub", cost);
+            }
             Optional<ModelToolCall> toolCall = readToolCall(response, metadata);
             ModelChatResponse result = new ModelChatResponse(
                     readText(response), toolCall, provider, model, latency, Map.copyOf(metadata));
@@ -282,9 +287,9 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
      * rejection an {@link IllegalStateException}. Neither carries the response body; the cause keeps only the
      * status, so the call log still names it (e.g. {@code TooManyRequests}).
      */
-    private Map<?, ?> chatExchange(Map<String, Object> body) {
+    private ResponseEntity<Map> chatExchange(Map<String, Object> body) {
         try {
-            return post("/chat/completions", body);
+            return exchange("/chat/completions", body);
         } catch (HttpClientErrorException error) {
             int status = error.getStatusCode().value();
             HttpClientErrorException bare = HttpClientErrorException.create(
@@ -529,6 +534,11 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
     }
 
     private Map<?, ?> post(String path, Map<String, Object> body) {
+        ResponseEntity<Map> response = exchange(path, body);
+        return response.getBody() == null ? Map.of() : response.getBody();
+    }
+
+    private ResponseEntity<Map> exchange(String path, Map<String, Object> body) {
         if (baseUrl == null) {
             throw new IllegalStateException(provider + " base URL is not configured: set " + envPrefix + "_BASE_URL");
         }
@@ -539,13 +549,26 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
         headers.setBearerAuth(apiKey);
-        ResponseEntity<Map> response = restTemplate.exchange(
+        return restTemplate.exchange(
                 baseUrl + path,
                 HttpMethod.POST,
                 new HttpEntity<>(body, headers),
                 Map.class
         );
-        return response.getBody() == null ? Map.of() : response.getBody();
+    }
+
+    /** What the service charged for this answer ({@code x-litellm-response-cost}, rubles on the Sber500 API), or null. */
+    static Double charged(ResponseEntity<?> response) {
+        String header = response.getHeaders().getFirst("x-litellm-response-cost");
+        if (header == null || header.isBlank()) {
+            return null;
+        }
+        try {
+            double cost = Double.parseDouble(header.trim());
+            return Double.isFinite(cost) && cost >= 0 ? cost : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private boolean expectsJson(ModelTextRequest request) {

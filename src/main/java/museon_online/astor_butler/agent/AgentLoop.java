@@ -69,6 +69,7 @@ public class AgentLoop {
     private ToolCallingModel agentModel;
     private String defaultProvider = "";
     private MeterRegistry meters;
+    private AgentBudget budget;
 
     @Autowired
     public AgentLoop(CapabilityRegistry registry, AgentProperties properties) {
@@ -97,6 +98,12 @@ public class AgentLoop {
     @Autowired(required = false)
     public void setDefaultProvider(@Value("${astor.model.provider:}") String provider) {
         this.defaultProvider = provider == null ? "" : provider.trim();
+    }
+
+    /** {@code ASTOR_AGENT_DAILY_BUDGET_RUB}: when today's spend reaches it, turns fall back without a model call. */
+    @Autowired(required = false)
+    public void setBudget(AgentBudget budget) {
+        this.budget = budget;
     }
 
     @Autowired(required = false)
@@ -141,6 +148,11 @@ public class AgentLoop {
         int calls = 0;
         while (true) {
             boolean toolsAllowed = calls < properties.getMaxToolCalls() && !offered.isEmpty();
+            if (budget != null && budget.exhausted()) {
+                log.warn("Agent turn falls back: calls={}, reason=daily_budget", calls);
+                countTurn("fallback", "daily_budget");
+                return AgentOutcome.fallback(uses, calls);
+            }
             ModelChatResponse response;
             try {
                 response = ask(messages, toolsAllowed ? offered : List.of(), ctx, deadline, auditContent);
@@ -194,6 +206,9 @@ public class AgentLoop {
                 throw new IllegalStateException("no_answer");
             }
             countCall(response.toolCall().isPresent() ? "tool_call" : "answer", started, response);
+            if (budget != null) {
+                budget.charge(response);
+            }
             return response;
         } catch (RuntimeException e) {
             countCall(timedOut(e) ? "timeout" : "error", started, null);

@@ -149,6 +149,7 @@ services:
       # Empty: the agent uses ASTOR_MODEL_PROVIDER. openai-compatible: only the agent goes to OPENAI_COMPATIBLE_*
       # (ASTOR_AGENT_MODEL then is a GET /models name, e.g. gigachat-3-pro). docs/operations/SBER500_LLM_ROLLOUT.md
       ASTOR_AGENT_PROVIDER: ${ASTOR_AGENT_PROVIDER:-}
+      ASTOR_AGENT_DAILY_BUDGET_RUB: ${ASTOR_AGENT_DAILY_BUDGET_RUB:-}
       ASTOR_AGENT_TURN_TIMEOUT_MS: ${ASTOR_AGENT_TURN_TIMEOUT_MS:-25000}
       ASTOR_AGENT_BOT_TURN_TIMEOUT_MS: ${ASTOR_AGENT_BOT_TURN_TIMEOUT_MS:-12000}
       # Butler -> Concierge webhook (negotiation plan, task 9).

@@ -245,4 +245,27 @@ class AgentLoopOpenAiCompatibleTest {
         assertThat(meters.get("astor.agent.turns").tags("reason", "timeout").counter().count()).isEqualTo(1.0);
         assertThat(meters.get("astor.agent.model.calls").tags("outcome", "timeout").timer().count()).isEqualTo(1);
     }
+
+    @Test
+    void aSpentDailyBudgetStopsModelCallsUntilTheNextDay() {
+        CapabilityRegistry registry = mock(CapabilityRegistry.class);
+        when(registry.invoke(eq("table_availability"), any(), anyMap())).thenReturn(CapabilityResult.ok(Map.of("available", true)));
+        server.expect(once(), requestTo(COMPLETIONS)).andRespond(withSuccess(call("call_a", "table_availability", "{}"),
+                MediaType.APPLICATION_JSON).header("x-litellm-response-cost", "0.03"));
+        server.expect(once(), requestTo(COMPLETIONS)).andRespond(withSuccess(answer("Есть стол в 19:00. Оформить?"),
+                MediaType.APPLICATION_JSON).header("x-litellm-response-cost", "0.03"));
+        AgentBudget budget = new AgentBudget(0.05, java.time.ZoneId.of("Asia/Yekaterinburg"), java.time.Clock.systemUTC());
+        AgentLoop loop = loop(registry);
+        loop.setBudget(budget);
+
+        AgentOutcome first = loop.run(history(), TOOLS, CTX);
+        AgentOutcome second = loop.run(history(), TOOLS, CTX);
+
+        // Exactly the two calls of the first turn: the second turn never reaches the model.
+        server.verify();
+        assertThat(first.fallback()).isFalse();
+        assertThat(budget.spentToday()).isEqualTo(0.06, org.assertj.core.data.Offset.offset(1e-9));
+        assertThat(second.fallback()).isTrue();
+        assertThat(meters.get("astor.agent.turns").tags("outcome", "fallback", "reason", "daily_budget").counter().count()).isEqualTo(1.0);
+    }
 }

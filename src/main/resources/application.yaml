@@ -65,6 +65,9 @@ astor:
     # Empty: the agent uses ASTOR_MODEL_PROVIDER's model. openai-compatible: only the agent goes to OPENAI_COMPATIBLE_*
     # (everything else stays on ASTOR_MODEL_PROVIDER). Rollback: empty again and ASTOR_AGENT_MODEL=GigaChat-2-Pro.
     provider: ${ASTOR_AGENT_PROVIDER:}
+    # Rubles per venue day for the agent's model calls (the service's charge, else the call log tariff); empty — no limit.
+    # Reached: agent turns fall back to the scenarios until the next day. Pilot on the Sber500 API: 100.
+    daily-budget-rub: ${ASTOR_AGENT_DAILY_BUDGET_RUB:}
     # One negotiation turn (up to 5 tool calls, each model call at most 20 s) ends as a fallback after this long;
     # under the Concierge's BUTLER_NEGOTIATION_TIMEOUT_MS (30 s).
     turn-timeout-ms: ${ASTOR_AGENT_TURN_TIMEOUT_MS:25000}

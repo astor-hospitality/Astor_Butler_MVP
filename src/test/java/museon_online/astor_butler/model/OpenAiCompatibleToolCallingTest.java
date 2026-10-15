@@ -111,6 +111,23 @@ class OpenAiCompatibleToolCallingTest {
     }
 
     @Test
+    void theServicesChargeGoesIntoTheMetadata() {
+        Fixture fixture = fixture();
+        fixture.server().expect(once(), requestTo(COMPLETIONS))
+                .andRespond(withSuccess(reply("{\"role\": \"assistant\", \"content\": \"Да\"}", "stop"), MediaType.APPLICATION_JSON)
+                        .header("x-litellm-response-cost", "0.0326"));
+        fixture.server().expect(once(), requestTo(COMPLETIONS))
+                .andRespond(withSuccess(reply("{\"role\": \"assistant\", \"content\": \"Да\"}", "stop"), MediaType.APPLICATION_JSON)
+                        .header("x-litellm-response-cost", "not-a-number"));
+
+        ModelChatResponse charged = fixture.gateway().chat(request(List.of(ModelChatMessage.user("Стол")), List.of(FIND_SLOTS)));
+        ModelChatResponse unreadable = fixture.gateway().chat(request(List.of(ModelChatMessage.user("Стол")), List.of(FIND_SLOTS)));
+
+        assertThat(charged.metadata()).containsEntry("costRub", 0.0326);
+        assertThat(unreadable.metadata()).doesNotContainKey("costRub");
+    }
+
+    @Test
     void toolResultsGoBackAsToolMessagesUnderTheirCallIds() {
         Fixture fixture = fixture();
         fixture.server().expect(once(), requestTo(COMPLETIONS))
