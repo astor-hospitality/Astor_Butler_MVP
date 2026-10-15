@@ -121,11 +121,11 @@ sudo sh -c 'f=/opt/astor-butler/.env.production; grep -vE "^(ASTOR_AGENT_PROVIDE
 Добавить новые (ключ — скрытым вводом, в историю shell не попадает):
 
 ```bash
-read -r -s -p 'OPENAI_COMPATIBLE_API_KEY: ' k && echo && printf '%s\n' 'ASTOR_AGENT_PROVIDER=openai-compatible' 'ASTOR_AGENT_MODEL=gigachat-3-pro' 'ASTOR_AGENT_DAILY_BUDGET_RUB=100' 'OPENAI_COMPATIBLE_BASE_URL=https://shared1.multitool.works:4000/v1' "OPENAI_COMPATIBLE_API_KEY=$k" 'OPENAI_COMPATIBLE_PARALLEL_TOOL_CALLS=false' | sudo tee -a /opt/astor-butler/.env.production > /dev/null; unset k
+read -r -s -p 'OPENAI_COMPATIBLE_API_KEY: ' k && echo && printf '%s\n' 'ASTOR_AGENT_PROVIDER=openai-compatible' 'ASTOR_AGENT_MODEL=gigachat-3-pro' 'ASTOR_AGENT_DAILY_BUDGET_RUB=1000' 'OPENAI_COMPATIBLE_BASE_URL=https://shared1.multitool.works:4000/v1' "OPENAI_COMPATIBLE_API_KEY=$k" 'OPENAI_COMPATIBLE_PARALLEL_TOOL_CALLS=false' | sudo tee -a /opt/astor-butler/.env.production > /dev/null; unset k
 ```
 
-`ASTOR_AGENT_MODEL=gigachat-3-pro` — выбор Михаила 15.10 (`SBER500_LLM_ACCEPTANCE.md`, §2). `ASTOR_AGENT_DAILY_BUDGET_RUB=100` —
-лимит пилота: при 100 ₽ за день заведения агент перестаёт вызывать модель до следующего дня, гости получают сценарии.
+`ASTOR_AGENT_MODEL=gigachat-3-pro` — выбор Михаила 15.10 (`SBER500_LLM_ACCEPTANCE.md`, §2). `ASTOR_AGENT_DAILY_BUDGET_RUB=1000` —
+лимит (решение Михаила): при 1000 ₽ за день заведения агент перестаёт вызывать модель до следующего дня, гости получают сценарии.
 `ASTOR_AGENT_ENABLED=true` и `ASTOR_AGENT_ALLOWLIST=<chat id Михаила>` должны уже стоять; других чатов в списке на этом шаге нет.
 
 Пересоздать только бот (та же команда compose, что у `cloudru-deploy.sh`):
@@ -159,7 +159,7 @@ docker exec aeris_astor_butler_bot curl -fsS http://127.0.0.1:8089/actuator/prom
 ```
 
 Ожидается: `agent_provider=openai-compatible`, `model_provider=gigachat`, `key=set`; в логах нет `not configured`, при старте —
-`Agent daily model budget: 100.0 RUB per venue day`; `astor_agent_budget_limit_rub 100`.
+`Agent daily model budget: 1000.0 RUB per venue day`; `astor_agent_budget_limit_rub 1000`.
 
 ## 6. Проверка переговоров в чате Михаила
 
@@ -170,8 +170,9 @@ docker exec aeris_astor_butler_bot curl -fsS http://127.0.0.1:8089/actuator/prom
    в call log (`CALL_LOG.md`) строки `llm` с моделью `gigachat-3-pro` и токенами.
 4. Тестовые заявки отменить через хостес.
 
-Зелёный CI и эти шаги проверяют техническую часть, а не готовность гостевого сценария; решение об открытии остальным гостям
-(расширение `ASTOR_AGENT_ALLOWLIST`) — отдельное. QR-путь AERIS на агента не переключать без отдельного согласования.
+Зелёный CI и эти шаги проверяют техническую часть, а не готовность гостевого сценария. После проверки Михаил открывает агента
+гостям Консьержа (у Консьержа `AGENT_ALLOWLIST=*`, его runbook §6а): Батлер ведёт переговоры с любым гостем Консьержа при
+`ASTOR_AGENT_ENABLED=true`, расход ограничен лимитом. `ASTOR_AGENT_ALLOWLIST` — только собственный бот AERIS, там остаётся чат Михаила. QR-путь AERIS на агента не переключать без отдельного согласования.
 
 ## 7. Откат конфигурации (минуты, без смены образа)
 
@@ -201,7 +202,7 @@ bash /opt/astor-butler/current/scripts/deploy/cloudru-deploy.sh /opt/astor-butle
 - `astor_agent_turns_total{outcome="fallback"}` больше 10% ходов за 30 минут или больше 3 подряд в чате Михаила;
 - в логах `openai-compatible chat failed: HTTP 401/402/403` (ключ, бюджет) или серия `HTTP 429`;
 - ответ агента обещает бронь без подтверждения хостес или нарушает сценарий — сразу шаг 7 и разбор по `model_interaction_audit`;
-- `Agent daily model budget is spent` в пилоте одного чата — признак зацикливания, не нагрузки: шаг 7 и разбор.
+- `Agent daily model budget is spent` при малом числе гостей — признак зацикливания, не нагрузки: шаг 7 и разбор.
 
 ## 10. Остаток бюджета ключа (раз в день)
 
@@ -211,5 +212,5 @@ bash /opt/astor-butler/current/scripts/deploy/cloudru-deploy.sh /opt/astor-butle
 docker exec aeris_astor_butler_bot sh -c 'printf "Authorization: Bearer %s\n" "$OPENAI_COMPATIBLE_API_KEY" | curl -fsS -H @- "${OPENAI_COMPATIBLE_BASE_URL%/v1}/key/info"' | grep -oE '"(spend|max_budget)":[0-9.]+'
 ```
 
-Ориентир пилота: прирост `spend` за сутки не больше 200 ₽ (два дневных лимита по 100 ₽). Больше — смотреть
+Потолок: прирост `spend` за сутки не больше 2000 ₽ (два дневных лимита по 1000 ₽); при нём ключа хватит не меньше чем на 37 дней. Больше — смотреть
 `astor_agent_budget_spent_rub` и логи `Agent daily model budget`.
