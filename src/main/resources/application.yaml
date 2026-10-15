@@ -696,6 +696,8 @@ telegram:
     notifications-enabled: ${TELEGRAM_BOOKING_NOTIFICATIONS_ENABLED:true}
     manager-chat-id: ${TELEGRAM_BOOKING_MANAGER_CHAT_ID:876857557}
     hostess-chat-id: ${TELEGRAM_HOSTESS_CHAT_ID:}
+    # Forum topic (message_thread_id) in the hostess group for every new bot message there; empty = «General» as before.
+    hostess-thread-id: ${TELEGRAM_HOSTESS_THREAD_ID:}
     plan-pdf-asset-code: ${TELEGRAM_BOOKING_PLAN_PDF_ASSET_CODE:AERIS_FLOOR_PLAN}
   quiet-guide:
     interior-video-asset-code: ${TELEGRAM_QUIET_GUIDE_INTERIOR_VIDEO_ASSET_CODE:AERIS_INTERIOR_TOUR}

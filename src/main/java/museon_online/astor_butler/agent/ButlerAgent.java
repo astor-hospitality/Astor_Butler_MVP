@@ -154,15 +154,16 @@ public class ButlerAgent {
             return new NegotiationReply(null, null, facts, visitId, true);
         }
         Map<String, Object> offer = offer(outcome);
-        history.add(key, said, outcome.text(), digest(outcome));
+        String text = HonestBookingStatus.guard(outcome.text(), outcome.uses());
+        history.add(key, said, text, digest(outcome));
         Map<String, Object> payload = new LinkedHashMap<>();
         if (offer != null) {
             payload.put("offerKind", offer.get("kind"));
         }
         write(new VisitTurnDraft(visitId, sessionId, TurnSide.BUTLER, TurnChannel.CONCIERGE_TG,
                 offer == null ? TurnKind.MESSAGE : TurnKind.OFFER,
-                outcome.text(), payload.isEmpty() ? null : payload, GOAL_VENUE), true);
-        return new NegotiationReply(outcome.text(), offer, facts, visitId, false);
+                text, payload.isEmpty() ? null : payload, GOAL_VENUE), true);
+        return new NegotiationReply(text, offer, facts, visitId, false);
     }
 
     /**
@@ -191,8 +192,9 @@ public class ButlerAgent {
             write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), visit != null);
             return Optional.empty();
         }
-        history.add(key, said, outcome.text(), digest(outcome));
-        return Optional.of(outcome.text());
+        String text = HonestBookingStatus.guard(outcome.text(), outcome.uses());
+        history.add(key, said, text, digest(outcome));
+        return Optional.of(text);
     }
 
     private AgentOutcome run(String key, String said, CapabilityContext ctx, String phone, Long chatId, boolean auditContent,

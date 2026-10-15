@@ -209,6 +209,8 @@ services:
       TELEGRAM_GET_UPDATES_TIMEOUT_SECONDS: ${TELEGRAM_GET_UPDATES_TIMEOUT_SECONDS:-20}
       TELEGRAM_UI_CLEANUP_ENABLED: ${TELEGRAM_UI_CLEANUP_ENABLED:-false}
       TELEGRAM_UI_DELETE_USER_MESSAGES_ENABLED: ${TELEGRAM_UI_DELETE_USER_MESSAGES_ENABLED:-false}
+      # Forum topic id in the hostess group: every new bot message there goes into it; empty = «General» as before.
+      TELEGRAM_HOSTESS_THREAD_ID: ${TELEGRAM_HOSTESS_THREAD_ID:-}
       ASTOR_WEB_ALLOWED_ORIGINS: ${ASTOR_WEB_ALLOWED_ORIGINS:-http://51.250.31.97:3001}
       YANDEX_AI_BASE_URL: ${YANDEX_AI_BASE_URL:-https://llm.api.cloud.yandex.net}
       YANDEX_RESPONSES_BASE_URL: ${YANDEX_RESPONSES_BASE_URL:-https://ai.api.cloud.yandex.net/v1}
