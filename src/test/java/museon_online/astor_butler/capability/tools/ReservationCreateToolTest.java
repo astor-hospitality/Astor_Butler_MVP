@@ -3,6 +3,7 @@ package museon_online.astor_butler.capability.tools;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityRegistry;
 import museon_online.astor_butler.capability.CapabilityResult;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.capability.IdempotencyStore;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationService;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
+import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -144,6 +146,41 @@ public class ReservationCreateToolTest {
 
         assertThat(tool.invoke(CapabilityFixtures.concierge("k1"), noDate).error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
         assertThat(nameless.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+        verifyNoInteractions(reservations);
+    }
+
+    @Test
+    void withoutTheGuestsYesToThisTableNothingIsBooked() {
+        GuestAgreement.Table later = new GuestAgreement.Table(CapabilityFixtures.TABLE.date(), LocalTime.of(20, 0), 2);
+        Map<String, GuestAgreement> agreements = new java.util.LinkedHashMap<>();
+        agreements.put("no agreement (a REST call)", null);
+        agreements.put("nothing said yet", GuestAgreement.NONE);
+        agreements.put("a question about the offered table", GuestAgreement.of("Есть стол?", List.of(CapabilityFixtures.TABLE)));
+        agreements.put("a yes to another time", GuestAgreement.of("да", List.of(later)));
+        agreements.put("a yes with nothing offered", GuestAgreement.of("да", List.of()));
+
+        agreements.forEach((name, agreement) -> {
+            for (var ctx : List.of(CapabilityFixtures.concierge("k1", agreement), CapabilityFixtures.butler("k1", agreement))) {
+                CapabilityResult result = tool.invoke(ctx, args());
+
+                assertThat(result.ok()).as(name).isFalse();
+                assertThat(result.error()).as(name).isEqualTo(CapabilityResult.NOT_ALLOWED);
+                // The table to put to the guest, so the model can ask for the yes.
+                assertThat(result.facts()).as(name).containsEntry("reason", GuestAgreement.NEEDS_GUEST_YES)
+                        .containsEntry("date", "2026-10-20").containsEntry("time", "19:00").containsEntry("partySize", 2);
+            }
+        });
+        verifyNoInteractions(reservations, journey, ledger);
+    }
+
+    @Test
+    void aBadArgumentIsNamedBeforeTheGuestsYesIsAskedFor() {
+        Map<String, Object> noDate = args();
+        noDate.remove("date");
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", GuestAgreement.NONE), noDate);
+
+        assertThat(result.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
         verifyNoInteractions(reservations);
     }
 

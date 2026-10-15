@@ -45,7 +45,11 @@ public class CapabilityController {
         }).toList();
     }
 
-    /** Over REST the caller is always the Concierge; the Butler's agent calls the registry in-process. */
+    /**
+     * Over REST the caller is always the Concierge; the Butler's agent calls the registry in-process. A REST context
+     * never carries the guest's agreement, so {@code reservation_create} and {@code lunch_order_place} answer
+     * {@code needs_guest_yes} here: a booking comes only from a negotiation turn with the guest's own yes.
+     */
     @PostMapping("/{tool}")
     @Operation(summary = "Invoke a tool")
     public CapabilityResult invoke(@PathVariable("tool") String tool, @RequestBody(required = false) InvokeRequest request,

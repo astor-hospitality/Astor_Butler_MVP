@@ -174,7 +174,10 @@ class AgentNegotiationLoadTest {
             public Map<String, Object> parameters() { return Map.of("type", "object", "properties", Map.of()); }
             public boolean commitment() { return false; }
             public CapabilityResult invoke(CapabilityContext ctx, Map<String, Object> args) {
-                return CapabilityResult.ok(Map.of("available", true, "time", "19:00"));
+                // The real tool's shape: the asked slot is free, so it is the offer the guest's «да» can book.
+                return CapabilityResult.ok(Map.of("date", args.get("date"), "time", args.get("time"), "partySize", args.get("partySize"),
+                        "open", true, "free", List.of(Map.of("tableCode", "T5", "name", "Стол у окна", "capacity", 4)),
+                        "alternatives", List.of()));
             }
         };
         CapabilityRegistry registry = new CapabilityRegistry(List.of(availability, ReservationCreateToolTest.tool(reservations)),

@@ -1,5 +1,6 @@
 package museon_online.astor_butler.agent;
 
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.model.ModelChatMessage;
 
 import java.util.ArrayDeque;
@@ -13,7 +14,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * The agent's memory of a conversation (a chat of the bot or a Concierge session), in process only. It keeps the last
  * turns within {@code historyChars}; older ones collapse into one «Ранее: …» line built from their facts, without a
- * model call. It also remembers the visit a session was linked to, so one session never opens a second visit.
+ * model call. It also remembers the visit a session was linked to, so one session never opens a second visit, and the
+ * tables the last answered turn put to the guest: the only ones the guest's next yes can book.
  */
 class AgentHistory {
 
@@ -31,6 +33,7 @@ class AgentHistory {
         final Deque<Exchange> exchanges = new ArrayDeque<>();
         final Deque<String> earlier = new ArrayDeque<>();
         int turns;
+        List<GuestAgreement.Table> proposed = List.of();
         volatile Long visitId;
         volatile long touched = System.nanoTime();
     }
@@ -94,10 +97,31 @@ class AgentHistory {
         }
     }
 
-    void add(String key, String said, String answered, String digest) {
+    /** The tables the last answered turn put to the guest; none after a turn that fell back. */
+    List<GuestAgreement.Table> proposed(String key) {
+        Conversation conversation = conversations.get(key);
+        if (conversation == null) {
+            return List.of();
+        }
+        synchronized (conversation) {
+            return conversation.proposed;
+        }
+    }
+
+    /** A turn that fell back: the guest never heard its answer, so the next yes answers no offer. */
+    void withdrawProposals(String key) {
+        Conversation conversation = conversation(key);
+        synchronized (conversation) {
+            conversation.proposed = List.of();
+        }
+    }
+
+    /** @param proposed the tables this turn put to the guest; they replace the previous turn's */
+    void add(String key, String said, String answered, String digest, List<GuestAgreement.Table> proposed) {
         Conversation conversation = conversation(key);
         synchronized (conversation) {
             conversation.turns++;
+            conversation.proposed = proposed == null ? List.of() : List.copyOf(proposed);
             conversation.exchanges.addLast(new Exchange(said == null ? "" : said, answered == null ? "" : answered,
                     digest == null || digest.isBlank() ? shorten("гость: " + said) : digest));
             int earlierLimit = Math.max(60, Math.min(600, properties.getHistoryChars() / 4));

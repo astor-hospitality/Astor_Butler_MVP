@@ -140,6 +140,11 @@ mvn -o test -Dtest=AgentNegotiationLoadTest -Dastor.load=true -Dastor.load.profi
 OPENAI_COMPATIBLE_BASE_URL=... OPENAI_COMPATIBLE_API_KEY=... mvn -o test -Dtest=AgentNegotiationLiveTest -Dastor.live=true -Dastor.live.model=gigachat-3-pro -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
+С PR #215 в обоих тестах `reservation_create` проходит настоящую проверку «да» гостя: заявка создаётся, только если
+прошлый ход предложил этот стол (`table_availability` отдаёт факты в форме настоящего инструмента), а в этом ходе гость
+сказал «да». В живом тесте инструмент настоящий, над заглушкой брони; «вызов отклонён инструментом» в повторах первого
+хода — отказ этой проверки (`needs_guest_yes`), а не заявка.
+
 У Консьержа — `npm run load:agent -- --profile gigachat-3-pro` и `npm run live:agent -- --model gigachat-3-pro`.
 Живая проверка стоит около 1–2 ₽ за прогон; ключ берётся из окружения и не печатается. На macOS без нативного DNS Netty живой
 тест Батлера идёт через `HttpURLConnection` (Reactor Netty уходит в публичный DNS по IPv6); на Linux-ВМ это не нужно.
