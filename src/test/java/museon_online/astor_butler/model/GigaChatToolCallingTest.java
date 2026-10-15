@@ -144,6 +144,25 @@ class GigaChatToolCallingTest {
     }
 
     @Test
+    void anAnswerOnlyStepSendsNoFunctionsAsBefore() {
+        Fixture fixture = fixture();
+        fixture.expectToken();
+        fixture.server().expect(once(), requestTo(COMPLETIONS))
+                .andExpect(jsonPath("$.functions").doesNotExist())
+                .andExpect(jsonPath("$.function_call").doesNotExist())
+                .andRespond(withSuccess(reply("""
+                        {"role": "assistant", "content": "Свободно в 14:00."}
+                        """), MediaType.APPLICATION_JSON));
+
+        ModelChatResponse response = fixture.gateway().chat(new ModelChatRequest(
+                List.of(new ModelChatMessage("user", "Стол", null, null)), List.of(FIND_SLOTS), ModelProfile.FRONTLINE,
+                "agent-turn", Map.of(), null, null, true));
+
+        assertThat(response.text()).isEqualTo("Свободно в 14:00.");
+        fixture.server().verify();
+    }
+
+    @Test
     void maxTokensOfTheRequestReplacesTheConfiguredOne() {
         Fixture fixture = fixture();
         fixture.expectToken();
