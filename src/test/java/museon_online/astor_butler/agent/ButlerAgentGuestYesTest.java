@@ -35,10 +35,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 
+import java.math.BigDecimal;
 import java.sql.Connection;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -63,9 +68,14 @@ import static org.mockito.Mockito.when;
  */
 class ButlerAgentGuestYesTest {
 
+    /** What a scripted model call costs, for the test with a daily budget. */
+    private static final Map<String, Object> CHEAP = Map.of("costRub", 0.01);
+
     private Connection schema;
+    private JdbcTemplate jdbc;
     private TableReservationService reservations;
     private final Deque<ModelChatResponse> script = new ArrayDeque<>();
+    private AgentLoop loop;
     private ButlerAgent agent;
 
     @BeforeEach
@@ -74,7 +84,9 @@ class ButlerAgentGuestYesTest {
                 "jdbc:h2:mem:agent-yes-" + UUID.randomUUID() + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
         schema = dataSource.getConnection();
         ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-15-capability-calls.sql"));
-        IdempotencyStore store = new IdempotencyStore(new JdbcTemplate(dataSource), new ObjectMapper());
+        ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-16-agent-budget.sql"));
+        jdbc = new JdbcTemplate(dataSource);
+        IdempotencyStore store = new IdempotencyStore(jdbc, new ObjectMapper());
         reservations = mock(TableReservationService.class);
         when(reservations.createReservation(any())).thenReturn(CapabilityFixtures.order(41L, null,
                 TableReservationStatus.AWAITING_MANAGER_CONFIRMATION));
@@ -96,7 +108,8 @@ class ButlerAgentGuestYesTest {
         when(turns.visitOfSession(anyString())).thenReturn(Optional.empty());
         GuestVisitRepository visits = mock(GuestVisitRepository.class);
         when(visits.activeByChat(anyLong(), any())).thenReturn(Optional.empty());
-        agent = new ButlerAgent(new AgentLoop(model, registry, properties), registry, properties,
+        loop = new AgentLoop(model, registry, properties);
+        agent = new ButlerAgent(loop, registry, properties,
                 mock(AgentLessonRepository.class), mock(GuestMemory.class), new VenueFactsCatalog(VenueFacts.none()), capabilities,
                 mock(LedgerWriter.class), turns, visits);
     }
@@ -236,6 +249,40 @@ class ButlerAgentGuestYesTest {
         assertThat(command.getValue().chatId()).isEqualTo(CapabilityFixtures.BUTLER_CHAT);
     }
 
+    /**
+     * The daily budget runs out on the offer: the guest's «да» gets no reservation for a model call, falls back and
+     * books nothing, and the offer it never heard answered is withdrawn. The next venue day the venue asks again
+     * before it books.
+     */
+    @Test
+    void aSpentDailyBudgetStopsTheAgentAndTheYesWaitsForANewOffer() {
+        MovableClock clock = new MovableClock(Instant.parse("2026-10-15T08:00:00Z"));
+        // 3 RUB a day, 1 RUB held per call: the offer's answer costs 2.5, so the yes finds no room for a call.
+        loop.setBudget(new AgentBudget(new BigDecimal("3"), BigDecimal.ONE, ZoneId.of("Asia/Yekaterinburg"), clock, jdbc));
+        books();
+        script.add(new ModelChatResponse("Могу забронировать на 20 октября, 19:00, на двоих. Бронирую?", Optional.empty(), "openai-compatible",
+                "m", Duration.ZERO, Map.of("costRub", 2.5)));
+
+        agent.negotiate(turn("Есть стол на 20-е в 19 на двоих?", "m1"));
+        // What the model would do on the yes, were it asked: book the offered table.
+        books();
+        says("Подтвердите, пожалуйста: 20 октября, 19:00, двое?");
+        NegotiationReply spent = agent.negotiate(turn("Да", "m2"));
+        assertThat(script).as("no model call on a spent budget").hasSize(2);
+        clock.now = clock.now.plus(Duration.ofDays(1));
+        NegotiationReply asked = agent.negotiate(turn("Да", "m3"));
+        verify(reservations, never()).createReservation(any());
+        books();
+        says("Заявка передана хостес.");
+        NegotiationReply booked = agent.negotiate(turn("Да", "m4"));
+
+        assertThat(spent.fallback()).isTrue();
+        assertThat(spent.facts()).isEmpty();
+        assertThat(asked.facts()).singleElement().satisfies(fact -> assertThat(fact).containsEntry("ok", false));
+        verify(reservations, times(1)).createReservation(any());
+        assertThat(booked.offer()).containsEntry("kind", "RESERVATION");
+    }
+
     @Test
     void theOfferIsReadFromTheTurnsToolFacts() {
         Map<String, Object> full = new LinkedHashMap<>();
@@ -263,11 +310,11 @@ class ButlerAgentGuestYesTest {
     }
 
     private void call(String tool, Map<String, Object> args) {
-        script.add(new ModelChatResponse("", Optional.of(new ModelToolCall(tool, args)), "gigachat", "m", Duration.ZERO));
+        script.add(new ModelChatResponse("", Optional.of(new ModelToolCall(tool, args)), "gigachat", "m", Duration.ZERO, CHEAP));
     }
 
     private void says(String text) {
-        script.add(new ModelChatResponse(text, Optional.empty(), "gigachat", "m", Duration.ZERO));
+        script.add(new ModelChatResponse(text, Optional.empty(), "gigachat", "m", Duration.ZERO, CHEAP));
     }
 
     private static NegotiationTurn turn(String guestText, String turnId) {
@@ -277,6 +324,29 @@ class ButlerAgentGuestYesTest {
     private static IncomingMessage message(String text) {
         return IncomingMessage.telegram(CapabilityFixtures.BUTLER_CHAT, CapabilityFixtures.BUTLER_CHAT, 1, 100, text, null, "Анна",
                 null, "anna", "ru", false, "c");
+    }
+
+    private static final class MovableClock extends Clock {
+        private Instant now;
+
+        MovableClock(Instant now) {
+            this.now = now;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return Clock.fixed(now, zone);
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
     }
 
     /** Availability as the real tool reports it: a free table at 19:00 on 20.10 for two. */

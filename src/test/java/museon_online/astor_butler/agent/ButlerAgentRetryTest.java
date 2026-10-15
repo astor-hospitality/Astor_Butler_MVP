@@ -114,6 +114,7 @@ class ButlerAgentRetryTest {
     /**
      * The OpenAI-compatible provider booked, then failed before it could say so (429): the guest's outcome is unknown.
      * The turn falls back without another model call, and the Concierge's retry of the same turn replays the booking.
+     * The booking is the guest's «бронируйте» to the table the venue put to them in the turn before.
      */
     @Test
     void aRetryAfterAnUnknownOutcomeOverTheOpenAiCompatibleApiBooksOnce() {
@@ -136,6 +137,12 @@ class ButlerAgentRetryTest {
                    "arguments": "{\\"date\\": \\"2026-10-20\\", \\"time\\": \\"19:00\\", \\"partySize\\": 2, \\"guestName\\": \\"Анна Петрова\\"}"}}
                 ]}}], "usage": {"prompt_tokens": 100, "completion_tokens": 20}}
                 """;
+        // The offer: booking before the guest's yes is refused, and the venue asks.
+        server.expect(once(), requestTo(completions)).andRespond(withSuccess(booking, MediaType.APPLICATION_JSON));
+        server.expect(once(), requestTo(completions)).andRespond(withSuccess("""
+                {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "Бронирую на 20 октября, 19:00, на двоих?"}}]}
+                """, MediaType.APPLICATION_JSON));
+        // The guest's yes: booked, then 429 before the answer; the retry replays the booking and answers.
         server.expect(once(), requestTo(completions)).andRespond(withSuccess(booking, MediaType.APPLICATION_JSON));
         server.expect(once(), requestTo(completions)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
         server.expect(once(), requestTo(completions)).andRespond(withSuccess(booking, MediaType.APPLICATION_JSON));
@@ -151,11 +158,15 @@ class ButlerAgentRetryTest {
                 mock(AgentLessonRepository.class), mock(GuestMemory.class), new VenueFactsCatalog(VenueFacts.none()), capabilities,
                 mock(LedgerWriter.class), turns, mock(GuestVisitRepository.class));
         NegotiationTurn turn = new NegotiationTurn("c-2", null, "бронируйте", null, "Анна", null, "Бронируем?", "t-7", true);
+        NegotiationReply offered = agent.negotiate(new NegotiationTurn("c-2", null, "Есть стол на 20-е в 19 на двоих?", null, "Анна",
+                null, null, "t-6", true));
 
         NegotiationReply unknown = agent.negotiate(turn);
         NegotiationReply retry = agent.negotiate(turn);
 
         server.verify();
+        assertThat(offered.fallback()).isFalse();
+        assertThat(offered.offer()).isNull();
         assertThat(unknown.fallback()).isTrue();
         assertThat(retry.fallback()).isFalse();
         verify(reservations, times(1)).createReservation(any());

@@ -9,6 +9,7 @@ import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.CapabilityTool;
 import museon_online.astor_butler.capability.IdempotencyStore;
 import museon_online.astor_butler.capability.tools.BillRequestTool;
+import museon_online.astor_butler.capability.tools.CapabilityFixtures;
 import museon_online.astor_butler.capability.tools.LunchMenuTool;
 import museon_online.astor_butler.capability.tools.LunchOrderPlaceTool;
 import museon_online.astor_butler.capability.tools.ReservationAccess;
@@ -64,8 +65,9 @@ import static org.mockito.Mockito.when;
  * mvn -o test -Dtest=AgentNegotiationLiveTest -Dastor.live=true -Dastor.live.model=gigachat-3-pro -Dsurefire.failIfNoSpecifiedTests=false
  * </pre>
  * The prompt is the production one (ButlerPrompt with the AERIS facts) and the model sees every production tool schema,
- * but each tool answers with synthetic facts: nothing is booked, ordered or paid, and no guest data is sent. Three
- * synthetic negotiation turns, at most six. The report (tokens, latency, the cost the service charged per call from its
+ * but each tool answers with synthetic facts: nothing is booked, ordered or paid, and no guest data is sent. Only
+ * {@code reservation_create} is the real tool over a mock booking service, so its guard (the guest's yes to the table
+ * offered just before) decides as in production. Three synthetic negotiation turns, at most six. The report (tokens, latency, the cost the service charged per call from its
  * {@code x-litellm-response-cost} header) goes to stdout and target/load/.
  */
 @EnabledIfSystemProperty(named = "astor.live", matches = "true")
@@ -73,8 +75,6 @@ import static org.mockito.Mockito.when;
 class AgentNegotiationLiveTest {
 
     private static final Map<String, Map<String, Object>> FACTS = Map.of(
-            "table_availability", Map.of("available", true, "slots", List.of("13:00", "13:30"), "partySize", 2),
-            "reservation_create", Map.of("reservationId", 9001, "status", "AWAITING_MANAGER_CONFIRMATION"),
             "venue_info", Map.of("name", "AERIS", "parking", "городская платная парковка рядом"));
 
     @Test
@@ -167,11 +167,12 @@ class AgentNegotiationLiveTest {
                 long started = System.nanoTime();
                 NegotiationReply reply = agent.negotiate(new NegotiationTurn(session, null, dialog.get(i)[0], null, "Анна", null,
                         dialog.get(i)[1], "t-" + (i + 1), false));
+                List<String> used = reply.facts().stream().map(fact -> fact.get("tool") + (Boolean.TRUE.equals(fact.get("ok")) ? "" : ":refused")).toList();
                 double seconds = (System.nanoTime() - started) / 1e9;
                 double in = tokens(meters, "in");
                 double outTokens = tokens(meters, "out");
                 out.append(String.format(Locale.ROOT, "| %d | %s | %s | %d | %.0f | %.0f | %.2f | %.4f |%n", i + 1, reply.fallback(),
-                        reply.facts().stream().map(fact -> String.valueOf(fact.get("tool"))).toList(), calls.get() - calls0,
+                        used, calls.get() - calls0,
                         in - tokensIn0, outTokens - tokensOut0, seconds, cost.sum() - cost0));
                 tokensIn0 = in;
                 tokensOut0 = outTokens;
@@ -183,6 +184,18 @@ class AgentNegotiationLiveTest {
             Files.createDirectories(dir);
             Files.writeString(dir.resolve("butler-live-" + model + ".md"), out, StandardCharsets.UTF_8);
         }
+    }
+
+    /** The real tool's shape: the asked slot is free, so it is an offer the guest's next yes can book. */
+    private static CapabilityResult freeAsAsked(Map<String, Object> args) {
+        Map<String, Object> facts = new java.util.LinkedHashMap<>();
+        facts.put("date", args.get("date"));
+        facts.put("time", args.get("time"));
+        facts.put("partySize", args.get("partySize"));
+        facts.put("open", true);
+        facts.put("free", List.of(Map.of("tableCode", "T5", "name", "Стол у окна", "capacity", 4)));
+        facts.put("alternatives", List.of());
+        return CapabilityResult.ok(facts);
     }
 
     private static double tokens(SimpleMeterRegistry meters, String direction) {
@@ -197,9 +210,8 @@ class AgentNegotiationLiveTest {
         List<CapabilityTool> real = List.of(
                 new TableAvailabilityTool(mock(museon_online.astor_butler.domain.booking.TableReservationService.class),
                         mock(museon_online.astor_butler.domain.booking.VenueOpeningHours.class), capabilities, journey),
-                new ReservationCreateTool(mock(museon_online.astor_butler.domain.booking.TableReservationService.class),
-                        mock(GuestVisitRepository.class), mock(museon_online.astor_butler.domain.journey.JourneyEvents.class),
-                        mock(LedgerWriter.class), capabilities, journey),
+                new ReservationCreateTool(bookingService(), mock(GuestVisitRepository.class),
+                        mock(museon_online.astor_butler.domain.journey.JourneyEvents.class), mock(LedgerWriter.class), capabilities, journey),
                 new ReservationChangeTool(mock(museon_online.astor_butler.domain.booking.TableReservationService.class), access, journey),
                 new ReservationCancelTool(mock(museon_online.astor_butler.domain.booking.TableReservationService.class), access),
                 new VenueInfoTool(new VenueFactsCatalog(new ObjectMapper()), capabilities),
@@ -214,14 +226,23 @@ class AgentNegotiationLiveTest {
                 new TipCreateTool(mock(museon_online.astor_butler.domain.tip.TipService.class),
                         mock(museon_online.astor_butler.domain.journey.talk.TableRequestRouter.class), access),
                 new ReviewSubmitTool(mock(museon_online.astor_butler.domain.billing.VisitReviewService.class), access));
-        return real.stream().<CapabilityTool>map(tool -> new CapabilityTool() {
+        return real.stream().<CapabilityTool>map(tool -> tool instanceof ReservationCreateTool ? tool : new CapabilityTool() {
             public String name() { return tool.name(); }
             public String description() { return tool.description(); }
             public Map<String, Object> parameters() { return tool.parameters(); }
             public boolean commitment() { return tool.commitment(); }
             public CapabilityResult invoke(CapabilityContext ctx, Map<String, Object> args) {
-                return CapabilityResult.ok(FACTS.getOrDefault(tool.name(), Map.of("accepted", true)));
+                return "table_availability".equals(tool.name()) ? freeAsAsked(args)
+                        : CapabilityResult.ok(FACTS.getOrDefault(tool.name(), Map.of("accepted", true)));
             }
         }).toList();
+    }
+
+    /** A booking service that books nothing: every request is a synthetic order waiting for the hostess. */
+    private static museon_online.astor_butler.domain.booking.TableReservationService bookingService() {
+        var service = mock(museon_online.astor_butler.domain.booking.TableReservationService.class);
+        when(service.createReservation(org.mockito.ArgumentMatchers.any())).thenReturn(CapabilityFixtures.order(9001L, null,
+                museon_online.astor_butler.domain.booking.TableReservationStatus.AWAITING_MANAGER_CONFIRMATION));
+        return service;
     }
 }
