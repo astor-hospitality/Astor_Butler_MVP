@@ -15,7 +15,8 @@ import java.util.stream.Collectors;
  * only chats in {@code ASTOR_AGENT_ALLOWLIST} (comma-separated chat ids; empty — nobody). {@code model}
  * ({@code ASTOR_AGENT_MODEL}) names the model of agent chats; one model call waits {@code modelTimeoutMs} at most, a
  * whole negotiation turn {@code turnTimeoutMs} ({@code ASTOR_AGENT_TURN_TIMEOUT_MS}), a turn in the bot
- * {@code botTurnTimeoutMs} ({@code ASTOR_AGENT_BOT_TURN_TIMEOUT_MS}).
+ * {@code botTurnTimeoutMs} ({@code ASTOR_AGENT_BOT_TURN_TIMEOUT_MS}). {@code provider} ({@code ASTOR_AGENT_PROVIDER})
+ * blank keeps the application's model; {@code openai-compatible} gives only the agent the OpenAI-compatible API.
  */
 @Component
 @ConfigurationProperties(prefix = "astor.agent")
@@ -25,6 +26,8 @@ public class AgentProperties {
 
     private boolean enabled = false;
     private String allowlist = "";
+    /** Blank: the agent uses ASTOR_MODEL_PROVIDER's model; {@code openai-compatible}: its own (AgentModelConfiguration). */
+    private String provider = "";
     /** Probed 14.10 on the PERS scope: GigaChat-3-Pro is «No such model», GigaChat-2-Pro calls functions. */
     private String model = "GigaChat-2-Pro";
     /** Under the Concierge's own wait for a negotiation turn (30 s), so it never gives up on a turn still running. */

@@ -18,20 +18,26 @@ import museon_online.astor_butler.domain.summary.GuestMemory;
 import museon_online.astor_butler.model.ModelChatRequest;
 import museon_online.astor_butler.model.ModelChatResponse;
 import museon_online.astor_butler.model.ModelToolCall;
+import museon_online.astor_butler.model.OpenAiCompatibleModelGateway;
 import museon_online.astor_butler.model.ToolCallingModel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.restclient.RestTemplateBuilder;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
+import org.springframework.test.web.client.MockRestServiceServer;
 
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -40,6 +46,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /** A Concierge retry of the same turn (same turnId) replays the booking instead of making a second one. */
 class ButlerAgentRetryTest {
@@ -99,5 +109,56 @@ class ButlerAgentRetryTest {
         // The result is stored as JSON, so the replayed id comes back as a plain number.
         assertThat(((Number) first.offer().get("reservationId")).longValue()).isEqualTo(41L);
         assertThat(retry.offer()).containsEntry("reservationId", first.offer().get("reservationId"));
+    }
+
+    /**
+     * The OpenAI-compatible provider booked, then failed before it could say so (429): the guest's outcome is unknown.
+     * The turn falls back without another model call, and the Concierge's retry of the same turn replays the booking.
+     */
+    @Test
+    void aRetryAfterAnUnknownOutcomeOverTheOpenAiCompatibleApiBooksOnce() {
+        TableReservationService reservations = mock(TableReservationService.class);
+        when(reservations.createReservation(any())).thenReturn(CapabilityFixtures.order(41L, null,
+                TableReservationStatus.AWAITING_MANAGER_CONFIRMATION));
+        CapabilityProperties capabilities = new CapabilityProperties();
+        capabilities.setEnabled(true);
+        CapabilityRegistry registry = new CapabilityRegistry(List.of(ReservationCreateToolTest.tool(reservations)),
+                mock(LedgerWriter.class), capabilities, store);
+        AtomicReference<MockRestServiceServer> serverRef = new AtomicReference<>();
+        OpenAiCompatibleModelGateway gateway = new OpenAiCompatibleModelGateway(
+                new RestTemplateBuilder(restTemplate -> serverRef.set(MockRestServiceServer.bindTo(restTemplate).build())),
+                "https://models.test/v1", "sk-fixture", "", "", "", "", 8000, 256, 0.1, true, "");
+        MockRestServiceServer server = serverRef.get();
+        String completions = "https://models.test/v1/chat/completions";
+        String booking = """
+                {"choices": [{"finish_reason": "tool_calls", "message": {"role": "assistant", "content": null, "tool_calls": [
+                  {"id": "call_1", "type": "function", "function": {"name": "reservation_create",
+                   "arguments": "{\\"date\\": \\"2026-10-20\\", \\"time\\": \\"19:00\\", \\"partySize\\": 2, \\"guestName\\": \\"Анна Петрова\\"}"}}
+                ]}}], "usage": {"prompt_tokens": 100, "completion_tokens": 20}}
+                """;
+        server.expect(once(), requestTo(completions)).andRespond(withSuccess(booking, MediaType.APPLICATION_JSON));
+        server.expect(once(), requestTo(completions)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(once(), requestTo(completions)).andRespond(withSuccess(booking, MediaType.APPLICATION_JSON));
+        server.expect(once(), requestTo(completions)).andRespond(withSuccess("""
+                {"choices": [{"finish_reason": "stop", "message": {"role": "assistant", "content": "Заявка передана хостес."}}]}
+                """, MediaType.APPLICATION_JSON));
+        AgentProperties properties = new AgentProperties();
+        properties.setEnabled(true);
+        properties.setModel("gigachat-3-pro");
+        VisitTurnRepository turns = mock(VisitTurnRepository.class);
+        when(turns.visitOfSession(anyString())).thenReturn(Optional.empty());
+        ButlerAgent agent = new ButlerAgent(new AgentLoop(gateway, registry, properties), registry, properties,
+                mock(AgentLessonRepository.class), mock(GuestMemory.class), new VenueFactsCatalog(VenueFacts.none()), capabilities,
+                mock(LedgerWriter.class), turns, mock(GuestVisitRepository.class));
+        NegotiationTurn turn = new NegotiationTurn("c-2", null, "бронируйте", null, "Анна", null, "Бронируем?", "t-7", true);
+
+        NegotiationReply unknown = agent.negotiate(turn);
+        NegotiationReply retry = agent.negotiate(turn);
+
+        server.verify();
+        assertThat(unknown.fallback()).isTrue();
+        assertThat(retry.fallback()).isFalse();
+        verify(reservations, times(1)).createReservation(any());
+        assertThat(((Number) retry.offer().get("reservationId")).longValue()).isEqualTo(41L);
     }
 }
