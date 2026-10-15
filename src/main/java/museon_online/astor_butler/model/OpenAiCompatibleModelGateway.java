@@ -1,5 +1,7 @@
 package museon_online.astor_butler.model;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +13,9 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
@@ -22,6 +27,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Model provider for any service that speaks the OpenAI HTTP API: {@code POST /chat/completions}
@@ -37,14 +44,25 @@ import java.util.Map;
  * {@code system} message of every free-text generation. Structured understanding (JSON intent and
  * slot calls) is sent exactly as the caller built it, without the persona, the same split the
  * agent runtime kept so the FSM sees the same answers whichever provider is behind it.
+ *
+ * <p>Function calling ({@link ToolCallingModel}) uses the OpenAI {@code tools} / {@code tool_calls} fields. The
+ * agent loop runs one tool per step, so only the first of several calls in one answer is taken (the rest are counted
+ * in {@code tool_calls_ignored}); its result goes back as a {@code tool} message under the call's id. A failed call
+ * says only the HTTP status and the service's error code: the body may quote the guest's words. Every {@code chat}
+ * call is written to {@code model_interaction_audit} when the repository is wired, as for GigaChat.
  */
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "astor.model", name = "provider", havingValue = "openai-compatible", matchIfMissing = false)
-public class OpenAiCompatibleModelGateway implements ModelGateway {
+public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingModel {
 
     static final String PROVIDER = "openai-compatible";
     static final String ENV_PREFIX = "OPENAI_COMPATIBLE";
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> JSON_OBJECT = new TypeReference<>() {
+    };
+    /** An error field the logs may keep: a short identifier, never free text. */
+    private static final Pattern SAFE_ERROR_FIELD = Pattern.compile("[\\w.-]{1,64}");
 
     private final String provider;
     private final String envPrefix;
@@ -59,6 +77,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     private final double temperature;
     private final boolean jsonMode;
     private final String systemPrompt;   // null when no persona file is configured or readable
+    private Boolean parallelToolCalls;   // null: not sent, the service's default applies
+    private ModelInteractionAuditRepository auditRepository;
 
     @Autowired
     public OpenAiCompatibleModelGateway(
@@ -197,6 +217,220 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                 false,
                 completionMetadata(response)
         );
+    }
+
+    @Autowired(required = false)
+    public void setAuditRepository(ModelInteractionAuditRepository auditRepository) {
+        this.auditRepository = auditRepository;
+    }
+
+    /**
+     * {@code parallel_tool_calls} of tool requests ({@code OPENAI_COMPATIBLE_PARALLEL_TOOL_CALLS}): blank leaves it
+     * out, {@code false} asks for one call per answer. Not every model behind the service accepts it.
+     */
+    @Autowired(required = false)
+    public void setParallelToolCalls(@Value("${astor.model.openai-compatible.parallel-tool-calls:}") String value) {
+        String flag = blankToNull(value);
+        this.parallelToolCalls = flag == null ? null : Boolean.valueOf(flag);
+    }
+
+    /**
+     * One chat completion with optional tools. {@code request.model()} (the agent's {@code ASTOR_AGENT_MODEL}) must be
+     * a name from this service's {@code GET /models}; without it the profile's configured model answers.
+     *
+     * @throws ModelUnavailableException on 401, 402, 403, 408, 429, 5xx, a timeout or an I/O failure
+     */
+    @Override
+    public ModelChatResponse chat(ModelChatRequest request) {
+        String model = request.model() != null ? request.model().trim() : textModel(request.profile());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", model);
+        body.put("messages", chatMessages(request.messages()));
+        body.put("max_tokens", request.maxTokens() != null ? request.maxTokens() : maxTokens);
+        if (temperature >= 0) {
+            body.put("temperature", Math.min(2.0, temperature));
+        }
+        body.put("stream", false);
+        if (!request.tools().isEmpty()) {
+            body.put("tools", request.tools().stream().map(OpenAiCompatibleModelGateway::tool).toList());
+            body.put("tool_choice", "auto");
+            if (parallelToolCalls != null) {
+                body.put("parallel_tool_calls", parallelToolCalls);
+            }
+        }
+        long startedAt = System.nanoTime();
+        try {
+            Map<?, ?> response = chatExchange(body);
+            Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
+            Map<String, Object> metadata = completionMetadata(response);
+            Optional<ModelToolCall> toolCall = readToolCall(response, metadata);
+            ModelChatResponse result = new ModelChatResponse(
+                    readText(response), toolCall, provider, model, latency, Map.copyOf(metadata));
+            ModelChatAudit.record(auditRepository, provider, request, model, result, latency, null);
+            log.debug("ModelGateway chat provider={} model={} purpose={} toolCall={} latencyMs={}",
+                    provider, model, request.purpose(), toolCall.map(ModelToolCall::name).orElse(""), latency.toMillis());
+            return result;
+        } catch (RuntimeException error) {
+            ModelChatAudit.record(auditRepository, provider, request, model, null,
+                    Duration.ofNanos(System.nanoTime() - startedAt), error);
+            throw error;
+        }
+    }
+
+    /**
+     * {@link #post} for chat: "cannot be used now" answers become {@link ModelUnavailableException}, any other
+     * rejection an {@link IllegalStateException}. Neither carries the response body; the cause keeps only the
+     * status, so the call log still names it (e.g. {@code TooManyRequests}).
+     */
+    private Map<?, ?> chatExchange(Map<String, Object> body) {
+        try {
+            return post("/chat/completions", body);
+        } catch (HttpClientErrorException error) {
+            int status = error.getStatusCode().value();
+            HttpClientErrorException bare = HttpClientErrorException.create(
+                    error.getStatusCode(), error.getStatusText(), new HttpHeaders(), new byte[0], null);
+            String message = provider + " chat failed: HTTP " + status + errorHint(error.getResponseBodyAsString());
+            if (status == 401 || status == 402 || status == 403 || status == 408 || status == 429) {
+                throw new ModelUnavailableException(message, bare);
+            }
+            throw new IllegalStateException(message, bare);
+        } catch (HttpServerErrorException error) {
+            throw new ModelUnavailableException(
+                    provider + " chat failed: HTTP " + error.getStatusCode().value() + errorHint(error.getResponseBodyAsString()),
+                    HttpServerErrorException.create(error.getStatusCode(), error.getStatusText(), new HttpHeaders(), new byte[0], null));
+        } catch (ResourceAccessException error) {
+            throw new ModelUnavailableException(provider + " did not answer in time or could not be reached", error);
+        }
+    }
+
+    /** Which code, type or parameter the service named, e.g. " (code 429, type rate_limit_error)"; never its message. */
+    static String errorHint(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return "";
+        }
+        try {
+            Map<String, Object> parsed = JSON.readValue(responseBody, JSON_OBJECT);
+            if (!(parsed.get("error") instanceof Map<?, ?> error)) {
+                return "";
+            }
+            List<String> hints = new ArrayList<>();
+            for (String field : List.of("code", "type", "param")) {
+                Object value = error.get(field);
+                if (value != null && SAFE_ERROR_FIELD.matcher(value.toString()).matches()) {
+                    hints.add(field + " " + value);
+                }
+            }
+            return hints.isEmpty() ? "" : " (" + String.join(", ", hints) + ")";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * Turns as the OpenAI API takes them. A call keeps the provider's id, or gets {@code call00001}-style one (nine
+     * letters and digits, accepted by every service seen so far); the result that follows it is sent under that id.
+     * A function result with no call before it (never sent by the agent) goes as a user line, not as a {@code tool}
+     * message the service would reject.
+     */
+    static List<Map<String, Object>> chatMessages(List<ModelChatMessage> messages) {
+        List<Map<String, Object>> json = new ArrayList<>(messages.size());
+        String openCall = null;
+        int generated = 0;
+        for (ModelChatMessage message : messages) {
+            String role = message.role() == null ? "user" : message.role();
+            Map<String, Object> turn = new LinkedHashMap<>();
+            if (message.functionCall() != null) {
+                ModelToolCall call = message.functionCall();
+                String id = call.id() != null ? call.id() : "call%05d".formatted(++generated);
+                Map<String, Object> function = new LinkedHashMap<>();
+                function.put("name", call.name());
+                function.put("arguments", argumentsJson(call.arguments()));
+                Map<String, Object> toolCall = new LinkedHashMap<>();
+                toolCall.put("id", id);
+                toolCall.put("type", "function");
+                toolCall.put("function", function);
+                turn.put("role", "assistant");
+                // OpenAI allows no content beside tool calls; an empty string is refused by some services.
+                turn.put("content", message.content() == null || message.content().isBlank() ? null : message.content());
+                turn.put("tool_calls", List.of(toolCall));
+                openCall = id;
+            } else if ("function".equals(role) || "tool".equals(role)) {
+                if (openCall != null) {
+                    turn.put("role", "tool");
+                    turn.put("tool_call_id", openCall);
+                    turn.put("content", message.content() == null ? "" : message.content());
+                    openCall = null;
+                } else {
+                    turn.put("role", "user");
+                    turn.put("content", "Результат " + (message.name() == null ? "инструмента" : message.name()) + ": "
+                            + (message.content() == null ? "" : message.content()));
+                }
+            } else {
+                turn.put("role", role);
+                turn.put("content", message.content() == null ? "" : message.content());
+            }
+            json.add(turn);
+        }
+        return json;
+    }
+
+    private static String argumentsJson(Map<String, Object> arguments) {
+        try {
+            return JSON.writeValueAsString(arguments);
+        } catch (Exception e) {
+            return "{}";
+        }
+    }
+
+    private static Map<String, Object> tool(ModelTool tool) {
+        Map<String, Object> function = new LinkedHashMap<>();
+        function.put("name", tool.name());
+        function.put("description", tool.description() == null ? "" : tool.description());
+        function.put("parameters", tool.parameters());
+        return Map.of("type", "function", "function", function);
+    }
+
+    /**
+     * The first of {@code tool_calls} (or a legacy {@code function_call}). Its {@code arguments} come as a JSON string
+     * or an object; an unreadable one becomes {@code {}} with {@code arguments_unparsed}, and the tool's own
+     * validation answers it, as with GigaChat.
+     */
+    private Optional<ModelToolCall> readToolCall(Map<?, ?> response, Map<String, Object> metadata) {
+        if (!(firstChoice(response).get("message") instanceof Map<?, ?> message)) {
+            return Optional.empty();
+        }
+        Map<?, ?> function = null;
+        String id = null;
+        if (message.get("tool_calls") instanceof List<?> calls && !calls.isEmpty()
+                && calls.getFirst() instanceof Map<?, ?> first && first.get("function") instanceof Map<?, ?> called) {
+            function = called;
+            id = first.get("id") instanceof String text ? text : null;
+            if (calls.size() > 1) {
+                metadata.put("tool_calls_ignored", calls.size() - 1);
+            }
+        } else if (message.get("function_call") instanceof Map<?, ?> legacy) {
+            function = legacy;
+        }
+        if (function == null || !(function.get("name") instanceof String name) || name.isBlank()) {
+            return Optional.empty();
+        }
+        Object arguments = function.get("arguments");
+        Map<String, Object> parsed = new LinkedHashMap<>();
+        if (arguments instanceof Map<?, ?> object) {
+            object.forEach((key, value) -> parsed.put(String.valueOf(key), value));
+        } else if (arguments instanceof String text && !text.isBlank()) {
+            try {
+                Map<String, Object> value = JSON.readValue(text, JSON_OBJECT);
+                if (value != null) {
+                    parsed.putAll(value);
+                }
+            } catch (Exception e) {
+                metadata.put("arguments_unparsed", true);
+            }
+        } else if (arguments != null && !(arguments instanceof String)) {
+            metadata.put("arguments_unparsed", true);
+        }
+        return Optional.of(new ModelToolCall(name, parsed, id));
     }
 
     @Override
@@ -377,7 +611,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         return embedding;
     }
 
-    private String blankToNull(String value) {
+    private static String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 }

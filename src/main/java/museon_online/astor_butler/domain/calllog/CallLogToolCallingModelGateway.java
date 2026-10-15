@@ -8,7 +8,7 @@ import museon_online.astor_butler.model.ToolCallingModel;
 import java.util.function.Supplier;
 
 /**
- * {@link CallLogModelGateway} for a gateway that also calls tools (GigaChat): every {@link #chat} of the agents and
+ * {@link CallLogModelGateway} for a gateway that also calls tools (GigaChat, OpenAI-compatible): every {@link #chat} of the agents and
  * the visit summaries is one {@code llm} row under the request's model (e.g. {@code astor.agent.model}), with the
  * answer's token usage. Like the text calls, the answer and any exception pass through untouched.
  */

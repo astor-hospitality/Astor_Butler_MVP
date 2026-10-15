@@ -24,7 +24,8 @@ public class CallLogModelGatewayPostProcessor implements BeanPostProcessor {
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) {
         if (bean instanceof ModelGateway gateway && !(bean instanceof CallLogModelGateway)) {
-            // GigaChat also calls tools: the wrapper must stay a ToolCallingModel, or the agent loses its model.
+            // GigaChat and the OpenAI-compatible gateway also call tools: the wrapper must stay a ToolCallingModel,
+            // or the agent loses its model.
             return bean instanceof ToolCallingModel
                     ? new CallLogToolCallingModelGateway(gateway, writer)
                     : new CallLogModelGateway(gateway, writer);
