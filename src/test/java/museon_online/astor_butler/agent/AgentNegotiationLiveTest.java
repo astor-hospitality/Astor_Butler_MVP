@@ -124,21 +124,26 @@ class AgentNegotiationLiveTest {
             int repeats = Math.min(6, Integer.getInteger("astor.live.repeats", 0));
             if (repeats > 0) {
                 int premature = 0;
+                int refusedCalls = 0;
                 StringBuilder first = new StringBuilder();
                 for (int r = 0; r < repeats; r++) {
                     NegotiationReply reply = agent.negotiate(new NegotiationTurn("live-" + UUID.randomUUID(), null,
                             "Хочу пообедать сегодня в 13:00 вдвоём", null, "Анна", null,
                             "Гость хочет пообедать сегодня в 13:00 вдвоём. Есть стол?", "t-1", false));
-                    List<String> used = reply.facts().stream().map(fact -> String.valueOf(fact.get("tool"))).toList();
+                    List<String> used = reply.facts().stream().map(fact -> fact.get("tool") + (Boolean.TRUE.equals(fact.get("ok")) ? "" : ":refused")).toList();
+                    // Only a request the tool actually created counts; a refused call (a guard) is not a booking.
                     if (used.contains("reservation_create")) {
                         premature++;
+                    }
+                    if (used.contains("reservation_create:refused")) {
+                        refusedCalls++;
                     }
                     first.append(String.format(Locale.ROOT, "| %d | %s | %s |%n", r + 1, reply.fallback(), used));
                 }
                 String report = "# Butler: первый ход «Есть стол?» ×" + repeats + ", модель " + model + "\n\n"
                         + "| Повтор | Fallback | Инструменты |\n|---:|---|---|\n" + first
-                        + String.format(Locale.ROOT, "%nЗаявка до согласия гостя: %d из %d. Стоимость %.4f ₽, вызовов %d.%n",
-                        premature, repeats, cost.sum(), calls.get());
+                        + String.format(Locale.ROOT, "%nЗаявка создана до согласия гостя: %d из %d; вызов отклонён инструментом: %d. Стоимость %.4f ₽, вызовов %d.%n",
+                        premature, repeats, refusedCalls, cost.sum(), calls.get());
                 System.out.println(report);
                 Files.createDirectories(Path.of("target", "load"));
                 Files.writeString(Path.of("target", "load", "butler-live-first-turn-" + model + ".md"), report, StandardCharsets.UTF_8);

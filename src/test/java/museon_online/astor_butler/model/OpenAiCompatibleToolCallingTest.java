@@ -110,6 +110,29 @@ class OpenAiCompatibleToolCallingTest {
         assertThat(record.responseText()).isEqualTo("function_call:find_slots").doesNotContain("2026-10-16");
     }
 
+    /** Measured 15.10: gigachat-3-pro answers 400 «undeclared function» to tool history without tools, even with tool_choice none. */
+    @Test
+    void anAnswerOnlyStepDeclaresTheToolsAndIgnoresANewCall() {
+        Fixture fixture = fixture();
+        fixture.server().expect(once(), requestTo(COMPLETIONS))
+                .andExpect(jsonPath("$.tools[0].function.name").value("find_slots"))
+                .andExpect(jsonPath("$.tool_choice").value("auto"))
+                .andRespond(withSuccess(reply("""
+                        {"role": "assistant", "content": "Есть 19:00.", "tool_calls": [
+                          {"id": "call_9", "type": "function", "function": {"name": "find_slots", "arguments": "{}"}}]}
+                        """, "tool_calls"), MediaType.APPLICATION_JSON));
+
+        ModelChatResponse response = fixture.gateway().chat(new ModelChatRequest(List.of(
+                ModelChatMessage.user("Стол"),
+                ModelChatMessage.assistantCall("", new ModelToolCall("find_slots", Map.of(), "call_1")),
+                ModelChatMessage.functionResult("find_slots", "{\"ok\":true}")), List.of(FIND_SLOTS), ModelProfile.FRONTLINE,
+                "butler_agent", Map.of(), "gigachat-3-pro", 512, true));
+
+        assertThat(response.toolCall()).isEmpty();
+        assertThat(response.text()).isEqualTo("Есть 19:00.");
+        assertThat(response.metadata()).containsEntry("tool_call_ignored", "find_slots");
+    }
+
     @Test
     void theServicesChargeGoesIntoTheMetadata() {
         Fixture fixture = fixture();

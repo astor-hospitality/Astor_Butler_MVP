@@ -99,3 +99,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-15-concierge-reservations.yaml
   - include:
       file: db/changelog/2026-10-15-call-log.yaml
+  - include:
+      file: db/changelog/2026-10-16-agent-budget.yaml

@@ -60,9 +60,11 @@ import static org.mockito.Mockito.when;
  *     -Dastor.load.profile=gigachat-3-pro -Dastor.load.steps=1,2,5,10 -Dastor.load.stress=20,40 -Dastor.load.seconds=30
  * </pre>
  * One RPS unit is one negotiation turn ({@link ButlerAgent#negotiate}, what {@code POST /api/negotiation/v1/turn}
- * runs): three model calls (table_availability, reservation_create, answer) through the real OpenAI-compatible gateway
- * over HTTP to a local stub. The booking runs the real tool and idempotency store on H2; the reservation service is a
- * mock. Not measured here: the HTTP controller, PostgreSQL, Telegram. Model latency profiles are the live ones of
+ * runs). Every guest session is two turns, as the real flow: «Есть стол на 19:00?» (table_availability → the offer)
+ * and then «Да, оформляйте» (reservation_create → «заявка у хостес»), each two model calls through the real
+ * OpenAI-compatible gateway over HTTP to a local stub. The booking runs the real tool and idempotency store on H2; the
+ * reservation service is a mock that counts what was really created. Outcomes are counted by meaning, not by the
+ * absence of exceptions: booked, refused by a tool, answered without a booking, fallback, error. Not measured here: the HTTP controller, PostgreSQL, Telegram. Model latency profiles are the live ones of
  * 2026-10-15 (docs/operations/SBER500_LLM_ACCEPTANCE.md). The report goes to stdout and target/load/.
  */
 @EnabledIfSystemProperty(named = "astor.load", matches = "true")
@@ -132,9 +134,12 @@ class AgentNegotiationLoadTest {
             long done = messages.subList(lastUser + 1, messages.size()).stream()
                     .filter(m -> "tool".equals(((Map<?, ?>) m).get("role"))).count();
             boolean tools = body.get("tools") instanceof List<?> list && !list.isEmpty();
-            Map<String, Object> message = tools && done == 0 ? call(n, "table_availability", Map.of("date", "2026-10-20", "time", "19:00", "partySize", 2))
-                    : tools && done == 1 ? call(n, "reservation_create", ReservationCreateToolTest.args())
-                    : Map.of("role", "assistant", "content", "Стол на 19:00 передан хостес, она подтвердит.");
+            String said = lastUser < 0 ? "" : String.valueOf(((Map<?, ?>) messages.get(lastUser)).get("content"));
+            boolean agreed = said.contains("Да, оформляйте");
+            Map<String, Object> message = tools && done == 0 && !agreed ? call(n, "table_availability", Map.of("date", "2026-10-20", "time", "19:00", "partySize", 2))
+                    : tools && done == 0 ? call(n, "reservation_create", ReservationCreateToolTest.args())
+                    : agreed ? Map.of("role", "assistant", "content", "Заявка на 19:00 передана хостес, она подтвердит.")
+                    : Map.of("role", "assistant", "content", "Есть стол на двоих в 19:00. Оформить заявку?");
             byte[] answer = JSON.writeValueAsBytes(Map.of(
                     "choices", List.of(Map.of("finish_reason", message.containsKey("tool_calls") ? "tool_calls" : "stop", "message", message)),
                     "usage", Map.of("prompt_tokens", 0, "completion_tokens", 0)));
@@ -152,11 +157,15 @@ class AgentNegotiationLoadTest {
                 "function", Map.of("name", tool, "arguments", JSON.writeValueAsString(args)))));
     }
 
+    private final AtomicLong created = new AtomicLong();
+
     private ButlerAgent agent(IdempotencyStore store, String baseUrl, SimpleMeterRegistry meters) {
         TableReservationService reservations = mock(TableReservationService.class);
         AtomicLong ids = new AtomicLong(1000);
-        when(reservations.createReservation(any())).thenAnswer(invocation -> CapabilityFixtures.order(ids.incrementAndGet(), null,
-                TableReservationStatus.AWAITING_MANAGER_CONFIRMATION));
+        when(reservations.createReservation(any())).thenAnswer(invocation -> {
+            created.incrementAndGet();
+            return CapabilityFixtures.order(ids.incrementAndGet(), null, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+        });
         CapabilityProperties capabilities = new CapabilityProperties();
         capabilities.setEnabled(true);
         CapabilityTool availability = new CapabilityTool() {
@@ -184,47 +193,83 @@ class AgentNegotiationLoadTest {
                 new VenueFactsCatalog(VenueFacts.none()), capabilities, mock(LedgerWriter.class), turns, mock(GuestVisitRepository.class));
     }
 
-    private record Turn(long nanos, boolean fallback, boolean error) {
+    /** What one turn came to, by meaning. */
+    enum Outcome { BOOKED, REFUSED, ANSWERED, FALLBACK, ERROR }
+
+    private record Turn(long nanos, boolean agreeing, Outcome outcome) {
     }
 
-    private record Row(String kind, int rps, int sent, double achieved, double p50, double p95, double p99, double max,
-                       long answered, long fallback, long errors, double modelRps, double cpu) {
+    private record Row(String kind, int rps, int sessions, int turns, double achieved, double p50, double p95, double p99,
+                       double max, long offered, long booked, long refused, long noBooking, long fallback, long errors,
+                       long created, double modelRps, double cpu) {
     }
 
+    private static Outcome outcome(NegotiationReply reply) {
+        if (reply.fallback()) {
+            return Outcome.FALLBACK;
+        }
+        boolean booked = false;
+        boolean refused = false;
+        for (Map<String, Object> fact : reply.facts()) {
+            if ("reservation_create".equals(fact.get("tool"))) {
+                if (Boolean.TRUE.equals(fact.get("ok"))) {
+                    booked = true;
+                } else {
+                    refused = true;
+                }
+            }
+        }
+        return booked ? Outcome.BOOKED : refused ? Outcome.REFUSED : Outcome.ANSWERED;
+    }
+
+    private Turn turn(ButlerAgent agent, String session, int number, String guest, String concierge) {
+        long t0 = System.nanoTime();
+        try {
+            NegotiationReply reply = agent.negotiate(new NegotiationTurn(session, null, guest, null, "Гость", null, concierge,
+                    "t-" + number, true));
+            return new Turn(System.nanoTime() - t0, number == 2, outcome(reply));
+        } catch (RuntimeException e) {
+            return new Turn(System.nanoTime() - t0, number == 2, Outcome.ERROR);
+        }
+    }
+
+    /** {@code rps} negotiation turns a second: sessions arrive at half that rate, each runs its two turns in order. */
     private Row step(String kind, int rps, ButlerAgent agent) throws Exception {
         long models = modelRequests.get();
+        long created0 = created.get();
         double processCpu0 = processCpuNanos();
         long started = System.nanoTime();
-        int total = rps * seconds;
-        List<CompletableFuture<Turn>> turns = new ArrayList<>(total);
+        int sessions = Math.max(1, rps * seconds / 2);
+        double sessionRate = rps / 2.0;
+        List<CompletableFuture<List<Turn>>> runs = new ArrayList<>(sessions);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            for (int i = 0; i < total; i++) {
-                long due = started + (long) (i * 1e9 / rps);
+            for (int i = 0; i < sessions; i++) {
+                long due = started + (long) (i * 1e9 / sessionRate);
                 long wait = due - System.nanoTime();
                 if (wait > 0) {
                     Thread.sleep(wait / 1_000_000, (int) (wait % 1_000_000));
                 }
                 String session = "load-" + UUID.randomUUID();
-                turns.add(CompletableFuture.supplyAsync(() -> {
-                    long t0 = System.nanoTime();
-                    try {
-                        NegotiationReply reply = agent.negotiate(new NegotiationTurn(session, null, "Стол на двоих сегодня в 19:00",
-                                null, "Гость", null, "Бронируем?", "t-1", true));
-                        return new Turn(System.nanoTime() - t0, reply.fallback(), false);
-                    } catch (RuntimeException e) {
-                        return new Turn(System.nanoTime() - t0, false, true);
-                    }
+                runs.add(CompletableFuture.supplyAsync(() -> {
+                    Turn offer = turn(agent, session, 1, "Есть стол на двоих сегодня в 19:00?", "Гость спрашивает стол на двоих в 19:00.");
+                    Turn yes = turn(agent, session, 2, "Да, оформляйте", "Гость согласен на 19:00. Да, оформляйте.");
+                    return List.of(offer, yes);
                 }, executor));
             }
             long sentNanos = System.nanoTime() - started;
-            List<Turn> done = turns.stream().map(CompletableFuture::join).toList();
+            List<Turn> done = runs.stream().map(CompletableFuture::join).flatMap(List::stream).toList();
             double wall = (System.nanoTime() - started) / 1e9;
             double[] sorted = done.stream().mapToDouble(t -> t.nanos() / 1e9).sorted().toArray();
-            return new Row(kind, rps, done.size(), done.size() > 1 ? (done.size() - 1) / (sentNanos / 1e9) : done.size(),
+            long offered = done.stream().filter(t -> !t.agreeing() && t.outcome() == Outcome.ANSWERED).count();
+            long booked = done.stream().filter(t -> t.outcome() == Outcome.BOOKED).count();
+            long refused = done.stream().filter(t -> t.outcome() == Outcome.REFUSED).count();
+            long noBooking = done.stream().filter(t -> t.agreeing() && t.outcome() == Outcome.ANSWERED).count();
+            long fallback = done.stream().filter(t -> t.outcome() == Outcome.FALLBACK).count();
+            long errors = done.stream().filter(t -> t.outcome() == Outcome.ERROR).count();
+            return new Row(kind, rps, sessions, done.size(), sessions > 1 ? 2.0 * (sessions - 1) / (sentNanos / 1e9) : done.size(),
                     pct(sorted, 0.5), pct(sorted, 0.95), pct(sorted, 0.99), sorted.length == 0 ? 0 : sorted[sorted.length - 1],
-                    done.stream().filter(t -> !t.fallback() && !t.error()).count(), done.stream().filter(Turn::fallback).count(),
-                    done.stream().filter(Turn::error).count(), (modelRequests.get() - models) / wall,
-                    (processCpuNanos() - processCpu0) / (wall * 1e9) * 100);
+                    offered, booked, refused, noBooking, fallback, errors, created.get() - created0,
+                    (modelRequests.get() - models) / wall, (processCpuNanos() - processCpu0) / (wall * 1e9) * 100);
         }
     }
 
@@ -248,14 +293,16 @@ class AgentNegotiationLoadTest {
                 .append(System.getProperty("os.name")).append('/').append(System.getProperty("os.arch"))
                 .append(", ядер: ").append(Runtime.getRuntime().availableProcessors()).append(". Профиль задержки модели: ").append(profile)
                 .append(". Длительность ступени: ").append(seconds).append(" с. Открытая модель нагрузки.\n\n")
-                .append("RPS — переговорных ходов в секунду (ButlerAgent.negotiate); на каждый: 3 вызова модели через HTTP и бронь через ")
-                .append("идемпотентный инструмент. Задержки — время хода, секунды.\n\n")
-                .append("| Тип | Цель RPS | Отправлено | Факт RPS | p50 | p95 | p99 | max | Ответ | Fallback | Ошибки | Вызовов модели/с | CPU % ядра |\n")
-                .append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
+                .append("RPS — переговорных ходов в секунду (ButlerAgent.negotiate). Сессия гостя — два хода: «Есть стол?» → предложение, ")
+                .append("«Да, оформляйте» → заявка; по 2 вызова модели через HTTP. Исходы по смыслу: предложено (ход 1 без брони), ")
+                .append("заявка создана, отказ инструмента, ход 2 без заявки, fallback, ошибка; «создано в сервисе» — вызовы мока брони. ")
+                .append("Задержки — время хода, секунды.\n\n")
+                .append("| Тип | Цель RPS | Сессий | Ходов | Факт RPS | p50 | p95 | p99 | max | Предложено | Заявка | Отказ | Без заявки | Fallback | Ошибки | Создано в сервисе | Вызовов модели/с | CPU % ядра |\n")
+                .append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
         for (Row r : rows) {
-            out.append(String.format(Locale.ROOT, "| %s | %d | %d | %.2f | %.2f | %.2f | %.2f | %.2f | %d | %d | %d | %.1f | %.0f |%n",
-                    r.kind(), r.rps(), r.sent(), r.achieved(), r.p50(), r.p95(), r.p99(), r.max(), r.answered(), r.fallback(), r.errors(),
-                    r.modelRps(), r.cpu()));
+            out.append(String.format(Locale.ROOT, "| %s | %d | %d | %d | %.2f | %.2f | %.2f | %.2f | %.2f | %d | %d | %d | %d | %d | %d | %d | %.1f | %.0f |%n",
+                    r.kind(), r.rps(), r.sessions(), r.turns(), r.achieved(), r.p50(), r.p95(), r.p99(), r.max(), r.offered(), r.booked(),
+                    r.refused(), r.noBooking(), r.fallback(), r.errors(), r.created(), r.modelRps(), r.cpu()));
         }
         out.append(String.format(Locale.ROOT, "%nПамять кучи после прогона: %d МБ.%n",
                 (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / 1024 / 1024));

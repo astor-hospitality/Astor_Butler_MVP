@@ -253,6 +253,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
         body.put("stream", false);
         if (!request.tools().isEmpty()) {
             body.put("tools", request.tools().stream().map(OpenAiCompatibleModelGateway::tool).toList());
+            // "none" is not honoured by every model behind the service (gigachat-3-pro then refuses the history's
+            // calls as undeclared), so an answer-only step offers the tools too and ignores a new call below.
             body.put("tool_choice", "auto");
             if (parallelToolCalls != null) {
                 body.put("parallel_tool_calls", parallelToolCalls);
@@ -269,6 +271,10 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
                 metadata.put("costRub", cost);
             }
             Optional<ModelToolCall> toolCall = readToolCall(response, metadata);
+            if (request.answerOnly() && toolCall.isPresent()) {
+                metadata.put("tool_call_ignored", toolCall.get().name());
+                toolCall = Optional.empty();
+            }
             ModelChatResponse result = new ModelChatResponse(
                     readText(response), toolCall, provider, model, latency, Map.copyOf(metadata));
             ModelChatAudit.record(auditRepository, provider, request, model, result, latency, null);

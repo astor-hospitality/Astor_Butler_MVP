@@ -182,7 +182,8 @@ public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
         Map<String, Object> body = completionBody(
                 model, request.messages().stream().map(GigaChatModelGateway::chatMessage).toList(),
                 request.maxTokens() != null ? request.maxTokens() : maxTokens);
-        if (!request.tools().isEmpty()) {
+        // An answer-only step goes without functions, as before answerOnly existed: GigaChat accepts the history as is.
+        if (!request.tools().isEmpty() && !request.answerOnly()) {
             body.put("functions", request.tools().stream().map(GigaChatModelGateway::function).toList());
             body.put("function_call", "auto");
         }

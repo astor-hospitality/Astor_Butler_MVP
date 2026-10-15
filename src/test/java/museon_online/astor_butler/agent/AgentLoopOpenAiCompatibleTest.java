@@ -254,7 +254,13 @@ class AgentLoopOpenAiCompatibleTest {
                 MediaType.APPLICATION_JSON).header("x-litellm-response-cost", "0.03"));
         server.expect(once(), requestTo(COMPLETIONS)).andRespond(withSuccess(answer("Есть стол в 19:00. Оформить?"),
                 MediaType.APPLICATION_JSON).header("x-litellm-response-cost", "0.03"));
-        AgentBudget budget = new AgentBudget(0.05, java.time.ZoneId.of("Asia/Yekaterinburg"), java.time.Clock.systemUTC());
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                "jdbc:h2:mem:agent-loop-budget-" + UUID.randomUUID() + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", "");
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        jdbc.execute(budgetSchema());
+        // 0.05 ₽ reserved per call against 0.10 ₽: the first turn's two calls (0.03 each) fit, a third reservation does not.
+        AgentBudget budget = new AgentBudget(new java.math.BigDecimal("0.10"), new java.math.BigDecimal("0.05"),
+                java.time.ZoneId.of("Asia/Yekaterinburg"), java.time.Clock.systemUTC(), jdbc);
         AgentLoop loop = loop(registry);
         loop.setBudget(budget);
 
@@ -267,5 +273,29 @@ class AgentLoopOpenAiCompatibleTest {
         assertThat(budget.spentToday()).isEqualTo(0.06, org.assertj.core.data.Offset.offset(1e-9));
         assertThat(second.fallback()).isTrue();
         assertThat(meters.get("astor.agent.turns").tags("outcome", "fallback", "reason", "daily_budget").counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void aFailedCallKeepsItsWholeReservation() {
+        server.expect(once(), requestTo(COMPLETIONS)).andRespond(withStatus(HttpStatus.GATEWAY_TIMEOUT));
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:agent-loop-budget-" + UUID.randomUUID() + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""));
+        jdbc.execute(budgetSchema());
+        AgentBudget budget = new AgentBudget(new java.math.BigDecimal("10"), new java.math.BigDecimal("1"),
+                java.time.ZoneId.of("Asia/Yekaterinburg"), java.time.Clock.systemUTC(), jdbc);
+        AgentLoop loop = loop(mock(CapabilityRegistry.class));
+        loop.setBudget(budget);
+
+        assertThat(loop.run(history(), TOOLS, CTX).fallback()).isTrue();
+        assertThat(budget.spentToday()).isEqualTo(1.0, org.assertj.core.data.Offset.offset(1e-9));
+    }
+
+    private static String budgetSchema() {
+        try {
+            return new String(new ClassPathResource("db/changelog/2026-10-16-agent-budget.sql").getInputStream().readAllBytes(),
+                    java.nio.charset.StandardCharsets.UTF_8).replaceAll("(?m)^--.*$", "");
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

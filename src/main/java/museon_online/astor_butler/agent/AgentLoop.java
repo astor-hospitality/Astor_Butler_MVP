@@ -100,7 +100,7 @@ public class AgentLoop {
         this.defaultProvider = provider == null ? "" : provider.trim();
     }
 
-    /** {@code ASTOR_AGENT_DAILY_BUDGET_RUB}: when today's spend reaches it, turns fall back without a model call. */
+    /** {@code ASTOR_AGENT_DAILY_BUDGET_RUB}: each model call reserves its price first; no room — the turn falls back. */
     @Autowired(required = false)
     public void setBudget(AgentBudget budget) {
         this.budget = budget;
@@ -148,19 +148,23 @@ public class AgentLoop {
         int calls = 0;
         while (true) {
             boolean toolsAllowed = calls < properties.getMaxToolCalls() && !offered.isEmpty();
-            if (budget != null && budget.exhausted()) {
+            AgentBudget.Reservation reservation = budget == null ? null : budget.reserve();
+            if (budget != null && reservation == null) {
                 log.warn("Agent turn falls back: calls={}, reason=daily_budget", calls);
                 countTurn("fallback", "daily_budget");
                 return AgentOutcome.fallback(uses, calls);
             }
             ModelChatResponse response;
             try {
-                response = ask(messages, toolsAllowed ? offered : List.of(), ctx, deadline, auditContent);
+                response = ask(messages, offered, !toolsAllowed, ctx, deadline, auditContent);
             } catch (RuntimeException e) {
+                // A timed-out or failed call may still be charged: it keeps its whole reservation.
+                settle(reservation, null);
                 log.warn("Agent turn falls back: calls={}, reason={}", calls, reason(e));
                 countTurn("fallback", timedOut(e) ? "timeout" : "model_error");
                 return AgentOutcome.fallback(uses, calls);
             }
+            settle(reservation, response);
             if (toolsAllowed && response.toolCall().isPresent()) {
                 calls++;
                 ModelToolCall call = response.toolCall().get();
@@ -185,15 +189,17 @@ public class AgentLoop {
     }
 
     /** One model call bounded by the per-call timeout and what is left of the turn. */
-    private ModelChatResponse ask(List<ModelChatMessage> messages, List<ModelTool> tools, CapabilityContext ctx, long deadline,
-                                  boolean auditContent) {
+    /** @param answerOnly the last step: the tools are only declared (the history calls them), the model must answer */
+    private ModelChatResponse ask(List<ModelChatMessage> messages, List<ModelTool> tools, boolean answerOnly, CapabilityContext ctx,
+                                  long deadline, boolean auditContent) {
         long left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
         if (left <= 0) {
             throw new IllegalStateException("turn_timeout");
         }
         long timeout = Math.min(Math.max(1, properties.getModelTimeoutMs()), left);
         ModelChatRequest request = new ModelChatRequest(List.copyOf(messages), tools, ModelProfile.FRONTLINE, "butler_agent",
-                metadata(ctx, auditContent), properties.getModel(), properties.getMaxTokens());
+                metadata(ctx, auditContent), properties.getModel(), properties.getMaxTokens(),
+                answerOnly && !tools.isEmpty());
         ToolCallingModel current = currentModel();
         long started = System.nanoTime();
         CompletableFuture<ModelChatResponse> answer = CompletableFuture.supplyAsync(
@@ -206,15 +212,18 @@ public class AgentLoop {
                 throw new IllegalStateException("no_answer");
             }
             countCall(response.toolCall().isPresent() ? "tool_call" : "answer", started, response);
-            if (budget != null) {
-                budget.charge(response);
-            }
             return response;
         } catch (RuntimeException e) {
             countCall(timedOut(e) ? "timeout" : "error", started, null);
             throw e;
         } finally {
             answer.cancel(true);
+        }
+    }
+
+    private void settle(AgentBudget.Reservation reservation, ModelChatResponse response) {
+        if (budget != null) {
+            budget.settle(reservation, response);
         }
     }
 

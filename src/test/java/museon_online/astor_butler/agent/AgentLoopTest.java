@@ -103,7 +103,7 @@ class AgentLoopTest {
         when(model.chat(any())).thenAnswer(invocation -> {
             ModelChatRequest request = invocation.getArgument(0);
             requests.add(request);
-            return request.tools().isEmpty() ? text("Свободно в 14:00.") : call("table_availability", Map.of());
+            return request.answerOnly() ? text("Свободно в 14:00.") : call("table_availability", Map.of());
         });
         when(registry.invoke(any(), any(), anyMap())).thenReturn(CapabilityResult.ok(Map.of("available", false)));
 
@@ -114,8 +114,13 @@ class AgentLoopTest {
         assertThat(outcome.fallback()).isFalse();
         verify(registry, times(5)).invoke(any(), any(), anyMap());
         assertThat(requests).hasSize(6);
-        assertThat(requests.get(5).tools()).isEmpty();
-        assertThat(requests.subList(0, 5)).allSatisfy(request -> assertThat(request.tools()).hasSize(2));
+        // The last step still declares the tools (the history calls them) but asks for an answer only.
+        assertThat(requests.get(5).answerOnly()).isTrue();
+        assertThat(requests.get(5).tools()).hasSize(2);
+        assertThat(requests.subList(0, 5)).allSatisfy(request -> {
+            assertThat(request.tools()).hasSize(2);
+            assertThat(request.answerOnly()).isFalse();
+        });
     }
 
     @Test
