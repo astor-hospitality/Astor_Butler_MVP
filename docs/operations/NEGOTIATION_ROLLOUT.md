@@ -62,7 +62,13 @@ curl -sS "${GIGACHAT_API_URL:-https://gigachat.devices.sberbank.ru/api/v1}/chat/
 `AGENT_MODEL` у Консьержа) модель, которая на этом ключе отвечает `function_call` (`GigaChat-2-Pro`, запасной —
 `GigaChat-2`), и повторить запрос. С моделью без функций каждый ход агента уходит в запасной путь.
 
-Шаг 6 у Консьержа без `LLM_PROVIDER=gigachat` не включится (в логе `AGENT_ENABLED needs LLM_PROVIDER=gigachat`).
+Шаг 6 у Консьержа без модели с вызовом инструментов не включится (в логе `AGENT_ENABLED needs a model that calls tools`):
+нужен `LLM_PROVIDER=gigachat` или `openai-compatible`, либо только для агента `AGENT_LLM_PROVIDER=openai-compatible`.
+
+**Агенты на API Sber500 × Disrupt (с 15.10).** Только агенты переходят на OpenAI-совместимый API, всё остальное остаётся на
+своём провайдере: у Батлера `ASTOR_AGENT_PROVIDER=openai-compatible`, у Консьержа `AGENT_LLM_PROVIDER=openai-compatible`,
+плюс `OPENAI_COMPATIBLE_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY` и имя модели из `GET /models` в `ASTOR_AGENT_MODEL` /
+`AGENT_MODEL`. Проверка контракта и выбор модели — `SBER500_LLM_ACCEPTANCE.md`, выкладка и откат — `SBER500_LLM_ROLLOUT.md`.
 Батлер должен включить шаги 1, 4 и 6 раньше Консьержа: Консьерж ходит в `/api/ledger/v1/turns`, `/api/capabilities/v1/*`
 и `/api/negotiation/v1/turn` с `X-Astor-Internal-Token` (`ASTOR_INTERNAL_API_TOKEN` в обоих `.env`, уже заведён).
 
