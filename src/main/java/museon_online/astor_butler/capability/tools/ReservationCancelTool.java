@@ -61,7 +61,7 @@ public class ReservationCancelTool implements CapabilityTool {
 
     @Override
     public CapabilityResult invoke(CapabilityContext ctx, Map<String, Object> args) {
-        ReservationAccess.Checked checked = access.check(ctx, args);
+        ReservationAccess.Checked checked = access.checkOrOnly(ctx, args);
         if (!checked.allowed()) {
             return checked.error();
         }

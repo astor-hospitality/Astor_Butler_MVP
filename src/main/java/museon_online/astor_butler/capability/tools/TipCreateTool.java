@@ -73,7 +73,7 @@ public class TipCreateTool implements CapabilityTool {
         if (amount == null || amount < 1 || amount > MAX_RUB) {
             return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
         }
-        ReservationAccess.Checked checked = access.check(ctx, args);
+        ReservationAccess.Checked checked = access.checkOrOnly(ctx, args);
         if (!checked.allowed()) {
             return checked.error();
         }

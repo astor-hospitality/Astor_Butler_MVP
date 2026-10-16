@@ -14,6 +14,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -55,6 +56,22 @@ public class ReservationAccess {
             return new Checked(null, CapabilityResult.error(CapabilityResult.BAD_ARGUMENT));
         }
         return check(ctx, id.longValue());
+    }
+
+    /**
+     * Like {@link #check(CapabilityContext, Map)}, but when the given id is missing, unknown or not this guest's, and the
+     * Concierge session holds exactly one active booking, that booking is the one meant. Live test 16.10: on «отмените
+     * бронь» the model sent reservationId 1 for the guest's booking 9 and the guest heard «отменить нельзя». Not for the
+     * lunch order: a lunch must not land in another booking of the same guest.
+     */
+    public Checked checkOrOnly(CapabilityContext ctx, Map<String, Object> args) {
+        Checked direct = check(ctx, args);
+        if (direct.allowed() || ctx == null || ctx.butlerAgent() || !CapabilityContext.CONCIERGE.equals(ctx.caller())
+                || ctx.sessionId() == null || ctx.sessionId().isBlank()) {
+            return direct;
+        }
+        List<TableReservationOrder> held = orders.findActiveOrdersOfSession(ctx.sessionId(), ctx.visitId(), null);
+        return held != null && held.size() == 1 ? new Checked(held.get(0), null) : direct;
     }
 
     public Checked check(CapabilityContext ctx, long reservationId) {

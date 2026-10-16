@@ -69,7 +69,7 @@ public class TableRequestTool implements CapabilityTool {
         if (request.isEmpty()) {
             return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
         }
-        ReservationAccess.Checked checked = access.check(ctx, args);
+        ReservationAccess.Checked checked = access.checkOrOnly(ctx, args);
         if (!checked.allowed()) {
             return checked.error();
         }
