@@ -14,6 +14,7 @@ import museon_online.astor_butler.domain.booking.HostessReservationApprovalServi
 import museon_online.astor_butler.domain.booking.HostessSeatedService;
 import museon_online.astor_butler.domain.entry.StaffHandoffLinkCommandService;
 import museon_online.astor_butler.domain.lunch.scoreboard.LunchScoreboardCommandService;
+import museon_online.astor_butler.domain.roster.StaffScheduleTelegram;
 import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
 import museon_online.astor_butler.domain.tips.TipsStaffCommandService;
 import museon_online.astor_butler.service.message.IncomingMessage;
@@ -114,6 +115,10 @@ public class TelegramRouter {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private LunchScoreboardCommandService lunchScoreboardCommandService;
 
+    /** The schedule photo in the «График» topic, its buttons and /смена: optional for the same reason. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private StaffScheduleTelegram staffScheduleTelegram;
+
 
     public void handle(Update update, AbsSender sender) {
         try {
@@ -122,6 +127,10 @@ public class TelegramRouter {
             }
 
             if (handleCallback(update, sender)) {
+                return;
+            }
+            // The schedule topic and /смена in the staff group: before the hostess boundary, which consumes every staff text.
+            if (staffScheduleTelegram != null && staffScheduleTelegram.handle(update.getMessage(), sender)) {
                 return;
             }
 
@@ -183,6 +192,10 @@ public class TelegramRouter {
         Long chatId = callbackQuery.getMessage() == null ? null : callbackQuery.getMessage().getChatId();
         if (journeyEvents != null) {
             journeyEvents.guestMessage(chatId);
+        }
+
+        if (staffScheduleTelegram != null && staffScheduleTelegram.handleCallback(callbackQuery, sender)) {
+            return true;
         }
 
         TelegramVoiceReplyService.CallbackResult fullReply = voiceReplyService.handleCallback(callbackQuery.getData(), chatId, sender);

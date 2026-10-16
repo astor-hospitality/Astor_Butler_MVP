@@ -333,7 +333,8 @@ public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
         message.put("content", nullToEmpty(request.prompt()));
         message.put("attachments", List.of(fileId));
 
-        Map<?, ?> response = postJson("/chat/completions", completionBody(visionModel, List.of(message), visionMaxTokens));
+        Map<?, ?> response = postJson("/chat/completions", completionBody(visionModel, List.of(message),
+                request.maxTokens() != null && request.maxTokens() > 0 ? request.maxTokens() : visionMaxTokens));
 
         Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
         String text = readText(response);

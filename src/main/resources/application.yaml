@@ -268,6 +268,17 @@ astor:
       max-bytes: ${ASTOR_STAFF_EVIDENCE_MAX_BYTES:10485760}
       content-types: ${ASTOR_STAFF_EVIDENCE_CONTENT_TYPES:image/jpeg,image/png,image/webp,image/heic,image/heif}
       retention-days: ${ASTOR_STAFF_EVIDENCE_RETENTION_DAYS:30}
+    # The shift schedule from a photo in the staff group's «График» topic (docs/operations/STAFF_SHIFT_SCHEDULE.md):
+    # the vision model reads it, names are matched to astor_staff_members, «Верно» makes it the answer to «who is on
+    # shift» (StaffRoster, /смена). Off by default: the topic is not touched and /смена is unknown.
+    schedule:
+      enabled: ${ASTOR_STAFF_SCHEDULE_ENABLED:false}
+      chat-id: ${ASTOR_STAFF_SCHEDULE_CHAT_ID:-1002768239841}
+      thread-id: ${ASTOR_STAFF_SCHEDULE_THREAD_ID:4}
+      tenant: ${ASTOR_STAFF_SCHEDULE_TENANT:AERIS}
+      timezone: ${ASTOR_STAFF_SCHEDULE_TIMEZONE:Asia/Yekaterinburg}
+      max-tokens: ${ASTOR_STAFF_SCHEDULE_MAX_TOKENS:2048}
+      max-image-bytes: ${ASTOR_STAFF_SCHEDULE_MAX_IMAGE_BYTES:8388608}
   glasses:
     # The isolated glasses runtime repeats a staff question, Astor's answer and the photo of that request
     # to Butler, which puts them in the system chat and the shift feed. Off by default; both services need
