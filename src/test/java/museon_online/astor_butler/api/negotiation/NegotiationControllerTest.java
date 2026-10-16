@@ -79,6 +79,25 @@ class NegotiationControllerTest {
     }
 
     @Test
+    void theGuestsTelegramUserIdIsOptional() throws Exception {
+        when(agent.negotiate(any())).thenReturn(new NegotiationReply("Отменили.", null, List.of(), null, false));
+        String named = BODY.replace("\"guestConsent\":true}", "\"guestConsent\":true,\"guestTelegramUserId\":777001}");
+
+        mvc.perform(post("/api/negotiation/v1/turn").header(InternalApiGuardFilter.HEADER, TOKEN)
+                        .contentType("application/json").content(named))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/negotiation/v1/turn").header(InternalApiGuardFilter.HEADER, TOKEN)
+                        .contentType("application/json").content(BODY))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<NegotiationTurn> turn = ArgumentCaptor.forClass(NegotiationTurn.class);
+        verify(agent, org.mockito.Mockito.times(2)).negotiate(turn.capture());
+        assertThat(turn.getAllValues().get(0).guestTelegramUserId()).isEqualTo(777001L);
+        assertThat(turn.getAllValues().get(0).guestConsent()).isTrue();
+        assertThat(turn.getAllValues().get(1).guestTelegramUserId()).isNull();
+    }
+
+    @Test
     void aTurnWithoutSessionIsABadRequest() throws Exception {
         mvc.perform(post("/api/negotiation/v1/turn").header(InternalApiGuardFilter.HEADER, TOKEN)
                         .contentType("application/json").content("{\"guestText\":\"стол\"}"))
