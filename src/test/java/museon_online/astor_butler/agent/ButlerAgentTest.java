@@ -354,4 +354,32 @@ class ButlerAgentTest {
         String system = histories.get(0).get(0).content();
         assertThat(system).contains("Сегодня: 2026-10-15, четверг").contains("YYYY-MM-DD").contains("завтра");
     }
+
+    /** Live test 16.10: «Напишите коды блюд… SALAD_COLESLAW» reached the guest. */
+    @Test
+    void theGuestNeverReadsAnInternalDishCode() {
+        agent.setLunchCatalog(new museon_online.astor_butler.domain.lunch.BusinessLunchCatalog(List.of(LunchDishNamesTest.AERIS)));
+        loopAnswers(new AgentOutcome("Напишите коды блюд, например SALAD_COLESLAW.", List.of(), false, 0));
+
+        NegotiationReply reply = agent.negotiate(turn(9L, "хочу бизнес-ланч"));
+        Optional<String> bot = agent.reply(guest(501L, "хочу бизнес-ланч"), 9L);
+
+        assertThat(reply.butlerText()).isEqualTo("Напишите коды блюд, например Салат коул слоу.");
+        assertThat(bot).contains("Напишите коды блюд, например Салат коул слоу.");
+    }
+
+    /** «Хочу чизкейк с собой», then «Да»: the yes turn still carries the guest's request to pack. */
+    @Test
+    void theTakeawayOfTheTurnBeforeReachesTheTools() {
+        loopAnswers(new AgentOutcome("Завернуть то, что в заказе, или добавить ещё одну порцию?", List.of(), false, 0));
+
+        agent.reply(guest(501L, "Хочу чизкейк с собой"), 9L);
+        agent.reply(guest(501L, "Да"), 9L);
+        agent.reply(guest(501L, "Добавьте ещё одну"), 9L);
+
+        assertThat(contexts.get(0).agreement().takeaway()).isTrue();
+        assertThat(contexts.get(1).agreement().takeaway()).isTrue();
+        assertThat(contexts.get(1).agreement().yes()).isTrue();
+        assertThat(contexts.get(2).agreement().takeaway()).isFalse();
+    }
 }

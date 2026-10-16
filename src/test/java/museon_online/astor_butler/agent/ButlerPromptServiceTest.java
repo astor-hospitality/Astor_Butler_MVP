@@ -101,4 +101,20 @@ class ButlerPromptServiceTest {
     void theGuestTextsUseTheEnDashAndYo() {
         assertThat(prompt).contains("Тире – короткое «–», буква «ё» на месте").doesNotContain("—");
     }
+
+    /** Live test 16.10: the model asked the guest for dish codes and did not show the menu. */
+    @Test
+    void theMenuIsShownFirstAndCodesNeverReachTheGuest() {
+        assertThat(prompt).contains("На первое сообщение гостя о ланче вызови lunch_menu и сразу покажи меню из text",
+                "Никогда не проси у гостя коды и не показывай их", "так и передавай их в dishCodes");
+    }
+
+    @Test
+    void portionsTakeawayAndAnUnconfirmedKitchenAreRules() {
+        assertThat(prompt).contains("повтори блюдо в dishCodes по разу на порцию", "items с count");
+        assertThat(prompt).contains("«С собой», «упакуйте», «заверните» о блюде, которое уже в заказе, – не новый заказ",
+                "«Завернуть то, что в заказе, или добавить ещё одну порцию?»", "table_request \nс WAITER".replace("\n", ""));
+        assertThat(prompt).contains("kitchenConfirmed=false", "«Заказ передал официанту, он внесёт его в кассу.»",
+                "никогда не «оформлен»");
+    }
 }

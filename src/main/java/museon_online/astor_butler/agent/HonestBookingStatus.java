@@ -17,6 +17,11 @@ import java.util.regex.Pattern;
  * AWAITING_HOSTESS, the model wrote «Ваш стол у окна на 13:00 забронирован»). When the turn's last successful
  * reservation_create is not CONFIRMED and the reply claims confirmation, the reply is replaced by a fixed honest text
  * built from the tool's facts.
+ *
+ * <p>The same for a lunch the kitchen has not got (live test 16.10: Saby answered PROVIDER_RESULT_UNKNOWN and the guest
+ * read «заказ оформлен»): when the turn's last placed lunch says {@code kitchenConfirmed=false}, a sentence that claims the
+ * order is made or with the kitchen becomes «Заказ передал официанту, он внесёт его в кассу.», and that sentence is there
+ * even when the model said nothing of it.
  */
 final class HonestBookingStatus {
 
@@ -28,10 +33,20 @@ final class HonestBookingStatus {
     private static final Pattern CREATED = Pattern.compile("(?<!не )(забронирован|оформлен|бронь создана|заявка создана"
             + "|заявка передана|заявку передал|передал хостес|передала хостес|ждет подтверждения|ждем вас|ожидаем вас)");
 
+    /** A lunch claimed as made or with the kitchen; not under «не». Text is lower case, ё as е. */
+    private static final Pattern LUNCH_CLAIM = Pattern.compile("(?<!не )(оформлен|оформил|принят|приняли|заказ подтвержден"
+            + "|(передан|передал|отправлен|отправил)\\S* (на кухню|в кухню|повар|в saby|в кассу)|кухня (уже )?(готовит|получила)"
+            + "|готовим|уже готовят|пробит)");
+    private static final Pattern SENTENCE_END = Pattern.compile("(?<=[.!?…])\\s+");
+
     private HonestBookingStatus() {
     }
 
     static String guard(String text, List<AgentOutcome.ToolUse> uses) {
+        return lunch(booking(text, uses), uses);
+    }
+
+    private static String booking(String text, List<AgentOutcome.ToolUse> uses) {
         Map<String, Object> booking = lastBooking(uses);
         if (text == null || booking == null || "CONFIRMED".equalsIgnoreCase(value(booking.get("status")))
                 || !claimsConfirmation(text)) {
@@ -39,6 +54,57 @@ final class HonestBookingStatus {
         }
         log.warn("Butler reply claimed an unconfirmed booking: status={}, replaced with the honest text", booking.get("status"));
         return honest(booking);
+    }
+
+    /** The last lunch placed this turn that the kitchen's system did not take ({@code kitchenConfirmed=false}); else null. */
+    static Map<String, Object> unconfirmedLunch(List<AgentOutcome.ToolUse> uses) {
+        if (uses == null) {
+            return null;
+        }
+        for (int i = uses.size() - 1; i >= 0; i--) {
+            AgentOutcome.ToolUse use = uses.get(i);
+            if ("lunch_order_place".equals(use.tool()) && use.result() != null && use.result().ok()) {
+                Map<String, Object> facts = use.result().facts();
+                return facts != null && Boolean.FALSE.equals(facts.get("kitchenConfirmed")) ? facts : null;
+            }
+        }
+        return null;
+    }
+
+    private static String lunch(String text, List<AgentOutcome.ToolUse> uses) {
+        Map<String, Object> lunch = unconfirmedLunch(uses);
+        if (text == null || lunch == null) {
+            return text;
+        }
+        String handed = handed(lunch);
+        List<String> kept = new ArrayList<>();
+        boolean replaced = false;
+        for (String sentence : SENTENCE_END.split(text.trim())) {
+            String lower = sentence.toLowerCase(Locale.ROOT).replace('ё', 'е');
+            if (LUNCH_CLAIM.matcher(lower).find() && (lower.contains("заказ") || lower.contains("ланч")
+                    || lower.contains("блюд") || lower.contains("кухн"))) {
+                if (!replaced) {
+                    kept.add(handed);
+                    replaced = true;
+                }
+            } else {
+                kept.add(sentence);
+            }
+        }
+        if (replaced) {
+            log.warn("Butler reply claimed a lunch the kitchen has not got: sabyStatus={}, the claim was replaced",
+                    lunch.get("sabyStatus"));
+        } else if (!text.toLowerCase(Locale.ROOT).contains("официант")) {
+            kept.add(handed);
+        }
+        return String.join(" ", kept);
+    }
+
+    private static String handed(Map<String, Object> lunch) {
+        Object total = lunch.get("totalRub");
+        return total instanceof Number sum
+                ? "Заказ на " + sum + " ₽ передал официанту, он внесёт его в кассу."
+                : "Заказ передал официанту, он внесёт его в кассу.";
     }
 
     /**
