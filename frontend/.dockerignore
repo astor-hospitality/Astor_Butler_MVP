@@ -6,3 +6,9 @@ node_modules
 npm-debug.log*
 *.tsbuildinfo
 .DS_Store
+# media is served from S3 (NEXT_PUBLIC_MEDIA_BASE_URL), never baked into the image
+public/media
+tools
+# not part of the Next.js app: the Astor static site is served by astor-site from the checkout, the archive data is for scripts
+astor-butler
+data

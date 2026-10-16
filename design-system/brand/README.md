@@ -10,12 +10,12 @@
 | Сайт | Как подключен | Что менять при смене шрифта |
 | --- | --- | --- |
 | Astor (`frontend/astor-butler`, статика без сборки) | копия `frontend/astor-butler/css/brand-typography.css`, первая `<link rel="stylesheet">` на каждой странице; `style.css`, `feed.css`, `staff.css`, `docs/docs.css` берут семейство и веса из `--brand-*` | только копию (см. ниже) |
-| c3ag.ru (`frontend/`, Next.js) | шрифт грузит `next/font` в `frontend/app/layout.tsx`, переменная `--font-body`; токены `--f-body` / `--f-heading` и блок «Minimal skin» в `frontend/app/globals.css` | `layout.tsx` (гарнитура и веса) и, если менялись трекинги, `globals.css` |
+| c3ag.ru (`frontend/`, сайт студии C3, Next.js) | свой шрифт студии, не бренд-токены Astor: `@font-face` из хранилища медиа (S3) в `frontend/src/app/fonts.ts`, см. `frontend/DEPLOY_C3_SITE.md` | только `frontend/src/app/fonts.ts`; смена шрифта Astor сайт студии не затрагивает |
 
 Синхронность копии проверяет `frontend/astor-butler/tests/brand-typography.test.mjs`:
 копия должна совпадать с `typography.css` байт в байт, каждая страница Astor должна подключать
-ее первой, а `layout.tsx` должен импортировать первое имя из `--brand-font-family` из
-`next/font/google` (для self-hosted шрифта - `localFont(...)` с этим именем в `src`).
+ее первой, а сайт студии C3 должен объявлять свои шрифты только в `frontend/src/app/fonts.ts`
+и не ходить в сервисы шрифтов.
 
 ## Как поменять шрифт, когда придет новый
 
@@ -31,11 +31,8 @@
    cp design-system/brand/typography.css frontend/astor-butler/css/brand-typography.css
    ```
 
-3. В `frontend/app/layout.tsx` заменить `Inter` из `next/font/google` на новую гарнитуру
-   (для файла шрифта - `localFont` из `next/font/local`, имя семейства в пути `src`),
-   сохранив `variable: "--font-body"` и веса из токенов. c3ag грузит ещё вес 300 для
-   своих нужд - это его локальное решение, в бренд-токены он не входит.
-   Если менялись трекинги - поправить блок «Minimal skin» в `frontend/app/globals.css`.
+3. Сайт c3ag.ru (студия C3) от бренд-токенов Astor не зависит, его шрифт меняется отдельно
+   в `frontend/src/app/fonts.ts`.
 4. Проверить:
 
    ```bash

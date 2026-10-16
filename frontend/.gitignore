@@ -1,1 +1,24 @@
+# dependencies and builds
+/node_modules
+/.next/
+/out/
+/build
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel and env files: never in git
 .vercel
+.env
+.env.*
+
+# Media (photos, video, audio, models, fonts) is never committed: it lives in S3 and is reached through
+# NEXT_PUBLIC_MEDIA_BASE_URL. For local work the same files go here (see DEPLOY_C3_SITE.md).
+/public/media/
+
+# the design tools of the site live outside this repository
+/tools/
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
