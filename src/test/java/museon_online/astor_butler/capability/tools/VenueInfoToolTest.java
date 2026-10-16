@@ -26,6 +26,15 @@ class VenueInfoToolTest {
         assertThat(facts.values()).containsOnlyNulls();
     }
 
+    /** Run 16.10: «Уточню у команды про парковку», while the agent has no way to ask the team. */
+    @Test
+    void aMissingFactIsToBeSaidHonestlyNotPromised() {
+        String description = new VenueInfoTool(new VenueFactsCatalog(VenueFacts.none()), new CapabilityProperties()).description();
+
+        assertThat(description).contains("не обещай уточнить у команды", "честно скажи, что таких сведений пока нет")
+                .doesNotContain("предложи уточнить");
+    }
+
     @Test
     void knownFactsAreGiven() {
         VenueInfoTool tool = new VenueInfoTool(

@@ -40,6 +40,13 @@ class ReservationCancelToolTest {
         tool = new ReservationCancelTool(reservations, new ReservationAccess(orders, visits, turns));
     }
 
+    /** Run 16.10: «нет, это тест» to an order summary sent the agent looking for a booking to cancel. */
+    @Test
+    void theModelIsToldToCancelOnlyOnADirectRequest() {
+        assertThat(tool.description()).contains("только когда гость прямо просит её отменить",
+                "«Нет» на перечень заказа или на предложение стола — не просьба об отмене");
+    }
+
     @Test
     void someoneElsesReservationIsNotAllowed() {
         when(orders.findOrder(41L)).thenReturn(Optional.of(CapabilityFixtures.order(41L, 999L, TableReservationStatus.CONFIRMED)));
