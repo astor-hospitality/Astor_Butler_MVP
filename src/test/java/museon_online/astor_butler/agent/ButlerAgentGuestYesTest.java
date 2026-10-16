@@ -100,6 +100,8 @@ class ButlerAgentGuestYesTest {
         ReservationAccess access = mock(ReservationAccess.class);
         when(access.check(any(), anyMap())).thenReturn(new ReservationAccess.Checked(
                 CapabilityFixtures.order(42L, null, TableReservationStatus.CONFIRMED), null));
+        when(access.checkOrOnly(any(), anyMap())).thenReturn(new ReservationAccess.Checked(
+                CapabilityFixtures.order(42L, null, TableReservationStatus.CONFIRMED), null));
         CapabilityRegistry registry = new CapabilityRegistry(List.of(ReservationCreateToolTest.tool(reservations), new FreeAtSeven(),
                 new ReservationCancelTool(reservations, access),
                 new ReservationChangeTool(reservations, access, new museon_online.astor_butler.domain.journey.GuestJourneyProperties())),

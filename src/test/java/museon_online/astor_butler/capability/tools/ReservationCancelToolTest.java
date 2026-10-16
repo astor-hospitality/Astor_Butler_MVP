@@ -2,6 +2,7 @@ package museon_online.astor_butler.capability.tools;
 
 import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.GuestAgreement;
+import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
@@ -18,6 +19,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -122,5 +124,32 @@ class ReservationCancelToolTest {
         CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 404));
 
         assertThat(result.error()).isEqualTo(CapabilityResult.NOT_FOUND);
+    }
+
+    /** Live test 16.10: «отмените бронь» came with reservationId 1 for the guest's booking 9; the guest heard «нельзя». */
+    @Test
+    void anInventedIdMeansTheSessionsOnlyBooking() {
+        TableReservationOrder nine = CapabilityFixtures.order(9L, null, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION);
+        when(orders.findActiveOrdersOfSession(eq(CapabilityFixtures.SESSION), any(), any())).thenReturn(List.of(nine));
+        when(reservations.cancelByGuest(9L)).thenReturn(CapabilityFixtures.order(9L, null, TableReservationStatus.CANCELLED));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", GuestAgreement.of("отмените бронь", List.of())),
+                Map.of("reservationId", 1));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("reservationId", 9L).containsEntry("status", "CANCELLED");
+    }
+
+    @Test
+    void withTwoBookingsAnInventedIdStaysRefused() {
+        when(orders.findActiveOrdersOfSession(eq(CapabilityFixtures.SESSION), any(), any())).thenReturn(List.of(
+                CapabilityFixtures.order(9L, null, TableReservationStatus.CONFIRMED),
+                CapabilityFixtures.order(10L, null, TableReservationStatus.CONFIRMED)));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", GuestAgreement.of("отмените бронь", List.of())),
+                Map.of("reservationId", 1));
+
+        assertThat(result.error()).isEqualTo(CapabilityResult.NOT_FOUND);
+        verify(reservations, never()).cancelByGuest(any());
     }
 }
