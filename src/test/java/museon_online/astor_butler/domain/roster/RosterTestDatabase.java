@@ -32,6 +32,8 @@ final class RosterTestDatabase implements AutoCloseable {
             Connection schema = dataSource.getConnection();
             ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-05-staff-portal.sql"));
             ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-16-staff-shift-schedule.sql"));
+            ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-12-tips-personal.sql"));
+            ScriptUtils.executeSqlScript(schema, new ClassPathResource("db/changelog/2026-10-16-waiter-zones.sql"));
             return new RosterTestDatabase(schema, new JdbcTemplate(dataSource));
         } catch (SQLException e) {
             throw new IllegalStateException("Cannot build the roster test database", e);
