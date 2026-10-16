@@ -156,15 +156,13 @@ public class AgentLoop {
             }
             ModelChatResponse response;
             try {
-                response = ask(messages, offered, !toolsAllowed, ctx, deadline, auditContent);
+                // ask settles the reservation: by the answer's price, or by how the call ended (see AgentBudget).
+                response = ask(messages, offered, !toolsAllowed, ctx, deadline, auditContent, reservation);
             } catch (RuntimeException e) {
-                // A timed-out or failed call may still be charged: it keeps its whole reservation.
-                settle(reservation, null);
                 log.warn("Agent turn falls back: calls={}, reason={}", calls, reason(e));
                 countTurn("fallback", timedOut(e) ? "timeout" : "model_error");
                 return AgentOutcome.fallback(uses, calls);
             }
-            settle(reservation, response);
             if (toolsAllowed && response.toolCall().isPresent()) {
                 calls++;
                 ModelToolCall call = response.toolCall().get();
@@ -188,13 +186,22 @@ public class AgentLoop {
         }
     }
 
-    /** One model call bounded by the per-call timeout and what is left of the turn. */
-    /** @param answerOnly the last step: the tools are only declared (the history calls them), the model must answer */
+    /**
+     * One model call bounded by the per-call timeout and what is left of the turn; it settles {@code reservation}.
+     * A call cut off by the timeout keeps running on its own thread until the gateway's own timeouts end it, and its
+     * reservation is settled then: by the late answer's price, or released when it ends with an error that cost nothing.
+     * No database connection is held while the model thinks: the budget and the call log each take one only for their
+     * own statement.
+     *
+     * @param answerOnly the last step: the tools are only declared (the history calls them), the model must answer
+     */
     private ModelChatResponse ask(List<ModelChatMessage> messages, List<ModelTool> tools, boolean answerOnly, CapabilityContext ctx,
-                                  long deadline, boolean auditContent) {
+                                  long deadline, boolean auditContent, AgentBudget.Reservation reservation) {
         long left = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
         if (left <= 0) {
-            throw new IllegalStateException("turn_timeout");
+            // Never sent: the reservation goes back whole.
+            release(reservation);
+            throw new IllegalStateException(AgentBudget.NOT_SENT);
         }
         long timeout = Math.min(Math.max(1, properties.getModelTimeoutMs()), left);
         ModelChatRequest request = new ModelChatRequest(List.copyOf(messages), tools, ModelProfile.FRONTLINE, "butler_agent",
@@ -202,23 +209,44 @@ public class AgentLoop {
                 answerOnly && !tools.isEmpty());
         ToolCallingModel current = currentModel();
         long started = System.nanoTime();
-        CompletableFuture<ModelChatResponse> answer = CompletableFuture.supplyAsync(
-                        // The call log names the guest and the message of the calling thread.
-                        CallLogContext.propagate(() -> current.chat(request)), MODEL_CALLS)
-                .orTimeout(timeout, TimeUnit.MILLISECONDS);
+        CompletableFuture<ModelChatResponse> call = CompletableFuture.supplyAsync(
+                // The call log names the guest and the message of the calling thread.
+                CallLogContext.propagate(() -> current.chat(request)), MODEL_CALLS);
+        // The turn waits on a copy: its timeout leaves the call itself to finish and be settled by what it returns.
+        CompletableFuture<ModelChatResponse> answer = call.copy().orTimeout(timeout, TimeUnit.MILLISECONDS);
+        ModelChatResponse response;
         try {
-            ModelChatResponse response = answer.join();
-            if (response == null) {
-                throw new IllegalStateException("no_answer");
-            }
-            countCall(response.toolCall().isPresent() ? "tool_call" : "answer", started, response);
-            return response;
+            response = answer.join();
         } catch (RuntimeException e) {
             countCall(timedOut(e) ? "timeout" : "error", started, null);
+            settleWhenDone(call, reservation);
             throw e;
-        } finally {
-            answer.cancel(true);
         }
+        settle(reservation, response);
+        if (response == null) {
+            countCall("error", started, null);
+            throw new IllegalStateException("no_answer");
+        }
+        countCall(response.toolCall().isPresent() ? "tool_call" : "answer", started, response);
+        return response;
+    }
+
+    /** Settles the reservation of a call that did not answer in time once it ends (at once when it already has). */
+    private void settleWhenDone(CompletableFuture<ModelChatResponse> call, AgentBudget.Reservation reservation) {
+        if (budget == null) {
+            return;
+        }
+        call.whenComplete((late, error) -> {
+            try {
+                if (error != null) {
+                    budget.settleFailure(reservation, error);
+                } else {
+                    budget.settle(reservation, late);
+                }
+            } catch (RuntimeException e) {
+                log.warn("Agent model call was not settled: reason={}", e.getClass().getSimpleName());
+            }
+        });
     }
 
     private void settle(AgentBudget.Reservation reservation, ModelChatResponse response) {
@@ -227,10 +255,16 @@ public class AgentLoop {
         }
     }
 
+    private void release(AgentBudget.Reservation reservation) {
+        if (budget != null) {
+            budget.release(reservation);
+        }
+    }
+
     private static boolean timedOut(Throwable e) {
         Throwable cause = e;
         for (int depth = 0; cause != null && depth < 8; depth++, cause = cause.getCause()) {
-            if (cause instanceof TimeoutException || "turn_timeout".equals(cause.getMessage())) {
+            if (cause instanceof TimeoutException || AgentBudget.NOT_SENT.equals(cause.getMessage())) {
                 return true;
             }
         }

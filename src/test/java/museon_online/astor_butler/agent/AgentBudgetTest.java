@@ -2,6 +2,7 @@ package museon_online.astor_butler.agent;
 
 import museon_online.astor_butler.domain.calllog.ModelTariff;
 import museon_online.astor_butler.model.ModelChatResponse;
+import museon_online.astor_butler.model.ModelUnavailableException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -9,11 +10,18 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Duration;
@@ -25,10 +33,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -116,15 +126,48 @@ class AgentBudgetTest {
     }
 
     @Test
-    void anUnknownPriceATimeoutOrAFailureKeepsTheWholeReservation() {
+    void anUnknownPriceOrAnErrorThatSaysNothingKeepsTheWholeReservation() {
         AgentBudget budget = budget("10", "1");
         ModelChatResponse unpriced = new ModelChatResponse("ok", Optional.empty(), "openai-compatible", "no-tariff-model",
                 Duration.ZERO, Map.of("usage", Map.of("prompt_tokens", 1000, "completion_tokens", 10)));
 
         budget.settle(budget.reserve(), unpriced);
         budget.settle(budget.reserve(), null);
+        budget.settleFailure(budget.reserve(), new CompletionException(new IllegalArgumentException("unreadable answer")));
 
-        assertThat(budget.spentToday()).isEqualTo(2.0, within(1e-9));
+        assertThat(budget.spentToday()).isEqualTo(3.0, within(1e-9));
+    }
+
+    @Test
+    void aTimeoutAnHttpErrorOrACallNeverSentGivesTheReservationBack() {
+        AgentBudget budget = budget("10", "3");
+
+        budget.settleFailure(budget.reserve(), new CompletionException(new TimeoutException()));
+        budget.settleFailure(budget.reserve(), new ModelUnavailableException("did not answer in time",
+                new ResourceAccessException("read timed out", new SocketTimeoutException("Read timed out"))));
+        budget.settleFailure(budget.reserve(), new ModelUnavailableException("could not be reached",
+                new ResourceAccessException("refused", new ConnectException("Connection refused"))));
+        budget.settleFailure(budget.reserve(), new ModelUnavailableException("HTTP 503",
+                HttpServerErrorException.create(HttpStatus.SERVICE_UNAVAILABLE, "busy", new HttpHeaders(), new byte[0], null)));
+        budget.settleFailure(budget.reserve(), new IllegalStateException("HTTP 400",
+                HttpClientErrorException.create(HttpStatus.BAD_REQUEST, "bad", new HttpHeaders(), new byte[0], null)));
+        budget.settleFailure(budget.reserve(), new IllegalStateException(AgentBudget.NOT_SENT));
+        budget.release(budget.reserve());
+
+        assertThat(budget.spentToday()).isZero();
+        assertThat(jdbc.queryForObject("SELECT reserved_rub FROM agent_budget_days", BigDecimal.class)).isEqualByComparingTo("0");
+    }
+
+    @Test
+    void anHttpErrorThatTheProviderChargedCostsWhatItSaid() {
+        AgentBudget budget = budget("10", "3");
+        HttpHeaders headers = new HttpHeaders();
+        headers.set(AgentBudget.COST_HEADER, "0.042");
+
+        budget.settleFailure(budget.reserve(), new ModelUnavailableException("HTTP 429",
+                HttpClientErrorException.create(HttpStatus.TOO_MANY_REQUESTS, "slow down", headers, new byte[0], null)));
+
+        assertThat(budget.spentToday()).isEqualTo(0.042, within(1e-9));
     }
 
     @Test

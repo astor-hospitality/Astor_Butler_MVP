@@ -9,12 +9,14 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
+import java.util.Optional;
 import java.util.OptionalLong;
 
 /**
  * The only way into the visit ledger. With the flag off it touches nothing; phones are masked and turns without the
  * guest's consent lose their text before writing; a failure is logged and never reaches the guest, the booking or the
- * scenario. Each written turn publishes {@link VisitTurnAppended}.
+ * scenario. Each written turn publishes {@link VisitTurnAppended}. A Concierge turn written without a visit goes into
+ * the visit its session is already linked to (or its booking's visit), so a session's turns never fall out of it.
  */
 @Component
 public class LedgerWriter {
@@ -55,16 +57,58 @@ public class LedgerWriter {
         if (!properties.isEnabled() || draft == null) {
             return OptionalLong.empty();
         }
+        VisitTurnDraft turn = draft.withText(draft.hidden() ? null : PhoneMask.mask(draft.text()));
+        if (turn.visitId() == null && turn.sessionId() != null && !turn.sessionId().isBlank()) {
+            // A session already linked to a visit writes into it: its turns never fall out of the visit again.
+            turn = turn.withVisit(sessionVisit(turn.sessionId()));
+        }
         long id;
         try {
-            id = turns.append(draft.withText(draft.hidden() ? null : PhoneMask.mask(draft.text())));
+            id = turns.append(turn);
         } catch (RuntimeException e) {
-            log.warn("Visit turn not written: visit={}, side={}, kind={}, reason={}", draft.visitId(), draft.side(), draft.kind(),
+            log.warn("Visit turn not written: visit={}, side={}, kind={}, reason={}", turn.visitId(), turn.side(), turn.kind(),
                     e.getClass().getSimpleName());
             return OptionalLong.empty();
         }
-        announce(draft.visitId());
+        announce(turn.visitId());
         return OptionalLong.of(id);
+    }
+
+    /**
+     * The visit of a session's own booking whose visit was opened after the booking (so nothing linked the session to
+     * it then); the session's earlier turns are moved into it on the way. Empty while there is none or on failure.
+     */
+    public Optional<Long> visitBookedBy(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            for (Long reservationId : turns.reservationsBookedBy(sessionId)) {
+                Optional<GuestVisit> visit = visits.findByReservation(reservationId);
+                if (visit.isPresent() && visit.get().id() != null) {
+                    long visitId = visit.get().id();
+                    linkSession(sessionId, visitId);
+                    return Optional.of(visitId);
+                }
+            }
+        } catch (RuntimeException e) {
+            log.warn("Visit of a session's booking not found: reason={}", e.getClass().getSimpleName());
+        }
+        return Optional.empty();
+    }
+
+    /** The visit the session is linked to, else the visit of its booking; null when neither is known. */
+    private Long sessionVisit(String sessionId) {
+        try {
+            Optional<Long> linked = turns.visitOfSession(sessionId);
+            if (linked != null && linked.isPresent()) {
+                return linked.get();
+            }
+        } catch (RuntimeException e) {
+            log.warn("Visit of a session not read for the ledger: reason={}", e.getClass().getSimpleName());
+            return null;
+        }
+        return visitBookedBy(sessionId).orElse(null);
     }
 
     /** A chat message, written into the visit whose window holds now (or with no visit when there is none). */

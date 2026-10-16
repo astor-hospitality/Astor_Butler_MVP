@@ -1033,6 +1033,67 @@ class TableReservationServiceTest {
                 !candidates.isEmpty(), true, "SABY", status, "", List.of(), Map.of("candidates", candidates, "hasMore", false));
     }
 
+    /** 18:00 → 18:30 of #12 (16.10): what the guest's move left in Presto decides the hostess's one line. */
+    private TableReservationOrder movedByGuest(String externalId, ExternalReservationResult sync, boolean update) {
+        VenueTable table = table(5L, "5", 4, true, true);
+        TableReservationOrder current = withExternalId(order(12L, table, TableReservationStatus.CONFIRMED), externalId);
+        Instant newStart = Instant.parse("2026-06-06T17:30:00Z");
+        Instant newEnd = Instant.parse("2026-06-06T19:30:00Z");
+        TableReservationOrder base = order(12L, table);
+        TableReservationOrder changed = withExternalId(new TableReservationOrder(base.id(), base.chatId(), base.telegramUserId(),
+                base.userId(), base.tableId(), base.tableCode(), base.tableDisplayName(), base.preferredZone(), base.seatingPreference(),
+                base.status(), base.source(), newStart, newEnd, base.partySize(), base.guestName(), base.guestPhone(),
+                base.guestComment(), base.managerTelegramId(), base.managerUserId(), base.hostessChatId(), null, base.createdAt(),
+                base.updatedAt()), externalId);
+        when(externalProvider.checkAvailability(any())).thenReturn(externalAnswer("AVAILABLE", "5"));
+        when(repository.findTables("AERIS")).thenReturn(List.of(table));
+        when(repository.findOrder(12L)).thenReturn(Optional.of(current));
+        when(repository.findTableByCode("AERIS", "5")).thenReturn(Optional.of(table));
+        when(repository.changeReservation(eq(12L), any(TableReservationChangeCommand.class), eq(table))).thenReturn(changed);
+        if (update) {
+            when(externalProvider.updateReservation(eq(externalId), any(), eq("12"))).thenReturn(sync);
+        } else {
+            when(externalProvider.reserve(any(), eq("12"))).thenReturn(sync);
+            if (sync.created()) {
+                when(repository.attachExternalId(12L, sync.externalReservationId())).thenReturn(withExternalId(changed, sync.externalReservationId()));
+            }
+        }
+        return service.changeByGuest(12L, new TableReservationChangeCommand("AERIS", null, null, null, newStart, newEnd, 3, null));
+    }
+
+    @Test
+    void aMovePrestoDidNotTakeKeepsTheChangeAndTellsTheHostessInOneLine() {
+        TableReservationOrder result = movedByGuest("saby-1", externalResult(false, "PROVIDER_RESULT_UNKNOWN", ""), true);
+
+        assertThat(result.requestedStartAt()).isEqualTo(Instant.parse("2026-06-06T17:30:00Z"));
+        verify(notificationService).notifyHostessChangeNotSynced(result);
+        assertThat(TableReservationNotificationService.hostessChangeNotSyncedText(result))
+                .isEqualTo("Перенос брони #12 не дошёл до Saby — поправьте время в кассе");
+    }
+
+    @Test
+    void aMoveOfABookingButlerNeverGotAnIdForIsOneLineToo() {
+        // The create was «Saby did not say»: the same key replays that answer and nothing reaches Presto.
+        TableReservationOrder result = movedByGuest(null, externalResult(false, "PROVIDER_RESULT_UNKNOWN", ""), false);
+
+        verify(notificationService).notifyHostessChangeNotSynced(result);
+    }
+
+    @Test
+    void aMoveRewrittenInPrestoOrCreatedThereAtTheNewTimeNeedsNoLine() {
+        movedByGuest("saby-1", externalResult(true, "SABY_ORDER_UPDATED", "saby-1"), true);
+        movedByGuest(null, externalResult(true, "SABY_ORDER_CREATED_UNCONFIRMED", "saby-2"), false);
+
+        verify(notificationService, never()).notifyHostessChangeNotSynced(any());
+    }
+
+    @Test
+    void withPrestoSwitchedOffAMoveNeedsNoLine() {
+        movedByGuest(null, ExternalReservationResult.rejectedBecauseUnconfigured("SABY", List.of()), false);
+
+        verify(notificationService, never()).notifyHostessChangeNotSynced(any());
+    }
+
     private ExternalReservationResult externalResult(boolean created, String status, String externalId) {
         return new ExternalReservationResult(created, true, "SABY", status, externalId, "", List.of(), Map.of());
     }

@@ -89,6 +89,28 @@ public class VisitTurnRepository {
         return found.stream().findFirst();
     }
 
+    /**
+     * The reservations the session's own bookings made, newest first: the successful {@code reservation_create} results
+     * the capability registry wrote under the session. Read when the session has no visit yet, e.g. when the booking's
+     * visit was opened later than the booking itself.
+     */
+    public List<Long> reservationsBookedBy(String sessionId) {
+        if (sessionId == null) {
+            return List.of();
+        }
+        List<String> payloads = jdbc.queryForList("SELECT payload FROM visit_turns WHERE session_id = ? AND kind = ? AND text = ? "
+                + "ORDER BY id DESC LIMIT 10", String.class, sessionId, TurnKind.TOOL_RESULT.name(), "reservation_create");
+        List<Long> reservations = new java.util.ArrayList<>();
+        for (String json : payloads) {
+            Map<String, Object> payload = map(json);
+            if (payload != null && Boolean.TRUE.equals(payload.get("ok")) && payload.get("facts") instanceof Map<?, ?> facts
+                    && facts.get("reservationId") instanceof Number id && !reservations.contains(id.longValue())) {
+                reservations.add(id.longValue());
+            }
+        }
+        return reservations;
+    }
+
     /** A Concierge session linked to the visit (the latest turn that has one); empty when the visit has none. */
     public Optional<String> sessionOf(long visitId) {
         List<String> found = jdbc.queryForList("SELECT session_id FROM visit_turns WHERE visit_id = ? AND session_id IS NOT NULL "

@@ -13,6 +13,10 @@ public record VisitTurnDraft(Long visitId, String sessionId, TurnSide side, Turn
         return payload != null && Boolean.TRUE.equals(payload.get("hidden"));
     }
 
+    VisitTurnDraft withVisit(Long newVisitId) {
+        return new VisitTurnDraft(newVisitId, sessionId, side, channel, kind, text, payload, goal);
+    }
+
     VisitTurnDraft withText(String newText) {
         return new VisitTurnDraft(visitId, sessionId, side, channel, kind, newText, payload, goal);
     }

@@ -151,6 +151,9 @@ services:
       ASTOR_AGENT_PROVIDER: ${ASTOR_AGENT_PROVIDER:-}
       ASTOR_AGENT_DAILY_BUDGET_RUB: ${ASTOR_AGENT_DAILY_BUDGET_RUB:-}
       ASTOR_AGENT_CALL_RESERVE_RUB: ${ASTOR_AGENT_CALL_RESERVE_RUB:-1}
+      # JDBC pool of this bot (Hikari, 10 by default ran out at 50 parallel negotiations). The shared PostgreSQL's
+      # max_connections (100 by default) must cover the pools of all bots on it.
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:-20}
       ASTOR_AGENT_TURN_TIMEOUT_MS: ${ASTOR_AGENT_TURN_TIMEOUT_MS:-25000}
       ASTOR_AGENT_BOT_TURN_TIMEOUT_MS: ${ASTOR_AGENT_BOT_TURN_TIMEOUT_MS:-12000}
       # Butler -> Concierge webhook (negotiation plan, task 9).
