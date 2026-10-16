@@ -220,7 +220,14 @@ public class ButlerAgent {
             messages.addAll(history.messages(key));
             messages.add(ModelChatMessage.user(said));
             AgentOutcome outcome = loop.run(messages, registry.asModelTools(), ctx, auditContent, turnTimeoutMs);
-            return outcome == null ? AgentOutcome.fallback(List.of(), 0) : outcome;
+            if (outcome == null) {
+                return AgentOutcome.fallback(List.of(), 0);
+            }
+            // A booking the guest has not got is never claimed: the turn falls back rather than say «оформлена».
+            if (!outcome.fallback() && HonestBookingStatus.unbacked(outcome.text(), outcome.uses(), ctx.visitId())) {
+                return AgentOutcome.fallback(outcome.uses(), outcome.toolCalls());
+            }
+            return outcome;
         } catch (RuntimeException e) {
             log.warn("Butler agent turn failed: reason={}", e.getClass().getSimpleName());
             return AgentOutcome.fallback(List.of(), 0);

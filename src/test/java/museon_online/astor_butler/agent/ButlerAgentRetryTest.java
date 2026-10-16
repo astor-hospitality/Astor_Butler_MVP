@@ -86,7 +86,11 @@ class ButlerAgentRetryTest {
         when(model.chat(any())).thenAnswer(invocation -> {
             ModelChatRequest request = invocation.getArgument(0);
             boolean called = request.messages().stream().anyMatch(message -> "function".equals(message.role()));
-            return called ? new ModelChatResponse("Заявка передана хостес.", Optional.empty(), "gigachat", "m", Duration.ZERO)
+            // Says «передана» only after the booking ran: a claim no tool backs makes the turn fall back.
+            boolean booked = request.messages().stream().anyMatch(message -> "function".equals(message.role())
+                    && message.content() != null && message.content().contains("reservationId"));
+            return called ? new ModelChatResponse(booked ? "Заявка передана хостес." : "Бронирую на 20 октября, 19:00?",
+                    Optional.empty(), "gigachat", "m", Duration.ZERO)
                     : new ModelChatResponse("", Optional.of(new ModelToolCall("reservation_create", ReservationCreateToolTest.args())),
                     "gigachat", "m", Duration.ZERO);
         });

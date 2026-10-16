@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * The Butler never tells the guest a booking is confirmed while it waits for the hostess (live 15.10: the tool said
@@ -23,6 +24,9 @@ final class HonestBookingStatus {
     private static final List<String> CLAIMS = List.of("забронирован", "подтвержд", "бронь оформлена", "ждём вас", "ждем вас",
             "ожидаем вашего", "ожидаем вас");
     private static final DateTimeFormatter DAY_MONTH = DateTimeFormatter.ofPattern("dd.MM");
+    /** Says a request exists: made, passed on to the hostess or waiting for her; not under «не». Text is lower case, ё as е. */
+    private static final Pattern CREATED = Pattern.compile("(?<!не )(забронирован|оформлен|бронь создана|заявка создана"
+            + "|заявка передана|заявку передал|передал хостес|передала хостес|ждет подтверждения|ждем вас|ожидаем вас)");
 
     private HonestBookingStatus() {
     }
@@ -35,6 +39,28 @@ final class HonestBookingStatus {
         }
         log.warn("Butler reply claimed an unconfirmed booking: status={}, replaced with the honest text", booking.get("status"));
         return honest(booking);
+    }
+
+    /**
+     * Whether the reply claims a booking that does not exist (prod run 16.10: «Бронь … в среду в 20:30 оформлена.», and
+     * no row was created): the guest has no visit yet, nothing was booked or changed this turn, and the reply says a
+     * request was made, passed on or is waiting for the hostess. A claim under «не» («ещё не оформлена») is no claim;
+     * asking for the yes («подтверждаете?») is none either. The caller lets such a turn fall back.
+     */
+    static boolean unbacked(String text, List<AgentOutcome.ToolUse> uses, Long visitId) {
+        if (text == null || visitId != null || committed(uses)) {
+            return false;
+        }
+        if (!CREATED.matcher(text.toLowerCase(Locale.ROOT).replace('ё', 'е')).find()) {
+            return false;
+        }
+        log.warn("Butler reply claimed a booking no tool made this turn; the turn falls back");
+        return true;
+    }
+
+    private static boolean committed(List<AgentOutcome.ToolUse> uses) {
+        return uses != null && uses.stream().anyMatch(use -> use.result() != null && use.result().ok()
+                && ("reservation_create".equals(use.tool()) || "reservation_change".equals(use.tool())));
     }
 
     private static Map<String, Object> lastBooking(List<AgentOutcome.ToolUse> uses) {
