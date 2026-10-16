@@ -11,6 +11,8 @@ import museon_online.astor_butler.domain.booking.external.ExternalReservationSta
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -21,7 +23,10 @@ import java.util.List;
  *
  * SEATED (#151) comes only when the provider was told which of its codes mean «the guest is at the table»
  * ({@code ASTOR_SABY_SEATED_STATES}); an awaiting order that Presto already seated is confirmed on this read and
- * seated on the next one, one step at a time like everything else here.
+ * seated on the next one, one step at a time like everything else here. A «seated» code earlier than
+ * {@link #SEATED_EARLIEST_BEFORE_START} before the booking time is not taken as a seating: the guest cannot be at the
+ * table that long before, so such a code is read as the venue accepting the booking, and nothing is seated on it.
+ * Defaults and the live check of the codes: docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
  */
 @Service
 @RequiredArgsConstructor
@@ -29,12 +34,15 @@ import java.util.List;
 public class ExternalBookingSync {
 
     static final int BATCH = 200;
+    /** How long before the booking time a «seated» code from the venue may seat the guest. */
+    static final Duration SEATED_EARLIEST_BEFORE_START = Duration.ofHours(2);
 
     private final TableReservationRepository repository;
     private final TableReservationService reservationService;
     private final ExternalReservationProvider externalProvider;
     private final BillingSync billingSync;
     private long lastCheckedId;
+    private Clock clock = Clock.systemUTC();
 
     /** The shift manager's kill switch (#134): optional so the constructor and its tests stay as they are. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -91,8 +99,12 @@ public class ExternalBookingSync {
                             reservationService.confirmFromVenue(order.id());
                             confirmed++;
                         } else if (order.status() == TableReservationStatus.CONFIRMED) {
-                            reservationService.seatFromVenue(order.id());
-                            seated++;
+                            if (tooEarlyToSeat(order)) {
+                                log.debug("Venue says order {} is seated long before its time; not seated", order.id());
+                            } else {
+                                reservationService.seatFromVenue(order.id());
+                                seated++;
+                            }
                         }
                     }
                     case CANCELLED -> {
@@ -113,6 +125,15 @@ public class ExternalBookingSync {
             }
         }
         return new Report(orders.size(), confirmed, seated, cancelled, unknown, failed);
+    }
+
+    private boolean tooEarlyToSeat(TableReservationOrder order) {
+        return order.requestedStartAt() != null
+                && clock.instant().isBefore(order.requestedStartAt().minus(SEATED_EARLIEST_BEFORE_START));
+    }
+
+    void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     void setButlerPause(ButlerPauseService butlerPause) {

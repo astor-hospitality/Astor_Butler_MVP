@@ -142,6 +142,26 @@ class ExternalBookingSyncTest {
         verify(billingSync).onVenueSnapshot(eq("SABY"), eq("ext-20"), eq(ExternalBookingState.SEATED), any());
     }
 
+    /** A «seated» code hours before the booking is the venue accepting it, not the guest at the table. */
+    @Test
+    void aSeatedCodeLongBeforeTheBookingTimeSeatsNobody() {
+        TableReservationOrder confirmed = order(24L, TableReservationStatus.CONFIRMED, "ext-24");
+        when(repository.findActiveOrdersWithExternalId(anyInt())).thenReturn(List.of(confirmed));
+        when(externalProvider.fetchReservationState("ext-24")).thenReturn(snapshot("ext-24", ExternalBookingState.SEATED, "SABY_STATE_50"));
+        sync.setClock(java.time.Clock.fixed(confirmed.requestedStartAt().minusSeconds(3 * 3600), java.time.ZoneOffset.UTC));
+
+        assertThat(sync.run().seated()).isZero();
+        verify(repository, never()).seatIfConfirmed(any());
+
+        // Within two hours of the booking the same code seats the guest.
+        when(repository.findOrder(24L)).thenReturn(Optional.of(confirmed), Optional.of(confirmed), Optional.of(seated(24L, "ext-24")));
+        when(repository.seatIfConfirmed(24L)).thenReturn(true);
+        sync.setClock(java.time.Clock.fixed(confirmed.requestedStartAt().minusSeconds(90 * 60), java.time.ZoneOffset.UTC));
+
+        assertThat(sync.run().seated()).isEqualTo(1);
+        verify(repository).seatIfConfirmed(24L);
+    }
+
     @Test
     void seatedInTheVenueSystemConfirmsAnAwaitingOrderFirstOneStepAtATime() {
         TableReservationOrder awaiting = order(21L, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, "ext-21");

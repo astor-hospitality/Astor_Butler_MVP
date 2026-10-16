@@ -13,6 +13,7 @@ import museon_online.astor_butler.domain.booking.external.ExternalBookingState;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationProvider;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.booking.external.ExternalReservationStatus;
+import museon_online.astor_butler.domain.booking.external.ExternalTableCodes;
 import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.restclient.RestTemplateBuilder;
@@ -23,9 +24,13 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -55,6 +60,17 @@ public class SabyReservationProvider implements ExternalReservationProvider {
             .expireAfterWrite(Duration.ofHours(24))
             .maximumSize(10_000)
             .build();
+
+    /**
+     * Butler table code key → Saby table of {@code retail/hall/list}. Tables of a point change rarely, so one list
+     * serves every create for a few hours; a failed read is not cached and the create falls back to the administrator.
+     */
+    private final Cache<String, TableDirectory> tableDirectory = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofHours(6))
+            .maximumSize(4)
+            .build();
+    /** Table codes already reported as not found in Saby: the warning is written once per code and process. */
+    private final Set<String> reportedTableCodes = ConcurrentHashMap.newKeySet();
 
     /** The kitchen's «готовить ко времени» line of a lunch (#164), refreshed when the lunch moves. Optional so the constructor stays. */
     @Autowired(required = false)
@@ -390,27 +406,41 @@ public class SabyReservationProvider implements ExternalReservationProvider {
 
     private ExternalReservationResult createOrder(TableReservationCommand command, String idempotencyKey) {
         String localStart = localStart(command.requestedStartAt());
-        Map<String, Object> body = SabyOrderPayload.create(command, idempotencyKey, properties, localStart);
+        TableMatch match = matchTable(command.tableCode(), localStart);
+        Map<String, Object> body = match.table() == null
+                ? SabyOrderPayload.create(command, idempotencyKey, properties, localStart)
+                : SabyOrderPayload.create(command, idempotencyKey, properties, localStart, match.table().hallId(), match.table().tableId());
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("pointId", properties.getPointId());
         metadata.put("localStart", localStart);
-        metadata.put("tableSelection", "SABY_ADMINISTRATOR");
+        metadata.put("tableSelection", match.table() == null ? TABLE_BY_ADMINISTRATOR : TABLE_BY_BUTLER);
+        metadata.put("tableMatch", match.reason());
+        if (match.table() != null) {
+            metadata.put("sabyHallId", match.table().hallId());
+            metadata.put("sabyTableId", match.table().tableId());
+        }
         metadata.put("butlerMarker", SabyOrderPayload.BUTLER_MARKER + idempotencyKey);
 
         JsonNode response;
         try {
             response = client.post(ORDER_CREATE_PATH, body);
         } catch (SabyApiException exception) {
-            log.warn("Saby booking create failed: {} (HTTP {})", exception.kind(), exception.httpStatus());
-            metadata.put("httpStatus", exception.httpStatus());
-            return switch (exception.kind()) {
-                // Authorization happens before the create is processed, so nothing was booked.
-                case AUTH_FAILED -> reservation("PROVIDER_AUTH_FAILED", exception.getMessage(), metadata);
-                case HTTP_ERROR -> exception.httpStatus() < 500
-                        ? reservation("PROVIDER_REJECTED", exception.getMessage(), metadata)
-                        : resultUnknown(idempotencyKey, metadata);
-                case TIMEOUT, INVALID_RESPONSE -> resultUnknown(idempotencyKey, metadata);
-            };
+            if (match.table() == null || !rejected(exception)) {
+                return createFailed(exception, idempotencyKey, metadata);
+            }
+            // A 4xx means nothing was booked: once more without the table, so the booking still reaches Saby as before.
+            log.warn("Saby refused the booking on table {} (HTTP {}); sending it without a table for the administrator",
+                    command.tableCode(), exception.httpStatus());
+            metadata.put("tableSelection", TABLE_BY_ADMINISTRATOR);
+            metadata.put("tableMatch", "TABLE_REJECTED");
+            metadata.put("tableRejectedHttpStatus", exception.httpStatus());
+            metadata.remove("sabyHallId");
+            metadata.remove("sabyTableId");
+            try {
+                response = client.post(ORDER_CREATE_PATH, SabyOrderPayload.create(command, idempotencyKey, properties, localStart));
+            } catch (SabyApiException again) {
+                return createFailed(again, idempotencyKey, metadata);
+            }
         }
 
         List<String> responseFields = new ArrayList<>();
@@ -439,6 +469,141 @@ public class SabyReservationProvider implements ExternalReservationProvider {
                 List.of(),
                 metadata
         );
+    }
+
+    private ExternalReservationResult createFailed(SabyApiException exception, String idempotencyKey, Map<String, Object> metadata) {
+        log.warn("Saby booking create failed: {} (HTTP {})", exception.kind(), exception.httpStatus());
+        metadata.put("httpStatus", exception.httpStatus());
+        return switch (exception.kind()) {
+            // Authorization happens before the create is processed, so nothing was booked.
+            case AUTH_FAILED -> reservation("PROVIDER_AUTH_FAILED", exception.getMessage(), metadata);
+            case HTTP_ERROR -> exception.httpStatus() < 500
+                    ? reservation("PROVIDER_REJECTED", exception.getMessage(), metadata)
+                    : resultUnknown(idempotencyKey, metadata);
+            case TIMEOUT, INVALID_RESPONSE -> resultUnknown(idempotencyKey, metadata);
+        };
+    }
+
+    private static boolean rejected(SabyApiException exception) {
+        return exception.kind() == SabyApiException.Kind.HTTP_ERROR
+                && exception.httpStatus() >= 400 && exception.httpStatus() < 500;
+    }
+
+    static final String TABLE_BY_BUTLER = "BUTLER";
+    static final String TABLE_BY_ADMINISTRATOR = "SABY_ADMINISTRATOR";
+
+    /** One table of {@code retail/hall/list}: its own hall and id, the pair {@code order/create} takes. */
+    record SabyTable(long hallId, long tableId, String name) {
+    }
+
+    /** The Saby table of a Butler table code, or why there is none ({@code reason}). */
+    record TableMatch(SabyTable table, String reason) {
+    }
+
+    /** Tables of the point by comparison key; a key two tables share is ambiguous and matches nothing. */
+    record TableDirectory(Map<String, SabyTable> byKey, Set<String> ambiguous) {
+    }
+
+    /**
+     * Saby table names that mean the Butler code {@code BAR}: a Cyrillic name keys differently from the Latin code.
+     */
+    private static final Set<String> BAR_NAMES = Set.of("BAR", "БАР", "БАРНЫЙ", "БАРНАЯСТОЙКА", "СТОЙКА");
+
+    private static String tableKey(String raw) {
+        String key = ExternalTableCodes.key(raw);
+        return BAR_NAMES.contains(key) ? "BAR" : key;
+    }
+
+    /**
+     * Which Saby table is the Butler table: {@code venue_tables.table_code} against the table names of
+     * {@code retail/hall/list} («4» ↔ «Стол 4», «13» ↔ «VIP 13», BAR ↔ «Бар»), see {@link ExternalTableCodes#key}.
+     * No code, no match, two Saby tables with the same key or a failed read all leave the table to the administrator.
+     */
+    TableMatch matchTable(String tableCode, String localStart) {
+        if (!properties.isSendTable()) {
+            return new TableMatch(null, "SEND_TABLE_OFF");
+        }
+        String key = tableKey(tableCode);
+        if (key.isEmpty()) {
+            return new TableMatch(null, "NO_TABLE_CODE");
+        }
+        TableDirectory directory = tableDirectory.getIfPresent(properties.getPointId());
+        if (directory == null) {
+            try {
+                directory = readTableDirectory(localStart);
+            } catch (SabyApiException exception) {
+                log.warn("Saby table list for the booking failed: {} (HTTP {}); the administrator picks the table",
+                        exception.kind(), exception.httpStatus());
+                return new TableMatch(null, "HALL_LIST_FAILED");
+            }
+            if (directory == null) {
+                return new TableMatch(null, "HALL_LIST_FAILED");
+            }
+            tableDirectory.put(properties.getPointId(), directory);
+        }
+        if (directory.ambiguous().contains(key)) {
+            reportOnce(tableCode, "Saby has several tables named like Butler table {}; the administrator picks the table");
+            return new TableMatch(null, "AMBIGUOUS");
+        }
+        SabyTable table = directory.byKey().get(key);
+        if (table == null) {
+            reportOnce(tableCode, "Saby hall/list has no table named like Butler table {}; the administrator picks the table");
+            return new TableMatch(null, "UNMATCHED");
+        }
+        return new TableMatch(table, "MATCHED");
+    }
+
+    private void reportOnce(String tableCode, String message) {
+        if (reportedTableCodes.add(tableCode.trim())) {
+            log.warn(message, tableCode.trim());
+        }
+    }
+
+    /** Null when the answer has no halls array; throws on a failed call. */
+    private TableDirectory readTableDirectory(String localStart) {
+        Map<String, Object> query = new LinkedHashMap<>();
+        query.put("pointId", properties.getPointId());
+        query.put("date", localStart);
+        if (properties.getHallId() != null && !properties.getHallId().isBlank()) {
+            query.put("hallId", properties.getHallId());
+        }
+        JsonNode halls = client.get(HALL_LIST_PATH, query).path("halls");
+        if (!halls.isArray()) {
+            return null;
+        }
+        Map<String, SabyTable> byKey = new HashMap<>();
+        Set<String> ambiguous = new HashSet<>();
+        for (JsonNode hall : halls) {
+            Long hallId = longId(hall.path("id"));
+            if (!hall.path("active").asBoolean(true) || hallId == null) {
+                continue;
+            }
+            for (JsonNode item : hall.path("items")) {
+                String name = item.path("name").asText("");
+                String key = tableKey(name);
+                Long tableId = longId(item.path("id"));
+                if (key.isEmpty() || tableId == null) {
+                    continue;
+                }
+                SabyTable table = new SabyTable(hallId, tableId, name);
+                SabyTable before = byKey.putIfAbsent(key, table);
+                if (before != null && before.tableId() != table.tableId()) {
+                    ambiguous.add(key);
+                }
+            }
+        }
+        return new TableDirectory(Map.copyOf(byKey), Set.copyOf(ambiguous));
+    }
+
+    /** A Saby id as a number; examples send numbers, a string of digits is taken too. */
+    private static Long longId(JsonNode node) {
+        if (node.isIntegralNumber()) {
+            return node.asLong();
+        }
+        if (node.isTextual() && node.asText().trim().matches("\\d{1,18}")) {
+            return Long.parseLong(node.asText().trim());
+        }
+        return null;
     }
 
     private ExternalReservationResult resultUnknown(String idempotencyKey, Map<String, Object> metadata) {

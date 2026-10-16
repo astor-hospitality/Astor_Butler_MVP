@@ -234,6 +234,8 @@ class SabyWriteReviewFixesTest {
         properties.setAppSecret("secret");
         properties.setSecretKey("service-key");
         properties.setPointId("206");
+        // The Butler table on create (hall/list first) is covered by SabyTableSelectionTest.
+        properties.setSendTable(false);
         return properties;
     }
 
