@@ -9,6 +9,8 @@ import museon_online.astor_butler.capability.CapabilityTool;
 import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.capability.IdempotencyStore;
 import museon_online.astor_butler.capability.tools.CapabilityFixtures;
+import museon_online.astor_butler.capability.tools.ReservationAccess;
+import museon_online.astor_butler.capability.tools.ReservationCancelTool;
 import museon_online.astor_butler.capability.tools.ReservationCreateToolTest;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationService;
@@ -55,6 +57,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -92,8 +95,12 @@ class ButlerAgentGuestYesTest {
                 TableReservationStatus.AWAITING_MANAGER_CONFIRMATION));
         CapabilityProperties capabilities = new CapabilityProperties();
         capabilities.setEnabled(true);
-        CapabilityRegistry registry = new CapabilityRegistry(List.of(ReservationCreateToolTest.tool(reservations), new FreeAtSeven()),
-                mock(LedgerWriter.class), capabilities, store);
+        when(reservations.cancelByGuest(42L)).thenReturn(CapabilityFixtures.order(42L, null, TableReservationStatus.CANCELLED));
+        ReservationAccess access = mock(ReservationAccess.class);
+        when(access.check(any(), anyMap())).thenReturn(new ReservationAccess.Checked(
+                CapabilityFixtures.order(42L, null, TableReservationStatus.CONFIRMED), null));
+        CapabilityRegistry registry = new CapabilityRegistry(List.of(ReservationCreateToolTest.tool(reservations), new FreeAtSeven(),
+                new ReservationCancelTool(reservations, access)), mock(LedgerWriter.class), capabilities, store);
         ToolCallingModel model = request -> {
             ModelChatResponse next = script.poll();
             if (next == null) {
@@ -303,6 +310,48 @@ class ButlerAgentGuestYesTest {
                 new GuestAgreement.Table(LocalDate.of(2026, 10, 20), LocalTime.of(19, 15), 2),
                 new GuestAgreement.Table(LocalDate.of(2026, 10, 20), LocalTime.of(19, 45), 2),
                 forThree);
+    }
+
+    @Test
+    void aCancellationTheModelOffersWaitsForTheGuestsYes() {
+        call("reservation_cancel", Map.of("reservationId", 42));
+        says("Отменить бронь на 20 октября, 19:00?");
+        call("reservation_cancel", Map.of("reservationId", 42));
+        says("Бронь отменена.");
+
+        NegotiationReply asked = agent.negotiate(turn("Планы поменялись", "m1"));
+        verify(reservations, never()).cancelByGuest(any());
+        agent.negotiate(turn("Да", "m2"));
+
+        assertThat(asked.facts()).singleElement().satisfies(fact -> {
+            Map<?, ?> refused = (Map<?, ?>) fact.get("facts");
+            assertThat(refused.get("reason")).isEqualTo(GuestAgreement.NEEDS_GUEST_YES);
+            assertThat(refused.get("action")).isEqualTo("cancel");
+            assertThat(((Number) refused.get("reservationId")).longValue()).isEqualTo(42L);
+        });
+        verify(reservations, times(1)).cancelByGuest(42L);
+    }
+
+    @Test
+    void theGuestsOwnRequestCancelsAtOnce() {
+        call("reservation_cancel", Map.of("reservationId", 42));
+        says("Бронь отменена.");
+
+        agent.negotiate(turn("Мы не придём, отмените бронь", "m1"));
+
+        verify(reservations, times(1)).cancelByGuest(42L);
+    }
+
+    @Test
+    void theOfferedCancellationIsReadFromTheTurnsToolFacts() {
+        AgentOutcome outcome = new AgentOutcome("Отменить бронь 42?", null, false, 2, List.of(
+                new AgentOutcome.ToolUse("reservation_cancel", GuestAgreement.refusal(42L, GuestAgreement.CANCEL, null)),
+                new AgentOutcome.ToolUse("reservation_change", GuestAgreement.refusal(43L, GuestAgreement.CHANGE, null)),
+                // Replayed from the idempotency store: the id comes back from JSON as an integer.
+                new AgentOutcome.ToolUse("reservation_cancel", new CapabilityResult(false, Map.of("reason",
+                        GuestAgreement.NEEDS_GUEST_YES, "reservationId", 44, "action", "cancel"), CapabilityResult.NOT_ALLOWED))));
+
+        assertThat(ButlerAgent.cancellations(outcome)).containsExactly(42L, 44L);
     }
 
     private void books() {

@@ -53,7 +53,8 @@ import java.util.function.Supplier;
  *
  * <p>Each turn carries the guest's {@link GuestAgreement}: whether the guest's own words (the Concierge's
  * {@code guestText}, the bot's message) say yes, and the tables the previous answered turn put to the guest
- * ({@link #proposed}). The tools, not the model, decide with it whether a table request or a lunch order may run.
+ * ({@link #proposed}) or offered to cancel ({@link #cancellations}). The tools, not the model, decide with it whether
+ * a table request, a change, a cancellation or a lunch order may run.
  */
 @Component
 public class ButlerAgent {
@@ -140,7 +141,7 @@ public class ButlerAgent {
         String said = negotiationMessage(turn);
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.CONCIERGE, null, sessionId, visitId,
                 turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()),
-                GuestAgreement.of(turn.guestText(), history.proposed(key)));
+                GuestAgreement.of(turn.guestText(), history.proposed(key), history.cancellations(key)));
         // Without consent the model audit keeps no words of this turn either.
         AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null, consent, properties.getTurnTimeoutMs());
 
@@ -161,7 +162,7 @@ public class ButlerAgent {
             return new NegotiationReply(null, null, facts, visitId, true);
         }
         Map<String, Object> offer = offer(outcome);
-        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome));
+        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome), cancellations(outcome));
         Map<String, Object> payload = new LinkedHashMap<>();
         if (offer != null) {
             payload.put("offerKind", offer.get("kind"));
@@ -189,7 +190,7 @@ public class ButlerAgent {
         }
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.BUTLER_AGENT, chatId, null, visit,
                 turnKey("tg:" + chatId, history.nextTurn(key)), blankToNull(incoming.firstName()), blankToNull(incoming.contactPhone()),
-                GuestAgreement.of(incoming.text(), history.proposed(key)));
+                GuestAgreement.of(incoming.text(), history.proposed(key), history.cancellations(key)));
         // The bot's single update thread waits the bot budget at most; on expiry the scenarios answer.
         AgentOutcome outcome = run(key, said, ctx, incoming.contactPhone(), chatId, true, properties.getBotTurnTimeoutMs());
         if (outcome.fallback()) {
@@ -200,7 +201,7 @@ public class ButlerAgent {
             write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), visit != null);
             return Optional.empty();
         }
-        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome));
+        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome), cancellations(outcome));
         return Optional.of(outcome.text());
     }
 
@@ -388,6 +389,22 @@ public class ButlerAgent {
             }
         }
         return tables;
+    }
+
+    /** The reservations this turn offered the guest to cancel: a cancellation refused for want of the guest's word. */
+    static List<Long> cancellations(AgentOutcome outcome) {
+        List<Long> reservations = new ArrayList<>();
+        for (AgentOutcome.ToolUse use : outcome.uses()) {
+            CapabilityResult result = use.result();
+            Map<String, Object> facts = result == null || result.facts() == null ? Map.of() : result.facts();
+            if ("reservation_cancel".equals(use.tool()) && result != null && !result.ok()
+                    && GuestAgreement.NEEDS_GUEST_YES.equals(facts.get("reason"))
+                    && facts.get("reservationId") instanceof Number id) {
+                // A result replayed from the idempotency store comes back from JSON as any number.
+                reservations.add(id.longValue());
+            }
+        }
+        return reservations;
     }
 
     private static List<Map<String, Object>> facts(AgentOutcome outcome) {
