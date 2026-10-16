@@ -102,7 +102,8 @@ public class LunchOrderPlaceTool implements CapabilityTool {
                 + "Бронь не в дни или часы ланча — NOT_ALLOWED с served=false, днями (days), часами (from, to) и ближайшим "
                 + "днём ланча (nextServedDay): скажи гостю, что в это время ланча нет, и предложи этот день. "
                 + "Если брони ещё нет — не выдумывай reservationId: передай date, time, partySize из позиции гостя, "
-                + "и стол забронируется вместе с заказом (reservationId и reservationCreated в ответе).";
+                + "и стол забронируется вместе с заказом (reservationId и reservationCreated в ответе). "
+                + "BAD_ARGUMENT с unknownDishCodes и menu — выбери коды из menu и сразу вызови снова, гостя не переспрашивай.";
     }
 
     @Override
