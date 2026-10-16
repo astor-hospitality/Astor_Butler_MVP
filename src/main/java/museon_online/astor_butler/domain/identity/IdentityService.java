@@ -33,6 +33,50 @@ public class IdentityService {
      * message is plain text, so a booking placed at the end of a dialogue has to read the phone back from here.
      * Empty for a guest who never shared one. The number is returned to the caller and never logged.
      */
+    /**
+     * The name and phone the guest gave Astor Concierge for the restaurant: a guest record for this Telegram user and
+     * the phone as their primary contact, so the venue's bot books with it without asking again.
+     */
+    public void rememberConciergeContact(long telegramUserId, String firstName, String phone) {
+        String name = firstName == null || firstName.isBlank() ? null : firstName.trim();
+        Long userId = jdbcTemplate.queryForObject("""
+                INSERT INTO users (telegram_id, display_name, first_name, phone, role, status, updated_at)
+                VALUES (?, ?, ?, ?, 'GUEST', 'ACTIVE', CURRENT_TIMESTAMP)
+                ON CONFLICT (telegram_id)
+                DO UPDATE SET
+                    display_name = COALESCE(users.display_name, EXCLUDED.display_name),
+                    first_name = COALESCE(users.first_name, EXCLUDED.first_name),
+                    phone = COALESCE(EXCLUDED.phone, users.phone),
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING id
+                """, Long.class, telegramUserId, name, name, phone);
+        if (userId == null || phone == null || phone.isBlank()) {
+            return;
+        }
+        jdbcTemplate.update("""
+                INSERT INTO user_contacts (
+                    id, user_id, contact_type, contact_value, source, is_primary, verified_at, updated_at
+                )
+                VALUES (?, ?, 'PHONE', ?, 'CONCIERGE_CONTACT', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                ON CONFLICT ON CONSTRAINT uq_user_contacts_user_type_value
+                DO UPDATE SET
+                    is_primary = true,
+                    verified_at = COALESCE(user_contacts.verified_at, EXCLUDED.verified_at),
+                    updated_at = CURRENT_TIMESTAMP
+                """, UUID.randomUUID(), userId, phone);
+    }
+
+    /** The guest's first name as the Butler knows it, if any. */
+    public Optional<String> firstName(Long telegramUserId) {
+        if (telegramUserId == null) {
+            return Optional.empty();
+        }
+        List<String> names = jdbcTemplate.queryForList(
+                "SELECT first_name FROM users WHERE telegram_id = ? AND NULLIF(TRIM(first_name), '') IS NOT NULL",
+                String.class, telegramUserId);
+        return names.isEmpty() ? Optional.empty() : Optional.of(names.get(0));
+    }
+
     public Optional<String> primaryPhone(Long telegramUserId) {
         if (telegramUserId == null) {
             return Optional.empty();
