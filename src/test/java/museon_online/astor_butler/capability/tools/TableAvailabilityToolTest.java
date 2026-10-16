@@ -43,11 +43,14 @@ class TableAvailabilityToolTest {
     }
 
     @Test
-    void pastDateIsABadArgument() {
+    void aSlotThatHasBegunIsAlreadyPassed() {
+        // Prod run 16.10: «вчера в 19:00» was put to the guest as a booking to confirm.
         CapabilityResult result = tool.invoke(null, Map.of("date", "2026-10-13", "time", "19:00", "partySize", 2));
 
         assertThat(result.ok()).isFalse();
-        assertThat(result.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+        assertThat(result.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(result.facts()).isEqualTo(Map.of("reason", "already_passed", "date", "2026-10-13", "dateLabel", "вт 13.10",
+                "time", "19:00"));
         verify(reservations, never()).availability(anyString(), any(), any(), anyInt());
     }
 

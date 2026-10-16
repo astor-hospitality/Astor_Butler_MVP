@@ -42,6 +42,8 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
     /** Reads «9:00» and «09:00», as the tools' arguments do; writes «09:00», as the tools' facts do. */
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("H:mm");
     private static final DateTimeFormatter FACT_TIME = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter FACT_DAY = DateTimeFormatter.ofPattern("dd.MM");
+    private static final String[] WEEKDAYS = {"пн", "вт", "ср", "чт", "пт", "сб", "вс"};
     private static final Pattern WORD = Pattern.compile("[^\\p{L}\\p{N}+]+");
     private static final Set<String> AGREE = Set.of("да", "ага", "угу", "ок", "окей", "ok", "okay", "yes", "конечно", "давай",
             "давайте", "бронируй", "бронируйте", "забронируй", "забронируйте", "бронируем", "подтверждаю", "подтверждаем",
@@ -117,6 +119,7 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
             Map<String, Object> facts = new LinkedHashMap<>();
             if (date != null) {
                 facts.put("date", date.toString());
+                facts.put("dateLabel", dateLabel(date));
             }
             if (time != null) {
                 facts.put("time", time.format(FACT_TIME));
@@ -176,6 +179,7 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("reason", NEEDS_GUEST_YES);
         facts.put("date", table.date().toString());
+        facts.put("dateLabel", dateLabel(table.date()));
         facts.put("time", table.time().format(FACT_TIME));
         facts.put("partySize", table.partySize());
         return new CapabilityResult(false, facts, CapabilityResult.NOT_ALLOWED);
@@ -199,6 +203,11 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
     /** {@code HH:mm}, as the facts write a time. */
     public static String factTime(LocalTime time) {
         return time.format(FACT_TIME);
+    }
+
+    /** «сб 17.10»: the weekday computed here, for the model to copy rather than work out (it gets them wrong). */
+    public static String dateLabel(LocalDate date) {
+        return WEEKDAYS[date.getDayOfWeek().getValue() - 1] + " " + date.format(FACT_DAY);
     }
 
     /** An agreement word, no negation, no question. */

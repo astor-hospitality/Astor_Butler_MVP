@@ -59,8 +59,10 @@ class GuestAgreementTest {
     @Test
     void aQuestionANegationOrAMoveIsNotACancellation() {
         for (String words : java.util.Arrays.asList(null, "", "отменить?", "А можно отменить бронь?", "не надо отменять",
-                "Не отменяйте", "отмена", "это не отмена брони", "не надо отмену брони", "да", "не сможем к 19, давайте в 20", "не придём в 19", "Не сможем, перенесите",
-                "не получится вовремя", "Придём")) {
+                "Не отменяйте", "отмена", "это не отмена брони", "не надо отмену брони", "да", "не сможем к 19, давайте в 20",
+                "не придём в 19", "Не сможем, перенесите", "не получится вовремя", "Придём",
+                // Prod run 16.10: said after an availability answer, it refuses the offer and must not cancel anything.
+                "нет, передумал, не надо")) {
             assertThat(GuestAgreement.asksToCancel(words)).as(String.valueOf(words)).isFalse();
         }
     }
@@ -73,6 +75,14 @@ class GuestAgreementTest {
         assertThat(GuestAgreement.of("да", List.of(AT_SEVEN)).allowsCancel(42L)).isFalse();
         assertThat(GuestAgreement.of("отменить?", List.of(), List.of(42L), List.of()).allowsCancel(42L)).isFalse();
         assertThat(GuestAgreement.NONE.allowsCancel(42L)).isFalse();
+    }
+
+    /** Prod run 16.10: the model wrote «субботу, 20 октября» for 17.10; the facts carry the weekday it should copy. */
+    @Test
+    void theWeekdayIsComputedInCode() {
+        assertThat(GuestAgreement.dateLabel(LocalDate.of(2026, 10, 17))).isEqualTo("сб 17.10");
+        assertThat(GuestAgreement.dateLabel(LocalDate.of(2026, 10, 20))).isEqualTo("вт 20.10");
+        assertThat(GuestAgreement.dateLabel(LocalDate.of(2026, 11, 1))).isEqualTo("вс 01.11");
     }
 
     @Test
@@ -92,7 +102,7 @@ class GuestAgreementTest {
 
         assertThat(refusal.ok()).isFalse();
         assertThat(refusal.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
-        assertThat(refusal.facts()).isEqualTo(Map.of("reason", GuestAgreement.NEEDS_GUEST_YES, "date", "2026-10-20",
+        assertThat(refusal.facts()).isEqualTo(Map.of("reason", GuestAgreement.NEEDS_GUEST_YES, "date", "2026-10-20", "dateLabel", "вт 20.10",
                 "time", "19:00", "partySize", 2));
         assertThat(GuestAgreement.Table.of(refusal.facts().get("date"), refusal.facts().get("time"),
                 refusal.facts().get("partySize"))).contains(AT_SEVEN);

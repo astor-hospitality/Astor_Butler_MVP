@@ -5,6 +5,7 @@ import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.CapabilityTool;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableAvailability;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.VenueOpeningHours;
@@ -27,7 +28,9 @@ import java.util.Map;
 
 /**
  * {@code table_availability{date, time, partySize}}: free tables for a 90-minute slot in venue time and, only when none
- * is free, up to three later times the same day with a free table. Reads only: nothing is held or booked.
+ * is free, up to three later times the same day with a free table. Reads only: nothing is held or booked. A slot
+ * that has begun by the venue's time is {@code NOT_ALLOWED} with {@code reason = already_passed}, as in
+ * {@code reservation_create}; the date comes with its weekday ({@code dateLabel}, «сб 17.10») for the model to copy.
  */
 @Component
 public class TableAvailabilityTool implements CapabilityTool {
@@ -73,9 +76,11 @@ public class TableAvailabilityTool implements CapabilityTool {
     @Override
     public String description() {
         return "Свободные столы на дату и время (время ресторана, слот 90 минут) для заданного числа гостей. "
+                + "dateLabel — день недели и дата («сб 17.10»): называй день так, сам не вычисляй. "
                 + "free — свободные столы; если free пуст, alternatives — до трёх более поздних времён (в пределах полутора часов) "
                 + "в тот же день со свободным столом, "
-                + "open=false — ресторан в это время закрыт. Ничего не бронирует.";
+                + "open=false — ресторан в это время закрыт. Время уже наступило — NOT_ALLOWED, reason=already_passed: "
+                + "не предлагай его. Стол гостю называй только из free или alternatives этого ответа. Ничего не бронирует.";
     }
 
     @Override
@@ -110,7 +115,13 @@ public class TableAvailabilityTool implements CapabilityTool {
         }
         ZoneId zone = ZoneId.of(journey.getZoneId());
         if (date.atTime(time).atZone(zone).toInstant().isBefore(clock.instant())) {
-            return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
+            // A reason the agent can say, not a bad argument it would retry: «вчера в 19:00» is never offered.
+            Map<String, Object> passed = new LinkedHashMap<>();
+            passed.put("reason", ReservationCreateTool.ALREADY_PASSED);
+            passed.put("date", date.toString());
+            passed.put("dateLabel", GuestAgreement.dateLabel(date));
+            passed.put("time", time.format(TIME));
+            return new CapabilityResult(false, passed, CapabilityResult.NOT_ALLOWED);
         }
         boolean open = openingHours.isOpen(date, time);
         List<Map<String, Object>> free = new ArrayList<>();
@@ -125,6 +136,7 @@ public class TableAvailabilityTool implements CapabilityTool {
         }
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("date", date.toString());
+        facts.put("dateLabel", GuestAgreement.dateLabel(date));
         facts.put("time", time.format(TIME));
         facts.put("partySize", partySize);
         facts.put("open", open);

@@ -111,7 +111,7 @@ class LunchMenuToolTest {
     void afterTheLunchHoursTodayTheNextLunchDayIsTomorrow() {
         CapabilityResult result = toolAt("2026-10-14T12:00:00Z").invoke(null, Map.of());
 
-        assertThat(result.facts()).containsEntry("date", "2026-10-14").containsEntry("served", false)
+        assertThat(result.facts()).containsEntry("date", "2026-10-14").containsEntry("dateLabel", "ср 14.10").containsEntry("served", false)
                 .containsEntry("issue", "ALREADY_PASSED").containsEntry("nextServedDay", "четверг, 15 октября");
     }
 

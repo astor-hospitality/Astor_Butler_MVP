@@ -10,6 +10,7 @@ import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
+import museon_online.astor_butler.domain.booking.VenueOpeningHours;
 import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.journey.GuestVisit;
 import museon_online.astor_butler.domain.journey.GuestVisitRepository;
@@ -18,8 +19,10 @@ import museon_online.astor_butler.domain.journey.VisitEventKind;
 import museon_online.astor_butler.domain.ledger.LedgerWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -44,11 +47,17 @@ import java.util.Optional;
  * <p>One guest, one table at a time: when the guest already holds a reservation across this visit (the bot's by its
  * chat, the Concierge's by its session and visit), nothing is booked and the answer is {@code NOT_ALLOWED} with
  * {@code reason = overlapping} and that reservation's id, day and time.
+ *
+ * <p>A slot no guest can have is refused before the yes is asked for: one that has already begun, by the venue's
+ * time ({@code reason = already_passed}), or outside {@link VenueOpeningHours} ({@code reason = closed}, with that
+ * day's hours). Every date in the facts comes with its weekday ({@code dateLabel}, «сб 17.10») for the model to copy.
  */
 @Component
 public class ReservationCreateTool implements CapabilityTool {
 
     static final Duration VISIT_LENGTH = Duration.ofMinutes(90);
+    static final String ALREADY_PASSED = "already_passed";
+    static final String CLOSED = "closed";
     private static final Logger log = LoggerFactory.getLogger(ReservationCreateTool.class);
 
     private final TableReservationService reservations;
@@ -57,15 +66,27 @@ public class ReservationCreateTool implements CapabilityTool {
     private final LedgerWriter ledger;
     private final CapabilityProperties properties;
     private final GuestJourneyProperties journeyProperties;
+    private final VenueOpeningHours openingHours;
+    private final Clock clock;
+
+    @Autowired
+    public ReservationCreateTool(TableReservationService reservations, GuestVisitRepository visits, JourneyEvents journey,
+                                 LedgerWriter ledger, CapabilityProperties properties, GuestJourneyProperties journeyProperties,
+                                 VenueOpeningHours openingHours) {
+        this(reservations, visits, journey, ledger, properties, journeyProperties, openingHours, Clock.systemUTC());
+    }
 
     public ReservationCreateTool(TableReservationService reservations, GuestVisitRepository visits, JourneyEvents journey,
-                                 LedgerWriter ledger, CapabilityProperties properties, GuestJourneyProperties journeyProperties) {
+                                 LedgerWriter ledger, CapabilityProperties properties, GuestJourneyProperties journeyProperties,
+                                 VenueOpeningHours openingHours, Clock clock) {
         this.reservations = reservations;
         this.visits = visits;
         this.journey = journey;
         this.ledger = ledger;
         this.properties = properties;
         this.journeyProperties = journeyProperties;
+        this.openingHours = openingHours;
+        this.clock = clock;
     }
 
     @Override
@@ -78,8 +99,11 @@ public class ReservationCreateTool implements CapabilityTool {
         return "Создать заявку на стол — только после «да» гостя на день, время и число гостей, которые ты назвал ему "
                 + "в прошлом ответе. Без этого заявки не будет: NOT_ALLOWED, reason=needs_guest_yes, с днём, временем и числом "
                 + "гостей — назови их гостю и спроси, бронировать ли. Если у гостя уже есть бронь на это время — NOT_ALLOWED, "
-                + "reason=overlapping, с её номером, днём и временем: второй заявки не будет, предложи изменить ту. Бронь ждёт подтверждения хостес (status=AWAITING_HOSTESS) — "
-                + "не обещай гостю, что стол подтверждён. Возвращает номер брони (reservationId), стол (table), дату и время.";
+                + "reason=overlapping, с её номером, днём и временем: второй заявки не будет, предложи изменить ту. Время уже "
+                + "наступило — reason=already_passed; ресторан в это время закрыт — reason=closed с часами работы (hours): "
+                + "скажи гостю и предложи другое время. Бронь ждёт подтверждения хостес (status=AWAITING_HOSTESS) — "
+                + "не обещай гостю, что стол подтверждён. Возвращает номер брони (reservationId), стол (table), дату, "
+                + "день недели с датой (dateLabel, например «сб 17.10» — называй его так, сам не вычисляй) и время.";
     }
 
     @Override
@@ -110,11 +134,18 @@ public class ReservationCreateTool implements CapabilityTool {
             return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
         }
         GuestAgreement.Table table = new GuestAgreement.Table(date, time, partySize);
+        Instant start = date.atTime(time).atZone(zone()).toInstant();
+        // A slot no guest can have is named before any yes is asked for: the yes could not book it anyway.
+        if (start.isBefore(clock.instant())) {
+            return slotRefusal(ALREADY_PASSED, table);
+        }
+        if (openingHours != null && !openingHours.isOpen(date, time)) {
+            return slotRefusal(CLOSED, table);
+        }
         if (ctx.agreement() == null || !ctx.agreement().covers(table)) {
             return GuestAgreement.refusal(table);
         }
         boolean butler = ctx.butlerAgent();
-        Instant start = date.atTime(time).atZone(zone()).toInstant();
         Optional<TableReservationOrder> held = heldAtTheTime(ctx, start, start.plus(VISIT_LENGTH));
         if (held.isPresent()) {
             return overlapping(held.get());
@@ -148,6 +179,7 @@ public class ReservationCreateTool implements CapabilityTool {
         facts.put("status", "AWAITING_HOSTESS");
         facts.put("table", table(order));
         facts.put("date", date.toString());
+        facts.put("dateLabel", GuestAgreement.dateLabel(date));
         facts.put("time", time.toString());
         facts.put("visitId", butler ? null : linkVisit(ctx, order));
         return CapabilityResult.ok(facts);
@@ -172,7 +204,21 @@ public class ReservationCreateTool implements CapabilityTool {
         facts.put("reservationId", held.id());
         ZonedDateTime start = held.requestedStartAt().atZone(zone());
         facts.put("date", start.toLocalDate().toString());
+        facts.put("dateLabel", GuestAgreement.dateLabel(start.toLocalDate()));
         facts.put("time", GuestAgreement.factTime(start.toLocalTime()));
+        return new CapabilityResult(false, facts, CapabilityResult.NOT_ALLOWED);
+    }
+
+    /** {@code NOT_ALLOWED} for a slot that has begun or falls outside the opening hours, with the hours of that day. */
+    private CapabilityResult slotRefusal(String reason, GuestAgreement.Table table) {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("reason", reason);
+        facts.put("date", table.date().toString());
+        facts.put("dateLabel", GuestAgreement.dateLabel(table.date()));
+        facts.put("time", GuestAgreement.factTime(table.time()));
+        if (CLOSED.equals(reason) && openingHours != null) {
+            facts.put("hours", openingHours.describe(table.date()).orElse("закрыто"));
+        }
         return new CapabilityResult(false, facts, CapabilityResult.NOT_ALLOWED);
     }
 

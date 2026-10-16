@@ -9,6 +9,7 @@ import museon_online.astor_butler.capability.IdempotencyStore;
 import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
+import museon_online.astor_butler.domain.booking.VenueOpeningHours;
 import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.journey.GuestVisitRepository;
 import museon_online.astor_butler.domain.journey.JourneyEvents;
@@ -18,9 +19,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +43,9 @@ import static org.mockito.Mockito.when;
 
 public class ReservationCreateToolTest {
 
+    /** The venue's clock: 10:00 in Yekaterinburg on Friday 16.10.2026, before the 20.10 table of {@link #args()}. */
+    static final Clock CLOCK = Clock.fixed(Instant.parse("2026-10-16T05:00:00Z"), ZoneOffset.UTC);
+
     private TableReservationService reservations;
     private GuestVisitRepository visits;
     private JourneyEvents journey;
@@ -51,7 +57,7 @@ public class ReservationCreateToolTest {
         GuestVisitRepository visits = mock(GuestVisitRepository.class);
         when(visits.findByReservation(anyLong())).thenReturn(Optional.empty());
         return new ReservationCreateTool(reservations, visits, mock(JourneyEvents.class), mock(LedgerWriter.class),
-                new CapabilityProperties(), new GuestJourneyProperties());
+                new CapabilityProperties(), new GuestJourneyProperties(), new VenueOpeningHours(), CLOCK);
     }
 
     public static Map<String, Object> args() {
@@ -71,7 +77,8 @@ public class ReservationCreateToolTest {
         journey = mock(JourneyEvents.class);
         ledger = mock(LedgerWriter.class);
         when(visits.findByReservation(anyLong())).thenReturn(Optional.empty());
-        tool = new ReservationCreateTool(reservations, visits, journey, ledger, new CapabilityProperties(), new GuestJourneyProperties());
+        tool = new ReservationCreateTool(reservations, visits, journey, ledger, new CapabilityProperties(), new GuestJourneyProperties(),
+                new VenueOpeningHours(), CLOCK);
     }
 
     @Test
@@ -205,10 +212,38 @@ public class ReservationCreateToolTest {
         CapabilityResult concierge = tool.invoke(conciergeInVisit, args());
 
         assertThat(bot.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
-        assertThat(bot.facts()).isEqualTo(Map.of("reason", "overlapping", "reservationId", 40L, "date", "2026-10-20", "time", "18:30"));
+        assertThat(bot.facts()).isEqualTo(Map.of("reason", "overlapping", "reservationId", 40L, "date", "2026-10-20", "dateLabel", "вт 20.10",
+                "time", "18:30"));
         assertThat(concierge.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
-        assertThat(concierge.facts()).isEqualTo(Map.of("reason", "overlapping", "reservationId", 39L, "date", "2026-10-20", "time", "18:30"));
+        assertThat(concierge.facts()).isEqualTo(Map.of("reason", "overlapping", "reservationId", 39L, "date", "2026-10-20", "dateLabel", "вт 20.10",
+                "time", "18:30"));
         verify(reservations, never()).createReservation(any());
+    }
+
+    @Test
+    void aSlotThatHasBegunOrIsOutsideTheHoursIsRefusedBeforeTheYes() {
+        Map<String, Object> yesterday = args();
+        yesterday.put("date", "2026-10-15");
+        Map<String, Object> thisMorning = args();
+        thisMorning.put("date", "2026-10-16");
+        thisMorning.put("time", "09:30");
+        // Saturday opens at 14:00.
+        Map<String, Object> saturdayNoon = args();
+        saturdayNoon.put("date", "2026-10-17");
+        saturdayNoon.put("time", "12:00");
+
+        CapabilityResult past = tool.invoke(CapabilityFixtures.concierge("k1"), yesterday);
+        CapabilityResult begun = tool.invoke(CapabilityFixtures.butler("k2"), thisMorning);
+        CapabilityResult closed = tool.invoke(CapabilityFixtures.concierge("k3", GuestAgreement.NONE), saturdayNoon);
+
+        assertThat(past.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(past.facts()).isEqualTo(Map.of("reason", "already_passed", "date", "2026-10-15", "dateLabel", "чт 15.10",
+                "time", "19:00"));
+        assertThat(begun.facts()).containsEntry("reason", "already_passed");
+        assertThat(closed.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(closed.facts()).isEqualTo(Map.of("reason", "closed", "date", "2026-10-17", "dateLabel", "сб 17.10",
+                "time", "12:00", "hours", "с 14:00 до 04:00"));
+        verifyNoInteractions(reservations);
     }
 
     @Test
