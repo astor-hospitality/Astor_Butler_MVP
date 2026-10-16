@@ -142,7 +142,7 @@ public class ButlerAgent {
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.CONCIERGE, null, sessionId, visitId,
                 turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()),
                 GuestAgreement.of(turn.guestText(), history.proposed(key), history.cancellations(key),
-                        history.changes(key)));
+                        history.changes(key)), turn.conciergePosition());
         // Without consent the model audit keeps no words of this turn either.
         AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null, consent, properties.getTurnTimeoutMs());
 

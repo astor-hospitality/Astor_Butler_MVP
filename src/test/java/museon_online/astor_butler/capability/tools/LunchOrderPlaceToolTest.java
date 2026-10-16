@@ -1,10 +1,12 @@
 package museon_online.astor_butler.capability.tools;
 
+import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
+import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
 import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.journey.GuestVisitRepository;
@@ -32,9 +34,11 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -214,5 +218,109 @@ class LunchOrderPlaceToolTest {
 
         assertThat(result.ok()).isTrue();
         verify(lunch).placeFor(eq(reservation), any());
+    }
+
+    /** A Concierge turn: the guest said «Да» to the lunch summary; the position is Tuesday 13:00 for two. */
+    private static CapabilityContext conciergeYes(Map<String, Object> position) {
+        return new CapabilityContext(CapabilityContext.CONCIERGE, null, "c-live", 7L, "k1", "Михаил", "+79120000060",
+                GuestAgreement.of("Да", List.of()), position);
+    }
+
+    private static final Map<String, Object> TUESDAY_LUNCH = Map.of("date", "2026-10-20", "time", "13:00", "partySize", 2);
+
+    private ReservationCreateTool create;
+    private TableReservationService reservations;
+    private ReservationAccess access;
+
+    private LunchOrderPlaceTool booking() {
+        create = mock(ReservationCreateTool.class);
+        reservations = mock(TableReservationService.class);
+        access = mock(ReservationAccess.class);
+        when(reservations.findOverlappingSessionReservation(any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+        when(access.check(any(), anyMap())).thenReturn(new ReservationAccess.Checked(null, CapabilityResult.error(CapabilityResult.NOT_ALLOWED)));
+        when(access.check(any(), eq(41L))).thenReturn(new ReservationAccess.Checked(reservation, null));
+        when(lunch.placeFor(eq(reservation), any())).thenReturn(new BusinessLunchService.Placement(reservation, false,
+                mock(BusinessLunchOrder.class), new ExternalLunchOrderProvider.Result(true, "saby", "ACCEPTED", "S-1", "ok")));
+        return new LunchOrderPlaceTool(lunch, catalog, new CapabilityProperties(), access, new GuestJourneyProperties(),
+                FRIDAY_MORNING).withBooking(create, reservations);
+    }
+
+    /**
+     * Live test 16.10: the guest said «Да» to the lunch summary, but no table was booked and the model ordered into
+     * reservations 0 and 1 that did not exist, with codes like «COLSLAW». The yes now books the table, then orders.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void withoutABookingTheYesToTheLunchBooksTheTableThenOrders() {
+        LunchOrderPlaceTool tool = booking();
+        when(create.invoke(any(), anyMap())).thenReturn(CapabilityResult.ok(Map.of("reservationId", 41L, "status", "AWAITING_HOSTESS")));
+        Map<String, Object> invented = args(true, List.of("BORSCH", "щука"));
+        invented.put("reservationId", 1);
+
+        CapabilityResult result = tool.invoke(conciergeYes(TUESDAY_LUNCH), invented);
+
+        ArgumentCaptor<CapabilityContext> yes = ArgumentCaptor.forClass(CapabilityContext.class);
+        ArgumentCaptor<Map<String, Object>> slot = ArgumentCaptor.forClass(Map.class);
+        verify(create).invoke(yes.capture(), slot.capture());
+        assertThat(yes.getValue().agreement().covers(new GuestAgreement.Table(LocalDate.of(2026, 10, 20), LocalTime.of(13, 0), 2)))
+                .isTrue();
+        assertThat(slot.getValue()).containsEntry("date", "2026-10-20").containsEntry("time", "13:00").containsEntry("partySize", 2);
+        ArgumentCaptor<BusinessLunchService.Request> request = ArgumentCaptor.forClass(BusinessLunchService.Request.class);
+        verify(lunch).placeFor(eq(reservation), request.capture());
+        assertThat(request.getValue().dishCodes()).containsExactly("BORSCHT", "PIKE");
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("reservationId", 41L).containsEntry("reservationCreated", true)
+                .containsEntry("status", "AWAITING_HOSTESS").containsEntry("dateLabel", "вт 20.10").containsEntry("time", "13:00");
+    }
+
+    @Test
+    void theArgumentsSlotWinsOverThePosition() {
+        LunchOrderPlaceTool tool = booking();
+        when(create.invoke(any(), anyMap())).thenReturn(CapabilityResult.ok(Map.of("reservationId", 41L)));
+        Map<String, Object> given = args(true, List.of("BORSCHT"));
+        given.remove("reservationId");
+        given.put("date", "2026-10-20");
+        given.put("time", "13:00");
+        given.put("partySize", 3);
+
+        assertThat(tool.invoke(conciergeYes(Map.of()), given).ok()).isTrue();
+        verify(create).invoke(any(), eq(Map.of("date", "2026-10-20", "time", "13:00", "partySize", 3)));
+    }
+
+    @Test
+    void theGuestsOwnBookingAtThatTimeIsUsedNotASecondOne() {
+        LunchOrderPlaceTool tool = booking();
+        when(reservations.findOverlappingSessionReservation(eq("c-live"), eq(7L), any(), any(), any())).thenReturn(Optional.of(reservation));
+
+        CapabilityResult result = tool.invoke(conciergeYes(TUESDAY_LUNCH), args(true, List.of("BORSCHT")));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("reservationCreated", false);
+        verify(create, never()).invoke(any(), anyMap());
+    }
+
+    @Test
+    void aSlotOutsideLunchIsRefusedBeforeAnythingIsBooked() {
+        LunchOrderPlaceTool tool = booking();
+
+        CapabilityResult saturday = tool.invoke(conciergeYes(Map.of("date", "2026-10-24", "time", "13:00", "partySize", 2)),
+                args(true, List.of("BORSCHT")));
+        CapabilityResult noSlot = tool.invoke(conciergeYes(Map.of()), args(true, List.of("BORSCHT")));
+
+        assertThat(saturday.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(saturday.facts()).containsEntry("reason", "NOT_A_LUNCH_DAY").containsEntry("nextServedDate", "2026-10-26");
+        assertThat(noSlot.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+        assertThat(noSlot.facts()).containsEntry("reason", "needs_date_time");
+        verify(create, never()).invoke(any(), anyMap());
+        verifyNoInteractions(lunch);
+    }
+
+    @Test
+    void aDishCodeThatFitsNothingReturnsTheMenu() {
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), args(true, List.of("PIZZA")));
+
+        assertThat(result.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+        assertThat(result.facts()).containsEntry("unknownDishCodes", List.of("PIZZA"))
+                .containsEntry("menu", List.of(Map.of("code", "BORSCHT", "title", "Борщ"), Map.of("code", "PIKE", "title", "Щука")));
     }
 }

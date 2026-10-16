@@ -97,6 +97,11 @@ class HonestBookingStatusTest {
         assertThat(HonestBookingStatus.unbacked(UNBACKED, List.of(new AgentOutcome.ToolUse("reservation_change", moved)), null))
                 .isFalse();
         assertThat(HonestBookingStatus.unbacked(UNBACKED, List.of(), 7L)).isFalse();
+        // A lunch order placed this turn (it may have booked its own table) backs «заказ оформлен».
+        CapabilityResult lunch = CapabilityResult.ok(Map.of("orderId", 41L, "reservationId", 41L, "reservationCreated", true,
+                "status", "AWAITING_HOSTESS"));
+        assertThat(HonestBookingStatus.unbacked(UNBACKED, List.of(new AgentOutcome.ToolUse("lunch_order_place", lunch)), null))
+                .isFalse();
         // Asking for the yes, or saying it is not done yet, claims nothing.
         for (String text : java.util.Arrays.asList(null, "На 20:30 есть стол у окна. Подтверждаете бронь?",
                 "Бронь ещё не оформлена: подтвердите, пожалуйста, время.", "Стол пока не забронирован.")) {

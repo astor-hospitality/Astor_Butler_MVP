@@ -60,7 +60,8 @@ final class HonestBookingStatus {
 
     private static boolean committed(List<AgentOutcome.ToolUse> uses) {
         return uses != null && uses.stream().anyMatch(use -> use.result() != null && use.result().ok()
-                && ("reservation_create".equals(use.tool()) || "reservation_change".equals(use.tool())));
+                && ("reservation_create".equals(use.tool()) || "reservation_change".equals(use.tool())
+                || "lunch_order_place".equals(use.tool())));
     }
 
     private static Map<String, Object> lastBooking(List<AgentOutcome.ToolUse> uses) {
@@ -69,7 +70,11 @@ final class HonestBookingStatus {
         }
         for (int i = uses.size() - 1; i >= 0; i--) {
             AgentOutcome.ToolUse use = uses.get(i);
-            if ("reservation_create".equals(use.tool()) && use.result() != null && use.result().ok()) {
+            // A lunch order that booked its own table carries the same status (reservationCreated).
+            boolean booked = "reservation_create".equals(use.tool()) || "lunch_order_place".equals(use.tool())
+                    && use.result() != null && use.result().facts() != null
+                    && Boolean.TRUE.equals(use.result().facts().get("reservationCreated"));
+            if (booked && use.result() != null && use.result().ok()) {
                 return use.result().facts() == null ? Map.of() : use.result().facts();
             }
         }

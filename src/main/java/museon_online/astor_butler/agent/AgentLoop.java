@@ -310,7 +310,7 @@ public class AgentLoop {
         String turn = ctx.idempotencyKey();
         String key = turn == null || turn.isBlank() ? null : turn + ":" + call;
         return new CapabilityContext(ctx.caller(), ctx.chatId(), ctx.sessionId(), ctx.visitId(), key, ctx.guestName(),
-                ctx.guestPhone(), ctx.agreement());
+                ctx.guestPhone(), ctx.agreement(), ctx.position());
     }
 
     private static Map<String, Object> metadata(CapabilityContext ctx, boolean auditContent) {
