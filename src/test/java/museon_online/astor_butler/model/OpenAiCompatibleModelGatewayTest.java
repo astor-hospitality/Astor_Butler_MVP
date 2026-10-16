@@ -198,6 +198,24 @@ class OpenAiCompatibleModelGatewayTest {
         withModel.server().verify();
     }
 
+    @Test
+    void aPhotoRequestMayAskForALongerAnswerThanTheDefault() {
+        Fixture fixture = fixture(BASE_URL, API_KEY, "fast-model", "", "eye-model", "", 0.1, true);
+        fixture.server().expect(once(), requestTo(COMPLETIONS))
+                .andExpect(jsonPath("$.max_tokens").value(128))
+                .andRespond(withSuccess("{\"choices\": [{\"message\": {\"content\": \"{}\"}}]}", MediaType.APPLICATION_JSON));
+        fixture.server().expect(once(), requestTo(COMPLETIONS))
+                .andExpect(jsonPath("$.max_tokens").value(2048))
+                .andRespond(withSuccess("{\"choices\": [{\"message\": {\"content\": \"{}\"}}]}", MediaType.APPLICATION_JSON));
+        ModelVisionRequest request = ModelVisionRequest.of(
+                "График смен", "aGVsbG8=", "image/png", null, "STAFF_SCHEDULE", "RECOGNIZE", "staff-schedule");
+
+        fixture.gateway().analyzeImage(request);
+        fixture.gateway().analyzeImage(request.withMaxTokens(2048));
+
+        fixture.server().verify();
+    }
+
     private static Fixture fixture(
             String baseUrl,
             String apiKey,

@@ -497,6 +497,9 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
                         Map.of("url", "data:" + mimeType + ";base64," + (request.imageBase64() == null ? "" : request.imageBase64())))
         );
         Map<String, Object> body = completionBody(visionModel, content, null);
+        if (request.maxTokens() != null && request.maxTokens() > 0) {
+            body.put("max_tokens", request.maxTokens());
+        }
         long startedAt = System.nanoTime();
 
         Map<?, ?> response = post("/chat/completions", body);

@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-16-staff-shift-schedule
+      author: astor-butler
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-16-staff-shift-schedule.sql

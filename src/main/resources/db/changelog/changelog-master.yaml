@@ -101,3 +101,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-15-call-log.yaml
   - include:
       file: db/changelog/2026-10-16-agent-budget.yaml
+  - include:
+      file: db/changelog/2026-10-16-staff-shift-schedule.yaml
