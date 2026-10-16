@@ -32,7 +32,7 @@ class GuestBillStaffCardTest {
     private final TableRequestRouter waiters = mock(TableRequestRouter.class);
 
     @Test
-    void theCardNamesTheTableTheWaiterAndTheGuestAndGoesToTheBookingsTopic() throws Exception {
+    void theCardNamesTheTableTheWaiterAndTheGuestAndGoesToTheWishesTopicLikeTableRequests() throws Exception {
         when(bot.execute(any(SendMessage.class))).thenReturn(message(700));
         when(waiters.waiterName(any())).thenReturn(Optional.of("Анна"));
         GuestBillStaffCard card = card("15");
@@ -41,7 +41,7 @@ class GuestBillStaffCardTest {
 
         SendMessage sent = sent().getFirst();
         assertThat(sent.getChatId()).isEqualTo(STAFF_CHAT);
-        assertThat(sent.getMessageThreadId()).as("no topic of its own: the router puts it in bookings").isNull();
+        assertThat(sent.getMessageThreadId()).as("the wishes topic, where table requests go (#232)").isEqualTo(15);
         assertThat(sent.getText())
                 .contains("Счёт · Стол у окна (T5) · Анна · гость Яна")
                 .contains("Бронь #68")
@@ -97,6 +97,26 @@ class GuestBillStaffCardTest {
 
         assertThat(sent().getFirst().getMessageThreadId()).isNull();
         assertThat(sent().getFirst().getText()).isEqualTo("Стол у окна (T5): счёт отменён");
+    }
+
+    @Test
+    void withoutTheWishesTopicOrWhenItFailsTheCardGoesToTheBookingsTopic() throws Exception {
+        when(bot.execute(any(SendMessage.class))).thenReturn(message(705));
+        assertThat(card("").billAsked(order(68L, null), null)).isTrue();
+        assertThat(sent().getFirst().getMessageThreadId()).as("no topic of its own: the router puts it in bookings").isNull();
+
+        TelegramBot flaky = mock(TelegramBot.class);
+        when(flaky.execute(any(SendMessage.class)))
+                .thenThrow(new org.telegram.telegrambots.meta.exceptions.TelegramApiException("message thread not found"))
+                .thenReturn(message(706));
+        @SuppressWarnings("unchecked")
+        ObjectProvider<TelegramBot> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(flaky);
+        assertThat(new GuestBillStaffCard(provider, true, true, STAFF_CHAT, "15").billAsked(order(68L, null), null)).isTrue();
+        List<SendMessage> tried = mockingDetails(flaky).getInvocations().stream()
+                .flatMap(invocation -> java.util.Arrays.stream(invocation.getArguments()))
+                .filter(SendMessage.class::isInstance).map(SendMessage.class::cast).toList();
+        assertThat(tried).extracting(SendMessage::getMessageThreadId).containsExactly(15, null);
     }
 
     @Test

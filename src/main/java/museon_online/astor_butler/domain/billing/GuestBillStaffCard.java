@@ -25,10 +25,11 @@ import java.util.Optional;
  * Яна» when the guest asks for it — in the bot, through the Butler's agent or through the Concierge — and one line
  * «Стол 5: счёт отменён · Анна» when the bill is cancelled.
  *
- * <p>The card goes to the hostess chat without a topic of its own, so {@link HostessTopicRouter} puts it in the bookings
- * topic ({@code TELEGRAM_HOSTESS_THREAD_ID}), where table requests go as well. It carries the hostess «Счёт» button (the
- * review at the bill, {@link HostessBillRequestService}) and «Отменить счёт» while the bill is live. The cancellation
- * line goes to the wishes topic ({@code TELEGRAM_WISHES_THREAD_ID}); without that topic it goes where the card went.
+ * <p>The card goes to the wishes topic of the staff group ({@code TELEGRAM_WISHES_THREAD_ID}), where the guests' table
+ * requests go too (#232, {@code TableRequestCards}); without that topic, or when that send fails, it goes to the hostess
+ * chat without a topic, which {@link HostessTopicRouter} puts in the bookings topic ({@code TELEGRAM_HOSTESS_THREAD_ID}).
+ * It carries the hostess «Счёт» button (the review at the bill, {@link HostessBillRequestService}) and «Отменить счёт»
+ * while the bill is live. The cancellation line goes the same way.
  * The waiter is the one assigned to the table for the day ({@code table_waiter_assignments}), when there is one.
  */
 @Component
@@ -83,8 +84,16 @@ public class GuestBillStaffCard {
             log.info("Bill card for reservation {} not sent: the staff chat is not configured or Telegram is off", order.id());
             return false;
         }
-        Optional<Integer> sent = send(chat, null, billAskedText(order, bill, waiterOf(order)), buttons(order, bill));
-        sent.ifPresent(id -> log.info("Bill card for reservation {} sent to the staff chat: message {}", order.id(), id));
+        String text = billAskedText(order, bill, waiterOf(order));
+        Integer thread = threadFor(chat);
+        Optional<Integer> sent = send(chat, thread, text, buttons(order, bill));
+        if (sent.isEmpty() && thread != null) {
+            thread = null;
+            sent = send(chat, null, text, buttons(order, bill));
+        }
+        Integer topic = thread;
+        sent.ifPresent(id -> log.info("Bill card for reservation {} sent to the staff chat ({}): message {}", order.id(),
+                topic == null ? "bookings topic" : "wishes topic", id));
         return sent.isPresent();
     }
 
@@ -97,8 +106,9 @@ public class GuestBillStaffCard {
         if (!enabled || chat.isEmpty()) {
             return false;
         }
-        Integer thread = chat.equals(hostessChatId) ? wishesThreadId : null;
-        return send(chat, thread, billCancelledText(order, waiterOf(order)), null).isPresent();
+        String text = billCancelledText(order, waiterOf(order));
+        Integer thread = threadFor(chat);
+        return send(chat, thread, text, null).isPresent() || thread != null && send(chat, null, text, null).isPresent();
     }
 
     static String billAskedText(TableReservationOrder order, GuestBill bill, String waiter) {
@@ -150,6 +160,11 @@ public class GuestBillStaffCard {
             log.warn("Waiter of reservation {} not looked up: {}", order.id(), e.getClass().getSimpleName());
             return null;
         }
+    }
+
+    /** The wishes topic, when it is set and the card goes to the staff group it belongs to. */
+    private Integer threadFor(String chat) {
+        return chat.equals(hostessChatId) ? wishesThreadId : null;
     }
 
     private String chatOf(TableReservationOrder order) {

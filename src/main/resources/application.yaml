@@ -401,8 +401,8 @@ astor:
     guest-bill-request:
       # The guest asks for the bill in the bot (#153 A2): «счёт», «чек», «посчитайте», «рассчитайте», «оплатить», «закрыть стол»
       # as whole words, outside a dialogue step, from a guest with a visit today. Off (default): the words go to the usual flow.
-      # On: the staff chat's bookings topic gets «💳 Счёт · Стол N · официант · гость Имя» (no phone; the waiter from
-      # table_waiter_assignments) with «Счёт» and «Отменить счёт»; the same card for the agents' bill_request (Butler bot and
+      # On: the staff chat's wishes topic (bookings topic without it) gets «💳 Счёт · Стол N · официант · гость Имя» (no
+      # phone; the table's waiter of the day or of the zone on shift) with «Счёт» and «Отменить счёт»; the same card for the agents' bill_request (Butler bot and
       # Concierge). The guest hears «передал команде»; with astor.review.moment=on-bill the review is asked right there, and
       # with SABY_PAYMENT_ENABLED the venue's payment link goes to the guest (bot chat, or the Concierge's PAYMENT_LINK).
       enabled: ${ASTOR_GUEST_BILL_REQUEST_ENABLED:false}
