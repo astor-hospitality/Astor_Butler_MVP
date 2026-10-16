@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Astor — табло</title>
-<meta name="description" content="Закрытое табло Astor: визиты, переговоры агентов, метрики и здоровье систем.">
+<meta name="description" content="Закрытое табло Astor: брони и ланчи дня для менеджера смены, визиты, переговоры агентов, метрики и здоровье систем.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#0e1216">
@@ -30,6 +30,7 @@
   <header class="topbar">
     <div class="brand">Astor · Табло <small>AERIS · <span id="today"></span> · <span id="status" role="status">—</span></small></div>
     <nav class="nav" role="tablist" aria-label="Разделы табло">
+      <button type="button" role="tab" data-tab="today" aria-selected="false">Сегодня</button>
       <button type="button" role="tab" data-tab="visits" aria-selected="true">Визиты</button>
       <button type="button" role="tab" data-tab="metrics" aria-selected="false">Метрики</button>
       <button type="button" role="tab" data-tab="arch" aria-selected="false">Архитектура</button>
@@ -40,6 +41,17 @@
       <button type="button" class="btn small" id="logout">Выйти</button>
     </div>
   </header>
+
+  <main class="grid day" id="tab-today" role="tabpanel" aria-label="Сегодня" hidden>
+    <div class="day-head">
+      <div class="venues" id="venues" role="group" aria-label="Ресторан"></div>
+      <p class="note">Только просмотр: брони подтверждает хостес в Telegram · <span id="dayUpdated"></span></p>
+    </div>
+    <div class="counters" id="dayCounters" aria-label="Счётчики дня"></div>
+    <p class="note limited" id="dayLimited" hidden>Сервер табло ещё не отдаёт сумму ланча, канал, число гостей, оценки и время ожидания – они появятся после его обновления. Тестовые гости пока могут быть видны.</p>
+    <ol class="daylist" id="dayList" aria-label="Брони и заказы ланча на сегодня"></ol>
+    <p class="empty day-empty" id="dayEmpty" hidden>На сегодня броней и заказов ланча пока нет.</p>
+  </main>
 
   <main class="grid" id="tab-visits" role="tabpanel">
     <div class="kanban" id="kanban" aria-label="Визиты по этапам"></div>

@@ -1,4 +1,5 @@
-/* Astor board (/board): kanban of visits, the open visit in three lanes, metrics, architecture, lessons.
+/* Astor board (/board): «Сегодня» for the shift manager, kanban of visits, the open visit in three lanes, metrics,
+   architecture, lessons.
    Closed by the board token (X-Astor-Board-Token); the token lives in sessionStorage only; a sign-in link /board/#t=<token> sets it.
    ES module: the pure functions below are imported by tests/board.test.mjs; the DOM part runs only in a browser. */
 
@@ -6,6 +7,10 @@ export const API = "/api/board/v1";
 export const VENUE_TZ = "Asia/Yekaterinburg";
 const TOKEN_KEY = "astor-board-token";
 const THEME_KEY = "astor-board-theme";
+const TAB_KEY = "astor-board-tab";
+const VENUE_KEY = "astor-board-venue";
+/** The venue until the server names its venues (a server without /today). */
+const DEFAULT_VENUES = ["AERIS"];
 const HIDDEN_TEXT = "текст скрыт";
 
 export const STAGES = [
@@ -206,6 +211,123 @@ export function metricTiles(m) {
   ];
 }
 
+// ---- today (the shift manager's tab) ----------------------------------------------------------------------------
+
+/** Statuses of /today; the board only shows them: confirming stays with the hostess in Telegram. */
+export const DAY_STATUS = {
+  WAITING: { label: "ждёт хостес", tone: "warn" },
+  CONFIRMED: { label: "подтверждена", tone: "good" },
+  BILL: { label: "счёт", tone: "gold" },
+  CANCELLED: { label: "отменена", tone: "off" },
+  NO_SHOW: { label: "не пришёл", tone: "off" },
+};
+export const DAY_CHANNEL = { CONCIERGE: "Консьерж", BUTLER: "бот ресторана" };
+/** A request the hostess has not answered for this long is highlighted. */
+export const OVERDUE_MS = 10 * 60000;
+const STAGE_STATUS = {
+  REQUESTED: "WAITING", CONFIRMED: "CONFIRMED", VISIT_DAY: "CONFIRMED", SEATED: "CONFIRMED",
+  BILL: "BILL", AFTER: "BILL", RETURNED: "BILL", CANCELLED: "CANCELLED", NO_SHOW: "NO_SHOW",
+};
+
+/** «Мария К.» → «Мария»: the manager sees first names only. */
+export function firstName(guest) {
+  const word = String(guest || "").trim().split(/\s+/)[0];
+  return word || "Гость";
+}
+
+/**
+ * The day from /visits for a server without /today: what /visits holds (time, first name, table, status by stage);
+ * guests, lunch, channel, rating and the waiting time stay null and their places stay hidden.
+ */
+export function dayFromVisits(visits, window) {
+  const from = toDate(window && window.from);
+  const to = toDate(window && window.to);
+  const items = (visits || [])
+    .filter((visit) => {
+      const at = toDate(visit.visitDay);
+      return at && (!from || at >= from) && (!to || at < to);
+    })
+    .map((visit) => ({
+      visitId: visit.id, reservationId: visit.reservationId, venue: null, at: visit.visitDay, guest: firstName(visit.guest),
+      table: visit.table || null, guests: null, status: STAGE_STATUS[visit.stage] || "WAITING", lunchRub: null,
+      channel: null, waitingSince: null, stars: null,
+    }));
+  return byTime(items);
+}
+
+/** Every venue in one time line: by start, then by visit. */
+export function byTime(items) {
+  const time = (item) => (toDate(item.at) || new Date(0)).getTime();
+  return [...(items || [])].sort((a, b) => time(a) - time(b) || a.visitId - b.visitId);
+}
+
+/** Whole minutes the hostess has not answered; null when the item does not wait or the server does not say since when. */
+export function waitingMinutes(item, now = new Date()) {
+  if (!item || item.status !== "WAITING") return null;
+  const since = toDate(item.waitingSince);
+  return since ? Math.max(0, Math.floor((now.getTime() - since.getTime()) / 60000)) : null;
+}
+
+export function isOverdue(item, now = new Date()) {
+  const minutes = waitingMinutes(item, now);
+  return minutes != null && minutes * 60000 >= OVERDUE_MS;
+}
+
+/** The counters of the day, counted here so the waiting time moves on between two loads. */
+export function dayTotals(items, now = new Date()) {
+  const list = items || [];
+  const live = (item) => item.status !== "CANCELLED" && item.status !== "NO_SHOW";
+  const lunches = list.filter((item) => item.lunchRub != null && live(item));
+  const stars = list.map((item) => item.stars).filter((value) => value != null);
+  return {
+    requests: list.length,
+    confirmed: list.filter((item) => item.status === "CONFIRMED" || item.status === "BILL").length,
+    waiting: list.filter((item) => item.status === "WAITING").length,
+    overdue: list.filter((item) => isOverdue(item, now)).length,
+    lunchRub: lunches.reduce((sum, item) => sum + item.lunchRub, 0),
+    ratingAvg: stars.length ? Math.round((stars.reduce((sum, value) => sum + value, 0) / stars.length) * 10) / 10 : null,
+    ratings: stars.length,
+  };
+}
+
+/** "1 160 ₽" with a plain space (the hall tablet must not wrap a sum). */
+export function rub(value) {
+  return value == null ? "–" : num(Math.round(value)) + " ₽";
+}
+
+/** Russian plural: plural(2, ["гость", "гостя", "гостей"]) → "гостя". */
+export function plural(n, forms) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
+  return forms[2];
+}
+
+/** Counter tiles for the top of «Сегодня»; a figure the server does not give yet is left out, not shown as zero. */
+export function dayCounters(totals, { full } = { full: true }) {
+  if (!totals) return [];
+  const tiles = [
+    { key: "requests", label: "Заявок", value: num(totals.requests) },
+    { key: "confirmed", label: "Подтверждено", value: num(totals.confirmed) },
+    { key: "waiting", label: "Ждут ответа хостес", value: num(totals.waiting), alert: totals.overdue > 0,
+      note: totals.overdue > 0 ? "дольше 10 минут: " + num(totals.overdue) : "" },
+  ];
+  if (full) tiles.push({ key: "lunch", label: "Выручка ланча", value: rub(totals.lunchRub) });
+  if (full) {
+    tiles.push({ key: "rating", label: "Оценка гостей", value: totals.ratingAvg == null ? "–" : num(totals.ratingAvg),
+      note: totals.ratings ? "средняя из " + num(totals.ratings) + " " + plural(totals.ratings, ["оценки", "оценок", "оценок"])
+        : "оценок пока нет" });
+  }
+  return tiles;
+}
+
+/** /today?from&to[&venue]: venue null means every venue. */
+export function dayPath(window, venue) {
+  return "/today?from=" + encodeURIComponent(window.from) + "&to=" + encodeURIComponent(window.to)
+    + (venue ? "&venue=" + encodeURIComponent(venue) : "");
+}
+
 // ---- live stream ------------------------------------------------------------------------------------------------
 
 /** The stream URL: EventSource cannot send headers, so the token goes as ?t= (accepted on this route only). */
@@ -231,6 +353,14 @@ const store = {
   get(key) { try { return window.sessionStorage.getItem(key); } catch (e) { return null; } },
   set(key, value) { try { window.sessionStorage.setItem(key, value); } catch (e) { /* private mode: memory only */ } },
   remove(key) { try { window.sessionStorage.removeItem(key); } catch (e) { /* nothing stored */ } },
+  // The tab and the venue a device shows (no token): the hall tablet opens on «Сегодня», a laptop on «Визиты».
+  local(key, value) {
+    try {
+      if (value === undefined) return window.localStorage.getItem(key);
+      window.localStorage.setItem(key, value);
+    } catch (e) { /* not remembered */ }
+    return null;
+  },
 };
 
 function el(tag, props, ...children) {
@@ -254,7 +384,8 @@ class Unauthorized extends Error {}
 function startBoard() {
   const $ = (id) => document.getElementById(id);
   const state = { token: store.get(TOKEN_KEY) || "", visits: [], openId: null, userPicked: false, tab: "visits",
-    window: "today", source: null, backoff: 0, retry: null, refresh: null, health: null };
+    window: "today", source: null, backoff: 0, retry: null, refresh: null, health: null,
+    venue: store.local(VENUE_KEY) || "", venues: DEFAULT_VENUES, day: [], dayFull: true, dayTimer: null };
 
   // ---- API ----
   async function api(path, options = {}) {
@@ -286,6 +417,7 @@ function startBoard() {
     store.remove(TOKEN_KEY);
     closeStream();
     clearInterval(state.health);
+    clearInterval(state.dayTimer);
     document.body.classList.add("locked");
     $("loginError").textContent = message || "";
     $("token").value = "";
@@ -326,15 +458,17 @@ function startBoard() {
   $("theme").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
 
   // ---- tabs ----
-  const TABS = ["visits", "metrics", "arch", "lessons"];
+  const TABS = ["today", "visits", "metrics", "arch", "lessons"];
   function showTab(tab) {
-    state.tab = TABS.includes(tab) ? tab : "visits";
+    state.tab = TABS.includes(tab) ? tab : TABS.includes(store.local(TAB_KEY)) ? store.local(TAB_KEY) : "visits";
+    store.local(TAB_KEY, state.tab);
     for (const name of TABS) {
       $("tab-" + name).hidden = name !== state.tab;
       const button = document.querySelector('[data-tab="' + name + '"]');
       button.setAttribute("aria-selected", String(name === state.tab));
     }
     if (!state.token) return;
+    if (state.tab === "today") loadDay();
     if (state.tab === "metrics") loadMetrics();
     if (state.tab === "lessons") loadLessons();
     if (state.tab === "arch") loadHealth();
@@ -522,6 +656,86 @@ function startBoard() {
     });
   }
 
+  // ---- today: the shift manager's tab, read-only ----
+  // A server without /today answers 404 (or 503 while the day is off): the tab then reads /visits and hides the rest.
+  const DAY_FALLBACK = [404, 405, 501, 503];
+  async function loadDay() {
+    const range = venueWindow("today");
+    try {
+      const response = await api(dayPath(range, state.venue || null));
+      if (response.ok) {
+        const day = await response.json();
+        state.dayFull = true;
+        state.day = byTime(Array.isArray(day.items) ? day.items : []);
+        if (Array.isArray(day.venues) && day.venues.length) state.venues = day.venues;
+        if (state.venue && !state.venues.includes(state.venue)) {
+          // A venue remembered on this device that has no visits any more: back to every venue.
+          state.venue = "";
+          store.local(VENUE_KEY, "");
+          return loadDay();
+        }
+      } else if (DAY_FALLBACK.includes(response.status)) {
+        state.dayFull = false;
+        state.day = dayFromVisits(await json("/visits" + query(range)), range);
+      } else {
+        throw new Error("HTTP " + response.status);
+      }
+      renderDay();
+    } catch (error) {
+      failed(error, "сегодня");
+    }
+  }
+
+  function renderVenues() {
+    const venues = state.venues.length > 1 ? [""].concat(state.venues) : state.venues;
+    const current = state.venues.length > 1 ? state.venue : state.venues[0];
+    $("venues").replaceChildren(...venues.map((code) => el("button", {
+      type: "button", class: "btn venue", "aria-pressed": String(code === current), "data-venue": code,
+      onclick: () => {
+        if (state.venues.length < 2) return;
+        state.venue = code;
+        store.local(VENUE_KEY, code);
+        renderVenues();
+        loadDay();
+      },
+    }, code || "Все")));
+  }
+
+  function renderDay() {
+    const now = new Date();
+    const totals = dayTotals(state.day, now);
+    renderVenues();
+    $("dayCounters").replaceChildren(...dayCounters(totals, { full: state.dayFull }).map((tile) =>
+      el("div", { class: "counter" + (tile.alert ? " alert" : ""), "data-key": tile.key },
+        el("b", {}, tile.label), el("span", { class: "v" }, tile.value), tile.note ? el("small", {}, tile.note) : null)));
+    $("dayList").replaceChildren(...state.day.map((item) => dayRow(item, now)));
+    $("dayEmpty").hidden = state.day.length > 0;
+    $("dayLimited").hidden = state.dayFull;
+    $("dayUpdated").textContent = "обновлено " + venueTime(now);
+  }
+
+  function dayRow(item, now) {
+    const status = DAY_STATUS[item.status] || { label: item.status || "–", tone: "off" };
+    const minutes = waitingMinutes(item, now);
+    const facts = [item.table ? "стол " + item.table : "стол не назначен",
+      item.guests ? item.guests + " " + plural(item.guests, ["гость", "гостя", "гостей"]) : null].filter(Boolean).join(" · ");
+    const showVenue = state.venues.length > 1 && !state.venue && item.venue;
+    return el("li", { class: "dayrow tone-" + status.tone + (isOverdue(item, now) ? " overdue" : ""), "data-status": item.status },
+      el("span", { class: "time" }, venueTime(item.at) || "–"),
+      el("span", { class: "who" },
+        el("span", { class: "name" }, item.guest || "Гость"),
+        el("span", { class: "facts" }, facts),
+        item.channel || showVenue ? el("span", { class: "tags" },
+          item.channel ? el("span", { class: "tag" }, DAY_CHANNEL[item.channel] || item.channel) : null,
+          showVenue ? el("span", { class: "tag" }, item.venue) : null) : null),
+      el("span", { class: "state" },
+        el("span", { class: "status" }, status.label),
+        minutes != null ? el("span", { class: "wait" }, "ждёт " + minutes + " мин") : null),
+      el("span", { class: "money" },
+        item.lunchRub != null ? el("span", { class: "lunch" }, "ланч ", el("b", {}, rub(item.lunchRub))) : null,
+        item.stars != null ? el("span", { class: "stars", "aria-label": "оценка " + item.stars + " из 5" }, "★ " + item.stars) : null));
+  }
+
   // ---- health ----
   async function loadHealth() {
     try {
@@ -600,6 +814,7 @@ function startBoard() {
       clearTimeout(state.refresh);
       state.refresh = setTimeout(() => {
         loadVisits();
+        if (state.tab === "today") loadDay();
         if (visitId != null && visitId === state.openId) loadTurns();
       }, 300);
     });
@@ -622,6 +837,9 @@ function startBoard() {
     loadHealth();
     clearInterval(state.health);
     state.health = setInterval(loadHealth, 30000);
+    // The waiting time moves on without events, and a missed event is caught up within a minute.
+    clearInterval(state.dayTimer);
+    state.dayTimer = setInterval(() => { if (state.tab === "today") loadDay(); }, 60000);
     openStream();
     showTab(state.tab);
   }
