@@ -107,4 +107,19 @@ class GuestAgreementTest {
         assertThat(GuestAgreement.Table.of(refusal.facts().get("date"), refusal.facts().get("time"),
                 refusal.facts().get("partySize"))).contains(AT_SEVEN);
     }
+
+    /** «Отмените счёт» cancels the bill (bill_cancel), never the booking; the booking named still is. */
+    @Test
+    void aRequestToCancelTheBillIsNotOneToCancelTheBooking() {
+        for (String words : List.of("Отмените счёт", "отменить счет пожалуйста", "отмена счёта", "отмените чек")) {
+            assertThat(GuestAgreement.asksToCancelBill(words)).as(words).isTrue();
+            assertThat(GuestAgreement.asksToCancel(words)).as(words).isFalse();
+            assertThat(GuestAgreement.of(words, List.of()).cancelsBill()).as(words).isTrue();
+        }
+        assertThat(GuestAgreement.asksToCancel("отмените счёт и бронь")).isTrue();
+        for (String words : java.util.Arrays.asList("счёт", "отменить счёт?", "не надо отменять счёт", "отмените бронь", "давайте счёт", null, "")) {
+            assertThat(GuestAgreement.asksToCancelBill(words)).as(String.valueOf(words)).isFalse();
+        }
+        assertThat(new GuestAgreement(true, List.of()).cancelsBill()).isFalse();
+    }
 }

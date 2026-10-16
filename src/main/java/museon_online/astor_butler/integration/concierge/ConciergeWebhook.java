@@ -187,15 +187,20 @@ public class ConciergeWebhook {
 
     private Optional<ConciergeEvent> event(String type, long reservationId, TableReservationOrder order, Map<String, Object> facts) {
         if (!ready()) {
+            // Said at info: a Concierge guest's bill, review or link then reaches no one (16.10, reservation 68).
+            log.info("Concierge event not sent, the webhook is off or has no usable secret: type={}, reservation={}", type, reservationId);
             return Optional.empty();
         }
         try {
             Optional<GuestVisit> visit = visits.findByReservation(reservationId);
             if (visit.isEmpty()) {
+                log.info("Concierge event not sent, no visit for the reservation: type={}, reservation={}", type, reservationId);
                 return Optional.empty();
             }
             Optional<String> session = turns.sessionOf(visit.get().id());
             if (session.isEmpty()) {
+                log.info("Concierge event not sent, visit {} is linked to no Concierge session: type={}, reservation={}",
+                        visit.get().id(), type, reservationId);
                 return Optional.empty();
             }
             Map<String, Object> all = new LinkedHashMap<>(bookingFacts(order));

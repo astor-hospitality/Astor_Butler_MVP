@@ -30,7 +30,7 @@ import java.util.regex.Pattern;
  * no question. A false «no» costs one more question to the guest; a false «yes» still needs a proposed table.
  */
 public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels, List<Long> cancellations,
-                             List<Change> changes) {
+                             List<Change> changes, boolean cancelsBill) {
 
     /** The reason of the {@code NOT_ALLOWED} a commitment answers without the guest's yes. */
     public static final String NEEDS_GUEST_YES = "needs_guest_yes";
@@ -58,6 +58,10 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
     /** «Отмена» alone stops the last offer; «отмена брони», «сделайте отмену брони» ask to cancel. */
     private static final Set<String> CANCEL_NOUNS = Set.of("отмена", "отмену");
     private static final Set<String> BOOKING_WORDS = Set.of("бронь", "брони", "бронирования", "заказ", "заказа", "заявки", "стола");
+    /** The bill, as guests name it: «отмените счёт» cancels the bill, never the booking. */
+    private static final Set<String> BILL_WORDS = Set.of("счет", "счета", "чек", "чека");
+    /** The booking itself, named: with one of these «отмените счёт и бронь» still asks to cancel the booking. */
+    private static final Set<String> RESERVATION_WORDS = Set.of("бронь", "брони", "бронирование", "бронирования", "стол", "стола", "столик", "визит");
     /** After «не»: the guest will not come («не придём»). */
     private static final Set<String> NOT_COMING = Set.of("придем", "приду", "придут", "придет", "приедем", "приеду", "приедут");
     /** After «не»: the guest cannot, when nothing or «прийти» follows («не сможем», «не получится прийти»). */
@@ -137,10 +141,15 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
         changes = changes == null ? List.of() : List.copyOf(changes);
     }
 
+    /** An agreement without the guest's own request to cancel the bill. */
+    public GuestAgreement(boolean yes, List<Table> proposed, boolean cancels, List<Long> cancellations, List<Change> changes) {
+        this(yes, proposed, cancels, cancellations, changes, false);
+    }
+
     /** Also how JSON reads one: a REST context may carry an agreement, which the controller drops anyway. */
     @JsonCreator
     public GuestAgreement(@JsonProperty("yes") boolean yes, @JsonProperty("proposed") List<Table> proposed) {
-        this(yes, proposed, false, List.of(), List.of());
+        this(yes, proposed, false, List.of(), List.of(), false);
     }
 
     /** @param guestWords the guest's own words this turn, as the guest wrote them */
@@ -156,7 +165,7 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
                                     Collection<Change> changes) {
         return new GuestAgreement(saysYes(guestWords), proposed, asksToCancel(guestWords),
                 cancellations == null ? List.of() : List.copyOf(cancellations),
-                changes == null ? List.of() : List.copyOf(changes));
+                changes == null ? List.of() : List.copyOf(changes), asksToCancelBill(guestWords));
     }
 
     /** Whether the guest said yes to this very change, offered in the venue's previous answer. */
@@ -167,6 +176,34 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
     /** Whether the guest said yes to this very table, offered in the venue's previous answer. */
     public boolean covers(Table table) {
         return yes && proposed.contains(table);
+    }
+
+    /**
+     * The guest's own request to cancel the bill, as words: a cancel word («отмените», «отменить», «отмена») not under
+     * «не», and the bill named («счёт», «чек»). A question asks, it does not request; there is no «yes» to an offer here,
+     * since the venue never offers to cancel a bill.
+     */
+    public static boolean asksToCancelBill(String words) {
+        if (words == null || words.isBlank() || words.contains("?")) {
+            return false;
+        }
+        String text = words.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        List<String> said = Arrays.stream(WORD.split(text)).filter(word -> !word.isEmpty()).toList();
+        if (said.stream().noneMatch(BILL_WORDS::contains)) {
+            return false;
+        }
+        for (int i = 0; i < said.size(); i++) {
+            String word = said.get(i);
+            boolean negated = i > 0 && "не".equals(said.get(i - 1)) || i > 1 && "не".equals(said.get(i - 2));
+            if ((CANCEL_WORDS.contains(word) || CANCEL_NOUNS.contains(word)) && !negated) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean namesTheBillOnly(List<String> said) {
+        return said.stream().anyMatch(BILL_WORDS::contains) && said.stream().noneMatch(RESERVATION_WORDS::contains);
     }
 
     /** Whether this reservation may be cancelled: the guest asked to cancel this turn, or said yes to this very offer. */
@@ -238,6 +275,10 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
         }
         String text = words.toLowerCase(Locale.ROOT).replace('ё', 'е');
         List<String> said = Arrays.stream(WORD.split(text)).filter(word -> !word.isEmpty()).toList();
+        if (namesTheBillOnly(said)) {
+            // «Отмените счёт» is about the bill (bill_cancel), not the booking.
+            return false;
+        }
         boolean moves = text.chars().anyMatch(Character::isDigit)
                 || said.stream().anyMatch(word -> MOVE_STEMS.stream().anyMatch(word::startsWith));
         for (int i = 0; i < said.size(); i++) {

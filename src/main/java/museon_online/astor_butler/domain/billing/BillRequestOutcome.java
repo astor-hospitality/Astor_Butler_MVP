@@ -2,10 +2,18 @@ package museon_online.astor_butler.domain.billing;
 
 /**
  * What came of a bill request made for a reservation (the agents' {@code bill_request}): whether the team was told,
- * and the bill as Butler knows it. {@code billId} and {@code totalRub} are null when the visit has no bill in Butler
- * (the lunch was not ordered through it); {@code paymentUrl} only when the venue's payment page is switched on.
+ * and the bill as Butler knows it. {@code billId} is null when the visit has no bill in Butler (the lunch was not
+ * ordered through it); {@code totalRub} only when the venue (Saby) reported the sum — Butler's own estimate is never
+ * told to the guest as the bill (16.10: 2230 ₽ said, 2510 ₽ in Saby); {@code paymentUrl} only when the venue's payment
+ * page is switched on; {@code paymentLinkSent} when the link also went to the guest as a message with «Оплатить» (the
+ * bot's chat, or the Concierge's PAYMENT_LINK handed over).
  */
-public record BillRequestOutcome(Status status, Long reservationId, Long billId, Long totalRub, String paymentUrl) {
+public record BillRequestOutcome(Status status, Long reservationId, Long billId, Long totalRub, String paymentUrl,
+                                 boolean paymentLinkSent) {
+
+    public BillRequestOutcome(Status status, Long reservationId, Long billId, Long totalRub, String paymentUrl) {
+        this(status, reservationId, billId, totalRub, paymentUrl, false);
+    }
 
     public enum Status {
         /** {@code ASTOR_GUEST_BILL_REQUEST_ENABLED} is off. */

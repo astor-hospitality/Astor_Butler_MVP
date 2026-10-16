@@ -102,10 +102,10 @@ public class GuestBillPaymentPrompter {
         List<GuestBill> waiting = bills.awaitingPaymentLinkAfter(lastCheckedId, BATCH);
         lastCheckedId = waiting.size() == BATCH ? waiting.getLast().id() : 0L;
         for (GuestBill bill : waiting) {
-            // A bill without a chat (a Concierge booking) has no one to send the link to here: the agent asks for it
-            // through bill_request, so the venue is not asked for a link every ten minutes in vain — unless the booking
-            // belongs to a Concierge session the webhook reaches (BILL_READY).
-            if ((bill.chatId() == null && !notifier.reachesConcierge(bill)) || !provider.get().providerId().equals(bill.externalProvider()) || !confirmed(bill)
+            // A Concierge guest's bill has no Butler chat to send the link to: the agent asks for it through
+            // bill_request, so the venue is not asked for a link every ten minutes in vain — unless the booking
+            // belongs to a Concierge session the webhook reaches (PAYMENT_LINK).
+            if ((GuestBillNotifier.concierge(bill) && !notifier.reachesConcierge(bill)) || !provider.get().providerId().equals(bill.externalProvider()) || !confirmed(bill)
                     || retryAfter.getOrDefault(bill.id(), Instant.MIN).isAfter(now)) {
                 skipped++;
                 continue;
@@ -132,7 +132,8 @@ public class GuestBillPaymentPrompter {
                 bills.paymentLinkFailed(bill.id(), provider.get().providerId(), e.getClass().getSimpleName());
                 retryAfter.put(bill.id(), now.plus(RETRY_AFTER));
                 failed++;
-                log.warn("Payment link for bill {} was not had: {}", bill.id(), e.toString());
+                // The class only: an answer's message may carry the link or the venue's token.
+                log.warn("Payment link for bill {} was not had: {}", bill.id(), e.getClass().getSimpleName());
             }
         }
         return new Report(waiting.size(), sent, skipped, failed);

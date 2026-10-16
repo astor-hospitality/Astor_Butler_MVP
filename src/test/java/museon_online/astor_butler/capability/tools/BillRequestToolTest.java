@@ -41,7 +41,32 @@ class BillRequestToolTest {
         CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41));
 
         assertThat(result.ok()).isTrue();
-        assertThat(result.facts()).containsEntry("billId", 9L).containsEntry("totalRub", 540L).doesNotContainKey("paymentUrl");
+        assertThat(result.facts()).containsEntry("billId", 9L).containsEntry("totalRub", 540L).doesNotContainKey("paymentUrl")
+                .containsEntry("amountKnown", true).containsEntry("paymentLinkSent", false);
+    }
+
+    /** 16.10: the guest heard Butler's estimate as the bill; without the venue's sum there is no number at all. */
+    @Test
+    void withoutTheVenuesSumTheGuestHearsTheWaiterIsBringingTheBill() {
+        when(bills.requestByReservation(eq(41L), anyString())).thenReturn(
+                new BillRequestOutcome(BillRequestOutcome.Status.STAFF_NOTIFIED, 41L, 9L, null, null));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41));
+
+        assertThat(result.facts()).doesNotContainKey("totalRub").containsEntry("amountKnown", false)
+                .containsEntry("guestLine", "Официант несёт счёт.");
+        assertThat(tool.description()).contains("guestLine").contains("10 минут").contains("не называй");
+    }
+
+    @Test
+    void aLinkAlreadySentWithItsButtonIsSaidSo() {
+        when(bills.requestByReservation(eq(41L), anyString())).thenReturn(
+                new BillRequestOutcome(BillRequestOutcome.Status.STAFF_NOTIFIED, 41L, 9L, 2510L, "https://pay.example/9", true));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41));
+
+        assertThat(result.facts()).containsEntry("paymentLinkSent", true).containsEntry("totalRub", 2510L);
+        assertThat((String) result.facts().get("guestLine")).contains("2510 ₽").contains("Оплатить");
     }
 
     @Test
