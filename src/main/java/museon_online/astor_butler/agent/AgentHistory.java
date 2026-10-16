@@ -100,6 +100,18 @@ class AgentHistory {
         }
     }
 
+    /** What was said to the venue in the last answered turn (the guest's words, the Concierge's); null when nothing. */
+    String lastSaid(String key) {
+        Conversation conversation = conversations.get(key);
+        if (conversation == null) {
+            return null;
+        }
+        synchronized (conversation) {
+            Exchange last = conversation.exchanges.peekLast();
+            return last == null ? null : last.said();
+        }
+    }
+
     /** The tables the last answered turn put to the guest; none after a turn that fell back. */
     List<GuestAgreement.Table> proposed(String key) {
         Conversation conversation = conversations.get(key);

@@ -26,11 +26,15 @@ import java.util.regex.Pattern;
  * cancellation only on the guest's own request or a yes to the offered one ({@link #allowsCancel}). Only the Butler's
  * agent builds it, from the guest's words and its own previous turn; a REST caller cannot bring one.
  *
+ * <p>{@code takeaway}: the guest's words this turn, or the turn before when this one only answers, ask to pack a dish
+ * («с собой», «упакуйте», «заверните») and not for one more portion («ещё», «добавьте»). A lunch order of dishes already in
+ * the reservation is then refused: packing an ordered dish is the waiter's, not a new order (live test 16.10).
+ *
  * <p>The yes is a word check, not a model's reading: any agreement word («да», «ок», «бронируйте»…), no negation and
  * no question. A false «no» costs one more question to the guest; a false «yes» still needs a proposed table.
  */
 public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels, List<Long> cancellations,
-                             List<Change> changes, boolean cancelsBill) {
+                             List<Change> changes, boolean takeaway, boolean cancelsBill) {
 
     /** The reason of the {@code NOT_ALLOWED} a commitment answers without the guest's yes. */
     public static final String NEEDS_GUEST_YES = "needs_guest_yes";
@@ -68,6 +72,10 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
     private static final Set<String> CANNOT = Set.of("сможем", "смогу", "сможет", "смогут", "получится", "успеем");
     private static final Set<String> COME = Set.of("прийти", "придти", "приехать", "быть");
     /** A guest who names a time or moves the visit («не успеем к 19», «лучше позже») is not cancelling it. */
+    /** «С собой», «упакуйте», «заверните», «на вынос»: the guest wants a dish packed. Text is lower case, ё as е. */
+    private static final Pattern TAKEAWAY = Pattern.compile("с собой|(?<![\\p{L}])(упаку|упаков|заверн|заверт)|на ?вынос");
+    /** «Ещё одну», «добавьте», «вторую», «новую»: one more portion, not packing the one ordered. */
+    private static final Pattern MORE = Pattern.compile("(?<![\\p{L}])(еще|добав|втор|нов(ую|ый|ое|ая)|друг(ую|ой|ое))");
     private static final List<String> MOVE_STEMS = List.of("перенес", "перенос", "передвин", "сдвин", "помен", "измен", "лучше",
             "позже", "раньше", "вместо");
 
@@ -135,21 +143,27 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
         }
     }
 
+    /** An agreement without a takeaway request and without the guest's own request to cancel the bill. */
+    public GuestAgreement(boolean yes, List<Table> proposed, boolean cancels, List<Long> cancellations, List<Change> changes) {
+        this(yes, proposed, cancels, cancellations, changes, false, false);
+    }
+
+    /** An agreement without the guest's own request to cancel the bill. */
+    public GuestAgreement(boolean yes, List<Table> proposed, boolean cancels, List<Long> cancellations, List<Change> changes,
+                          boolean takeaway) {
+        this(yes, proposed, cancels, cancellations, changes, takeaway, false);
+    }
+
     public GuestAgreement {
         proposed = proposed == null ? List.of() : List.copyOf(proposed);
         cancellations = cancellations == null ? List.of() : List.copyOf(cancellations);
         changes = changes == null ? List.of() : List.copyOf(changes);
     }
 
-    /** An agreement without the guest's own request to cancel the bill. */
-    public GuestAgreement(boolean yes, List<Table> proposed, boolean cancels, List<Long> cancellations, List<Change> changes) {
-        this(yes, proposed, cancels, cancellations, changes, false);
-    }
-
     /** Also how JSON reads one: a REST context may carry an agreement, which the controller drops anyway. */
     @JsonCreator
     public GuestAgreement(@JsonProperty("yes") boolean yes, @JsonProperty("proposed") List<Table> proposed) {
-        this(yes, proposed, false, List.of(), List.of(), false);
+        this(yes, proposed, false, List.of(), List.of(), false, false);
     }
 
     /** @param guestWords the guest's own words this turn, as the guest wrote them */
@@ -165,7 +179,28 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
                                     Collection<Change> changes) {
         return new GuestAgreement(saysYes(guestWords), proposed, asksToCancel(guestWords),
                 cancellations == null ? List.of() : List.copyOf(cancellations),
-                changes == null ? List.of() : List.copyOf(changes), asksToCancelBill(guestWords));
+                changes == null ? List.of() : List.copyOf(changes), asksTakeaway(guestWords, null), asksToCancelBill(guestWords));
+    }
+
+    /** The same agreement, with the guest's takeaway request read from these words and the words of the turn before. */
+    public GuestAgreement withTakeaway(String guestWords, String earlierWords) {
+        return new GuestAgreement(yes, proposed, cancels, cancellations, changes, asksTakeaway(guestWords, earlierWords), cancelsBill);
+    }
+
+    /**
+     * Whether the guest asks to pack a dish: takeaway words this turn, or in the turn before when this one only answers
+     * it («Да»), and no word for one more portion this turn.
+     */
+    public static boolean asksTakeaway(String guestWords, String earlierWords) {
+        String now = guestWords == null ? "" : guestWords.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        if (MORE.matcher(now).find()) {
+            return false;
+        }
+        if (TAKEAWAY.matcher(now).find()) {
+            return true;
+        }
+        String before = earlierWords == null ? "" : earlierWords.toLowerCase(Locale.ROOT).replace('ё', 'е');
+        return !MORE.matcher(before).find() && TAKEAWAY.matcher(before).find();
     }
 
     /** Whether the guest said yes to this very change, offered in the venue's previous answer. */

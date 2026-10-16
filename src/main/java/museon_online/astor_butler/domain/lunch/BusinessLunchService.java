@@ -57,6 +57,14 @@ public class BusinessLunchService {
     @Autowired(required = false)
     private List<BusinessLunchOrderListener> listeners = List.of();
 
+    /** The «Внести в кассу вручную» card for a lunch the venue's till did not take. Optional so the tests' constructors stay as they are. */
+    @Autowired(required = false)
+    private LunchManualEntryNotifier manualEntryNotifier;
+
+    void setManualEntryNotifier(LunchManualEntryNotifier manualEntryNotifier) {
+        this.manualEntryNotifier = manualEntryNotifier;
+    }
+
     public enum WindowIssue {
         NOT_A_LUNCH_DAY,
         OUTSIDE_LUNCH_HOURS,
@@ -104,18 +112,57 @@ public class BusinessLunchService {
         }
     }
 
+    /** Where the dishes of a placed lunch are now. */
+    public enum KitchenHandoff {
+        /** The venue's till (Saby) took the dishes: the kitchen has them. */
+        TILL_CONFIRMED,
+        /**
+         * The till refused, failed, did not say (a 500, a timeout) or is not connected: the order stays in Butler and the
+         * staff enter it by hand. The guest is told the waiter enters it, never that it is placed.
+         */
+        MANUAL_ENTRY,
+        /** Nothing was placed: the guest's earlier request was in the way. */
+        NOT_PLACED
+    }
+
     /**
      * @param reservation the table held for this lunch; when {@code alreadyPlaced}, the guest's earlier request that is in its way
      * @param alreadyPlaced the guest already holds a request at this venue for a time that crosses the lunch, so no second table was held
      * @param order what was ordered; null when nothing was placed
      * @param external what the venue's own system answered; {@code MANUAL_ENTRY} when none is switched on; null when nothing was placed
+     * @param handoff whether the kitchen has the dishes from the till ({@link KitchenHandoff#TILL_CONFIRMED}) or staff enter them by hand
+     * @param staffNotified the staff group has the «Внести в кассу вручную» card for this order (sent now or before)
      */
     public record Placement(
             TableReservationOrder reservation,
             boolean alreadyPlaced,
             BusinessLunchOrder order,
-            ExternalLunchOrderProvider.Result external
+            ExternalLunchOrderProvider.Result external,
+            KitchenHandoff handoff,
+            boolean staffNotified
     ) {
+        public Placement(TableReservationOrder reservation, boolean alreadyPlaced, BusinessLunchOrder order,
+                         ExternalLunchOrderProvider.Result external) {
+            this(reservation, alreadyPlaced, order, external, handoffOf(alreadyPlaced, order, external), false);
+        }
+
+        /** Only an accepted answer of the till is a confirmed kitchen order; anything else is entered by hand. */
+        public static KitchenHandoff handoffOf(boolean alreadyPlaced, BusinessLunchOrder order, ExternalLunchOrderProvider.Result external) {
+            if (alreadyPlaced || order == null) {
+                return KitchenHandoff.NOT_PLACED;
+            }
+            return external != null && external.accepted() ? KitchenHandoff.TILL_CONFIRMED : KitchenHandoff.MANUAL_ENTRY;
+        }
+
+        /** The till took the dishes; false for a failure, an unknown result and a venue without a till connection. */
+        public boolean kitchenConfirmed() {
+            return handoff == KitchenHandoff.TILL_CONFIRMED;
+        }
+
+        /** The dishes are to be entered by hand: the guest hears «Заказ передал официанту, он внесёт его в кассу». */
+        public boolean manualEntry() {
+            return handoff == KitchenHandoff.MANUAL_ENTRY;
+        }
     }
 
     /**
@@ -228,8 +275,10 @@ public class BusinessLunchService {
         ));
         BusinessLunchOrder order = order(request, set, dishes, reservation, startAt, endAt);
         ExternalLunchOrderProvider.Result external = provider.map(ready -> submit(ready, order)).orElseGet(ExternalLunchOrderProvider.Result::manualEntry);
+        // Without a till the reservation card above already lists the dishes with «В Saby внести вручную».
+        boolean staffNotified = external.attempted() ? announceManualEntry(order, external) : provider.isEmpty();
         notifyListeners(request, order, external);
-        return new Placement(reservation, false, order, external);
+        return placed(reservation, order, external, staffNotified);
     }
 
     /**
@@ -262,8 +311,32 @@ public class BusinessLunchService {
                 .findFirst();
         BusinessLunchOrder order = order(request, set, dishes, reservation, reservation.requestedStartAt(), reservation.requestedEndAt());
         ExternalLunchOrderProvider.Result external = provider.map(ready -> submit(ready, order)).orElseGet(ExternalLunchOrderProvider.Result::manualEntry);
+        // The reservation's card was sent long before: the dishes reach the staff by this card or by the till.
+        boolean staffNotified = announceManualEntry(order, external);
         notifyListeners(request, order, external);
-        return new Placement(reservation, false, order, external);
+        return placed(reservation, order, external, staffNotified);
+    }
+
+    private static Placement placed(TableReservationOrder reservation, BusinessLunchOrder order,
+                                    ExternalLunchOrderProvider.Result external, boolean staffNotified) {
+        KitchenHandoff handoff = Placement.handoffOf(false, order, external);
+        if (handoff == KitchenHandoff.MANUAL_ENTRY) {
+            log.warn("Business lunch is not in the till, staff enter it by hand: reservation={}, status={}, staffNotified={}",
+                    order.tableReservationId(), external.status(), staffNotified);
+        }
+        return new Placement(reservation, false, order, external, handoff, handoff == KitchenHandoff.MANUAL_ENTRY && staffNotified);
+    }
+
+    /**
+     * The «Внести в кассу вручную» card, only when the till did not take the dishes. Whether the staff have it, now or
+     * from an earlier placement of the same order.
+     */
+    private boolean announceManualEntry(BusinessLunchOrder order, ExternalLunchOrderProvider.Result external) {
+        if (external.accepted() || manualEntryNotifier == null) {
+            return false;
+        }
+        LunchManualEntryNotifier.Outcome outcome = manualEntryNotifier.manualEntry(order, external);
+        return outcome == LunchManualEntryNotifier.Outcome.SENT || outcome == LunchManualEntryNotifier.Outcome.ALREADY_SENT;
     }
 
     /** A reservation still waiting for the hostess, confirmed or seated: the only ones a lunch may be ordered into. */

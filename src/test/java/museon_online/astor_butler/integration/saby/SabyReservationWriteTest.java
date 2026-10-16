@@ -327,6 +327,8 @@ class SabyReservationWriteTest {
         properties.setAppSecret("secret");
         properties.setSecretKey("service-key");
         properties.setPointId("206");
+        // The Butler table on create (hall/list first) is covered by SabyTableSelectionTest; here — the payload as before.
+        properties.setSendTable(false);
         return properties;
     }
 

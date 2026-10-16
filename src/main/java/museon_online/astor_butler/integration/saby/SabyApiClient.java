@@ -138,8 +138,9 @@ class SabyApiClient {
                     log.warn("Saby {} returned HTTP {}, retrying ({}/{})", operation, status, attempt, attempts);
                     continue;
                 }
+                // The error answer by its field names and codes only: never its text, which may name the guest.
                 throw new SabyApiException(SabyApiException.Kind.HTTP_ERROR, status,
-                        "Saby " + operation + " returned HTTP " + status);
+                        "Saby " + operation + " returned HTTP " + status, errorShape(exception));
             } catch (ResourceAccessException exception) {
                 if (attempt < attempts) {
                     log.warn("Saby {} I/O failure, retrying ({}/{})", operation, attempt, attempts);
@@ -225,6 +226,14 @@ class SabyApiClient {
             return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Cannot serialize Saby request", exception);
+        }
+    }
+
+    private static String errorShape(RestClientResponseException exception) {
+        try {
+            return SabyErrorShape.of(exception.getResponseBodyAsString());
+        } catch (RuntimeException e) {
+            return "unreadable body";
         }
     }
 

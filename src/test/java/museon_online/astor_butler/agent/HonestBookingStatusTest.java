@@ -160,4 +160,44 @@ class HonestBookingStatusTest {
         IncomingMessage incoming = IncomingMessage.telegram(501L, 501L, 1, 100, "бронируйте", null, "Мария", null, "maria", "ru", false, "c");
         assertThat(agent.reply(incoming, null)).contains(HONEST);
     }
+
+    private static List<AgentOutcome.ToolUse> lunchPlaced(boolean kitchenConfirmed, String sabyStatus) {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("orderId", 68L);
+        facts.put("totalRub", 2510);
+        facts.put("sabyStatus", sabyStatus);
+        facts.put("kitchenConfirmed", kitchenConfirmed);
+        facts.put("manualEntry", !kitchenConfirmed);
+        return List.of(new AgentOutcome.ToolUse("lunch_order_place", CapabilityResult.ok(facts)));
+    }
+
+    /** Live test 16.10: Saby answered PROVIDER_RESULT_UNKNOWN and the guest read «Заказ оформлен». */
+    @Test
+    void aLunchTheKitchenHasNotGotIsNeverClaimedAsMade() {
+        String live = "Заказ оформлен: салат с сельдью и яблоком ×2, суп, чизкейк – 2510 ₽. Приятного аппетита!";
+
+        for (String status : List.of("PROVIDER_RESULT_UNKNOWN", "MANUAL_ENTRY", "PROVIDER_ERROR")) {
+            assertThat(HonestBookingStatus.guard(live, lunchPlaced(false, status)))
+                    .isEqualTo("Заказ на 2510 ₽ передал официанту, он внесёт его в кассу. Приятного аппетита!");
+        }
+        assertThat(HonestBookingStatus.guard("Передал заказ на кухню, уже готовят.", lunchPlaced(false, "MANUAL_ENTRY")))
+                .isEqualTo("Заказ на 2510 ₽ передал официанту, он внесёт его в кассу.");
+    }
+
+    @Test
+    void theWaiterSentenceIsAddedWhenTheReplySaysNothingOfIt() {
+        assertThat(HonestBookingStatus.guard("Приятного аппетита!", lunchPlaced(false, "MANUAL_ENTRY")))
+                .isEqualTo("Приятного аппетита! Заказ на 2510 ₽ передал официанту, он внесёт его в кассу.");
+        String honest = "Заказ передал официанту, он внесёт его в кассу.";
+        assertThat(HonestBookingStatus.guard(honest, lunchPlaced(false, "MANUAL_ENTRY"))).isEqualTo(honest);
+    }
+
+    @Test
+    void aLunchSabyTookStaysAsTheModelSaidIt() {
+        String text = "Заказ оформлен, 2510 ₽.";
+        assertThat(HonestBookingStatus.guard(text, lunchPlaced(true, "SABY_LUNCH_ATTACHED"))).isEqualTo(text);
+        // An older result without the fact is left alone.
+        CapabilityResult old = CapabilityResult.ok(Map.of("orderId", 1L, "sabyStatus", "ACCEPTED"));
+        assertThat(HonestBookingStatus.guard(text, List.of(new AgentOutcome.ToolUse("lunch_order_place", old)))).isEqualTo(text);
+    }
 }

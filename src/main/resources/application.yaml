@@ -380,9 +380,13 @@ astor:
       timeout-ms: ${SABY_TIMEOUT_MS:3000}
       max-retries: ${SABY_MAX_RETRIES:1}
       # Which order/{id}/state codes mean «the guest is at the table» (#151): a comma list of state or
-      # state/productState, e.g. 50/1002. Empty (default): nothing is ever SEATED from Saby. The real codes behind the
-      # green tick in Presto Waiter are recorded on the live test: docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
-      seated-states: ${ASTOR_SABY_SEATED_STATES:}
+      # state/productState. Default 50/1002 («принята в работу» + «выполнение»: the order is open at the table);
+      # «off» switches it off. Butler seats from Saby no earlier than 2 h before the booking time.
+      # Check the code behind the green tick in Presto Waiter: docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
+      seated-states: ${ASTOR_SABY_SEATED_STATES:50/1002}
+      # Send the table Butler holds to Saby on order/create (booking.table, matched by name from hall/list);
+      # false leaves the table to the Saby administrator (woTable=true), as before 16.10.
+      send-table: ${ASTOR_SABY_SEND_TABLE:true}
   billing:
     # Butler never takes the money. On: a bill and its journal are kept for every order Butler places.
     enabled: ${ASTOR_BILLING_ENABLED:false}
