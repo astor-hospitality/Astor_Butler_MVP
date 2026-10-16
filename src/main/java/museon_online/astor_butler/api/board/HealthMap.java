@@ -50,12 +50,20 @@ public class HealthMap {
         this.clock = clock;
     }
 
+    /** Kafka has no actuator check (see {@link KafkaProbe}); without the probe the map falls back to the actuator. */
+    private KafkaProbe kafka;
+
+    @Autowired(required = false)
+    public void setKafka(KafkaProbe kafka) {
+        this.kafka = kafka;
+    }
+
     public List<Component> map() {
         return List.of(
                 new Component("butler", Light.GREEN, "отвечает"),
                 infrastructure("postgres", "db"),
                 infrastructure("redis", "redis"),
-                infrastructure("kafka", "kafka"),
+                kafka(),
                 gigachat(),
                 saby(),
                 concierge());
@@ -78,6 +86,26 @@ public class HealthMap {
             return new Component(component, Light.YELLOW, status == null ? "UNKNOWN" : status.getCode());
         } catch (RuntimeException e) {
             return new Component(component, Light.YELLOW, "проверка не удалась");
+        }
+    }
+
+    private Component kafka() {
+        if (kafka == null) {
+            return infrastructure("kafka", "kafka");
+        }
+        try {
+            java.util.OptionalInt brokers = kafka.brokers();
+            if (brokers.isEmpty()) {
+                return new Component("kafka", Light.YELLOW, "выключена");
+            }
+            return brokers.getAsInt() > 0
+                    ? new Component("kafka", Light.GREEN, "брокеров: " + brokers.getAsInt())
+                    : new Component("kafka", Light.RED, "нет брокеров");
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return new Component("kafka", Light.RED, "не отвечает");
         }
     }
 
