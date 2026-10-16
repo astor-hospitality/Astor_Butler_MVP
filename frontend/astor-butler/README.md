@@ -1,6 +1,6 @@
 # Astor — Presentation Site
 
-Анимированный презентационный сайт Astor: общая титульная страница и три продуктовые страницы.
+Презентационный сайт Astor: титульная страница с одной историей продукта и три продуктовые страницы.
 Чистая статика: HTML/CSS/vanilla JS, без сборки и зависимостей. Своя цветовая идентичность
 (графит + серебро), но типографика общая с c3ag.ru: см. «Типографика» ниже.
 
@@ -29,7 +29,7 @@
 
 ```
 frontend/astor-butler/
-├── index.html          # общая титулка Astor: выбор Butler / Concierge / Glass
+├── index.html          # титулка: одна история продукта (ланч в AERIS, как это работает, для ресторанов, продукты)
 ├── policy.html         # политика конфиденциальности: боты, стаф-портал, Astor Glass
 ├── astor_butler/       # продуктовая страница для ресторанов и отелей
 ├── astor_concierge/    # продуктовая страница для событий и городских программ
@@ -37,7 +37,8 @@ frontend/astor-butler/
 ├── astor_glass/        # продуктовая страница очков для команды (пилот)
 ├── css/brand-typography.css  # копия design-system/brand/typography.css: шрифт, веса, трекинги
 ├── css/style.css       # вся стилистика продуктовых страниц (графит + серебро; шрифт из токенов бренда)
-├── js/main.js          # курсор-ключ, рябь, дверь, scroll reveal, optional chat UI
+├── css/story.css       # стили титулки: mobile first, без JS и картинок, экраны нарисованы разметкой
+├── js/main.js          # продуктовые страницы: курсор-ключ, рябь, дверь, scroll reveal, optional chat UI
 ├── js/widget.js        # transport layer виджета: submitMessage(payload), mock/backend режимы
 ├── css/feed.css        # стили ленты (те же токены, без интро-эффектов)
 ├── js/feed.js          # лента: закреплённые заведения, остальные по среднему рейтингу Яндекс Карт и 2ГИС
@@ -50,7 +51,7 @@ frontend/astor-butler/
 │   ├── comparison.html # сравнение (из docs/commercial/BENCHMARK_COMPARISON_RU.md)
 │   ├── brand.html      # бренд-гайд (из docs/commercial/BRAND_GUIDE_RU.md)
 │   └── docs.css
-└── tests/              # node --test tests/*.mjs: бренд-типографика, ссылки, staff UI/auth
+└── tests/              # node --test tests/*.mjs: бренд-типографика, ссылки, история титулки, staff UI/auth
 ```
 
 ## Локальный запуск
@@ -129,7 +130,8 @@ window.AstorChatConfig = {
 - [ ] Hero открывается «дверью», ключ-курсор на desktop
 - [ ] Рябь при движении мыши
 - [ ] Маскот Butler появляется после hero и меняет позу/подпись по главам
-- [ ] Главная ведет в `Astor Butler`, `Astor Concierge` и `Astor Glass`
+- [ ] Главная на 375 px: первый экран – фраза о продукте и две кнопки («Заказать ланч в AERIS» в `@astor_concierge_bot?start=lunch_aeris`, «Для ресторанов» – якорь), без видео; `tests/site-story.test.mjs` зелёный
+- [ ] Главная ведет в `Astor Butler`, `Astor Concierge` и `Astor Glass`, в подвале – боты и политика
 - [ ] На странице Butler ясно видны: заведения, хостес, менеджер, внедрение, поддержка
 - [ ] На странице Concierge ясно видны: события, программа, карта, VIP, поток гостей, лента `feed/`, отчет
 - [ ] На странице Glass ясно видны: голос, фото по шагам, сообщения в очки, журнал смены, границы (подсказка, не решение), статус «пилот»
