@@ -211,6 +211,19 @@ public class TableReservationNotificationService {
                 """.formatted(order.id()), null, "hostess-external-cancel-failed");
     }
 
+    /** One line under the booking's card: the guest's move stayed in Butler, the till still has the old time. */
+    public void notifyHostessChangeNotSynced(TableReservationOrder order) {
+        Optional<BookingHostessStateStorage.CardRef> card = hostessCard(order)
+                .filter(ref -> ref.chatId() != null && !ref.chatId().isBlank());
+        send(card.map(BookingHostessStateStorage.CardRef::chatId).orElseGet(() -> hostessChatId(order)),
+                hostessChangeNotSyncedText(order), null,
+                card.map(BookingHostessStateStorage.CardRef::messageId).orElse(null), "hostess-change-not-synced");
+    }
+
+    static String hostessChangeNotSyncedText(TableReservationOrder order) {
+        return "Перенос брони #%s не дошёл до Saby — поправьте время в кассе".formatted(order.id());
+    }
+
     public void notifyHostessConfirmed(TableReservationOrder order) {
         String chatId = hostessChatId(order);
         send(chatId, hostessText(order), billKeyboard(order.id()), "hostess");

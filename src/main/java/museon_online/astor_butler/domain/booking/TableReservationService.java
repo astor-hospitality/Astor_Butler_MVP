@@ -446,13 +446,37 @@ public class TableReservationService {
 
         TableReservationOrder changed = repository.changeReservation(current.id(), resolved, table);
         // A booking already in the restaurant's system is rewritten there; one that never got there is created now.
-        ExternalReservationResult sync = hasExternalId(changed)
+        boolean inVenueSystem = hasExternalId(changed);
+        ExternalReservationResult sync = inVenueSystem
                 ? updateExternally(changed, resolved.venueCode())
                 : reserveExternally(changed, resolved.venueCode());
         changed = rememberExternalId(changed, sync);
         notificationService.notifyHostessApprovalRequest(changed, sync);
+        if (movedOrResized(current, changed) && !reachedVenueSystem(sync, inVenueSystem)) {
+            // The change stays in Butler; the hostess gets one line to fix the time in the till by hand.
+            notificationService.notifyHostessChangeNotSynced(changed);
+        }
         journey(changed, museon_online.astor_butler.domain.journey.VisitEventKind.MOVED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
         return changed;
+    }
+
+    /**
+     * Whether the venue's system now holds the changed time and party size: nothing to hold while it is off, the
+     * rewritten booking, or a booking created now at the new time. A rejected or unknown update, or a create that only
+     * replays an earlier answer (e.g. «Saby did not say»), leaves the old data there.
+     */
+    static boolean reachedVenueSystem(ExternalReservationResult sync, boolean wasInVenueSystem) {
+        if (sync == null || !sync.providerConfigured()) {
+            return true;
+        }
+        if (EXTERNAL_CHANGE_SYNCED.equals(sync.status())) {
+            return true;
+        }
+        return !wasInVenueSystem && sync.created();
+    }
+
+    static boolean movedOrResized(TableReservationOrder before, TableReservationOrder after) {
+        return timeChanged(before, after) || !java.util.Objects.equals(before.partySize(), after.partySize());
     }
 
     /**

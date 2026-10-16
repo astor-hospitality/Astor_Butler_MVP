@@ -185,7 +185,6 @@ public class ButlerAgent {
         if (newVisit != null && !newVisit.equals(visitId)) {
             visitId = newVisit;
             history.rememberVisit(key, visitId);
-            safely(() -> ledger.linkSession(sessionId, newVisit));
         }
         List<Map<String, Object>> facts = facts(outcome);
         if (outcome.fallback()) {
@@ -195,6 +194,7 @@ public class ButlerAgent {
             }
             history.withdrawProposals(key);
             write(fallbackTurn(visitId, sessionId, TurnChannel.CONCIERGE_TG, outcome), true);
+            linkSession(sessionId, visitId);
             return new NegotiationReply(null, null, facts, visitId, true);
         }
         Map<String, Object> offer = offer(outcome);
@@ -207,7 +207,19 @@ public class ButlerAgent {
         write(new VisitTurnDraft(visitId, sessionId, TurnSide.BUTLER, TurnChannel.CONCIERGE_TG,
                 offer == null ? TurnKind.MESSAGE : TurnKind.OFFER,
                 text, payload.isEmpty() ? null : payload, GOAL_VENUE), true);
+        linkSession(sessionId, visitId);
         return new NegotiationReply(text, offer, facts, visitId, false);
+    }
+
+    /**
+     * Once the session has a visit, every turn of it written so far without one moves in: the tools' rows of this turn,
+     * the Concierge's own rows, and earlier turns a failed link left behind. One UPDATE of the session's rows with no
+     * visit; nothing when there are none.
+     */
+    private void linkSession(String sessionId, Long visitId) {
+        if (visitId != null) {
+            safely(() -> ledger.linkSession(sessionId, visitId));
+        }
     }
 
     /**
@@ -504,7 +516,9 @@ public class ButlerAgent {
         if (remembered != null) {
             return remembered;
         }
-        return quietlyOptional(() -> turns.visitOfSession(sessionId)).orElse(null);
+        Long linked = quietlyOptional(() -> turns.visitOfSession(sessionId)).orElse(null);
+        // A booking whose visit was opened after it (nothing linked the session then) is found by its reservation.
+        return linked != null ? linked : quietlyOptional(() -> ledger.visitBookedBy(sessionId)).orElse(null);
     }
 
     private Long activeVisit(long chatId) {

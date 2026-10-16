@@ -665,6 +665,10 @@ spring:
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # 10 by default was spent by 50 parallel negotiations (16.10): each turn takes many short connections, a booking
+      # tool holds one over the venue's system call. PostgreSQL's max_connections must cover every replica's pool.
+      maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:20}
 
   jpa:
     hibernate:

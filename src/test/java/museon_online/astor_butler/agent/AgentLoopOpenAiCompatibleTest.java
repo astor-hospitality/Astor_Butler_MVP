@@ -276,18 +276,34 @@ class AgentLoopOpenAiCompatibleTest {
     }
 
     @Test
-    void aFailedCallKeepsItsWholeReservation() {
+    void aFailedCallWithoutAPriceGivesItsReservationBack() {
         server.expect(once(), requestTo(COMPLETIONS)).andRespond(withStatus(HttpStatus.GATEWAY_TIMEOUT));
-        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
-                "jdbc:h2:mem:agent-loop-budget-" + UUID.randomUUID() + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""));
-        jdbc.execute(budgetSchema());
-        AgentBudget budget = new AgentBudget(new java.math.BigDecimal("10"), new java.math.BigDecimal("1"),
-                java.time.ZoneId.of("Asia/Yekaterinburg"), java.time.Clock.systemUTC(), jdbc);
+        AgentBudget budget = budgetOf10();
         AgentLoop loop = loop(mock(CapabilityRegistry.class));
         loop.setBudget(budget);
 
         assertThat(loop.run(history(), TOOLS, CTX).fallback()).isTrue();
-        assertThat(budget.spentToday()).isEqualTo(1.0, org.assertj.core.data.Offset.offset(1e-9));
+        assertThat(budget.spentToday()).isZero();
+    }
+
+    @Test
+    void aFailedCallTheServiceChargedCostsWhatItsHeaderSays() {
+        server.expect(once(), requestTo(COMPLETIONS)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
+                .header("x-litellm-response-cost", "0.004"));
+        AgentBudget budget = budgetOf10();
+        AgentLoop loop = loop(mock(CapabilityRegistry.class));
+        loop.setBudget(budget);
+
+        assertThat(loop.run(history(), TOOLS, CTX).fallback()).isTrue();
+        assertThat(budget.spentToday()).isEqualTo(0.004, org.assertj.core.data.Offset.offset(1e-9));
+    }
+
+    private static AgentBudget budgetOf10() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
+                "jdbc:h2:mem:agent-loop-budget-" + UUID.randomUUID() + ";MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""));
+        jdbc.execute(budgetSchema());
+        return new AgentBudget(new java.math.BigDecimal("10"), new java.math.BigDecimal("1"),
+                java.time.ZoneId.of("Asia/Yekaterinburg"), java.time.Clock.systemUTC(), jdbc);
     }
 
     private static String budgetSchema() {

@@ -11,14 +11,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.net.http.HttpTimeoutException;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 
 /**
  * The agent's daily model budget ({@code ASTOR_AGENT_DAILY_BUDGET_RUB}; blank or 0 — no limit) in
@@ -27,15 +34,21 @@ import java.util.Map;
  * <p>Every model call first {@link #reserve reserves} its worst-case price ({@code ASTOR_AGENT_CALL_RESERVE_RUB}, 1 ₽):
  * one conditional UPDATE, under a lock within this process, so parallel calls never pass the limit together. The answer
  * then {@link #settle settles} the reservation: what the service charged ({@code costRub} from
- * {@code x-litellm-response-cost}), else the call log tariff for the reported tokens, else — price unknown, a timeout or
- * any failure — the whole reservation. Counts survive restarts; a reservation left by a crash stays counted until the
- * day ends. If the table cannot be read or written, no reservation is given: the agent falls back (fails closed).
+ * {@code x-litellm-response-cost}), else the call log tariff for the reported tokens, else — an answer of unknown
+ * price — the whole reservation. A call that ended without an answer is {@link #settleFailure settled by its error}:
+ * an HTTP error is charged what its {@code x-litellm-response-cost} says (nothing without it), a call that was never
+ * sent, could not connect or timed out is released; only an error that says nothing of the outcome keeps the whole
+ * reservation. Counts survive restarts; a reservation left by a crash stays counted until the day ends. If the table cannot be read or written, no reservation is given: the agent falls back (fails closed).
  * A reached limit means no model calls until the next venue day; turns fall back to the scenarios, never to another model.
  */
 @Component
 public class AgentBudget {
 
     static final String SCOPE = "butler-agent";
+    /** The provider's charge for a call, also on its error answers. */
+    public static final String COST_HEADER = "x-litellm-response-cost";
+    /** The message of the error AgentLoop raises when no time is left for a call it then never sends. */
+    static final String NOT_SENT = "turn_timeout";
     private static final Logger log = LoggerFactory.getLogger(AgentBudget.class);
     private static final Reservation UNLIMITED = new Reservation(null, BigDecimal.ZERO);
 
@@ -115,13 +128,72 @@ public class AgentBudget {
         }
     }
 
-    /** Turns the reservation into what the call cost; {@code response} null (timeout, failure) keeps the whole reservation. */
-    public synchronized void settle(Reservation reservation, ModelChatResponse response) {
+    /** Turns the reservation into what the call cost; {@code response} null (an answer that says nothing) keeps all of it. */
+    public void settle(Reservation reservation, ModelChatResponse response) {
         if (reservation == null || reservation.day() == null) {
             return;
         }
         BigDecimal cost = cost(response);
-        BigDecimal charged = cost == null ? reservation.amount() : cost;
+        charge(reservation, cost == null ? reservation.amount() : cost);
+    }
+
+    /** Hands the whole reservation back: the call was never sent, so it cost nothing. */
+    public void release(Reservation reservation) {
+        if (reservation == null || reservation.day() == null) {
+            return;
+        }
+        charge(reservation, BigDecimal.ZERO);
+    }
+
+    /**
+     * Settles a call that ended with {@code error} instead of an answer: {@link #failureCost} decides what it cost, the
+     * whole reservation only when the error says nothing of the outcome.
+     */
+    public void settleFailure(Reservation reservation, Throwable error) {
+        if (reservation == null || reservation.day() == null) {
+            return;
+        }
+        charge(reservation, failureCost(error, reservation.amount()));
+    }
+
+    /**
+     * What a failed call cost. An HTTP error answer is the provider's word: its {@code x-litellm-response-cost}, else
+     * nothing. A call that timed out, could not connect or was refused before sending is nothing too: the gateway
+     * reports no cost for it (the 16.10 load counted 517 ₽ against ~140 ₽ really charged). Any other error says nothing
+     * of what reached the provider and keeps the {@code reserved} amount.
+     */
+    static BigDecimal failureCost(Throwable error, BigDecimal reserved) {
+        Throwable cause = error;
+        for (int depth = 0; cause != null && depth < 12; depth++, cause = cause.getCause()) {
+            if (cause instanceof HttpStatusCodeException http) {
+                BigDecimal charged = http.getResponseHeaders() == null ? null : charged(http.getResponseHeaders().getFirst(COST_HEADER));
+                return charged == null ? BigDecimal.ZERO : charged;
+            }
+            if (cause instanceof TimeoutException || cause instanceof SocketTimeoutException || cause instanceof HttpTimeoutException
+                    || cause instanceof ConnectException || cause instanceof UnknownHostException
+                    || cause instanceof ResourceAccessException || NOT_SENT.equals(cause.getMessage())) {
+                return BigDecimal.ZERO;
+            }
+            if (cause.getCause() == cause) {
+                break;
+            }
+        }
+        return reserved;
+    }
+
+    private static BigDecimal charged(String header) {
+        if (header == null || header.isBlank()) {
+            return null;
+        }
+        try {
+            BigDecimal cost = new BigDecimal(header.trim());
+            return cost.signum() >= 0 ? cost : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private synchronized void charge(Reservation reservation, BigDecimal charged) {
         try {
             jdbc.update("""
                     UPDATE agent_budget_days

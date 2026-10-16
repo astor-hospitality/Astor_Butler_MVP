@@ -299,7 +299,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
         } catch (HttpClientErrorException error) {
             int status = error.getStatusCode().value();
             HttpClientErrorException bare = HttpClientErrorException.create(
-                    error.getStatusCode(), error.getStatusText(), new HttpHeaders(), new byte[0], null);
+                    error.getStatusCode(), error.getStatusText(), costOnly(error.getResponseHeaders()), new byte[0], null);
             String message = provider + " chat failed: HTTP " + status + errorHint(error.getResponseBodyAsString());
             if (status == 401 || status == 402 || status == 403 || status == 408 || status == 429) {
                 throw new ModelUnavailableException(message, bare);
@@ -308,7 +308,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
         } catch (HttpServerErrorException error) {
             throw new ModelUnavailableException(
                     provider + " chat failed: HTTP " + error.getStatusCode().value() + errorHint(error.getResponseBodyAsString()),
-                    HttpServerErrorException.create(error.getStatusCode(), error.getStatusText(), new HttpHeaders(), new byte[0], null));
+                    HttpServerErrorException.create(error.getStatusCode(), error.getStatusText(), costOnly(error.getResponseHeaders()),
+                            new byte[0], null));
         } catch (ResourceAccessException error) {
             throw new ModelUnavailableException(provider + " did not answer in time or could not be reached", error);
         }
@@ -564,6 +565,16 @@ public class OpenAiCompatibleModelGateway implements ModelGateway, ToolCallingMo
                 new HttpEntity<>(body, headers),
                 Map.class
         );
+    }
+
+    /** Only the service's charge of an error answer, for the agent's budget; no other header leaves the gateway. */
+    static HttpHeaders costOnly(HttpHeaders headers) {
+        HttpHeaders kept = new HttpHeaders();
+        String cost = headers == null ? null : headers.getFirst("x-litellm-response-cost");
+        if (cost != null && !cost.isBlank()) {
+            kept.set("x-litellm-response-cost", cost.trim());
+        }
+        return kept;
     }
 
     /** What the service charged for this answer ({@code x-litellm-response-cost}, rubles on the Sber500 API), or null. */

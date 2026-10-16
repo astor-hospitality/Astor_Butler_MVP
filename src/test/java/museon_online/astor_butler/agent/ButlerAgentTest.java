@@ -355,6 +355,40 @@ class ButlerAgentTest {
         assertThat(system).contains("Сегодня: 2026-10-15, четверг").contains("YYYY-MM-DD").contains("завтра");
     }
 
+    @Test
+    void everyTurnOfALinkedSessionMovesItsTurnsWithoutAVisitIntoIt() {
+        when(turns.visitOfSession("c-1")).thenReturn(Optional.of(77L));
+        loopAnswers(new AgentOutcome("Бронь на 13:00 ждёт хостес.", List.of(), false, 0));
+
+        agent.negotiate(turn(null, "а что с моей бронью?"));
+
+        // The tools' rows of the turn, the Concierge's own rows and any a failed link left behind.
+        verify(ledger).linkSession("c-1", 77L);
+    }
+
+    @Test
+    void aBookingWhoseVisitOpenedAfterItIsFoundByItsReservation() {
+        when(ledger.visitBookedBy("c-1")).thenReturn(Optional.of(64L));
+        loopAnswers(new AgentOutcome("Бронь на 18:00 ждёт хостес.", List.of(), false, 0));
+
+        NegotiationReply reply = agent.negotiate(turn(null, "а что с моей бронью?"));
+
+        assertThat(reply.visitId()).isEqualTo(64L);
+        ArgumentCaptor<VisitTurnDraft> drafts = ArgumentCaptor.forClass(VisitTurnDraft.class);
+        verify(ledger, org.mockito.Mockito.times(2)).write(drafts.capture());
+        assertThat(drafts.getAllValues()).extracting(VisitTurnDraft::visitId).containsOnly(64L);
+    }
+
+    @Test
+    void aFallbackTurnLinksTheSessionToo() {
+        when(turns.visitOfSession("c-1")).thenReturn(Optional.of(77L));
+        loopAnswers(AgentOutcome.fallback(List.of(), 0));
+
+        agent.negotiate(turn(null, "стол"));
+
+        verify(ledger).linkSession("c-1", 77L);
+    }
+
     /** Live test 16.10: «Напишите коды блюд… SALAD_COLESLAW» reached the guest. */
     @Test
     void theGuestNeverReadsAnInternalDishCode() {
