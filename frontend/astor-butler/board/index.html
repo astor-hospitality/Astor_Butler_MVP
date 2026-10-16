@@ -74,33 +74,40 @@
   <main class="grid" id="tab-arch" role="tabpanel" hidden>
     <p class="note">Цвет узла — из карты здоровья, обновляется каждые 30 секунд · <span id="archUpdated"></span></p>
     <div class="arch">
-      <svg viewBox="0 0 640 410" role="img" aria-label="Архитектура Astor: гость, Консьерж и Батлер, системы">
+      <svg viewBox="0 0 780 520" role="img" aria-label="Архитектура Astor: гость, Консьерж и Батлер, ресторан, модель и данные">
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
           </marker>
         </defs>
         <g class="edges">
-          <path d="M140 178 C170 178 170 78 198 78"/>
-          <path d="M280 108 L280 248" marker-start="url(#arrow)"/>
-          <path d="M360 270 C410 270 410 48 458 48"/>
-          <path d="M360 280 C420 280 420 128 458 128"/>
-          <path d="M360 78 C410 78 410 200 458 200"/>
-          <path d="M360 290 C430 290 430 216 458 216"/>
-          <path d="M268 306 L192 338"/>
-          <path d="M280 306 L360 338"/>
-          <path d="M292 306 L528 338"/>
+          <path d="M170 230 C200 230 200 100 228 100"/>
+          <path d="M170 250 C200 250 200 350 228 350"/>
+          <path d="M300 142 L300 318"/>
+          <path d="M350 318 L350 142"/>
+          <path d="M412 330 C470 330 470 58 528 58"/>
+          <path d="M412 345 C480 345 480 160 528 160"/>
+          <path d="M412 92 C470 92 470 256 528 256"/>
+          <path d="M412 360 C480 360 480 272 528 272"/>
+          <path d="M412 375 C470 375 470 362 528 362"/>
+          <path d="M290 392 L200 438"/>
+          <path d="M320 392 L370 438"/>
+          <path d="M350 392 L540 438"/>
         </g>
-        <text class="edge-label" x="290" y="182">переговоры</text>
-        <g class="anode" data-node="guest" transform="translate(20 150)"><rect width="120" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Гость</text><text class="detail" x="16" y="44">Telegram, сайт</text></g>
-        <g class="anode" data-health="concierge" transform="translate(200 50)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Консьерж</text><text class="detail" x="16" y="44">—</text></g>
-        <g class="anode" data-health="butler" transform="translate(200 250)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Батлер</text><text class="detail" x="16" y="44">—</text></g>
-        <g class="anode" data-health="saby" transform="translate(460 20)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Saby</text><text class="detail" x="16" y="44">—</text></g>
-        <g class="anode" data-node="staff" transform="translate(460 100)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Персонал · очки</text><text class="detail" x="16" y="44">без проверки</text></g>
-        <g class="anode" data-health="gigachat" transform="translate(460 180)"><rect width="160" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">GigaChat</text><text class="detail" x="16" y="44">—</text></g>
-        <g class="anode" data-health="postgres" transform="translate(130 340)"><rect width="124" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Postgres</text><text class="detail" x="16" y="44">—</text></g>
-        <g class="anode" data-health="redis" transform="translate(298 340)"><rect width="124" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Redis</text><text class="detail" x="16" y="44">—</text></g>
-        <g class="anode" data-health="kafka" transform="translate(466 340)"><rect width="124" height="56" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Kafka</text><text class="detail" x="16" y="44">—</text></g>
+        <text class="edge-label" x="208" y="236">переговоры ↓</text>
+        <text class="edge-label" x="360" y="222">события ↑</text>
+        <text class="edge-label" x="360" y="238">статус, счёт,</text>
+        <text class="edge-label" x="360" y="254">отзыв</text>
+        <g class="anode" data-node="guest" transform="translate(20 205)"><rect width="150" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Гость</text><text class="detail" x="16" y="44">Telegram · мини-апп</text><text class="sub" x="16" y="62">QR в зале · MAX</text></g>
+        <g class="anode" data-health="concierge" transform="translate(230 70)"><rect width="180" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Консьерж</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">агент гостя · SQLite: согласия</text></g>
+        <g class="anode" data-health="butler" transform="translate(230 320)"><rect width="180" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Батлер</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">агент ресторана · FSM · табло</text></g>
+        <g class="anode" data-health="saby" transform="translate(530 20)"><rect width="230" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Saby</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">брони и заказы ланча · Presto</text></g>
+        <g class="anode" data-node="staff" transform="translate(530 120)"><rect width="230" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Группа персонала</text><text class="detail" x="16" y="44">Telegram, темы:</text><text class="sub" x="16" y="62">Брони · Пожелания · Отзывы · График</text></g>
+        <g class="anode" data-health="gigachat" transform="translate(530 220)"><rect width="230" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">gigachat-3-pro</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">API Sber500 · агенты обоих ботов</text></g>
+        <g class="anode" data-node="glasses" transform="translate(530 325)"><rect width="230" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Очки персонала</text><text class="detail" x="16" y="44">пилот</text><text class="sub" x="16" y="62">без проверки здоровья</text></g>
+        <g class="anode" data-health="postgres" transform="translate(130 440)"><rect width="150" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Postgres</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">брони, визиты, журнал</text></g>
+        <g class="anode" data-health="redis" transform="translate(300 440)"><rect width="150" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Redis</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">FSM, идемпотентность</text></g>
+        <g class="anode" data-health="kafka" transform="translate(470 440)"><rect width="170" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Kafka</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">события гостя · outbox</text></g>
       </svg>
     </div>
     <p class="legend"><span><i class="dot" style="background:var(--good)"></i>работает</span><span><i class="dot" style="background:var(--warn)"></i>есть ошибки</span><span><i class="dot" style="background:var(--bad)"></i>не отвечает</span><span><i class="dot" style="background:var(--idle)"></i>нет данных</span></p>

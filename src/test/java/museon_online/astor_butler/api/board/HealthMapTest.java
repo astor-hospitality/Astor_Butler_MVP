@@ -115,4 +115,27 @@ class HealthMapTest {
     private HealthMap.Light status(String component) {
         return map.map().stream().filter(c -> c.component().equals(component)).findFirst().orElseThrow().status();
     }
+
+    /** Kafka is not in /actuator/health (it is off the booking path): the board asks the brokers itself. */
+    @Test
+    void kafkaIsGreenWithBrokersYellowWhenOffRedWhenSilent() throws Exception {
+        KafkaProbe probe = org.mockito.Mockito.mock(KafkaProbe.class);
+        map.setKafka(probe);
+
+        org.mockito.Mockito.when(probe.brokers()).thenReturn(java.util.OptionalInt.of(1));
+        assertThat(status("kafka")).isEqualTo(HealthMap.Light.GREEN);
+        assertThat(detail("kafka")).isEqualTo("брокеров: 1");
+
+        org.mockito.Mockito.when(probe.brokers()).thenReturn(java.util.OptionalInt.empty());
+        assertThat(status("kafka")).isEqualTo(HealthMap.Light.YELLOW);
+        assertThat(detail("kafka")).isEqualTo("выключена");
+
+        org.mockito.Mockito.when(probe.brokers()).thenThrow(new java.util.concurrent.TimeoutException());
+        assertThat(status("kafka")).isEqualTo(HealthMap.Light.RED);
+        assertThat(detail("kafka")).isEqualTo("не отвечает");
+    }
+
+    private String detail(String component) {
+        return map.map().stream().filter(c -> c.component().equals(component)).findFirst().orElseThrow().detail();
+    }
 }
