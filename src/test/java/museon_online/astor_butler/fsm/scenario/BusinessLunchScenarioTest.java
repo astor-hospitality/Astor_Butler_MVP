@@ -120,8 +120,9 @@ class BusinessLunchScenarioTest {
                 "Вторник, 06.10 в 13:00",
                 "Гостей: 2",
                 "Комбо: «Салат или суп + горячее», 650 ₽ за ланч",
-                "Блюда: Куриный бульон, Паста с томатами",
-                "Отправляю заявку команде?");
+                "Блюда: Куриный бульон, Паста с томатами");
+        // One question at the end, nothing else asked of the guest at the same time.
+        assertThat(summary.text()).endsWith("\n\nОтправить заявку хостес?").doesNotContain("пожелания", "убрать");
         assertThat(buttons(summary)).containsExactly("✅ Отправить заявку", "✏️ Изменить", "↩️ Отменить");
         verify(tableReservationService, never()).createReservation(any());
 
@@ -135,7 +136,7 @@ class BusinessLunchScenarioTest {
         assertThat(command.getValue().guestComment()).isEqualTo(
                 "Бизнес-ланч из Concierge: 2 × «Салат или суп + горячее», 650 ₽. Куриный бульон, Паста с томатами. В Saby внести вручную.");
         assertThat(placed.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
-        assertThat(placed.text()).contains("Заявку #77 на бизнес-ланч передал команде AERIS", "Как только хостес ответит");
+        assertThat(placed.text()).isEqualTo("Готово – заявку #77 на бизнес-ланч передал хостес AERIS.");
         assertThat(placed.text().toLowerCase()).doesNotContain("подтвержден");
         assertThat(placed.actions()).containsExactly("BUSINESS_LUNCH", "LUNCH_ORDER_PLACED", "EXTERNAL_ORDER_MANUAL", "WAIT_HOSTESS_CONFIRMATION", "RETURN_MAIN_MENU");
         assertThat(placed.metadata()).containsEntry("tableReservationId", 77L).containsEntry("lunchSource", "CONCIERGE").containsEntry("externalStatus", "MANUAL_ENTRY");
@@ -147,12 +148,9 @@ class BusinessLunchScenarioTest {
     void aMenuWithoutSetsIsOrderedCourseByCourse() {
         OutgoingMessage salads = say("/start lunch_carte");
         assertThat(salads.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
-        assertThat(salads.text()).contains(
-                "Бизнес-ланч в Carte: по будням с 12:00 до 16:00.",
-                "Салаты\n• Нисуаз, 170 г · 290 ₽\n• Цезарь с цыплёнком, 130 г · 290 ₽",
-                "Напитки\n• Клюквенный морс, 200 мл · 140 ₽\n• Капучино · 220 ₽",
-                "Салаты: что добавить? Каждое нажатие добавляет одну порцию.");
-        assertThat(salads.text()).doesNotContain("подтвердит команда");
+        // Two lines instead of the whole price list: the dish buttons below already carry the prices (run 16.10).
+        assertThat(salads.text()).isEqualTo(
+                "Бизнес-ланч в Carte: по будням с 12:00 до 16:00.\n\nСалаты: что добавить? Каждое нажатие добавляет одну порцию.");
         assertThat(buttons(salads)).containsExactly("Нисуаз · 290 ₽", "Цезарь с цыплёнком · 290 ₽", "➡️ Дальше", "↩️ Отменить");
 
         OutgoingMessage added = say("Нисуаз · 290 ₽");
@@ -188,7 +186,7 @@ class BusinessLunchScenarioTest {
         verify(tableReservationService).createReservation(command.capture());
         assertThat(command.getValue().venueCode()).isEqualTo("CARTE");
         assertThat(command.getValue().guestComment()).isEqualTo("Бизнес-ланч из Concierge: Нисуаз × 1, Борщ со сметаной × 2. Итого 830 ₽. В Saby внести вручную.");
-        assertThat(placed.text()).contains("Заявку #77 на бизнес-ланч передал команде Carte", "Итого: 830 ₽");
+        assertThat(placed.text()).isEqualTo("Готово – заявку #77 на бизнес-ланч передал хостес Carte.").doesNotContain("Итого");
         assertThat(placed.metadata()).containsEntry("lunchSet", "A_LA_CARTE");
     }
 
@@ -250,7 +248,7 @@ class BusinessLunchScenarioTest {
         OutgoingMessage unknown = say("Борщ со сметаной");
 
         assertThat(unknown.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
-        assertThat(unknown.text()).contains("Не нашел такое блюдо в этом разделе.", "Салаты: что добавить?");
+        assertThat(unknown.text()).contains("Не нашёл такое блюдо в этом разделе.", "Салаты: что добавить?");
         assertThat(drafts.get(CHAT).dishCodes()).isEmpty();
     }
 
@@ -292,8 +290,10 @@ class BusinessLunchScenarioTest {
         assertThat(summary.text()).doesNotContain("₽");
         verify(tableReservationService, never()).createReservation(any());
 
-        say("да");
+        OutgoingMessage placed = say("да");
 
+        // The venue's word is said once, in the summary: neither the opening nor «Готово» repeats it.
+        assertThat(placed.text()).isEqualTo("Готово – заявку #77 на бизнес-ланч передал хостес Simple.");
         var command = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(command.capture());
         assertThat(command.getValue().venueCode()).isEqualTo("SIMPLE");
@@ -335,7 +335,7 @@ class BusinessLunchScenarioTest {
 
         OutgoingMessage noTime = say("25:00");
         assertThat(noTime.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_TIME.name());
-        assertThat(noTime.text()).contains("Не хочу гадать со временем.");
+        assertThat(noTime.text()).contains("Не смог понять время.").doesNotContain("гадать");
 
         OutgoingMessage summary = say("в 2 дня");
         assertThat(summary.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
@@ -405,7 +405,7 @@ class BusinessLunchScenarioTest {
 
         OutgoingMessage again = say("✏️ Изменить");
         assertThat(again.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_SET.name());
-        assertThat(again.text()).contains("Хорошо, соберем заново.");
+        assertThat(again.text()).contains("Хорошо, соберём заново.");
         verify(tableReservationService, never()).createReservation(any());
     }
 
@@ -482,8 +482,7 @@ class BusinessLunchScenarioTest {
         OutgoingMessage resumed = scenario.continueAfterFirstTouch(contact, firstTouch(contact, BotState.READY_FOR_DIALOG, "CONTACT_CAPTURED"));
 
         assertThat(resumed.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_SET.name());
-        assertThat(resumed.text()).startsWith("Спасибо, контакт получил.")
-                .contains("Бизнес-ланч в Simple: по будням с 12:00 до 16:00. Состав и стоимость на день подтвердит команда.", "Какой вариант выбираете?");
+        assertThat(resumed.text()).isEqualTo("Спасибо, контакт получил.\n\nБизнес-ланч в Simple: по будням с 12:00 до 16:00.\n\nКакой вариант выбираете?");
         assertThat(states.get(CHAT)).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_SET);
     }
 
@@ -517,7 +516,7 @@ class BusinessLunchScenarioTest {
         verify(tableReservationService).attachExternalId(77L, "SABY-501");
         assertThat(placed.actions()).contains("EXTERNAL_ORDER_SENT").doesNotContain("EXTERNAL_ORDER_MANUAL");
         // Saby has the order, the hostess still has the last word.
-        assertThat(placed.text()).contains("Как только хостес ответит").doesNotContain("Saby");
+        assertThat(placed.text()).isEqualTo("Готово – заявку #77 на бизнес-ланч передал хостес Simple.");
         assertThat(placed.adminAlert().required()).isFalse();
         var command = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(command.capture());
@@ -566,7 +565,7 @@ class BusinessLunchScenarioTest {
 
         OutgoingMessage placed = say("да");
 
-        assertThat(placed.text()).contains("Заявку #77 на бизнес-ланч передал команде");
+        assertThat(placed.text()).isEqualTo("Готово – заявку #77 на бизнес-ланч передал хостес Simple.");
         assertThat(placed.actions()).contains("EXTERNAL_ORDER_MANUAL");
         AdminAlert alert = placed.adminAlert();
         assertThat(alert.required()).isTrue();
@@ -599,7 +598,7 @@ class BusinessLunchScenarioTest {
         OutgoingMessage reply = say("/start lunch_nowhere");
 
         assertThat(reply.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
-        assertThat(reply.text()).contains("Бизнес-ланч для этого заведения пока не подключен.");
+        assertThat(reply.text()).contains("Бизнес-ланч для этого заведения пока не подключён.");
         assertThat(drafts).isEmpty();
     }
 
@@ -637,7 +636,7 @@ class BusinessLunchScenarioTest {
 
         OutgoingMessage noted = say("Без лука,  соус\nотдельно");
         assertThat(noted.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_PARTY_SIZE.name());
-        assertThat(noted.text()).startsWith("Пожелание записал, передам кухне вместе с заказом — подтвердят при подаче.\n\nНа сколько гостей накрыть?");
+        assertThat(noted.text()).startsWith("Пожелание записал, передам кухне вместе с заказом – подтвердят при подаче.\n\nНа сколько гостей накрыть?");
         assertThat(noted.text().toLowerCase()).doesNotContain("сделаем", "обязательно");
         assertThat(drafts.get(CHAT).wishes()).isEqualTo("Без лука, соус отдельно");
 
@@ -656,7 +655,7 @@ class BusinessLunchScenarioTest {
                         + "Пожелание гостя: Без лука, соус отдельно — согласовать с кухней.");
         assertThat(saby.order.wishes()).isEqualTo("Без лука, соус отдельно");
         assertThat(saby.order.comment()).isNull();
-        assertThat(placed.text()).contains("Пожелание: Без лука, соус отдельно").endsWith("Передал пожелание кухне, подтвердят при подаче.");
+        assertThat(placed.text()).isEqualTo("Готово – заявку #77 на бизнес-ланч передал хостес AERIS. Пожелание к блюдам тоже передал, кухня подтвердит при подаче.");
         assertThat(placed.text().toLowerCase()).doesNotContain("подтвержден");
     }
 
@@ -666,11 +665,12 @@ class BusinessLunchScenarioTest {
 
         OutgoingMessage asked = say("/start lunch_simple_s1_p2_d20261006_t1300");
         assertThat(asked.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_COLLECT_WISHES.name());
-        assertThat(asked.text()).contains("Состав и стоимость на день подтвердит команда.", "Пожелания к блюдам или напиткам?");
+        assertThat(asked.text()).contains("Пожелания к блюдам или напиткам?").doesNotContain("Состав и стоимость на день подтвердит команда.");
 
         OutgoingMessage summary = say("Нет");
         assertThat(summary.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CONFIRMATION.name());
-        assertThat(summary.text()).contains("Отправляю заявку команде?").doesNotContain("Пожелание");
+        assertThat(summary.text()).containsOnlyOnce("Состав и стоимость на день подтвердит команда.")
+                .endsWith("Отправить заявку хостес?").doesNotContain("Пожелание");
         assertThat(drafts.get(CHAT).wishes()).isEmpty();
 
         OutgoingMessage placed = say("да");
@@ -678,7 +678,7 @@ class BusinessLunchScenarioTest {
         var command = forClass(TableReservationCommand.class);
         verify(tableReservationService).createReservation(command.capture());
         assertThat(command.getValue().guestComment()).doesNotContain("Пожелание");
-        assertThat(placed.text()).doesNotContain("Передал пожелание");
+        assertThat(placed.text()).doesNotContain("Пожелание");
         assertThat(placed.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
     }
 
@@ -739,15 +739,15 @@ class BusinessLunchScenarioTest {
         OutgoingMessage borscht = say("Что в борще?");
         assertThat(borscht.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
         assertThat(borscht.text()).isEqualTo(
-                "«Борщ со сметаной»: состав — свёкла, говядина, капуста, картофель, сметана. Аллергены: молоко. "
-                        + "Можно попросить без: сметаны — согласуем с кухней."
+                "«Борщ со сметаной»: состав – свёкла, говядина, капуста, картофель, сметана. Аллергены: молоко. "
+                        + "Можно попросить без: сметаны – согласуем с кухней."
                         + "\n\nСалаты: что добавить? Каждое нажатие добавляет одну порцию.\nВ заказе: Нисуаз × 1. Итого 290 ₽.");
 
         OutgoingMessage caesar = say("аллергены в цезаре");
-        assertThat(caesar.text()).startsWith("«Цезарь с цыплёнком»: состав — романо, цыплёнок, пармезан, соус цезарь. Аллергены в меню не указаны — уточнит официант.");
+        assertThat(caesar.text()).startsWith("«Цезарь с цыплёнком»: состав – романо, цыплёнок, пармезан, соус цезарь. Аллергены в меню не указаны – уточнит официант.");
 
         OutgoingMessage unknown = say("состав нисуаза");
-        assertThat(unknown.text()).startsWith("«Нисуаз»: состав в меню бота пока не заполнен — уточнит официант при подаче.");
+        assertThat(unknown.text()).startsWith("«Нисуаз»: состав в меню бота пока не заполнен – уточнит официант при подаче.");
 
         OutgoingMessage noDish = say("из чего это?");
         assertThat(noDish.text()).startsWith("Не понял, про какое блюдо спросить. Напишите, например: «состав борща».");
@@ -776,8 +776,8 @@ class BusinessLunchScenarioTest {
         OutgoingMessage answer = say("Состав борща");
 
         assertThat(answer.nextState()).isEqualTo(BotState.READY_FOR_DIALOG.name());
-        assertThat(answer.text()).isEqualTo("«Борщ со сметаной»: состав — свёкла, говядина, капуста, картофель, сметана. Аллергены: молоко. "
-                + "Можно попросить без: сметаны — согласуем с кухней.\n\nЕсли захотите заказать бизнес-ланч, напишите «ланч».");
+        assertThat(answer.text()).isEqualTo("«Борщ со сметаной»: состав – свёкла, говядина, капуста, картофель, сметана. Аллергены: молоко. "
+                + "Можно попросить без: сметаны – согласуем с кухней.\n\nЕсли захотите заказать бизнес-ланч, напишите «ланч».");
         assertThat(answer.actions()).containsExactly("BUSINESS_LUNCH", "LUNCH_DISH_COMPOSITION", "RETURN_MAIN_MENU");
         assertThat(drafts).isEmpty();
         assertThat(states.get(CHAT)).isEqualTo(BotState.READY_FOR_DIALOG);
@@ -963,7 +963,7 @@ class BusinessLunchScenarioTest {
 
         OutgoingMessage reply = say("как в прошлый раз");
 
-        assertThat(reply.text()).contains("В прошлый раз ничего из нынешнего меню не было — соберём заново.");
+        assertThat(reply.text()).contains("В прошлый раз ничего из нынешнего меню не было – соберём заново.");
         assertThat(reply.nextState()).isEqualTo(BotState.BUSINESS_LUNCH_CHOOSE_DISH.name());
     }
 

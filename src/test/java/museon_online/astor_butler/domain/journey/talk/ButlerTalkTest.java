@@ -90,6 +90,13 @@ class ButlerTalkTest {
         verify(team).ask(CHAT, "можно с детьми прийти?");
     }
 
+    /** No answer comes back to the guest from the staff chat, so the bot says it does not know and promises nothing. */
+    @Test
+    void anUnknownFactIsSaidToBeUnknownWithoutAPromise() {
+        assertThat(ButlerTalk.ASK_TEAM).isEqualTo("Точных сведений об этом у меня пока нет.");
+        assertThat(ButlerTalk.ASK_TEAM.toLowerCase()).doesNotContain("уточню", "вернусь", "напишу");
+    }
+
     @Test
     void tableRequestGoesToTheRouterWhenSeated() {
         when(router.route(42L, TableRequest.BREAD, "можно ещё хлеба")).thenReturn("Передал. Кирилл скоро подойдёт.");

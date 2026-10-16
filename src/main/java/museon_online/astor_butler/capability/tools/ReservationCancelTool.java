@@ -12,7 +12,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** {@code reservation_cancel{reservationId}}: the guest cancels their own reservation; cancelling twice is no error. */
+/**
+ * {@code reservation_cancel{reservationId}}: the guest cancels their own reservation; cancelling twice is no error. Only
+ * on the guest's direct request: a «нет» to an order summary is not one (run 16.10: «нет, это тест» went looking for a
+ * booking to cancel).
+ */
 @Component
 public class ReservationCancelTool implements CapabilityTool {
 
@@ -31,7 +35,9 @@ public class ReservationCancelTool implements CapabilityTool {
 
     @Override
     public String description() {
-        return "Отменить бронь гостя по его просьбе. Возвращает reservationId и status (CANCELLED).";
+        return "Отменить уже созданную бронь гостя — только когда гость прямо просит её отменить («отмените бронь»). "
+                + "«Нет» на перечень заказа или на предложение стола — не просьба об отмене: тогда не вызывай, а спроси, "
+                + "что поменять. Возвращает reservationId и status (CANCELLED).";
     }
 
     @Override

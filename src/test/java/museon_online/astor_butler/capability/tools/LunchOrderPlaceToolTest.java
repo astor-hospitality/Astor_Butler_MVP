@@ -18,10 +18,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +42,8 @@ class LunchOrderPlaceToolTest {
 
     /** 13:00 in Yekaterinburg on Tuesday 20.10.2026. */
     private static final Instant LUNCH = Instant.parse("2026-10-20T08:00:00Z");
+    /** «Now»: 10:00 in Yekaterinburg on Friday 16.10.2026. */
+    private static final Clock FRIDAY_MORNING = Clock.fixed(Instant.parse("2026-10-16T05:00:00Z"), ZoneOffset.UTC);
     private static final BusinessLunchOffer OFFER = new BusinessLunchOffer("AERIS", "AERIS", true,
             List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY), LocalTime.of(12, 0), LocalTime.of(16, 0), 90, null,
             List.of(new BusinessLunchOffer.Course("SOUP", "Суп", List.of(new BusinessLunchOffer.Dish("BORSCHT", "Борщ", 270, "300 г"))),
@@ -61,7 +65,7 @@ class LunchOrderPlaceToolTest {
         when(orders.findOrder(41L)).thenReturn(Optional.of(reservation));
         tool = new LunchOrderPlaceTool(lunch, catalog, new CapabilityProperties(),
                 new ReservationAccess(orders, mock(GuestVisitRepository.class), mock(VisitTurnRepository.class)),
-                new GuestJourneyProperties());
+                new GuestJourneyProperties(), FRIDAY_MORNING);
     }
 
     private static Map<String, Object> args(Object confirmed, List<String> dishes) {
@@ -150,6 +154,23 @@ class LunchOrderPlaceToolTest {
 
         assertThat(result.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
         assertThat(result.facts()).containsEntry("reason", "OUTSIDE_LUNCH_HOURS");
+        // The refusal carries the lunch window lunch_menu gives, so the agent can name the hours.
+        assertThat(result.facts()).containsEntry("served", false).containsEntry("from", "12:00").containsEntry("to", "16:00")
+                .containsEntry("days", List.of("MONDAY", "TUESDAY")).containsEntry("nextServedDate", "2026-10-20");
+        verifyNoInteractions(lunch);
+    }
+
+    /** A table held for a Saturday gets no lunch, and the refusal names the nearest lunch day. */
+    @Test
+    void aSaturdayTableGetsNoLunchAndTheNextLunchDayIsNamed() {
+        when(orders.findOrder(41L)).thenReturn(Optional.of(CapabilityFixtures.order(41L, CapabilityFixtures.BUTLER_CHAT,
+                TableReservationStatus.CONFIRMED, Instant.parse("2026-10-24T08:00:00Z"))));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), args(true, List.of("BORSCHT")));
+
+        assertThat(result.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(result.facts()).containsEntry("reason", "NOT_A_LUNCH_DAY").containsEntry("served", false)
+                .containsEntry("nextServedDate", "2026-10-26").containsEntry("nextServedDay", "понедельник, 26 октября");
         verifyNoInteractions(lunch);
     }
 }

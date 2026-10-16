@@ -8,6 +8,7 @@ import museon_online.astor_butler.capability.CapabilityTool;
 import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOffer;
+import museon_online.astor_butler.domain.lunch.BusinessLunchService;
 import museon_online.astor_butler.integration.saby.SabyNutrition;
 import museon_online.astor_butler.integration.saby.SabyNutritionService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +18,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -27,8 +30,11 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * {@code lunch_menu{date?}}: the business lunch for today or the given day. Weight and nutrition come from Saby when it
- * knows the dish, cached per dish for ten minutes so the agent does not hammer Saby; unknown values are left out.
+ * {@code lunch_menu{date?, time?}}: the business lunch for today or the given day. {@code text} is the whole menu as the
+ * bot prints it ({@link BusinessLunchOffer#menuText}), for the agent and the Concierge to show word for word; {@code served}
+ * follows the bot's own rule ({@link BusinessLunchService#windowIssue}) and, when false, comes with the reason and the
+ * nearest lunch day ({@link LunchWindowFacts}). Weight and nutrition come from Saby when it knows the dish, cached per dish
+ * for ten minutes so the agent does not hammer Saby; unknown values are left out.
  */
 @Component
 public class LunchMenuTool implements CapabilityTool {
@@ -68,16 +74,20 @@ public class LunchMenuTool implements CapabilityTool {
 
     @Override
     public String description() {
-        return "Меню бизнес-ланча: блюда по разделам с ценой в рублях, часы подачи (from, to) и дни недели (days). "
-                + "served — подают ли ланч в этот день. Вес и КБЖУ есть только у блюд, о которых знает Saby; "
-                + "если поля нет — данных нет.";
+        return "Меню бизнес-ланча на день визита. text – готовое меню (разделы, блюда с порцией и ценой): показывай его гостю "
+                + "дословно, целиком, ничего не сокращай и не обобщай. courses – те же блюда с кодами (code) и ценой в рублях для "
+                + "lunch_order_place. Дни недели (days) и часы подачи (from, to). served – можно ли заказать ланч на этот день "
+                + "(и время, если передано); served=false – в это время ланча нет: issue – почему (NOT_A_LUNCH_DAY – не день ланча, "
+                + "OUTSIDE_LUNCH_HOURS – не те часы, ALREADY_PASSED – уже прошло), nextServedDay – ближайший день с ланчем, "
+                + "его и предложи. Вес и КБЖУ есть только у блюд, о которых знает Saby; если поля нет – данных нет.";
     }
 
     @Override
     public Map<String, Object> parameters() {
         return Map.of("type", "object",
-                "properties", Map.of("date", Map.of("type", "string",
-                        "description", "День в формате YYYY-MM-DD; без него — сегодня")),
+                "properties", Map.of(
+                        "date", Map.of("type", "string", "description", "День визита в формате YYYY-MM-DD; без него – сегодня"),
+                        "time", Map.of("type", "string", "description", "Время визита в формате HH:mm, если гость его назвал")),
                 "required", List.of());
     }
 
@@ -89,13 +99,16 @@ public class LunchMenuTool implements CapabilityTool {
     @Override
     public CapabilityResult invoke(CapabilityContext ctx, Map<String, Object> args) {
         LocalDate date;
+        LocalTime time;
         try {
             date = CapabilityArguments.date(args, "date");
+            time = CapabilityArguments.time(args, "time");
         } catch (CapabilityArguments.BadArgument e) {
             return CapabilityResult.error(CapabilityResult.BAD_ARGUMENT);
         }
+        ZonedDateTime now = ZonedDateTime.now(clock.withZone(zone()));
         if (date == null) {
-            date = LocalDate.now(clock.withZone(zone()));
+            date = now.toLocalDate();
         }
         Optional<BusinessLunchOffer> found = catalog.find(properties.getVenueCode());
         if (found.isEmpty()) {
@@ -113,13 +126,18 @@ public class LunchMenuTool implements CapabilityTool {
             entry.put("dishes", dishes);
             courses.add(entry);
         }
+        // The bot's rule: a weekend, the hours outside the lunch or a lunch already over are no lunch.
+        Optional<BusinessLunchService.WindowIssue> issue = BusinessLunchService.windowIssue(offer, date, time,
+                now.toLocalDate(), now.toLocalTime());
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("date", date.toString());
-        facts.put("served", offer.days().contains(date.getDayOfWeek()));
+        if (time != null) {
+            facts.put("time", time.format(TIME));
+        }
         facts.put("courses", courses);
-        facts.put("from", offer.from().format(TIME));
-        facts.put("to", offer.to().format(TIME));
-        facts.put("days", offer.days().stream().map(Enum::name).toList());
+        facts.putAll(LunchWindowFacts.of(offer, date, issue.isEmpty(), now.toLocalDate(), now.toLocalTime()));
+        issue.ifPresent(reason -> facts.put("issue", reason.name()));
+        facts.put("text", offer.menuText());
         return CapabilityResult.ok(facts);
     }
 

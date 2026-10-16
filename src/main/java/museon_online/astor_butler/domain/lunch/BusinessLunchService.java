@@ -37,6 +37,8 @@ public class BusinessLunchService {
     /** How the guest's wish reads on the hostess card and in the Saby comment: every wish is agreed with the kitchen, never promised. */
     public static final String WISH_PREFIX = "Пожелание гостя: ";
     public static final String WISH_SUFFIX = " — согласовать с кухней";
+    /** How far {@link #nextLunchDay} looks ahead, as far as the bot's day buttons do. */
+    private static final int LOOK_AHEAD_DAYS = 21;
 
     private final TableReservationService tableReservationService;
     private final List<ExternalLunchOrderProvider> externalProviders;
@@ -131,17 +133,25 @@ public class BusinessLunchService {
 
     /** Why this day or time cannot be a business lunch. A null time checks the day alone. */
     public Optional<WindowIssue> windowIssue(BusinessLunchOffer offer, LocalDate date, LocalTime time) {
+        return windowIssue(offer, date, time, timeProvider.today(), timeProvider.nowTime());
+    }
+
+    /**
+     * The rule of {@link #windowIssue(BusinessLunchOffer, LocalDate, LocalTime)} with the venue's «today» and «now»
+     * given: the agents' tools keep their own clock and must refuse exactly what the bot refuses.
+     */
+    public static Optional<WindowIssue> windowIssue(BusinessLunchOffer offer, LocalDate date, LocalTime time, LocalDate today,
+                                                    LocalTime now) {
         if (date == null) {
             return Optional.empty();
         }
-        LocalDate today = timeProvider.today();
         if (date.isBefore(today)) {
             return Optional.of(WindowIssue.ALREADY_PASSED);
         }
         if (!offer.days().contains(date.getDayOfWeek())) {
             return Optional.of(WindowIssue.NOT_A_LUNCH_DAY);
         }
-        if (date.equals(today) && !timeProvider.nowTime().isBefore(offer.to())) {
+        if (date.equals(today) && !now.isBefore(offer.to())) {
             return Optional.of(WindowIssue.ALREADY_PASSED);
         }
         if (time == null) {
@@ -150,8 +160,23 @@ public class BusinessLunchService {
         if (time.isBefore(offer.from()) || !time.isBefore(offer.to())) {
             return Optional.of(WindowIssue.OUTSIDE_LUNCH_HOURS);
         }
-        if (date.equals(today) && !time.isAfter(timeProvider.nowTime())) {
+        if (date.equals(today) && !time.isAfter(now)) {
             return Optional.of(WindowIssue.ALREADY_PASSED);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The nearest day from {@code from} on (never before today) whose lunch is still ahead, by the same rule: on a
+     * Saturday it is Monday, on a weekday after the lunch hours the next lunch day. Empty when none falls within
+     * three weeks.
+     */
+    public static Optional<LocalDate> nextLunchDay(BusinessLunchOffer offer, LocalDate from, LocalDate today, LocalTime now) {
+        LocalDate day = from == null || from.isBefore(today) ? today : from;
+        for (int ahead = 0; ahead < LOOK_AHEAD_DAYS; ahead++, day = day.plusDays(1)) {
+            if (windowIssue(offer, day, null, today, now).isEmpty()) {
+                return Optional.of(day);
+            }
         }
         return Optional.empty();
     }

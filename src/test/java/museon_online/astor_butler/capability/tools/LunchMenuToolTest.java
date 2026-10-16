@@ -32,11 +32,12 @@ class LunchMenuToolTest {
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-10-14T05:00:00Z"), ZoneOffset.UTC);
 
     private SabyNutritionService nutrition;
+    private BusinessLunchOffer offer;
     private LunchMenuTool tool;
 
     @BeforeEach
     void setUp() {
-        BusinessLunchOffer offer = new BusinessLunchOffer("AERIS", "AERIS", true,
+        offer = new BusinessLunchOffer("AERIS", "AERIS", true,
                 List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY),
                 LocalTime.of(12, 0), LocalTime.of(16, 0), 90, "",
                 List.of(new BusinessLunchOffer.Course("SOUP", "Суп", List.of(
@@ -82,11 +83,61 @@ class LunchMenuToolTest {
         CapabilityResult result = tool.invoke(null, Map.of("date", "2026-10-17"));
 
         assertThat(result.ok()).isTrue();
-        assertThat(result.facts()).containsEntry("served", false);
+        assertThat(result.facts()).containsEntry("served", false).containsEntry("issue", "NOT_A_LUNCH_DAY");
+    }
+
+    /** Run 16.10: on Friday «завтра» is Saturday, and the restaurant offered a Saturday lunch; Monday is the way on. */
+    @Test
+    void onAFridayTomorrowIsNoLunchAndMondayIsOffered() {
+        LunchMenuTool friday = toolAt("2026-10-16T05:00:00Z");
+
+        CapabilityResult result = friday.invoke(null, Map.of("date", "2026-10-17", "time", "13:00"));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("served", false).containsEntry("issue", "NOT_A_LUNCH_DAY")
+                .containsEntry("nextServedDate", "2026-10-19").containsEntry("nextServedDay", "понедельник, 19 октября")
+                .containsEntry("from", "12:00").containsEntry("to", "16:00");
+    }
+
+    @Test
+    void aTimeOutsideTheLunchHoursIsNoLunchThatDay() {
+        CapabilityResult result = tool.invoke(null, Map.of("date", "2026-10-15", "time", "17:00"));
+
+        assertThat(result.facts()).containsEntry("served", false).containsEntry("issue", "OUTSIDE_LUNCH_HOURS")
+                .containsEntry("time", "17:00").containsEntry("nextServedDate", "2026-10-15");
+    }
+
+    @Test
+    void afterTheLunchHoursTodayTheNextLunchDayIsTomorrow() {
+        CapabilityResult result = toolAt("2026-10-14T12:00:00Z").invoke(null, Map.of());
+
+        assertThat(result.facts()).containsEntry("date", "2026-10-14").containsEntry("served", false)
+                .containsEntry("issue", "ALREADY_PASSED").containsEntry("nextServedDay", "четверг, 15 октября");
+    }
+
+    @Test
+    void aServedDayNamesNoIssueAndNoOtherDay() {
+        CapabilityResult result = tool.invoke(null, Map.of("date", "2026-10-15", "time", "13:00"));
+
+        assertThat(result.facts()).containsEntry("served", true).doesNotContainKeys("issue", "nextServedDate", "nextServedDay");
+    }
+
+    /** The agent and the Concierge show this text word for word: every dish, its portion and its price, by course. */
+    @Test
+    void theMenuComesAsAReadyText() {
+        CapabilityResult result = tool.invoke(null, Map.of());
+
+        assertThat(result.facts()).containsEntry("text", "Суп\n• Гороховый суп · 290 ₽\n• Крем-суп · 230 ₽");
     }
 
     @Test
     void unreadableDateIsABadArgument() {
         assertThat(tool.invoke(null, Map.of("date", "завтра")).error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+        assertThat(tool.invoke(null, Map.of("time", "к обеду")).error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+    }
+
+    private LunchMenuTool toolAt(String instant) {
+        return new LunchMenuTool(new BusinessLunchCatalog(List.of(offer)), nutrition, new CapabilityProperties(),
+                new GuestJourneyProperties(), Clock.fixed(Instant.parse(instant), ZoneOffset.UTC));
     }
 }

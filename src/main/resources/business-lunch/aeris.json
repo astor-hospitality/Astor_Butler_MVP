@@ -14,7 +14,7 @@
       {"code": "SALAD_BLINI", "title": "Блинный салат", "sabyName": "Блинный салат Ланч", "priceRub": 280, "portion": null}
     ]},
     {"code": "SOUP", "title": "Суп", "dishes": [
-      {"code": "PEA_SOUP_SMOKED", "title": "Гороховый суп с копченостями", "sabyName": "Гороховый суп с копченостями ЛАНЧ", "priceRub": 290, "portion": null},
+      {"code": "PEA_SOUP_SMOKED", "title": "Гороховый суп с копчёностями", "sabyName": "Гороховый суп с копченостями ЛАНЧ", "priceRub": 290, "portion": null},
       {"code": "MUSHROOM_CREAM_SOUP", "title": "Крем-суп грибной", "sabyName": "Крем суп грибной Ланч", "priceRub": 230, "portion": null}
     ]},
     {"code": "MAIN", "title": "Горячее", "dishes": [
