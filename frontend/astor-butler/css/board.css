@@ -188,6 +188,11 @@ body.locked .frame { visibility: hidden; }
 .anode .detail { fill: var(--muted); font-size: 11px; font-family: var(--font-mono); }
 .anode[data-node="guest"] { --node: var(--guest); }
 .anode .sub { fill: var(--muted); font-size: 10.5px; }
+.channels { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); margin-top: 12px; }
+.channel-col { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 16px; }
+.channel-col h3 { margin: 0 0 8px; font-size: 14px; }
+.channel-col ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+.channel-col b { color: var(--fg); font-weight: var(--brand-weight-semibold); }
 
 /* lessons */
 .lessons { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); }
