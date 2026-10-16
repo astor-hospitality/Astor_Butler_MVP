@@ -237,23 +237,139 @@ class SabyLunchOrderProviderTest {
         fixture.server().verify();
     }
 
+    /** 16.10: a 500 on the update is read back, and resent once from the fresh read while the booking still has no dishes. */
     @Test
-    void configuredPriceListSkipsTheLookupAndAServerErrorIsNotRetried() {
-        SabyReservationProperties properties = writable();
-        properties.setPriceListId("4");
-        Fixture fixture = fixture(properties);
-        expectAuth(fixture.server());
-        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
-                .andExpect(queryParam("priceListId", "4"))
-                .andRespond(withSuccess("[{\"id\": 31, \"name\": \"борщ со сметаной\"}]", MediaType.APPLICATION_JSON));
+    void aServerErrorIsReadBackAndResentOnceFromAFreshRead() {
+        Fixture fixture = withDishLookup();
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL)).andExpect(method(HttpMethod.PUT))
+                .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR).contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":{\"code\":-32000,\"message\":\"Иван 79990000000 не найден\"}}"));
+        expectBooking(fixture.server(), "{}");
+        fixture.server().expect(once(), requestTo(UPDATE_URL)).andExpect(method(HttpMethod.PUT))
+                .andExpect(jsonPath("$.nomenclatures[0].id").value(31))
+                .andExpect(jsonPath("$.nomenclatures[0].count").value(2))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.status()).isEqualTo("SABY_LUNCH_ATTACHED");
+        fixture.server().verify();
+    }
+
+    @Test
+    void twoServerErrorsAreAFailureThatIsNotRetriedAgain() {
+        Fixture fixture = withDishLookup();
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.attempted()).isTrue();
+        assertThat(result.status()).isEqualTo("SABY_LUNCH_NOT_ATTACHED");
+        fixture.server().verify();
+    }
+
+    /** The 500 came after Saby kept the dishes: the read-back shows exactly Butler's, nothing is sent again. */
+    @Test
+    void anErrorAnswerAfterTheDishesLandedIsAcceptedWithoutASecondUpdate() {
+        Fixture fixture = withDishLookup();
         expectBooking(fixture.server(), "[]");
         fixture.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.BAD_GATEWAY));
+        expectBooking(fixture.server(), "[{\"id\":31,\"count\":2,\"name\":\"Борщ со сметаной\"}]");
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.externalOrderId()).isEqualTo(BOOKING_ID);
+        fixture.server().verify();
+    }
+
+    /** Someone else's dishes after the error: the till is not Butler's to guess, the result stays unknown. */
+    @Test
+    void otherDishesAfterAnErrorLeaveTheResultUnknown() {
+        Fixture fixture = withDishLookup();
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+        expectBooking(fixture.server(), "[{\"id\":90,\"count\":1}]");
 
         ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
 
         assertThat(result.accepted()).isFalse();
         assertThat(result.status()).isEqualTo("PROVIDER_RESULT_UNKNOWN");
         fixture.server().verify();
+    }
+
+    /** A timeout may still land: it is read back, never resent, so the kitchen never gets the ticket twice. */
+    @Test
+    void aTimeoutIsReadBackButNeverResent() {
+        Fixture fixture = withDishLookup();
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators.withException(new java.net.SocketTimeoutException("read timed out")));
+        expectBooking(fixture.server(), "[]");
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.status()).isEqualTo("SABY_LUNCH_NOT_ATTACHED");
+        fixture.server().verify();
+    }
+
+    @Test
+    void aReadBackThatFailsLeavesTheResultUnknown() {
+        Fixture fixture = withDishLookup();
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+        // GET is retried by the client (max-retries 2 by default): every attempt fails.
+        fixture.server().expect(org.springframework.test.web.client.ExpectedCount.manyTimes(), requestTo("https://api.saby.test/retail/order/" + BOOKING_ID))
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.status()).isEqualTo("PROVIDER_RESULT_UNKNOWN");
+        fixture.server().verify();
+    }
+
+    /** A 4xx is Saby's answer about the body: the same body would be refused again, so it is neither read back nor resent. */
+    @Test
+    void aRejectionIsNotRetried() {
+        Fixture fixture = withDishLookup();
+        expectBooking(fixture.server(), "[]");
+        fixture.server().expect(once(), requestTo(UPDATE_URL)).andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+        ExternalLunchOrderProvider.Result result = fixture.provider().submit(order(List.of(dish("Борщ со сметаной", 2))), "astor-lunch-1");
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.status()).isEqualTo("PROVIDER_REJECTED");
+        fixture.server().verify();
+    }
+
+    /** The log learns which fields the error and the booking had, never the guest's name, phone or comment. */
+    @Test
+    void theErrorAndTheBookingAreDescribedByFieldNamesAndCodesOnly() throws Exception {
+        String shape = SabyErrorShape.of("{\"error\":{\"code\":-32000,\"type\":\"error\",\"message\":\"Клиент Иван 79990000000\","
+                + "\"data\":{\"classid\":\"Sale\",\"details\":\"Стол 4 занят\"}},\"status\":\"Иван\"}");
+        assertThat(shape).contains("error.code=-32000", "error.type=error", "error.data.classid=Sale", "error.message=", "error.data.details")
+                .doesNotContain("Иван", "79990000000", "Стол 4");
+        assertThat(SabyErrorShape.of("<html>Internal Server Error</html>")).isEqualTo("non-JSON body, 34 chars");
+        assertThat(SabyErrorShape.of("")).isEqualTo("empty body");
+        assertThat(SabyErrorShape.of("{\"79990000000\":{\"code\":\"1\"}}")).doesNotContain("79990000000");
+
+        SabyLunchOrderProvider provider = fixture(writable()).provider();
+        ObjectNode snapshot = (ObjectNode) new ObjectMapper().readTree("""
+                {"datetime":"2026-10-16 14:00:00","comment":"Иван · Astor Butler #68","state":3,
+                 "booking":{"hall":1,"table":4,"visitors":2,"woTable":true},"customer":{"name":"Иван","phone":"79990000000"}}
+                """);
+        String sent = provider.shapeOf(snapshot, order(List.of(dish("Борщ со сметаной", 2))));
+        assertThat(sent).contains("order[datetime, comment, state, booking, customer]", "booking[hall, table, visitors, woTable]",
+                        "state=3", "tableSet=true", "woTable=true", "hallSet=true", "timePassed=")
+                .doesNotContain("Иван", "79990000000");
     }
 
     @Test
@@ -381,6 +497,17 @@ class SabyLunchOrderProviderTest {
 
         assertThat(result.accepted()).isTrue();
         fixture.server().verify();
+    }
+
+    private static Fixture withDishLookup() {
+        SabyReservationProperties properties = writable();
+        properties.setPriceListId("4");
+        Fixture fixture = fixture(properties);
+        expectAuth(fixture.server());
+        fixture.server().expect(once(), requestTo(containsString("/retail/v2/nomenclature/list")))
+                .andExpect(queryParam("priceListId", "4"))
+                .andRespond(withSuccess("[{\"id\": 31, \"name\": \"борщ со сметаной\"}]", MediaType.APPLICATION_JSON));
+        return fixture;
     }
 
     private static void expectBooking(MockRestServiceServer server, String dishes) {
