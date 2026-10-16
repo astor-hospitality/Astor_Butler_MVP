@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.OutgoingMessage;
 import museon_online.astor_butler.speech.TextToSpeech;
+import museon_online.astor_butler.telegram.utils.HostessTopicRouter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -288,7 +289,7 @@ public class TelegramVoiceReplyService {
                 builder.replyMarkup(keyboard);
             }
             try {
-                sender.execute(builder.build());
+                sender.execute(HostessTopicRouter.route(sender, builder.build()));
             } catch (Exception e) {
                 warnRateLimited("sendVoice to chat " + chatId + " failed", e);
                 return;
@@ -299,11 +300,11 @@ public class TelegramVoiceReplyService {
     private void sendPhotos(Long chatId, List<ReplyText.Link> photos, AbsSender sender) {
         for (ReplyText.Link photo : photos.stream().limit(config.maxPhotos()).toList()) {
             try {
-                sender.execute(SendPhoto.builder()
+                sender.execute(HostessTopicRouter.route(sender, SendPhoto.builder()
                         .chatId(chatId.toString())
                         .photo(new InputFile(photo.url()))
                         .caption(photo.label())
-                        .build());
+                        .build()));
             } catch (Exception e) {
                 log.debug("Telegram photo {} was not sent to {}: {}", photo.url(), chatId, e.getClass().getSimpleName());
             }

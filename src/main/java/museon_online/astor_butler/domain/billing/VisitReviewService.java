@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
  * to leave a tip. The question goes out when the venue closes the order, or after the visit ends by the clock; with
  * {@code astor.review.moment=on-bill} it goes out earlier, at the bill (payment link or the hostess «Счёт» button),
  * and the close stays as the safety net. Words from the guest are not collected here; the feedback scenario does that.
+ * Each answer is also shown to the team in the reviews topic of the staff group ({@link VisitReviewStaffCard}).
  */
 @Service
 @Slf4j
@@ -39,6 +40,14 @@ public class VisitReviewService {
 
     public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
         this.journeyEvents = journeyEvents;
+    }
+
+    /** The review card in the staff group's reviews topic: optional for the same reason; publishes nothing while off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private VisitReviewStaffCard staffCard;
+
+    public void setStaffCard(VisitReviewStaffCard staffCard) {
+        this.staffCard = staffCard;
     }
 
     @Autowired
@@ -198,6 +207,7 @@ public class VisitReviewService {
             }
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "stars=" + review.stars());
             notifier.reviewThanks(bill, review);
+            toStaff(bill, review, null);
             return new CallbackResult(true, "Спасибо за оценку!", null);
         }
         if (matcher.group(4) != null) {
@@ -207,6 +217,7 @@ public class VisitReviewService {
             }
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "thumb=" + review.thumb());
             notifier.reviewThanks(bill, review);
+            toStaff(bill, review, null);
             return new CallbackResult(true, "Спасибо!", null);
         }
         reviews.tipRequested(billId);
@@ -245,7 +256,20 @@ public class VisitReviewService {
             journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=" + review.stars());
         }
         bills.reviewNoted(bill.id(), BillOperationType.REVIEW_RECEIVED, "stars=" + review.stars());
+        toStaff(bill, review, text);
         return true;
+    }
+
+    /** The team sees the review in its topic; a card that does not go out never changes the guest's answer. */
+    private void toStaff(GuestBill bill, VisitReview review, String comment) {
+        if (staffCard == null) {
+            return;
+        }
+        try {
+            staffCard.publish(bill, review, comment);
+        } catch (RuntimeException e) {
+            log.warn("Visit review card for bill {} failed: {}", bill.id(), e.getClass().getSimpleName());
+        }
     }
 
     public Optional<VisitReview> reviewOf(Long billId) {

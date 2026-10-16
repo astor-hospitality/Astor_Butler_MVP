@@ -708,6 +708,15 @@ telegram:
     notifications-enabled: ${TELEGRAM_BOOKING_NOTIFICATIONS_ENABLED:true}
     manager-chat-id: ${TELEGRAM_BOOKING_MANAGER_CHAT_ID:876857557}
     hostess-chat-id: ${TELEGRAM_HOSTESS_CHAT_ID:}
+    # The staff group is a forum: the bot's messages to it without a topic of their own go to this topic (AERIS «Брони»).
+    # Blank: General, as before topics.
+    hostess-thread-id: ${TELEGRAM_HOSTESS_THREAD_ID:}
+    # The guest's review of the visit (stars, 👍/👎) is published to this topic of the same group (AERIS «Обратная связь»).
+    # Blank: reviews are not published.
+    feedback-thread-id: ${TELEGRAM_FEEDBACK_THREAD_ID:}
+    # The guest's wishes for the visit (без лука, allergy, occasion, high chair, table) as a short note in this topic
+    # (AERIS «Пожелания»); the hostess card keeps its line. Blank: no separate note.
+    wishes-thread-id: ${TELEGRAM_WISHES_THREAD_ID:}
     plan-pdf-asset-code: ${TELEGRAM_BOOKING_PLAN_PDF_ASSET_CODE:AERIS_FLOOR_PLAN}
   quiet-guide:
     interior-video-asset-code: ${TELEGRAM_QUIET_GUIDE_INTERIOR_VIDEO_ASSET_CODE:AERIS_INTERIOR_TOUR}

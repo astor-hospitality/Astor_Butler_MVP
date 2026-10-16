@@ -120,6 +120,14 @@ public class TableReservationNotificationService {
         this.conciergeWebhook = conciergeWebhook;
     }
 
+    /** The guest's wishes as a note in the staff group's wishes topic: optional so the constructor and its tests stay as they are. */
+    private GuestWishNotifier wishNotifier;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setWishNotifier(GuestWishNotifier wishNotifier) {
+        this.wishNotifier = wishNotifier;
+    }
+
     /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
@@ -135,6 +143,9 @@ public class TableReservationNotificationService {
         );
         if (sent != null && ((decision != null && decision != Decision.OFF) || holdExpiryEnabled)) {
             rememberHostessCard(order, chatId, sent);
+        }
+        if (wishNotifier != null) {
+            wishNotifier.onBooking(order);
         }
     }
 
@@ -1071,7 +1082,7 @@ public class TableReservationNotificationService {
     }
 
     /** «Стол 5 (5)», «Стол VIP 13 (13)» or «не выбран», as every card names the table. */
-    static String tableName(TableReservationOrder order) {
+    public static String tableName(TableReservationOrder order) {
         if (order.tableCode() == null) {
             return "не выбран";
         }

@@ -2,6 +2,7 @@ package museon_online.astor_butler.domain.entry;
 
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.service.message.IncomingMessage;
+import museon_online.astor_butler.telegram.utils.HostessTopicRouter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -101,12 +102,12 @@ public class StaffHandoffLinkCommandService {
     private boolean sendPhoto(AbsSender sender, String chatId, String url, String caption) {
         try {
             byte[] png = QrCodeImages.png(url);
-            sender.execute(SendPhoto.builder()
+            sender.execute(HostessTopicRouter.route(sender, SendPhoto.builder()
                     .chatId(chatId)
                     .photo(new InputFile(new ByteArrayInputStream(png), "astor-guest-link.png"))
                     .caption(caption)
                     .parseMode("HTML")
-                    .build());
+                    .build()));
             return true;
         } catch (Exception e) {
             log.warn("Staff handoff QR was not sent: chatId={}, reason={}", chatId, e.toString());
