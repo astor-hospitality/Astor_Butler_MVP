@@ -194,6 +194,79 @@ class HostessSeatedServiceTest {
         verify(reservations).seatByStaff(44L, "неизвестно");
     }
 
+    // ---- the guest's own «мы пришли» (guest_arrived) ----
+
+    /** The booking of {@link #order} is at 08:00 UTC, 13:00 at the venue. */
+    private static final Instant BOOKING_AT = Instant.parse("2026-10-12T08:00:00Z");
+
+    @Test
+    void theGuestsArrivalInTheWindowSeatsTheBookingAndTheHostessHears() {
+        when(reservations.seatByStaff(44L, HostessSeatedService.GUEST_SELF)).thenReturn(seated);
+
+        HostessSeatedService.Arrival arrival = service.guestArrived(44L, BOOKING_AT.minusSeconds(20 * 60));
+
+        assertThat(arrival.outcome()).isEqualTo(HostessSeatedService.ArrivalOutcome.SEATED);
+        assertThat(arrival.order()).isEqualTo(seated);
+        verify(reservations).seatByStaff(44L, HostessSeatedService.GUEST_SELF);
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(notifications).sendStaffNotice(eq("500"), text.capture());
+        assertThat(text.getValue()).contains("Гости брони #44 на месте, стол 5").contains("14:32");
+    }
+
+    @Test
+    void theArrivalWindowIsAnHourBeforeToNinetyMinutesAfterTheBookingTime() {
+        when(reservations.seatByStaff(44L, HostessSeatedService.GUEST_SELF)).thenReturn(seated);
+
+        assertThat(service.guestArrived(44L, BOOKING_AT.minusSeconds(61 * 60)).outcome())
+                .isEqualTo(HostessSeatedService.ArrivalOutcome.OUTSIDE_WINDOW);
+        assertThat(service.guestArrived(44L, BOOKING_AT.plusSeconds(91 * 60)).outcome())
+                .isEqualTo(HostessSeatedService.ArrivalOutcome.OUTSIDE_WINDOW);
+        HostessSeatedService.Arrival early = service.guestArrived(44L, BOOKING_AT.minusSeconds(3600 * 24));
+        assertThat(early.windowFrom()).isEqualTo(BOOKING_AT.minusSeconds(3600));
+        assertThat(early.windowTo()).isEqualTo(BOOKING_AT.plusSeconds(90 * 60));
+        verify(reservations, never()).seatByStaff(anyLong(), anyString());
+        verify(notifications, never()).sendStaffNotice(anyString(), anyString());
+
+        assertThat(service.guestArrived(44L, BOOKING_AT.minusSeconds(60 * 60)).outcome())
+                .isEqualTo(HostessSeatedService.ArrivalOutcome.SEATED);
+        assertThat(service.guestArrived(44L, BOOKING_AT.plusSeconds(90 * 60)).outcome())
+                .isEqualTo(HostessSeatedService.ArrivalOutcome.SEATED);
+    }
+
+    @Test
+    void whoeverWasFirstKeepsTheTimeAndTheHostessHearsNothingTwice() {
+        when(reservations.getReservation(44L)).thenReturn(seated);
+
+        HostessSeatedService.Arrival arrival = service.guestArrived(44L, BOOKING_AT);
+
+        assertThat(arrival.outcome()).isEqualTo(HostessSeatedService.ArrivalOutcome.ALREADY_SEATED);
+        assertThat(arrival.order().seatedAt()).isEqualTo(SEATED_AT);
+        verify(reservations, never()).seatByStaff(anyLong(), anyString());
+        verify(notifications, never()).sendStaffNotice(anyString(), anyString());
+    }
+
+    @Test
+    void aSeatingByTheHostessBetweenTheReadAndTheWriteStands() {
+        when(reservations.getReservation(44L)).thenReturn(confirmed, seated);
+        when(reservations.seatByStaff(44L, HostessSeatedService.GUEST_SELF))
+                .thenThrow(new ApiException(HttpStatus.CONFLICT, ErrorCode.CONFLICT, "changed"));
+
+        HostessSeatedService.Arrival arrival = service.guestArrived(44L, BOOKING_AT);
+
+        assertThat(arrival.outcome()).isEqualTo(HostessSeatedService.ArrivalOutcome.ALREADY_SEATED);
+        verify(notifications, never()).sendStaffNotice(anyString(), anyString());
+    }
+
+    @Test
+    void anUnconfirmedBookingOrTheSwitchedOffFeatureSeatsNobody() {
+        when(reservations.getReservation(45L)).thenReturn(order(45L, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, null));
+
+        assertThat(service.guestArrived(45L, BOOKING_AT).outcome()).isEqualTo(HostessSeatedService.ArrivalOutcome.NOT_CONFIRMED);
+        properties.setEnabled(false);
+        assertThat(service.guestArrived(44L, BOOKING_AT).outcome()).isEqualTo(HostessSeatedService.ArrivalOutcome.OFF);
+        verify(reservations, never()).seatByStaff(anyLong(), anyString());
+    }
+
     // ---- helpers ----
 
     /** The confirmed card as Telegram hands it back with the press: plain text plus the bold label as an entity. */

@@ -11,6 +11,8 @@ import org.telegram.telegrambots.meta.api.methods.updatingmessages.EditMessageTe
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.MessageEntity;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -24,6 +26,11 @@ import java.util.regex.Pattern;
  * line. A second press — on a stale copy of the card, or after Presto seated the guest first — only repeats the time
  * and cleans the card; nothing is stamped twice. Only the hostess chat may press, like the other buttons of the card;
  * the feature is off by default ({@code astor.booking.seated.enabled}).
+ *
+ * <p>The guest may mark the arrival too ({@link #guestArrived}, tool {@code guest_arrived}: «мы пришли»): within
+ * {@link #ARRIVAL_EARLIEST} before and {@link #ARRIVAL_LATEST} after the booking time the booking becomes SEATED the
+ * same way, and the hostess chat (bookings topic) gets «Гости брони #N на месте, стол T». Whoever is first — the
+ * hostess, Presto or the guest — sets the time; the others only see it.
  */
 @Service
 @Slf4j
@@ -63,6 +70,82 @@ public class HostessSeatedService {
         static CallbackResult handled(String answerText) {
             return new CallbackResult(true, answerText);
         }
+    }
+
+    /** How long before the booking time the guest's own «мы пришли» seats the booking. */
+    public static final Duration ARRIVAL_EARLIEST = Duration.ofMinutes(60);
+    /** How long after the booking time the guest's own «мы пришли» still seats the booking. */
+    public static final Duration ARRIVAL_LATEST = Duration.ofMinutes(90);
+    /** Who seated the booking, for the log and the system chat, when the guest said it. */
+    public static final String GUEST_SELF = "гость (сам)";
+
+    /** What the guest's «мы пришли» did to the booking. */
+    public enum ArrivalOutcome {
+        /** Seated now, the hostess was told. */
+        SEATED,
+        /** Seated before (by the hostess, Presto or an earlier «мы пришли»): the first time stands, nothing is sent. */
+        ALREADY_SEATED,
+        /** Not a confirmed booking: still awaiting the hostess, cancelled, refused or expired. */
+        NOT_CONFIRMED,
+        /** Too early or too late for the booking time; see the window. */
+        OUTSIDE_WINDOW,
+        /** The seated status is switched off ({@code ASTOR_BOOKING_SEATED_ENABLED}). */
+        OFF
+    }
+
+    /** @param windowFrom, windowTo when «мы пришли» seats this booking; null without a booking time */
+    public record Arrival(ArrivalOutcome outcome, TableReservationOrder order, Instant windowFrom, Instant windowTo) {
+    }
+
+    /**
+     * The guest says they are at the venue: a confirmed booking within its arrival window becomes SEATED, as on
+     * «🪑 Гость сел», and the hostess chat gets one line. Idempotent: an already seated booking keeps its time and the
+     * hostess hears nothing twice. The caller has already checked that the booking is this guest's.
+     */
+    public Arrival guestArrived(long orderId, Instant now) {
+        TableReservationOrder order = reservations.getReservation(orderId);
+        Instant start = order.requestedStartAt();
+        Instant from = start == null ? null : start.minus(ARRIVAL_EARLIEST);
+        Instant to = start == null ? null : start.plus(ARRIVAL_LATEST);
+        if (!properties.isEnabled()) {
+            return new Arrival(ArrivalOutcome.OFF, order, from, to);
+        }
+        if (order.status() == TableReservationStatus.SEATED) {
+            return new Arrival(ArrivalOutcome.ALREADY_SEATED, order, from, to);
+        }
+        if (order.status() != TableReservationStatus.CONFIRMED) {
+            return new Arrival(ArrivalOutcome.NOT_CONFIRMED, order, from, to);
+        }
+        if (start == null || now == null || now.isBefore(from) || now.isAfter(to)) {
+            return new Arrival(ArrivalOutcome.OUTSIDE_WINDOW, order, from, to);
+        }
+        TableReservationOrder seated;
+        try {
+            seated = reservations.seatByStaff(orderId, GUEST_SELF);
+        } catch (ApiException e) {
+            // Changed between the read and the write: a seating by someone else stands, anything else is not confirmed.
+            TableReservationOrder again = reservations.getReservation(orderId);
+            return new Arrival(again.status() == TableReservationStatus.SEATED
+                    ? ArrivalOutcome.ALREADY_SEATED : ArrivalOutcome.NOT_CONFIRMED, again, from, to);
+        }
+        notifications.sendStaffNotice(hostessChat(seated), guestArrivedText(seated));
+        log.info("Reservation {} seated on the guest's own word: table {}, seatedAt {}", orderId, seated.tableCode(), seated.seatedAt());
+        return new Arrival(ArrivalOutcome.SEATED, seated, from, to);
+    }
+
+    /** «🪑 Гости брони #68 на месте, стол 4.», the line the hostess chat gets on the guest's «мы пришли». */
+    static String guestArrivedText(TableReservationOrder order) {
+        String table = order.tableCode() == null || order.tableCode().isBlank() ? "не выбран" : order.tableCode().trim();
+        return "🪑 Гости брони #" + order.id() + " на месте, стол " + escape(table) + ". Отметил гость сам в "
+                + time(order) + ".";
+    }
+
+    private String hostessChat(TableReservationOrder order) {
+        return order.hostessChatId() == null || order.hostessChatId().isBlank() ? hostessChatId : order.hostessChatId();
+    }
+
+    private static String escape(String value) {
+        return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     /** The «🪑 Гость сел» button of a reservation, as the card builder puts it on the card. */

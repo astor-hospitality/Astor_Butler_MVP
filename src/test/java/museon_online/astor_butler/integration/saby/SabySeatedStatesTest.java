@@ -6,7 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * «The guest is at the table» has no documented Saby code (#151): the codes come from {@code ASTOR_SABY_SEATED_STATES}
- * and nothing is SEATED while that is empty.
+ * (default 50/1002) and nothing is SEATED while that is empty or «off».
  */
 class SabySeatedStatesTest {
 
@@ -62,8 +62,29 @@ class SabySeatedStatesTest {
     void thePropertiesParseTheVariableOnEveryRead() {
         SabyReservationProperties properties = new SabyReservationProperties();
 
+        properties.setSeatedStates("");
         assertThat(properties.seatedCodes().empty()).isTrue();
         properties.setSeatedStates("50/1002");
         assertThat(properties.seatedCodes().matches(50, 1002)).isTrue();
+    }
+
+    /**
+     * Prod 16.10: the hostess seated the guest in Presto and Butler stayed CONFIRMED, the variable was empty. The default
+     * is now the documented pair «принята в работу» + «выполнение»; a plain accepted booking stays CONFIRMED, a code
+     * outside the documented set stays UNKNOWN, and «off» switches the mapping off.
+     */
+    @Test
+    void byDefaultAnOrderInServiceIsSeatedAndNothingUnknownIs() {
+        SabySeatedStates defaults = new SabyReservationProperties().seatedCodes();
+
+        assertThat(defaults.codes()).extracting(SabySeatedStates.Code::toString).containsExactly("50/1002");
+        assertThat(SabyBookingState.of(50, 1002, defaults)).isEqualTo(SabyBookingState.SEATED);
+        assertThat(SabyBookingState.of(50, 1001, defaults)).isEqualTo(SabyBookingState.CONFIRMED);
+        assertThat(SabyBookingState.of(20, 1001, defaults)).isEqualTo(SabyBookingState.CONFIRMED);
+        assertThat(SabyBookingState.of(50, null, defaults)).isEqualTo(SabyBookingState.CONFIRMED);
+        assertThat(SabyBookingState.of(220, 1002, defaults)).isEqualTo(SabyBookingState.CANCELLED);
+        assertThat(SabyBookingState.of(77, 1777, defaults)).isEqualTo(SabyBookingState.UNKNOWN);
+        assertThat(SabyBookingState.of(150, null, defaults)).isEqualTo(SabyBookingState.UNKNOWN);
+        assertThat(SabySeatedStates.parse("off").empty()).isTrue();
     }
 }
