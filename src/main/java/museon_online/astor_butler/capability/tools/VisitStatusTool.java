@@ -3,6 +3,7 @@ package museon_online.astor_butler.capability.tools;
 import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.CapabilityTool;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
@@ -94,6 +95,8 @@ public class VisitStatusTool implements CapabilityTool {
         facts.put("reservationId", visit.reservationId());
         facts.put("visitDay", visit.visitDay() == null ? null
                 : visit.visitDay().atZone(ZoneId.of(journey.getZoneId())).format(DAY));
+        facts.put("dateLabel", visit.visitDay() == null ? null
+                : GuestAgreement.dateLabel(visit.visitDay().atZone(ZoneId.of(journey.getZoneId())).toLocalDate()));
         facts.put("table", table(visit.reservationId()));
         return CapabilityResult.ok(facts);
     }

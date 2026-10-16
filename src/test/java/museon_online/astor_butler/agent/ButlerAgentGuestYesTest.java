@@ -146,7 +146,7 @@ class ButlerAgentGuestYesTest {
         assertThat(reply.facts()).singleElement().satisfies(fact -> {
             assertThat(fact).containsEntry("tool", "reservation_create").containsEntry("ok", false)
                     .containsEntry("error", CapabilityResult.NOT_ALLOWED);
-            assertThat(fact.get("facts")).isEqualTo(Map.of("reason", GuestAgreement.NEEDS_GUEST_YES, "date", "2026-10-20",
+            assertThat(fact.get("facts")).isEqualTo(Map.of("reason", GuestAgreement.NEEDS_GUEST_YES, "date", "2026-10-20", "dateLabel", "вт 20.10",
                     "time", "19:00", "partySize", 2));
         });
     }
@@ -335,6 +335,22 @@ class ButlerAgentGuestYesTest {
             assertThat(((Number) refused.get("reservationId")).longValue()).isEqualTo(42L);
         });
         verify(reservations, times(1)).cancelByGuest(42L);
+    }
+
+    /** Prod run 16.10: «нет, передумал, не надо» after an availability answer made the model call reservation_cancel. */
+    @Test
+    void aNoToTheOfferCancelsNothing() {
+        call("table_availability", Map.of("date", "2026-10-20", "time", "19:00", "partySize", 2));
+        says("На 19:00 есть стол у окна. Бронирую?");
+        call("reservation_cancel", Map.of("reservationId", 42));
+        says("Хорошо, отменил.");
+
+        agent.negotiate(turn("Есть стол на 20-е в 19 на двоих?", "m1"));
+        NegotiationReply no = agent.negotiate(turn("нет, передумал, не надо", "m2"));
+
+        verify(reservations, never()).cancelByGuest(any());
+        assertThat(no.facts()).singleElement().satisfies(fact -> assertThat(fact).containsEntry("ok", false)
+                .containsEntry("error", CapabilityResult.NOT_ALLOWED));
     }
 
     @Test

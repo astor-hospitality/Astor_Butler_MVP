@@ -163,16 +163,16 @@ public class ButlerAgent {
             return new NegotiationReply(null, null, facts, visitId, true);
         }
         Map<String, Object> offer = offer(outcome);
-        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome), cancellations(outcome),
-                changes(outcome));
+        String text = HonestBookingStatus.guard(outcome.text(), outcome.uses());
+        history.add(key, said, text, digest(outcome), proposed(outcome), cancellations(outcome), changes(outcome));
         Map<String, Object> payload = new LinkedHashMap<>();
         if (offer != null) {
             payload.put("offerKind", offer.get("kind"));
         }
         write(new VisitTurnDraft(visitId, sessionId, TurnSide.BUTLER, TurnChannel.CONCIERGE_TG,
                 offer == null ? TurnKind.MESSAGE : TurnKind.OFFER,
-                outcome.text(), payload.isEmpty() ? null : payload, GOAL_VENUE), true);
-        return new NegotiationReply(outcome.text(), offer, facts, visitId, false);
+                text, payload.isEmpty() ? null : payload, GOAL_VENUE), true);
+        return new NegotiationReply(text, offer, facts, visitId, false);
     }
 
     /**
@@ -204,9 +204,9 @@ public class ButlerAgent {
             write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), visit != null);
             return Optional.empty();
         }
-        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome), cancellations(outcome),
-                changes(outcome));
-        return Optional.of(outcome.text());
+        String text = HonestBookingStatus.guard(outcome.text(), outcome.uses());
+        history.add(key, said, text, digest(outcome), proposed(outcome), cancellations(outcome), changes(outcome));
+        return Optional.of(text);
     }
 
     private AgentOutcome run(String key, String said, CapabilityContext ctx, String phone, Long chatId, boolean auditContent,
@@ -220,7 +220,14 @@ public class ButlerAgent {
             messages.addAll(history.messages(key));
             messages.add(ModelChatMessage.user(said));
             AgentOutcome outcome = loop.run(messages, registry.asModelTools(), ctx, auditContent, turnTimeoutMs);
-            return outcome == null ? AgentOutcome.fallback(List.of(), 0) : outcome;
+            if (outcome == null) {
+                return AgentOutcome.fallback(List.of(), 0);
+            }
+            // A booking the guest has not got is never claimed: the turn falls back rather than say «оформлена».
+            if (!outcome.fallback() && HonestBookingStatus.unbacked(outcome.text(), outcome.uses(), ctx.visitId())) {
+                return AgentOutcome.fallback(outcome.uses(), outcome.toolCalls());
+            }
+            return outcome;
         } catch (RuntimeException e) {
             log.warn("Butler agent turn failed: reason={}", e.getClass().getSimpleName());
             return AgentOutcome.fallback(List.of(), 0);

@@ -53,7 +53,8 @@ class VisitStatusToolTest {
 
         assertThat(result.ok()).isTrue();
         assertThat(result.facts()).containsEntry("stage", "CONFIRMED").containsEntry("reservationId", 42L)
-                .containsEntry("visitDay", "2026-10-14T19:00").containsEntry("table", "Стол у окна");
+                .containsEntry("visitDay", "2026-10-14T19:00").containsEntry("dateLabel", "ср 14.10")
+                .containsEntry("table", "Стол у окна");
     }
 
     @Test

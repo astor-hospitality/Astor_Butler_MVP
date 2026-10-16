@@ -5,6 +5,7 @@ import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.CapabilityTool;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOffer;
@@ -131,6 +132,7 @@ public class LunchMenuTool implements CapabilityTool {
                 now.toLocalDate(), now.toLocalTime());
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("date", date.toString());
+        facts.put("dateLabel", GuestAgreement.dateLabel(date));
         if (time != null) {
             facts.put("time", time.format(TIME));
         }
