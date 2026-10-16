@@ -98,7 +98,7 @@ public class VisitReviewService {
         if (bill == null || bill.status() == GuestBillStatus.CANCELLED) {
             return Optional.empty();
         }
-        if (bill.chatId() == null) {
+        if (GuestBillNotifier.concierge(bill)) {
             return askThroughTheConcierge(bill, trigger, queued);
         }
         synchronized (this) {

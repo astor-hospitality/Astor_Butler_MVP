@@ -29,6 +29,8 @@ import java.util.Map;
 public class GuestBillNotifier {
 
     static final String CALLBACK_PREFIX = "visit_review:";
+    /** The bill source of an order placed through the Concierge. */
+    static final String CONCIERGE_SOURCE = "CONCIERGE";
 
     private final ObjectProvider<TelegramBot> telegramBotProvider;
 
@@ -38,7 +40,6 @@ public class GuestBillNotifier {
     @Value("${telegram.booking.notifications-enabled:true}")
     private boolean notificationsEnabled;
 
-    /** @return whether the message left Butler */
     /** The usefulness filter for bot-first messages (spec 2026-10-13): optional, allows everything while off. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.UsefulnessPolicy usefulnessPolicy;
@@ -55,26 +56,55 @@ public class GuestBillNotifier {
         this.conciergeWebhook = conciergeWebhook;
     }
 
-    /** A bill without a Butler chat whose booking belongs to a Concierge session: its link goes through the Concierge. */
+    /**
+     * A Concierge guest's bill: no chat of the Butler's bot, or ordered through the Concierge. Its payment link and review
+     * question go only through the Concierge (webhook), never to a Butler bot chat the guest has not opened (16.10).
+     */
+    public static boolean concierge(GuestBill bill) {
+        return bill != null && (bill.chatId() == null || CONCIERGE_SOURCE.equals(bill.source()));
+    }
+
+    /** A Concierge guest's bill whose booking belongs to a Concierge session the webhook reaches. */
     public boolean reachesConcierge(GuestBill bill) {
-        return conciergeWebhook != null && bill != null && bill.chatId() == null && bill.tableReservationId() != null
+        return conciergeWebhook != null && concierge(bill) && bill.tableReservationId() != null
                 && conciergeWebhook.reaches(bill.tableReservationId());
     }
 
+    /**
+     * The venue's payment page for the guest, on a scheduler thread: a Concierge guest gets PAYMENT_LINK through the
+     * Concierge (delivered here, so the link is marked sent only once the Concierge took it), a bot guest a message with
+     * «Оплатить».
+     */
     public boolean paymentLink(GuestBill bill, String url) {
-        if (bill != null && bill.chatId() == null) {
-            // A Concierge booking has no chat here: the total and the link go only through the Concierge (BILL_READY).
-            // Delivered on the prompter's thread, so the link is marked sent only once the Concierge took it.
+        if (concierge(bill)) {
             return conciergeWebhook != null && bill.tableReservationId() != null
-                    && conciergeWebhook.announceNow(ConciergeEvent.BILL_READY, bill.tableReservationId(), null, billFacts(bill, url));
+                    && conciergeWebhook.announceNow(ConciergeEvent.PAYMENT_LINK, bill.tableReservationId(), null, billFacts(bill, url));
         }
         if (usefulnessPolicy != null && bill != null && !usefulnessPolicy.permits(bill.tableReservationId(), bill.chatId(), museon_online.astor_butler.domain.journey.ProactiveMessage.BILL_READY)) {
             return false;
         }
+        return sendPaymentLink(bill, url);
+    }
+
+    /**
+     * The same on a Telegram update or request thread, when the guest asked for the bill: the Concierge's PAYMENT_LINK
+     * is only queued (delivered on the webhook's own thread); a bot guest asked for it, so it goes out at once.
+     */
+    public boolean paymentLinkQueued(GuestBill bill, String url) {
+        if (bill == null || url == null || url.isBlank()) {
+            return false;
+        }
+        if (concierge(bill)) {
+            return conciergeWebhook != null && bill.tableReservationId() != null
+                    && conciergeWebhook.announce(ConciergeEvent.PAYMENT_LINK, bill.tableReservationId(), null, billFacts(bill, url));
+        }
+        return sendPaymentLink(bill, url);
+    }
+
+    private boolean sendPaymentLink(GuestBill bill, String url) {
+        // Only the venue's own sum (16.10: the guest was told Butler's estimate, 2230 ₽, while Saby had 2510 ₽).
         String amount = bill.venueAmountMinor() != null
                 ? "<b>К оплате:</b> " + rubles(bill.venueAmountMinor())
-                : bill.estimateMinor() != null
-                ? "<b>Предварительно:</b> " + rubles(bill.estimateMinor()) + "\nИтоговую сумму покажет страница оплаты ресторана."
                 : "Сумму покажет страница оплаты ресторана.";
         String text = """
                 <b>Счёт по вашему заказу</b>
@@ -92,6 +122,9 @@ public class GuestBillNotifier {
     }
 
     public boolean paid(GuestBill bill) {
+        if (concierge(bill)) {
+            return false;
+        }
         String text = """
                 <b>Оплата получена</b>
 
@@ -112,7 +145,7 @@ public class GuestBillNotifier {
     }
 
     public boolean reviewPrompt(GuestBill bill) {
-        if (bill != null && bill.chatId() == null) {
+        if (concierge(bill)) {
             // A Concierge booking: the question goes only through the Concierge (REVIEW), answered with one digit there.
             if (conciergeWebhook == null || bill.tableReservationId() == null) {
                 return false;
@@ -133,6 +166,9 @@ public class GuestBillNotifier {
     }
 
     public boolean reviewThanks(GuestBill bill, VisitReview review) {
+        if (concierge(bill)) {
+            return false;
+        }
         boolean askThumb = review.thumb() == null;
         boolean offerTip = review.tipRequestedAt() == null;
         String text = askThumb
@@ -156,7 +192,7 @@ public class GuestBillNotifier {
      * the webhook's own thread); a Telegram bill is asked as by {@link #reviewPrompt}.
      */
     public boolean reviewPromptQueued(GuestBill bill) {
-        if (bill != null && bill.chatId() == null) {
+        if (concierge(bill)) {
             return conciergeWebhook != null && bill.tableReservationId() != null
                     && conciergeWebhook.announce(ConciergeEvent.REVIEW, bill.tableReservationId(), null, reviewFacts(bill));
         }
@@ -172,7 +208,8 @@ public class GuestBillNotifier {
 
     static Map<String, Object> billFacts(GuestBill bill, String url) {
         Map<String, Object> facts = new LinkedHashMap<>();
-        Long minor = bill.venueAmountMinor() != null ? bill.venueAmountMinor() : bill.estimateMinor();
+        // Only the venue's sum: Butler's estimate is never told to the guest as the bill.
+        Long minor = bill.venueAmountMinor();
         if (minor != null) {
             facts.put("totalRub", minor % 100 == 0 ? (Object) (minor / 100) : BigDecimal.valueOf(minor, 2));
         }

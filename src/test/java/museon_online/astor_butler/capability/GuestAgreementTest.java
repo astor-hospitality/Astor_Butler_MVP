@@ -108,6 +108,24 @@ class GuestAgreementTest {
                 refusal.facts().get("partySize"))).contains(AT_SEVEN);
     }
 
+    /** «Отмените счёт» cancels the bill (bill_cancel), never the booking; the booking named still is. */
+    @Test
+    void aRequestToCancelTheBillIsNotOneToCancelTheBooking() {
+        for (String words : List.of("Отмените счёт", "отменить счет пожалуйста", "отмена счёта", "отмените чек")) {
+            assertThat(GuestAgreement.asksToCancelBill(words)).as(words).isTrue();
+            assertThat(GuestAgreement.asksToCancel(words)).as(words).isFalse();
+            assertThat(GuestAgreement.of(words, List.of()).cancelsBill()).as(words).isTrue();
+        }
+        assertThat(GuestAgreement.asksToCancel("отмените счёт и бронь")).isTrue();
+        for (String words : java.util.Arrays.asList("счёт", "отменить счёт?", "не надо отменять счёт", "отмените бронь", "давайте счёт", null, "")) {
+            assertThat(GuestAgreement.asksToCancelBill(words)).as(String.valueOf(words)).isFalse();
+        }
+        assertThat(new GuestAgreement(true, List.of()).cancelsBill()).isFalse();
+        assertThat(GuestAgreement.of("Отмените счёт", List.of()).withTakeaway("Да", "Гость: борщ с собой").cancelsBill())
+                .as("the takeaway reading keeps the bill-cancel request").isTrue();
+        assertThat(new GuestAgreement(true, List.of(), false, List.of(), List.of(), true).cancelsBill()).isFalse();
+    }
+
     /** Live test 16.10: «Хочу чизкейк с собой», «упакуйте мои котлеты» about dishes already ordered. */
     @Test
     void aRequestToPackIsReadFromThisTurnOrTheOneItAnswers() {

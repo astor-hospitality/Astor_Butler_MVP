@@ -8,7 +8,8 @@ import java.util.Map;
  * What the Butler tells the Concierge about a booking made in the Concierge's chat. {@code butlerText} is the Butler's own
  * short line for the guest; {@code facts} carry the values it was built from (time, table, total, link...).
  *
- * @param type CONFIRMED | REJECTED | EXPIRED | MOVED | MORNING | SEATED | BILL_READY | STAFF_COMING | CANCELLED | REVIEW;
+ * @param type CONFIRMED | REJECTED | EXPIRED | MOVED | MORNING | SEATED | BILL_READY | STAFF_COMING | CANCELLED | REVIEW |
+ *             PAYMENT_LINK;
  *             STAFF_COMING is part of the contract but not sent (the capability tool's result already carries the line)
  */
 public record ConciergeEvent(String type, long reservationId, Long visitId, String sessionId, String butlerText,
@@ -25,6 +26,12 @@ public record ConciergeEvent(String type, long reservationId, Long visitId, Stri
     public static final String CANCELLED = "CANCELLED";
     /** After the bill: one digit from 1 to 5, once per bill. */
     public static final String REVIEW = "REVIEW";
+    /**
+     * The venue's payment page for the bill: {@code facts.paymentUrl} (https), {@code facts.totalRub} only when the venue
+     * reported the sum, {@code facts.billId}. The Concierge shows the line with an «Оплатить» URL button. Needs a
+     * Concierge that knows the type (an older one answers 400 and the link stays only in bill_request's answer).
+     */
+    public static final String PAYMENT_LINK = "PAYMENT_LINK";
 
     public ConciergeEvent {
         facts = facts == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(facts));
@@ -51,6 +58,7 @@ public record ConciergeEvent(String type, long reservationId, Long visitId, Stri
                     ? "Передал команде, скоро подойдут."
                     : "Передал. " + facts.get("waiter") + " скоро подойдёт.";
             case REVIEW -> "Как вам сегодня? Оцените от 1 до 5 одной цифрой — передам команде.";
+            case PAYMENT_LINK -> paymentLinkText(facts);
             case CANCELLED -> "Бронь на " + time + " отменена. Если захотите выбрать другое время — просто напишите.";
             default -> throw new IllegalArgumentException("Unknown Concierge event type: " + type);
         };
@@ -61,6 +69,14 @@ public record ConciergeEvent(String type, long reservationId, Long visitId, Stri
         Object url = facts.get("paymentUrl");
         String head = total == null ? "Счёт готов" : "Счёт " + total + " ₽";
         return url == null ? head : head + " — оплатить: " + url;
+    }
+
+    /** The link itself rides in the facts (the Concierge's button), not in the line. */
+    private static String paymentLinkText(Map<String, Object> facts) {
+        Object total = facts.get("totalRub");
+        return total == null
+                ? "Счёт можно оплатить онлайн — кнопка «Оплатить» ниже. Платёж принимает ресторан."
+                : "Счёт " + total + " ₽ можно оплатить онлайн — кнопка «Оплатить» ниже. Платёж принимает ресторан.";
     }
 
     private static String text(Object value, String fallback) {

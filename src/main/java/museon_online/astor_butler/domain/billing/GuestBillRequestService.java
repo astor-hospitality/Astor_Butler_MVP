@@ -90,6 +90,10 @@ public class GuestBillRequestService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents;
 
+    /** The staff card «Счёт · стол · официант · гость» (16.10): optional; without it the older booking card goes. */
+    @Autowired(required = false)
+    private GuestBillStaffCard staffCard;
+
     /** The venue's payment page for {@link #requestByReservation}: optional, absent or off means no link. */
     @Autowired(required = false)
     private List<ExternalPaymentProvider> paymentProviders = List.of();
@@ -162,6 +166,11 @@ public class GuestBillRequestService {
             metadata.put("review", review.name());
             log.info("Guest {} asked for the bill of reservation {}: review {}", incoming.chatId(), order.id(), review);
         }
+        Optional<GuestBill> bill = billRequests.billOf(order.id()).filter(candidate -> candidate.status() != GuestBillStatus.CANCELLED);
+        ExternalPaymentProvider.PaymentLink link = bill.map(this::paymentLink).orElse(null);
+        if (link != null && deliverLink(bill.get(), link.url())) {
+            actions.add("PAYMENT_LINK_SENT");
+        }
         return Optional.of(reply(incoming, state, replied ? "" : REPLY_SENT, actions, metadata));
     }
 
@@ -193,9 +202,31 @@ public class GuestBillRequestService {
         if (bill.isEmpty()) {
             return new BillRequestOutcome(told, order.id(), null, null, null);
         }
-        Long minor = bill.get().venueAmountMinor() != null ? bill.get().venueAmountMinor() : bill.get().estimateMinor();
+        ExternalPaymentProvider.PaymentLink link = told == BillRequestOutcome.Status.STAFF_NOT_REACHED ? null : paymentLink(bill.get());
+        Long minor = bill.get().venueAmountMinor() != null ? bill.get().venueAmountMinor() : link == null ? null : link.amountMinor();
+        boolean linkSent = false;
+        if (link != null && told == BillRequestOutcome.Status.STAFF_NOTIFIED) {
+            // The guest asked now: the link goes to them with «Оплатить», the bot's chat or the Concierge (PAYMENT_LINK).
+            linkSent = deliverLink(bill.get(), link.url());
+        }
         return new BillRequestOutcome(told, order.id(), bill.get().id(), minor == null ? null : Math.round(minor / 100.0),
-                told == BillRequestOutcome.Status.STAFF_NOT_REACHED ? null : paymentUrl(bill.get()));
+                link == null ? null : link.url(), linkSent);
+    }
+
+    /** Hands the link to the guest; a bot guest's link is marked sent, the Concierge's one only queued. */
+    private boolean deliverLink(GuestBill bill, String url) {
+        try {
+            boolean sent = notifier.paymentLinkQueued(bill, url);
+            if (sent && !GuestBillNotifier.concierge(bill) && bill.paymentLinkSentAt() == null) {
+                billRequests.paymentLinkSent(bill);
+            }
+            log.info("Payment link for bill {} (reservation {}) at the guest's request: {}", bill.id(), bill.tableReservationId(),
+                    sent ? (GuestBillNotifier.concierge(bill) ? "handed to the Concierge" : "sent to the bot chat") : "not delivered");
+            return sent;
+        } catch (RuntimeException e) {
+            log.warn("Payment link for bill {} not delivered: {}", bill.id(), e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     /** Tells the team once per repeat window; the journey hears the request when the card went out. */
@@ -203,7 +234,9 @@ public class GuestBillRequestService {
         if (!firstAskWithinWindow(order.id())) {
             return BillRequestOutcome.Status.ALREADY_SENT;
         }
-        boolean cardSent = notifications.notifyHostessGuestAskedForBill(order);
+        boolean cardSent = staffCard != null
+                ? staffCard.billAsked(order, billRequests.billOf(order.id()).orElse(null))
+                : notifications.notifyHostessGuestAskedForBill(order);
         if (cardSent && journeyEvents != null) {
             journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.BILL_REQUESTED, source);
         }
@@ -222,8 +255,11 @@ public class GuestBillRequestService {
     }
 
     /** The venue's payment page for the bill, when its provider is on and holds the order; null otherwise. */
-    private String paymentUrl(GuestBill bill) {
+    private ExternalPaymentProvider.PaymentLink paymentLink(GuestBill bill) {
         if (bill.externalOrderId() == null || bill.externalOrderId().isBlank() || paymentProviders == null) {
+            if (paymentProviders != null && paymentProviders.stream().anyMatch(ExternalPaymentProvider::enabled)) {
+                log.info("No payment link for bill {}: the venue holds no order of it (externalOrderId is empty)", bill.id());
+            }
             return null;
         }
         for (ExternalPaymentProvider provider : paymentProviders) {
@@ -231,7 +267,7 @@ public class GuestBillRequestService {
                 continue;
             }
             try {
-                return provider.paymentLink(bill.externalOrderId()).map(ExternalPaymentProvider.PaymentLink::url).orElse(null);
+                return provider.paymentLink(bill.externalOrderId()).orElse(null);
             } catch (RuntimeException e) {
                 log.warn("Payment link for bill {} was not had: {}", bill.id(), e.getClass().getSimpleName());
                 return null;
@@ -307,6 +343,14 @@ public class GuestBillRequestService {
 
     void setKeyPrefix(String keyPrefix) {
         this.keyPrefix = keyPrefix;
+    }
+
+    void setStaffCard(GuestBillStaffCard staffCard) {
+        this.staffCard = staffCard;
+    }
+
+    void setPaymentProviders(List<ExternalPaymentProvider> paymentProviders) {
+        this.paymentProviders = paymentProviders;
     }
 
     void setButlerPause(ButlerPauseService butlerPause) {

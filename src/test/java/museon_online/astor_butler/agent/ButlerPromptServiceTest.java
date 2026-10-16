@@ -34,6 +34,11 @@ class ButlerPromptServiceTest {
      * 5 first turns «Есть стол?», gpt-4o-mini in 1 of 5; with it, 0 of 5 for both, and the request still follows «да».
      */
     @Test
+    void theGuestsArrivalIsMarkedWithoutAYes() {
+        assertThat(prompt).contains("вызови guest_arrived", "«мы пришли»", "«я на месте»", "«да» гостя для него не нужно");
+    }
+
+    @Test
     void aTableRequestWaitsForTheGuestsYes() {
         assertThat(prompt).contains("Перед reservation_create назови день, время и число гостей и дождись от гостя «да»");
         assertThat(prompt).contains("На вопрос «есть ли стол?» – только table_availability");
