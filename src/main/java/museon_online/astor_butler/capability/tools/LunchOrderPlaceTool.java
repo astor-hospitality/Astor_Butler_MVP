@@ -11,8 +11,10 @@ import museon_online.astor_butler.domain.journey.GuestJourneyProperties;
 import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
 import museon_online.astor_butler.domain.lunch.BusinessLunchOffer;
 import museon_online.astor_butler.domain.lunch.BusinessLunchService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -36,14 +38,22 @@ public class LunchOrderPlaceTool implements CapabilityTool {
     private final CapabilityProperties properties;
     private final ReservationAccess access;
     private final GuestJourneyProperties journeyProperties;
+    private final Clock clock;
 
+    @Autowired
     public LunchOrderPlaceTool(BusinessLunchService lunch, BusinessLunchCatalog catalog, CapabilityProperties properties,
                                ReservationAccess access, GuestJourneyProperties journeyProperties) {
+        this(lunch, catalog, properties, access, journeyProperties, Clock.systemUTC());
+    }
+
+    public LunchOrderPlaceTool(BusinessLunchService lunch, BusinessLunchCatalog catalog, CapabilityProperties properties,
+                               ReservationAccess access, GuestJourneyProperties journeyProperties, Clock clock) {
         this.lunch = lunch;
         this.catalog = catalog;
         this.properties = properties;
         this.access = access;
         this.journeyProperties = journeyProperties;
+        this.clock = clock;
     }
 
     @Override
@@ -56,7 +66,9 @@ public class LunchOrderPlaceTool implements CapabilityTool {
         return "Оформить бизнес-ланч к брони гостя. Вызывай только после того, как гость ответил «да» на перечень заказа: "
                 + "confirmedByGuest=true. Без «да» гостя в этом ходе — NOT_ALLOWED, reason=needs_guest_yes: перечисли заказ "
                 + "и спроси подтверждение. Коды блюд — из lunch_menu. Возвращает номер заказа (orderId), сумму в рублях "
-                + "(totalRub, если цены известны) и статус передачи в Saby (sabyStatus; MANUAL_ENTRY — внесут вручную).";
+                + "(totalRub, если цены известны) и статус передачи в Saby (sabyStatus; MANUAL_ENTRY — внесут вручную). "
+                + "Бронь не в дни или часы ланча — NOT_ALLOWED с served=false, днями (days), часами (from, to) и ближайшим "
+                + "днём ланча (nextServedDay): скажи гостю, что в это время ланча нет, и предложи этот день.";
     }
 
     @Override
@@ -115,11 +127,17 @@ public class LunchOrderPlaceTool implements CapabilityTool {
         if (reservation.requestedStartAt() == null) {
             return CapabilityResult.error(CapabilityResult.UNAVAILABLE);
         }
-        ZonedDateTime start = reservation.requestedStartAt().atZone(ZoneId.of(journeyProperties.getZoneId()));
+        ZoneId zone = ZoneId.of(journeyProperties.getZoneId());
+        ZonedDateTime start = reservation.requestedStartAt().atZone(zone);
         Optional<BusinessLunchService.WindowIssue> issue = BusinessLunchService.lunchTimeIssue(offer, start.toLocalDate(),
                 start.toLocalTime());
         if (issue.isPresent()) {
-            return ReservationAccess.withReason(CapabilityResult.NOT_ALLOWED, issue.get().name());
+            // The same days and hours lunch_menu gives, and the nearest lunch day, so the guest hears a way on.
+            ZonedDateTime now = ZonedDateTime.now(clock.withZone(zone));
+            Map<String, Object> facts = new LinkedHashMap<>();
+            facts.put("reason", issue.get().name());
+            facts.putAll(LunchWindowFacts.of(offer, start.toLocalDate(), false, now.toLocalDate(), now.toLocalTime()));
+            return new CapabilityResult(false, facts, CapabilityResult.NOT_ALLOWED);
         }
         int guests = reservation.partySize() == null || reservation.partySize() < 1 ? 1 : reservation.partySize();
         BusinessLunchService.Placement placement;

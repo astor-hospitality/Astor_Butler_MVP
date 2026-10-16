@@ -68,6 +68,36 @@ class BusinessLunchServiceTest {
         assertThat(service.windowIssue(offer, TODAY, LocalTime.of(14, 0))).contains(BusinessLunchService.WindowIssue.ALREADY_PASSED);
     }
 
+    /** The agents' tools keep their own clock: with the same «today» and «now» they get the bot's answer. */
+    @Test
+    void theRuleWithAGivenNowIsTheBotsRule() {
+        BusinessLunchService service = service(List.of());
+        LocalTime now = LocalTime.of(14, 0);
+
+        for (int ahead = -1; ahead <= 7; ahead++) {
+            for (LocalTime time : java.util.Arrays.asList(null, LocalTime.of(11, 59), LocalTime.of(13, 0), LocalTime.of(14, 30), LocalTime.of(16, 0))) {
+                LocalDate day = TODAY.plusDays(ahead);
+                assertThat(BusinessLunchService.windowIssue(offer, day, time, TODAY, now)).as(day + " " + time)
+                        .isEqualTo(service.windowIssue(offer, day, time));
+            }
+        }
+    }
+
+    @Test
+    void theNextLunchDaySkipsTheWeekendAndATodayThatIsOver() {
+        LocalDate friday = LocalDate.of(2026, 10, 16);
+        LocalDate saturday = friday.plusDays(1);
+        LocalDate monday = LocalDate.of(2026, 10, 19);
+
+        // Friday 10:00: «завтра» is Saturday, the lunch is on Monday; Friday itself still has its lunch ahead.
+        assertThat(BusinessLunchService.nextLunchDay(offer, saturday, friday, LocalTime.of(10, 0))).contains(monday);
+        assertThat(BusinessLunchService.nextLunchDay(offer, friday, friday, LocalTime.of(10, 0))).contains(friday);
+        // Friday after 16:00: today's lunch is over.
+        assertThat(BusinessLunchService.nextLunchDay(offer, friday, friday, LocalTime.of(16, 0))).contains(monday);
+        // A day already gone counts from today.
+        assertThat(BusinessLunchService.nextLunchDay(offer, friday.minusDays(3), friday, LocalTime.of(10, 0))).contains(friday);
+    }
+
     @Test
     void holdsATableAndLeavesTheOrderToTheStaffWhenNoExternalSystemIsOn() {
         BusinessLunchService service = service(List.of(new FakeProvider(false, false, null)));
