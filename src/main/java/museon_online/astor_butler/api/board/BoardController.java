@@ -36,7 +36,7 @@ import java.util.Set;
 
 /**
  * The closed board: visits, each visit's turns, the figures and the health map, plus a live stream; visit summaries and
- * the agents' lessons a manager accepts or rejects. Closed by {@link BoardTokenFilter}; names and phones leave masked,
+ * the agents' lessons a manager accepts or rejects; the shift manager's day ({@code /today}). Closed by {@link BoardTokenFilter}; names and phones leave masked,
  * hidden turns leave without text.
  */
 @RestController
@@ -55,6 +55,7 @@ public class BoardController {
     private final BoardMetrics metrics;
     private final HealthMap healthMap;
     private final BoardStream stream;
+    private BoardToday today;
     private VisitSummaryService summaryService;
     private VisitSummaryRepository summaries;
     private AgentLessonRepository lessons;
@@ -66,6 +67,11 @@ public class BoardController {
         this.metrics = metrics;
         this.healthMap = healthMap;
         this.stream = stream;
+    }
+
+    @Autowired(required = false)
+    public void setToday(BoardToday today) {
+        this.today = today;
     }
 
     @Autowired(required = false)
@@ -96,6 +102,25 @@ public class BoardController {
                         maskName(row.guestName()), maskPhone(row.guestPhone()), row.table(), row.guestMessages(),
                         text(row.lastTurnAt()), summarized.contains(row.id())))
                 .toList();
+    }
+
+    @GetMapping("/today")
+    @Operation(summary = "The shift manager's day: bookings and lunch orders with the day's counters, test guests left out; "
+            + "the venue day by default, one venue when venue is given")
+    public ResponseEntity<BoardToday.Day> today(@RequestParam(name = "from", required = false) String from,
+                                                @RequestParam(name = "to", required = false) String to,
+                                                @RequestParam(name = "venue", required = false) String venue) {
+        if (today == null) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).build();
+        }
+        Instant[] day = today.today();
+        Instant[] window = window(from == null || from.isBlank() ? day[0].toString() : from,
+                to == null || to.isBlank() ? day[1].toString() : to);
+        String code = venue == null || venue.isBlank() ? null : venue.trim().toUpperCase(java.util.Locale.ROOT);
+        if (code != null && !code.matches("[A-Z0-9_-]{1,32}")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "venue is a venue code");
+        }
+        return ResponseEntity.ok(today.day(window[0], window[1], code));
     }
 
     @GetMapping("/visits/{id}/summary")
