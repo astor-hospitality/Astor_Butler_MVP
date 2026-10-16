@@ -119,6 +119,32 @@ class ReservationCancelToolTest {
         when(turns.existsLink(8L, CapabilityFixtures.SESSION)).thenReturn(true);
     }
 
+    /** «Мои заявки» → «Отменить»: a booking of the Concierge's form, never linked to the session `app-r<id>`. */
+    @Test
+    void theConciergeCancelsItsFormBookingForTheSameGuest() {
+        when(orders.findOrder(70L)).thenReturn(Optional.of(CapabilityFixtures.formOrder(70L, 777001L, TableReservationStatus.CONFIRMED)));
+        when(reservations.cancelByGuest(70L)).thenReturn(CapabilityFixtures.formOrder(70L, 777001L, TableReservationStatus.CANCELLED));
+        GuestAgreement asked = GuestAgreement.of("Отмените, пожалуйста, мою бронь C-12 на пт 16.10, 13:00.", List.of());
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", asked, 777001L), Map.of("reservationId", 70));
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("reservationId", 70L).containsEntry("status", "CANCELLED");
+    }
+
+    @Test
+    void theConciergeCannotCancelAFormBookingOfAnotherGuestOrWithoutTheGuestsId() {
+        when(orders.findOrder(70L)).thenReturn(Optional.of(CapabilityFixtures.formOrder(70L, 777001L, TableReservationStatus.CONFIRMED)));
+        GuestAgreement asked = GuestAgreement.of("Отмените, пожалуйста, мою бронь C-12 на пт 16.10, 13:00.", List.of());
+
+        CapabilityResult other = tool.invoke(CapabilityFixtures.concierge("k1", asked, 777002L), Map.of("reservationId", 70));
+        CapabilityResult unnamed = tool.invoke(CapabilityFixtures.concierge("k2", asked), Map.of("reservationId", 70));
+
+        assertThat(other.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(unnamed.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        verify(reservations, never()).cancelByGuest(any());
+    }
+
     @Test
     void anUnknownReservationIsNotFound() {
         CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 404));

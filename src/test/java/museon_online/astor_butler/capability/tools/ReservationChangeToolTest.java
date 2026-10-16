@@ -105,4 +105,28 @@ class ReservationChangeToolTest {
         assertThat(command.getValue().partySize()).isNull();
         assertThat(result.facts()).containsEntry("reservationId", 41L).containsEntry("status", "AWAITING_HOSTESS");
     }
+    /** «Мои заявки» → «Изменить», then «Да, переносите.»: the Concierge's form booking of the same guest. */
+    @Test
+    void theConciergeChangesItsFormBookingForTheSameGuestOnly() {
+        TableReservationRepository orders = mock(TableReservationRepository.class);
+        when(orders.findOrder(70L)).thenReturn(Optional.of(CapabilityFixtures.formOrder(70L, 777001L, TableReservationStatus.CONFIRMED)));
+        when(reservations.changeByGuest(eq(70L), any())).thenReturn(CapabilityFixtures.formOrder(70L, 777001L,
+                TableReservationStatus.AWAITING_MANAGER_CONFIRMATION));
+        ReservationChangeTool concierge = new ReservationChangeTool(reservations,
+                new ReservationAccess(orders, mock(GuestVisitRepository.class), mock(VisitTurnRepository.class)),
+                new GuestJourneyProperties());
+        GuestAgreement yes = yesTo(new GuestAgreement.Change(70L, null, LocalTime.of(20, 30), 3));
+        Map<String, Object> args = Map.of("reservationId", 70, "time", "20:30", "partySize", 3);
+
+        CapabilityResult other = concierge.invoke(CapabilityFixtures.concierge("k1", yes, 777002L), args);
+        CapabilityResult unnamed = concierge.invoke(CapabilityFixtures.concierge("k2", yes), args);
+        verify(reservations, never()).changeByGuest(anyLong(), any());
+        CapabilityResult own = concierge.invoke(CapabilityFixtures.concierge("k3", yes, 777001L), args);
+
+        assertThat(other.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(unnamed.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(own.ok()).isTrue();
+        assertThat(own.facts()).containsEntry("reservationId", 70L).containsEntry("status", "AWAITING_HOSTESS");
+        verify(reservations).changeByGuest(eq(70L), any());
+    }
 }

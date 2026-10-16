@@ -374,7 +374,7 @@ public class LunchOrderPlaceTool implements CapabilityTool {
         GuestAgreement.Table table = new GuestAgreement.Table(date, time, guests);
         CapabilityContext yesToTable = new CapabilityContext(ctx.caller(), ctx.chatId(), ctx.sessionId(), ctx.visitId(),
                 ctx.idempotencyKey() == null ? null : ctx.idempotencyKey() + ":table", ctx.guestName(), ctx.guestPhone(),
-                new GuestAgreement(true, List.of(table)), ctx.position());
+                new GuestAgreement(true, List.of(table)), ctx.position(), ctx.guestTelegramUserId());
         Map<String, Object> createArgs = new LinkedHashMap<>();
         createArgs.put("date", date.toString());
         createArgs.put("time", GuestAgreement.factTime(time));

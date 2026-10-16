@@ -37,6 +37,22 @@ public final class CapabilityFixtures {
         return new CapabilityContext(CapabilityContext.CONCIERGE, 9001L, SESSION, null, key, "Анна", "+79120000060", agreement);
     }
 
+    /** A Concierge turn that names the Telegram user it talks to, as the mini app's «Изменить»/«Отменить» send it. */
+    public static CapabilityContext concierge(String key, GuestAgreement agreement, Long guestTelegramUserId) {
+        return new CapabilityContext(CapabilityContext.CONCIERGE, 9001L, SESSION, null, key, "Анна", "+79120000060",
+                agreement, null, guestTelegramUserId);
+    }
+
+    /**
+     * A booking the Concierge's form made (POST /api/bookings/table-reservations): the Concierge's chat id, the guest's
+     * Telegram user id and the default channel {@code TELEGRAM}; no visit linked to any session.
+     */
+    public static TableReservationOrder formOrder(long id, long telegramUserId, TableReservationStatus status) {
+        return new TableReservationOrder(id, telegramUserId, telegramUserId, null, 5L, "T5", "Стол у окна", null, null,
+                status, "TELEGRAM", START, START.plus(Duration.ofMinutes(90)), 2, "Анна", "+79120000060", null, null,
+                null, null, null, null, null);
+    }
+
     /** A turn of the Butler's own bot in which the guest has agreed to {@link #TABLE}. */
     public static CapabilityContext butler(String key) {
         return butler(key, AGREED);
