@@ -3,6 +3,7 @@ package museon_online.astor_butler.telegram.adapter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.storage.ObjectStorageService;
+import museon_online.astor_butler.telegram.utils.HostessTopicRouter;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Service;
@@ -70,11 +71,11 @@ public class TelegramMediaSender {
             return;
         }
         try (InputStream inputStream = objectStorageService.openMediaObject(objectKey.toString())) {
-            sender.execute(SendVideo.builder()
+            sender.execute(HostessTopicRouter.route(sender, SendVideo.builder()
                     .chatId(chatId.toString())
                     .video(new InputFile(inputStream, filename))
                     .caption(caption)
-                    .build());
+                    .build()));
             log.info("Telegram video sent: chatId={}, objectKey={}", chatId, objectKey);
         } catch (Exception e) {
             log.warn("Telegram video was not sent: {}", e.getMessage());
@@ -102,11 +103,11 @@ public class TelegramMediaSender {
             Resource resource = resourceLoader.getResource(location.toString());
             String filename = text(metadata.get("filename"), resource.getFilename() == null ? "document.pdf" : resource.getFilename());
             try (InputStream inputStream = resource.getInputStream()) {
-                sender.execute(SendDocument.builder()
+                sender.execute(HostessTopicRouter.route(sender, SendDocument.builder()
                         .chatId(chatId.toString())
                         .document(new InputFile(inputStream, filename))
                         .caption(text(metadata.get("caption"), ""))
-                        .build());
+                        .build()));
                 log.info("Telegram document sent: chatId={}, resource={}", chatId, location);
             }
         } catch (Exception e) {
@@ -139,11 +140,11 @@ public class TelegramMediaSender {
             return;
         }
         try (InputStream inputStream = objectStorageService.openMediaObject(objectKey)) {
-            sender.execute(SendDocument.builder()
+            sender.execute(HostessTopicRouter.route(sender, SendDocument.builder()
                     .chatId(chatId.toString())
                     .document(new InputFile(inputStream, filename == null || filename.isBlank() ? "media.bin" : filename))
                     .caption(caption == null ? "" : caption)
-                    .build());
+                    .build()));
             log.info("Telegram media object sent as document: chatId={}, objectKey={}", chatId, objectKey);
         } catch (Exception e) {
             log.warn("Telegram media object document was not sent: {}", e.getMessage());

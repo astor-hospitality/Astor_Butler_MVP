@@ -6,6 +6,7 @@ import museon_online.astor_butler.fsm.core.BotState;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.service.message.OutgoingMessage;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
+import museon_online.astor_butler.telegram.utils.HostessTopicRouter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -78,12 +79,12 @@ public class TelegramSystemNotifier {
             if (photo != null && photo.length > 0) {
                 // Telegram captions are limited; a long answer goes as its own message after the photo.
                 String short_ = caption.length() > 1000 ? header : caption;
-                telegramBot.execute(org.telegram.telegrambots.meta.api.methods.send.SendPhoto.builder()
+                telegramBot.execute(HostessTopicRouter.route(telegramBot, org.telegram.telegrambots.meta.api.methods.send.SendPhoto.builder()
                         .chatId(systemChatId)
                         .photo(new org.telegram.telegrambots.meta.api.objects.InputFile(
                                 new java.io.ByteArrayInputStream(photo), photoName == null ? "astor-glass.jpg" : photoName))
                         .caption(short_)
-                        .build());
+                        .build()));
                 if (caption.length() > 1000) {
                     sendGlassesText(telegramBot, caption);
                 }

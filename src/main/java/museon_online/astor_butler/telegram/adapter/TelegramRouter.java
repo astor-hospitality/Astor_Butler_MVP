@@ -21,6 +21,7 @@ import museon_online.astor_butler.service.message.MessageGatewayService;
 import museon_online.astor_butler.service.message.OutgoingMessage;
 import museon_online.astor_butler.telegram.exeption.TelegramExceptionHandler;
 import museon_online.astor_butler.telegram.voice.TelegramVoiceReplyService;
+import museon_online.astor_butler.telegram.utils.HostessTopicRouter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -572,12 +573,12 @@ public class TelegramRouter {
 
         String filename = previewAvatar.getFilename() == null ? "aeris-butler-preview.png" : previewAvatar.getFilename();
         try (InputStream inputStream = previewAvatar.getInputStream()) {
-            Message preview = sender.execute(SendPhoto.builder()
+            Message preview = sender.execute(HostessTopicRouter.route(sender, SendPhoto.builder()
                     .chatId(incoming.chatId().toString())
                     .photo(new InputFile(inputStream, filename))
                     .caption(previewText())
                     .parseMode("HTML")
-                    .build());
+                    .build()));
 
             if (preview != null) {
                 chatViewService.savePreviewMessageId(incoming.telegramUserId(), preview.getMessageId(), previewVersion);

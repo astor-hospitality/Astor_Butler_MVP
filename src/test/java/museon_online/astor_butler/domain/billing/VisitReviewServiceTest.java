@@ -242,4 +242,49 @@ class VisitReviewServiceTest {
         org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=5");
         org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.TIP, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
     }
+
+    @Test
+    void theTeamSeesEachAnswerInItsTopicButNotTheTip() {
+        VisitReviewStaffCard card = mock(VisitReviewStaffCard.class);
+        reviews.setStaffCard(card);
+        GuestBill bill = bill(77L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(bill);
+
+        reviews.handleCallback("visit_review:" + bill.id() + ":stars:4", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":thumb:DOWN", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":tip", CHAT);
+
+        org.mockito.ArgumentCaptor<VisitReview> seen = org.mockito.ArgumentCaptor.forClass(VisitReview.class);
+        verify(card, times(2)).publish(org.mockito.ArgumentMatchers.argThat(b -> b.id().equals(bill.id())), seen.capture(), org.mockito.ArgumentMatchers.isNull());
+        assertThat(seen.getAllValues()).extracting(VisitReview::stars, VisitReview::thumb)
+                .containsExactly(tuple(4, null), tuple(4, VisitReview.Thumb.DOWN));
+    }
+
+    @Test
+    void theAgentsStarsReachTheTeamWithTheGuestsWords() {
+        VisitReviewStaffCard card = mock(VisitReviewStaffCard.class);
+        reviews.setStaffCard(card);
+        GuestBill bill = bill(79L, NOW.minus(Duration.ofHours(2)));
+
+        assertThat(reviews.submit(79L, 5, "Очень вкусно")).isTrue();
+        assertThat(reviews.submit(79L, 4, null)).isFalse();
+
+        verify(card, times(1)).publish(org.mockito.ArgumentMatchers.argThat(b -> b.id().equals(bill.id())),
+                org.mockito.ArgumentMatchers.argThat(r -> r.stars() == 5), org.mockito.ArgumentMatchers.eq("Очень вкусно"));
+    }
+
+    @Test
+    void aCardThatFailsNeverLosesTheGuestsAnswer() {
+        VisitReviewStaffCard card = mock(VisitReviewStaffCard.class);
+        org.mockito.Mockito.when(card.publish(any(), any(), any())).thenThrow(new IllegalStateException("telegram down"));
+        reviews.setStaffCard(card);
+        GuestBill bill = bill(77L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(bill);
+
+        VisitReviewService.CallbackResult stars = reviews.handleCallback("visit_review:" + bill.id() + ":stars:2", CHAT);
+
+        assertThat(stars.answerText()).isEqualTo("Спасибо за оценку!");
+        assertThat(reviews.reviewOf(bill.id()).orElseThrow().stars()).isEqualTo(2);
+        verify(notifier).reviewThanks(any(), any());
+    }
 }
