@@ -27,6 +27,12 @@ public class FirstTouchScenario implements FsmScenario {
 
     static final String SHORT_GREETING = "AERIS · Батлер. Я на связи за столом: меню, вино, счёт, позвать официанта. Что подать?";
     static final List<List<String>> SHORT_GREETING_BUTTONS = List.of(List.of("Меню ланча"), List.of("Позвать официанта", "Счёт"));
+    /**
+     * What any text before the contact gets: one line for every guest (it no longer varies by chat id), nothing about the
+     * evening (a lunch guest comes by day).
+     */
+    static final String CONSENT_NUDGE = "Чтобы продолжить, нужен ваш контакт: по нему хостес AERIS подтвердит бронь. "
+            + "Нажмите «Согласиться и поделиться контактом» ниже – это нужно один раз.";
 
     /** The greeting that names the last lunch (spec 2026-10-13, ASTOR_REPEAT_LUNCH_ENABLED): optional, off by default. */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -197,7 +203,7 @@ public class FirstTouchScenario implements FsmScenario {
     private OutgoingMessage handleConsentNudge(IncomingMessage incoming, BotState currentState, String text) {
         return OutgoingMessage.of(
                 incoming,
-                consentNudgeText(incoming),
+                CONSENT_NUDGE,
                 BotState.CONSENT_REQUIRED.name(),
                 false,
                 true,
@@ -206,16 +212,6 @@ public class FirstTouchScenario implements FsmScenario {
                 AdminAlert.none(),
                 List.of("PRE_AUTH_CONSENT_NUDGE", "REQUEST_CONTACT", "CONSENT_REQUIRED")
         );
-    }
-
-    private String consentNudgeText(IncomingMessage incoming) {
-        String[] variants = {
-                "Понимаю. До личных деталей я не тороплюсь, но для брони команде AERIS нужен контакт: так хостес сможет подтвердить стол и не потерять вас в вечернем потоке. Нажмите «Согласиться и поделиться контактом» ниже.",
-                "Могу помочь и дальше, но сначала нужен маленький формальный шаг: поделиться контактом и согласиться с политикой. После этого приму бронь, голосовое или любой запрос обычным сообщением.",
-                "Давайте сделаем надежно: один раз подтвердите контакт кнопкой ниже, и дальше я смогу вести бронь, меню и вопросы без лишней анкеты."
-        };
-        long seed = incoming == null || incoming.chatId() == null ? 0 : Math.abs(incoming.chatId());
-        return variants[(int) (seed % variants.length)];
     }
 
     private boolean hasContact(IncomingMessage incoming) {

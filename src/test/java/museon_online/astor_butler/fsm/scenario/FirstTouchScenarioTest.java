@@ -150,6 +150,22 @@ class FirstTouchScenarioTest {
         verifyNoInteractions(consentVaultService);
     }
 
+    /** Run 16.10: three nudges picked by chat id, one about «вечерний поток» to a daytime lunch guest. */
+    @Test
+    void everyGuestGetsTheSameShortNudgeBeforeTheContact() {
+        java.util.Set<String> nudges = new java.util.HashSet<>();
+        for (long chatId : new long[]{421441838L, 421441839L, 421441840L}) {
+            IncomingMessage incoming = IncomingMessage.telegram(chatId, chatId, 10, 20, "А можно без контакта?", null,
+                    "Наталья", null, null, "ru", false, "20");
+            nudges.add(scenario.handle(incoming, BotState.CONSENT_REQUIRED, "А можно без контакта?").text());
+        }
+
+        assertThat(nudges).containsExactly(
+                "Чтобы продолжить, нужен ваш контакт: по нему хостес AERIS подтвердит бронь. "
+                        + "Нажмите «Согласиться и поделиться контактом» ниже – это нужно один раз.");
+        assertThat(nudges.iterator().next()).doesNotContain("вечерн", "—", "надежно");
+    }
+
     @Test
     void unknownMaxGuestGetsTheSameConsentGateAsTelegram() {
         IncomingMessage incoming = max("Привет", null);
