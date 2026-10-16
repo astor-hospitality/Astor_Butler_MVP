@@ -8,16 +8,60 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * A dish code as the model wrote it, read against the lunch menu. The exact code wins; otherwise the one dish whose code
  * or title the words clearly name («COLSLAW» → SALAD_COLESLAW, «PEAS_SOUP» → PEA_SOUP_SMOKED, «drink_mors» →
  * CRANBERRY_MORS, «паста болоньезе»). Course words («drink», «soup») only place the dish and are not required to match.
  * Two dishes that fit equally well, or none, give nothing: the model gets the menu codes back instead of a guess.
+ *
+ * <p>A count the guest wrote with the dish («SALAD_HERRING_APPLE 2шт», «борщ x2», «2 × щука», «суп 3 порции») is read off
+ * it ({@link #portion}): live test 16.10 ordered one portion of «… 2шт».
  */
 final class DishCodes {
 
+    /** The most portions of one dish in one order. */
+    static final int MAX_COUNT = 10;
+
+    /** «2шт», «2 шт.», «x2», «х2», «×2», «*2», «2 порции» after the dish. */
+    private static final Pattern COUNT_AFTER = Pattern.compile(
+            "^(.*?\\S)\\s*(?:[,;]\\s*)?(?:(?:[xх×*]\\s*(\\d{1,2}))|(?:(\\d{1,2})\\s*(?:шт\\.?|штук[аи]?|порц\\p{L}*|[xх×])))\\s*$",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+    /** «2 x борщ», «2× щука», «2 шт борщ», «2 порции борща» before the dish. */
+    private static final Pattern COUNT_BEFORE = Pattern.compile(
+            "^\\s*(\\d{1,2})\\s*(?:[xх×*]|шт\\.?|штук[аи]?|порц\\p{L}*)\\s+(\\S.*)$",
+            Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+    /** A dish as written and how many portions of it; one when no count was written. */
+    record Portion(String dish, int count) {
+    }
+
     private DishCodes() {
+    }
+
+    /** The dish and the count the words carry with it; the words as they are, one portion, when they carry none. */
+    static Portion portion(String asked) {
+        if (asked == null) {
+            return new Portion(null, 1);
+        }
+        String text = asked.trim();
+        Matcher after = COUNT_AFTER.matcher(text);
+        if (after.matches()) {
+            String count = after.group(2) != null ? after.group(2) : after.group(3);
+            return new Portion(after.group(1).trim(), Integer.parseInt(count));
+        }
+        Matcher before = COUNT_BEFORE.matcher(text);
+        if (before.matches()) {
+            return new Portion(before.group(2).trim(), Integer.parseInt(before.group(1)));
+        }
+        return new Portion(text, 1);
+    }
+
+    /** The dish's title in the menu, or the code itself when the menu has no such dish. */
+    static String title(BusinessLunchOffer offer, String code) {
+        return offer.dish(code).map(BusinessLunchOffer.Dish::title).orElse(code);
     }
 
     static Optional<String> resolve(BusinessLunchOffer offer, String asked) {

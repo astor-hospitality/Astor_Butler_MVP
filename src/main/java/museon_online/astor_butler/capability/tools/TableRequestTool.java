@@ -46,6 +46,7 @@ public class TableRequestTool implements CapabilityTool {
     public String description() {
         return "Передать просьбу гостя за столом команде: BREAD — хлеб, WATER — вода, WAITER — позвать официанта, "
                 + "SPEED_UP — ускорить подачу, CUTLERY — приборы. Только когда гость уже за столом. "
+                + "Завернуть с собой блюдо, которое уже в заказе («упакуйте мои котлеты»), — WAITER, а не новый заказ ланча. "
                 + "Возвращает routed и имя официанта (waiter), если он известен.";
     }
 

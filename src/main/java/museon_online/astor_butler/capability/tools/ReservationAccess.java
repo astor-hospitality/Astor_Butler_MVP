@@ -13,6 +13,7 @@ import museon_online.astor_butler.domain.ledger.VisitTurnRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +73,32 @@ public class ReservationAccess {
         }
         List<TableReservationOrder> held = orders.findActiveOrdersOfSession(ctx.sessionId(), ctx.visitId(), null);
         return held != null && held.size() == 1 ? new Checked(held.get(0), null) : direct;
+    }
+
+    /**
+     * The one booking this guest holds at the venue that is not over yet (its end after {@code now}): the Butler chat's,
+     * or the Concierge session's as {@link #checkOrOnly} reads it. Empty with none or several. Live test 16.10: on the
+     * guest's «Да» to the lunch the position was empty, no reservationId came, and the guest's booking #68 today at 14:00
+     * was there.
+     */
+    public Optional<TableReservationOrder> onlyUpcoming(CapabilityContext ctx, String venueCode, Instant now) {
+        if (ctx == null) {
+            return Optional.empty();
+        }
+        List<TableReservationOrder> held;
+        if (ctx.butlerAgent()) {
+            held = ctx.chatId() == null ? List.of() : orders.findActiveOrdersByChatId(ctx.chatId(), venueCode);
+        } else if (CapabilityContext.CONCIERGE.equals(ctx.caller()) && ctx.sessionId() != null && !ctx.sessionId().isBlank()) {
+            held = orders.findActiveOrdersOfSession(ctx.sessionId(), ctx.visitId(), venueCode);
+        } else {
+            held = List.of();
+        }
+        List<TableReservationOrder> upcoming = held == null ? List.of() : held.stream()
+                .filter(order -> order != null && order.id() != null && order.requestedStartAt() != null)
+                .filter(order -> now == null || (order.requestedEndAt() != null ? order.requestedEndAt()
+                        : order.requestedStartAt().plus(ReservationCreateTool.VISIT_LENGTH)).isAfter(now))
+                .toList();
+        return upcoming.size() == 1 ? Optional.of(upcoming.get(0)) : Optional.empty();
     }
 
     public Checked check(CapabilityContext ctx, long reservationId) {
