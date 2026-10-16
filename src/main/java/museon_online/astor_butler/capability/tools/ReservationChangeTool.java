@@ -5,6 +5,7 @@ import museon_online.astor_butler.capability.CapabilityArguments;
 import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityResult;
 import museon_online.astor_butler.capability.CapabilityTool;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableReservationChangeCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationService;
@@ -23,6 +24,12 @@ import java.util.Map;
 /**
  * {@code reservation_change{reservationId, date?, time?, partySize?}}: the guest moves their own reservation. What is
  * not given stays as it was; a new time keeps the visit length. The change goes back to the hostess.
+ *
+ * <p>Only after the guest's yes to this very change, offered in the venue's previous answer
+ * ({@link GuestAgreement#allowsChange}: the same reservation, day, time and party size), whatever the model decides.
+ * Otherwise nothing changes and the answer is {@code NOT_ALLOWED} with {@code reason = needs_guest_yes}, the
+ * reservation, {@code action = change} and the new day, time or party size, so the model can name them and ask; that
+ * refusal is the offer the guest's next yes answers. A REST call carries no agreement and is always refused.
  */
 @Component
 public class ReservationChangeTool implements CapabilityTool {
@@ -46,6 +53,8 @@ public class ReservationChangeTool implements CapabilityTool {
     @Override
     public String description() {
         return "Изменить бронь гостя: день, время или число гостей. Чего нет в аргументах — остаётся как было. "
+                + "Только после «да» гостя на это же изменение, которое ты назвал ему в прошлом ответе. Без этого — "
+                + "NOT_ALLOWED, reason=needs_guest_yes, с новыми днём, временем или числом гостей — назови их гостю и спроси. "
                 + "Изменённая бронь снова ждёт подтверждения хостес. Возвращает reservationId и status.";
     }
 
@@ -90,6 +99,10 @@ public class ReservationChangeTool implements CapabilityTool {
             start = (date != null ? date : was.toLocalDate()).atTime(time != null ? time : was.toLocalTime())
                     .atZone(zone()).toInstant();
             end = start.plus(ReservationCreateTool.VISIT_LENGTH);
+        }
+        GuestAgreement.Change change = new GuestAgreement.Change(current.id(), date, time, partySize);
+        if (ctx.agreement() == null || !ctx.agreement().allowsChange(change)) {
+            return GuestAgreement.refusal(current.id(), GuestAgreement.CHANGE, change.facts());
         }
         TableReservationOrder changed;
         try {

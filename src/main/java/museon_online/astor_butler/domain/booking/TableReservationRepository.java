@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import java.sql.ResultSet;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -319,6 +320,44 @@ public class TableReservationRepository {
                 orderMapper(),
                 chatId,
                 normalizeVenue(venueCode)
+        );
+    }
+
+    /**
+     * What the guest of a Concierge session holds at one venue. A Concierge booking has no chat: its guest is known by
+     * its visit ({@code guest_visits.reservation_id}), either the visit the session is in or one whose ledger turns
+     * carry the session id (the booking linked them). Empty when neither is given.
+     */
+    public List<TableReservationOrder> findActiveOrdersOfSession(String sessionId, Long visitId, String venueCode) {
+        boolean bySession = sessionId != null && !sessionId.isBlank();
+        if (!bySession && visitId == null) {
+            return List.of();
+        }
+        String guest = visitId == null ? "" : "gv.id = ?";
+        if (bySession) {
+            guest += (guest.isEmpty() ? "" : " OR ")
+                    + "EXISTS (SELECT 1 FROM visit_turns t WHERE t.visit_id = gv.id AND t.session_id = ?)";
+        }
+        List<Object> params = new ArrayList<>();
+        params.add(normalizeVenue(venueCode));
+        if (visitId != null) {
+            params.add(visitId);
+        }
+        if (bySession) {
+            params.add(sessionId);
+        }
+        return jdbcTemplate.query("""
+                SELECT tro.*, vt.table_code, vt.display_name AS table_display_name
+                FROM table_reservation_orders tro
+                JOIN venue_tables vt ON vt.id = tro.table_id
+                JOIN guest_visits gv ON gv.reservation_id = tro.id
+                WHERE vt.venue_code = ?
+                  AND tro.status IN ('AWAITING_MANAGER_CONFIRMATION', 'CONFIRMED', 'SEATED')
+                  AND (%s)
+                ORDER BY tro.requested_start_at
+                """.formatted(guest),
+                orderMapper(),
+                params.toArray()
         );
     }
 

@@ -1,5 +1,6 @@
 package museon_online.astor_butler.capability.tools;
 
+import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityProperties;
 import museon_online.astor_butler.capability.CapabilityRegistry;
 import museon_online.astor_butler.capability.CapabilityResult;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
@@ -28,8 +30,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -182,6 +186,47 @@ public class ReservationCreateToolTest {
 
         assertThat(result.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
         verifyNoInteractions(reservations);
+    }
+
+    @Test
+    void aGuestWhoAlreadyHoldsATableThenGetsNoSecondOne() {
+        Instant end = CapabilityFixtures.START.plus(Duration.ofMinutes(90));
+        // 18:30 the same evening: crosses the 19:00 visit.
+        Instant halfSix = CapabilityFixtures.START.minus(Duration.ofMinutes(30));
+        when(reservations.findOverlappingReservation(CapabilityFixtures.BUTLER_CHAT, "AERIS", CapabilityFixtures.START, end))
+                .thenReturn(Optional.of(CapabilityFixtures.order(40L, CapabilityFixtures.BUTLER_CHAT,
+                        TableReservationStatus.CONFIRMED, halfSix)));
+        when(reservations.findOverlappingSessionReservation(CapabilityFixtures.SESSION, 7L, "AERIS", CapabilityFixtures.START, end))
+                .thenReturn(Optional.of(CapabilityFixtures.order(39L, null, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, halfSix)));
+        CapabilityContext conciergeInVisit = new CapabilityContext(CapabilityContext.CONCIERGE, 9001L, CapabilityFixtures.SESSION,
+                7L, "k2", "Анна", null, CapabilityFixtures.AGREED);
+
+        CapabilityResult bot = tool.invoke(CapabilityFixtures.butler("k1"), args());
+        CapabilityResult concierge = tool.invoke(conciergeInVisit, args());
+
+        assertThat(bot.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(bot.facts()).isEqualTo(Map.of("reason", "overlapping", "reservationId", 40L, "date", "2026-10-20", "time", "18:30"));
+        assertThat(concierge.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(concierge.facts()).isEqualTo(Map.of("reason", "overlapping", "reservationId", 39L, "date", "2026-10-20", "time", "18:30"));
+        verify(reservations, never()).createReservation(any());
+    }
+
+    @Test
+    void aGuestWithNothingAtThatTimeIsBooked() {
+        Instant end = CapabilityFixtures.START.plus(Duration.ofMinutes(90));
+        when(reservations.createReservation(any())).thenReturn(CapabilityFixtures.order(41L, null,
+                TableReservationStatus.AWAITING_MANAGER_CONFIRMATION));
+
+        CapabilityResult bot = tool.invoke(CapabilityFixtures.butler("k1"), args());
+        CapabilityResult concierge = tool.invoke(CapabilityFixtures.concierge("k2"), args());
+
+        assertThat(bot.ok()).isTrue();
+        assertThat(concierge.ok()).isTrue();
+        // The bot's guest is its chat; the Concierge's one is its session, whatever chat id the Concierge sends.
+        verify(reservations).findOverlappingReservation(CapabilityFixtures.BUTLER_CHAT, "AERIS", CapabilityFixtures.START, end);
+        verify(reservations).findOverlappingSessionReservation(CapabilityFixtures.SESSION, null, "AERIS", CapabilityFixtures.START, end);
+        verify(reservations, never()).findOverlappingReservation(eq(9001L), anyString(), any(), any());
+        verify(reservations, times(2)).createReservation(any());
     }
 
     @Test

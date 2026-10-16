@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,10 @@ import java.util.Optional;
  * day, time and party size, offered to the guest in the venue's previous answer. Otherwise nothing is booked and the
  * answer is {@code NOT_ALLOWED} with {@code reason = needs_guest_yes} and the table to put to the guest. The same holds
  * in the Butler's own bot; a REST call carries no agreement and is always refused.
+ *
+ * <p>One guest, one table at a time: when the guest already holds a reservation across this visit (the bot's by its
+ * chat, the Concierge's by its session and visit), nothing is booked and the answer is {@code NOT_ALLOWED} with
+ * {@code reason = overlapping} and that reservation's id, day and time.
  */
 @Component
 public class ReservationCreateTool implements CapabilityTool {
@@ -72,7 +77,8 @@ public class ReservationCreateTool implements CapabilityTool {
     public String description() {
         return "Создать заявку на стол — только после «да» гостя на день, время и число гостей, которые ты назвал ему "
                 + "в прошлом ответе. Без этого заявки не будет: NOT_ALLOWED, reason=needs_guest_yes, с днём, временем и числом "
-                + "гостей — назови их гостю и спроси, бронировать ли. Бронь ждёт подтверждения хостес (status=AWAITING_HOSTESS) — "
+                + "гостей — назови их гостю и спроси, бронировать ли. Если у гостя уже есть бронь на это время — NOT_ALLOWED, "
+                + "reason=overlapping, с её номером, днём и временем: второй заявки не будет, предложи изменить ту. Бронь ждёт подтверждения хостес (status=AWAITING_HOSTESS) — "
                 + "не обещай гостю, что стол подтверждён. Возвращает номер брони (reservationId), стол (table), дату и время.";
     }
 
@@ -109,6 +115,10 @@ public class ReservationCreateTool implements CapabilityTool {
         }
         boolean butler = ctx.butlerAgent();
         Instant start = date.atTime(time).atZone(zone()).toInstant();
+        Optional<TableReservationOrder> held = heldAtTheTime(ctx, start, start.plus(VISIT_LENGTH));
+        if (held.isPresent()) {
+            return overlapping(held.get());
+        }
         TableReservationCommand command = new TableReservationCommand(
                 butler ? ctx.chatId() : null,
                 butler ? ctx.chatId() : null,
@@ -141,6 +151,29 @@ public class ReservationCreateTool implements CapabilityTool {
         facts.put("time", time.toString());
         facts.put("visitId", butler ? null : linkVisit(ctx, order));
         return CapabilityResult.ok(facts);
+    }
+
+    /**
+     * The guest's own reservation that already holds a table across this window: in the bot by its chat, for the
+     * Concierge by its session and visit (a Concierge booking has no chat). One guest never holds two tables at once.
+     */
+    private Optional<TableReservationOrder> heldAtTheTime(CapabilityContext ctx, Instant start, Instant end) {
+        if (ctx.butlerAgent()) {
+            return ctx.chatId() == null ? Optional.empty()
+                    : reservations.findOverlappingReservation(ctx.chatId(), properties.getVenueCode(), start, end);
+        }
+        return reservations.findOverlappingSessionReservation(ctx.sessionId(), ctx.visitId(), properties.getVenueCode(), start, end);
+    }
+
+    /** {@code NOT_ALLOWED}, {@code reason = overlapping}: the reservation the guest already holds then, in venue time. */
+    private CapabilityResult overlapping(TableReservationOrder held) {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("reason", "overlapping");
+        facts.put("reservationId", held.id());
+        ZonedDateTime start = held.requestedStartAt().atZone(zone());
+        facts.put("date", start.toLocalDate().toString());
+        facts.put("time", GuestAgreement.factTime(start.toLocalTime()));
+        return new CapabilityResult(false, facts, CapabilityResult.NOT_ALLOWED);
     }
 
     /** The visit of a Concierge booking, with the session's earlier turns moved into it; null while there is none. */

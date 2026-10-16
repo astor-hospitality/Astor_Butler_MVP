@@ -20,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Clock;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -51,6 +52,7 @@ class LunchOrderPlaceToolTest {
             List.of());
 
     private BusinessLunchService lunch;
+    private BusinessLunchCatalog catalog;
     private TableReservationRepository orders;
     private LunchOrderPlaceTool tool;
     private TableReservationOrder reservation;
@@ -59,13 +61,17 @@ class LunchOrderPlaceToolTest {
     void setUp() {
         lunch = mock(BusinessLunchService.class);
         orders = mock(TableReservationRepository.class);
-        BusinessLunchCatalog catalog = mock(BusinessLunchCatalog.class);
+        catalog = mock(BusinessLunchCatalog.class);
         when(catalog.find(anyString())).thenReturn(Optional.of(OFFER));
         reservation = CapabilityFixtures.order(41L, CapabilityFixtures.BUTLER_CHAT, TableReservationStatus.CONFIRMED, LUNCH);
         when(orders.findOrder(41L)).thenReturn(Optional.of(reservation));
-        tool = new LunchOrderPlaceTool(lunch, catalog, new CapabilityProperties(),
+        tool = toolAt(FRIDAY_MORNING.instant());
+    }
+
+    private LunchOrderPlaceTool toolAt(Instant now) {
+        return new LunchOrderPlaceTool(lunch, catalog, new CapabilityProperties(),
                 new ReservationAccess(orders, mock(GuestVisitRepository.class), mock(VisitTurnRepository.class)),
-                new GuestJourneyProperties(), FRIDAY_MORNING);
+                new GuestJourneyProperties(), Clock.fixed(now, ZoneOffset.UTC));
     }
 
     private static Map<String, Object> args(Object confirmed, List<String> dishes) {
@@ -172,5 +178,41 @@ class LunchOrderPlaceToolTest {
         assertThat(result.facts()).containsEntry("reason", "NOT_A_LUNCH_DAY").containsEntry("served", false)
                 .containsEntry("nextServedDate", "2026-10-26").containsEntry("nextServedDay", "понедельник, 26 октября");
         verifyNoInteractions(lunch);
+    }
+
+    @Test
+    void aLunchAlreadyInThePastIsNotAllowed() {
+        // The 13:00 visit ended at 14:30; and a 15:00 visit is still on at 16:10, but the lunch hours ended at 16:00.
+        Instant visitOver = Instant.parse("2026-10-20T09:40:00Z");
+        Instant lunchHoursOver = Instant.parse("2026-10-20T11:10:00Z");
+        TableReservationOrder atThree = CapabilityFixtures.order(42L, CapabilityFixtures.BUTLER_CHAT, TableReservationStatus.CONFIRMED,
+                Instant.parse("2026-10-20T10:00:00Z"));
+        when(orders.findOrder(42L)).thenReturn(Optional.of(atThree));
+        Map<String, Object> intoAtThree = args(true, List.of("BORSCHT"));
+        intoAtThree.put("reservationId", 42);
+
+        CapabilityResult afterTheVisit = toolAt(visitOver).invoke(CapabilityFixtures.butler("k1"), args(true, List.of("BORSCHT")));
+        CapabilityResult afterTheLunchHours = toolAt(lunchHoursOver).invoke(CapabilityFixtures.butler("k2"), intoAtThree);
+        CapabilityResult aDayLater = toolAt(LUNCH.plus(Duration.ofDays(1)))
+                .invoke(CapabilityFixtures.butler("k3"), args(true, List.of("BORSCHT")));
+
+        for (CapabilityResult result : List.of(afterTheVisit, afterTheLunchHours, aDayLater)) {
+            assertThat(result.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+            assertThat(result.facts()).containsEntry("reason", "already_passed");
+        }
+        verifyNoInteractions(lunch);
+    }
+
+    @Test
+    void aSeatedGuestMayStillOrderDuringTheVisit() {
+        when(lunch.placeFor(eq(reservation), any())).thenReturn(new BusinessLunchService.Placement(reservation, false,
+                mock(BusinessLunchOrder.class), ExternalLunchOrderProvider.Result.manualEntry()));
+
+        // 13:30, half an hour into the 13:00 visit.
+        CapabilityResult result = toolAt(LUNCH.plus(Duration.ofMinutes(30)))
+                .invoke(CapabilityFixtures.butler("k1"), args(true, List.of("BORSCHT")));
+
+        assertThat(result.ok()).isTrue();
+        verify(lunch).placeFor(eq(reservation), any());
     }
 }

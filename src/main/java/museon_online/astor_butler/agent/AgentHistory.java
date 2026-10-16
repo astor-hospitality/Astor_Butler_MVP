@@ -15,7 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * The agent's memory of a conversation (a chat of the bot or a Concierge session), in process only. It keeps the last
  * turns within {@code historyChars}; older ones collapse into one «Ранее: …» line built from their facts, without a
  * model call. It also remembers the visit a session was linked to, so one session never opens a second visit, and the
- * tables the last answered turn put to the guest: the only ones the guest's next yes can book.
+ * tables the last answered turn put to the guest: the only ones the guest's next yes can book, and the reservations and
+ * changes it offered: the only ones the guest's next yes can cancel or make.
  */
 class AgentHistory {
 
@@ -34,6 +35,8 @@ class AgentHistory {
         final Deque<String> earlier = new ArrayDeque<>();
         int turns;
         List<GuestAgreement.Table> proposed = List.of();
+        List<Long> cancellations = List.of();
+        List<GuestAgreement.Change> changes = List.of();
         volatile Long visitId;
         volatile long touched = System.nanoTime();
     }
@@ -113,15 +116,46 @@ class AgentHistory {
         Conversation conversation = conversation(key);
         synchronized (conversation) {
             conversation.proposed = List.of();
+            conversation.cancellations = List.of();
+            conversation.changes = List.of();
         }
     }
 
-    /** @param proposed the tables this turn put to the guest; they replace the previous turn's */
-    void add(String key, String said, String answered, String digest, List<GuestAgreement.Table> proposed) {
+    /** The reservations the last answered turn offered the guest to cancel; none after a turn that fell back. */
+    List<Long> cancellations(String key) {
+        Conversation conversation = conversations.get(key);
+        if (conversation == null) {
+            return List.of();
+        }
+        synchronized (conversation) {
+            return conversation.cancellations;
+        }
+    }
+
+    /** The changes the last answered turn offered the guest; none after a turn that fell back. */
+    List<GuestAgreement.Change> changes(String key) {
+        Conversation conversation = conversations.get(key);
+        if (conversation == null) {
+            return List.of();
+        }
+        synchronized (conversation) {
+            return conversation.changes;
+        }
+    }
+
+    /**
+     * @param proposed the tables this turn put to the guest; they replace the previous turn's
+     * @param cancellations the reservations this turn offered to cancel; likewise
+     * @param changes the changes this turn offered; likewise
+     */
+    void add(String key, String said, String answered, String digest, List<GuestAgreement.Table> proposed,
+             List<Long> cancellations, List<GuestAgreement.Change> changes) {
         Conversation conversation = conversation(key);
         synchronized (conversation) {
             conversation.turns++;
             conversation.proposed = proposed == null ? List.of() : List.copyOf(proposed);
+            conversation.cancellations = cancellations == null ? List.of() : List.copyOf(cancellations);
+            conversation.changes = changes == null ? List.of() : List.copyOf(changes);
             conversation.exchanges.addLast(new Exchange(said == null ? "" : said, answered == null ? "" : answered,
                     digest == null || digest.isBlank() ? shorten("гость: " + said) : digest));
             int earlierLimit = Math.max(60, Math.min(600, properties.getHistoryChars() / 4));

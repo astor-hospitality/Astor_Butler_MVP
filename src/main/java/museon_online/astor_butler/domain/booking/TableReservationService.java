@@ -123,7 +123,23 @@ public class TableReservationService {
         if (startAt == null || endAt == null) {
             return Optional.empty();
         }
-        return repository.findActiveOrdersByChatId(chatId, venueCode).stream()
+        return firstCrossing(repository.findActiveOrdersByChatId(chatId, venueCode), startAt, endAt);
+    }
+
+    /**
+     * The same for the guest of a Concierge session, whose bookings have no chat: the ones of its visit or linked to the
+     * session in the visit ledger ({@link TableReservationRepository#findActiveOrdersOfSession}). Empty without either.
+     */
+    public Optional<TableReservationOrder> findOverlappingSessionReservation(String sessionId, Long visitId, String venueCode,
+                                                                             Instant startAt, Instant endAt) {
+        if (startAt == null || endAt == null) {
+            return Optional.empty();
+        }
+        return firstCrossing(repository.findActiveOrdersOfSession(sessionId, visitId, venueCode), startAt, endAt);
+    }
+
+    private static Optional<TableReservationOrder> firstCrossing(List<TableReservationOrder> orders, Instant startAt, Instant endAt) {
+        return orders.stream()
                 .filter(TableReservationService::holdsATable)
                 .filter(order -> order.requestedStartAt() != null && order.requestedEndAt() != null)
                 .filter(order -> order.requestedStartAt().isBefore(endAt) && startAt.isBefore(order.requestedEndAt()))

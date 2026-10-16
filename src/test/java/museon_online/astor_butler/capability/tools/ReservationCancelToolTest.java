@@ -1,6 +1,7 @@
 package museon_online.astor_butler.capability.tools;
 
 import museon_online.astor_butler.capability.CapabilityResult;
+import museon_online.astor_butler.capability.GuestAgreement;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.booking.TableReservationService;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
@@ -10,6 +11,8 @@ import museon_online.astor_butler.domain.ledger.VisitTurnRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -65,16 +68,53 @@ class ReservationCancelToolTest {
     }
 
     @Test
-    void theGuestsOwnReservationIsCancelled() {
-        when(orders.findOrder(42L)).thenReturn(Optional.of(CapabilityFixtures.order(42L, null, TableReservationStatus.CONFIRMED)));
-        when(visits.findByReservation(42L)).thenReturn(Optional.of(CapabilityFixtures.visit(8L, 42L, null, JourneyStage.CONFIRMED)));
-        when(turns.existsLink(8L, CapabilityFixtures.SESSION)).thenReturn(true);
+    void theGuestsOwnReservationIsCancelledAtTheGuestsRequest() {
+        sessionHolds42();
         when(reservations.cancelByGuest(42L)).thenReturn(CapabilityFixtures.order(42L, null, TableReservationStatus.CANCELLED));
 
-        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1"), Map.of("reservationId", 42));
+        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1",
+                GuestAgreement.of("Отмените бронь, пожалуйста", List.of())), Map.of("reservationId", 42));
 
         assertThat(result.ok()).isTrue();
         assertThat(result.facts()).containsEntry("reservationId", 42L).containsEntry("status", "CANCELLED");
+    }
+
+    @Test
+    void theModelAloneCannotCancel() {
+        sessionHolds42();
+        Map<String, GuestAgreement> agreements = new LinkedHashMap<>();
+        agreements.put("no agreement (a REST call)", null);
+        agreements.put("nothing said yet", GuestAgreement.NONE);
+        agreements.put("a yes to something else", CapabilityFixtures.AGREED);
+        agreements.put("a question about cancelling", GuestAgreement.of("А можно отменить?", List.of()));
+        agreements.put("a yes to cancelling another booking", GuestAgreement.of("да", List.of(), List.of(7L), List.of()));
+
+        agreements.forEach((name, agreement) -> {
+            CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", agreement), Map.of("reservationId", 42));
+
+            assertThat(result.error()).as(name).isEqualTo(CapabilityResult.NOT_ALLOWED);
+            assertThat(result.facts()).as(name).isEqualTo(Map.of("reason", GuestAgreement.NEEDS_GUEST_YES,
+                    "reservationId", 42L, "action", "cancel"));
+        });
+        verify(reservations, never()).cancelByGuest(any());
+    }
+
+    @Test
+    void aYesToTheCancellationTheVenueOfferedCancelsIt() {
+        sessionHolds42();
+        when(reservations.cancelByGuest(42L)).thenReturn(CapabilityFixtures.order(42L, null, TableReservationStatus.CANCELLED));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", GuestAgreement.of("Да", List.of(), List.of(42L), List.of())),
+                Map.of("reservationId", 42));
+
+        assertThat(result.ok()).isTrue();
+        verify(reservations).cancelByGuest(42L);
+    }
+
+    private void sessionHolds42() {
+        when(orders.findOrder(42L)).thenReturn(Optional.of(CapabilityFixtures.order(42L, null, TableReservationStatus.CONFIRMED)));
+        when(visits.findByReservation(42L)).thenReturn(Optional.of(CapabilityFixtures.visit(8L, 42L, null, JourneyStage.CONFIRMED)));
+        when(turns.existsLink(8L, CapabilityFixtures.SESSION)).thenReturn(true);
     }
 
     @Test

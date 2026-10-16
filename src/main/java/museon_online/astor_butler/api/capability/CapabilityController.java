@@ -47,8 +47,9 @@ public class CapabilityController {
 
     /**
      * Over REST the caller is always the Concierge; the Butler's agent calls the registry in-process. A REST context
-     * never carries the guest's agreement, so {@code reservation_create} and {@code lunch_order_place} answer
-     * {@code needs_guest_yes} here: a booking comes only from a negotiation turn with the guest's own yes.
+     * never carries the guest's agreement, so {@code reservation_create}, {@code reservation_change},
+     * {@code reservation_cancel} and {@code lunch_order_place} answer {@code needs_guest_yes} here: a booking or a
+     * change to one comes only from a negotiation turn with the guest's own word.
      */
     @PostMapping("/{tool}")
     @Operation(summary = "Invoke a tool")

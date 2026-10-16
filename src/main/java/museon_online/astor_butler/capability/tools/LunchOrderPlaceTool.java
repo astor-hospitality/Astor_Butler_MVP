@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -28,10 +29,13 @@ import java.util.Optional;
  * ordered into their reservation. Only after the guest said yes to the summary: {@code confirmedByGuest} must be the
  * boolean {@code true}, and the guest's own words this turn must say yes ({@link GuestAgreement#yes}), else
  * {@code NOT_ALLOWED} with {@code reason = needs_guest_yes}. Dish codes come from {@code lunch_menu}; an unknown code
- * is named back as a bad argument.
+ * is named back as a bad argument. A lunch whose visit or lunch hours are already over by the venue's clock is
+ * {@code NOT_ALLOWED} with {@code reason = already_passed}.
  */
 @Component
 public class LunchOrderPlaceTool implements CapabilityTool {
+
+    static final String ALREADY_PASSED = "already_passed";
 
     private final BusinessLunchService lunch;
     private final BusinessLunchCatalog catalog;
@@ -129,6 +133,9 @@ public class LunchOrderPlaceTool implements CapabilityTool {
         }
         ZoneId zone = ZoneId.of(journeyProperties.getZoneId());
         ZonedDateTime start = reservation.requestedStartAt().atZone(zone);
+        if (alreadyPassed(offer, reservation, start)) {
+            return ReservationAccess.withReason(CapabilityResult.NOT_ALLOWED, ALREADY_PASSED);
+        }
         Optional<BusinessLunchService.WindowIssue> issue = BusinessLunchService.lunchTimeIssue(offer, start.toLocalDate(),
                 start.toLocalTime());
         if (issue.isPresent()) {
@@ -154,6 +161,18 @@ public class LunchOrderPlaceTool implements CapabilityTool {
         facts.put("totalRub", BusinessLunchService.totalRub(offer, setCode, codes, guests));
         facts.put("sabyStatus", placement.external() == null ? null : placement.external().status());
         return CapabilityResult.ok(facts);
+    }
+
+    /**
+     * Whether the lunch is in the past, by the venue's clock: the visit is over, or that day's lunch hours have ended.
+     * A visit that has begun but not ended may still order, as a seated guest does.
+     */
+    private boolean alreadyPassed(BusinessLunchOffer offer, TableReservationOrder reservation, ZonedDateTime start) {
+        Instant now = clock.instant();
+        Instant visitEnd = reservation.requestedEndAt() != null ? reservation.requestedEndAt()
+                : start.toInstant().plus(ReservationCreateTool.VISIT_LENGTH);
+        Instant lunchEnd = start.toLocalDate().atTime(offer.to()).atZone(start.getZone()).toInstant();
+        return !visitEnd.isAfter(now) || !lunchEnd.isAfter(now);
     }
 
     private static List<String> dishCodes(Object value) {
