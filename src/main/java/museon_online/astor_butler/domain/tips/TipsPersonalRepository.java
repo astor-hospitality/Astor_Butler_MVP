@@ -95,6 +95,27 @@ public class TipsPersonalRepository {
         }
     }
 
+    /**
+     * The table's waiter for the day only when nobody has it yet: an automatic pick never replaces the manager's word or
+     * an earlier pick. False when the table already had someone (this call then changed nothing).
+     */
+    public boolean assignIfFree(String tenant, String tableCode, LocalDate shiftDate, String staffId, String assignedBy) {
+        try {
+            return jdbc.update("""
+                    INSERT INTO table_waiter_assignments (tenant, table_code, shift_date, staff_id, assigned_by, assigned_at)
+                    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    tenant,
+                    tableCode,
+                    Date.valueOf(shiftDate),
+                    staffId,
+                    blankToNull(assignedBy)
+            ) > 0;
+        } catch (DuplicateKeyException taken) {
+            return false;
+        }
+    }
+
     private int updateAssignment(String tenant, String tableCode, LocalDate shiftDate, String staffId, String assignedBy) {
         return jdbc.update("""
                 UPDATE table_waiter_assignments

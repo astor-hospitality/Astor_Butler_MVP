@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-10-16-waiter-zones
+      author: astor-butler
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-10-16-waiter-zones.sql

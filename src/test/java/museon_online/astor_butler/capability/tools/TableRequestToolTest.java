@@ -49,20 +49,46 @@ class TableRequestToolTest {
         CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41, "request", "BREAD"));
 
         assertThat(result.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
-        verify(router, never()).route(anyLong(), any(), anyString());
+        verify(router, never()).deliver(anyLong(), any(), anyString());
     }
 
     @Test
     void atTheTableTheWaiterIsCalled() {
         when(visits.findByReservation(41L)).thenReturn(Optional.of(CapabilityFixtures.visit(7L, 41L,
                 CapabilityFixtures.BUTLER_CHAT, JourneyStage.SEATED)));
-        when(router.route(41L, TableRequest.WATER, "воду")).thenReturn("Передал. Ольга скоро подойдёт.");
-        when(router.waiterName(order)).thenReturn(Optional.of("Ольга"));
+        when(router.deliver(41L, TableRequest.WATER, "воду"))
+                .thenReturn(new TableRequestRouter.Routed("Передал. Ольга скоро подойдёт.", true, "Ольга"));
 
         CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41, "request", "WATER"));
 
         assertThat(result.ok()).isTrue();
         assertThat(result.facts()).containsEntry("routed", true).containsEntry("waiter", "Ольга");
+    }
+
+    @Test
+    void theWaiterPickedForThisVeryRequestIsTheOneNamed() {
+        // Nobody had table 41's table for the day: the router picks by zone and shift and says whom the card went to.
+        when(visits.findByReservation(41L)).thenReturn(Optional.of(CapabilityFixtures.visit(7L, 41L,
+                CapabilityFixtures.BUTLER_CHAT, JourneyStage.SEATED)));
+        when(router.deliver(41L, TableRequest.TAKEAWAY, "упаковать с собой"))
+                .thenReturn(new TableRequestRouter.Routed("Передал. Даниил скоро подойдёт.", true, "Даниил"));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41, "request", "TAKEAWAY"));
+
+        assertThat(result.facts()).containsEntry("routed", true).containsEntry("waiter", "Даниил");
+        verify(router, never()).waiterName(any());
+    }
+
+    @Test
+    void toTheTeamThereIsNoWaiterToName() {
+        when(visits.findByReservation(41L)).thenReturn(Optional.of(CapabilityFixtures.visit(7L, 41L,
+                CapabilityFixtures.BUTLER_CHAT, JourneyStage.SEATED)));
+        when(router.deliver(41L, TableRequest.BREAD, "хлеб"))
+                .thenReturn(new TableRequestRouter.Routed("Передал команде, скоро подойдут.", true, null));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41, "request", "BREAD"));
+
+        assertThat(result.facts()).containsEntry("routed", true).doesNotContainKey("waiter");
     }
 
     @Test

@@ -46,6 +46,7 @@ public class TableRequestTool implements CapabilityTool {
     public String description() {
         return "Передать просьбу гостя за столом команде: BREAD — хлеб, WATER — вода, WAITER — позвать официанта, "
                 + "SPEED_UP — ускорить подачу, CUTLERY — приборы. Только когда гость уже за столом. "
+                + "Завернуть с собой блюдо, которое уже в заказе («упакуйте мои котлеты»), — WAITER, а не новый заказ ланча. "
                 + "Возвращает routed и имя официанта (waiter), если он известен.";
     }
 
@@ -77,12 +78,12 @@ public class TableRequestTool implements CapabilityTool {
         if (!seated(order)) {
             return ReservationAccess.withReason(CapabilityResult.NOT_ALLOWED, "not_seated");
         }
-        String answer = router.route(order.id(), request.get(), request.get().what());
-        boolean routed = answer != null && !TableRequestRouter.NOT_DELIVERED.equals(answer);
+        // The waiter the card went to: the day's assignment or the one picked by zone and shift for this very request.
+        TableRequestRouter.Routed routed = router.deliver(order.id(), request.get(), request.get().what());
         Map<String, Object> facts = new LinkedHashMap<>();
-        facts.put("routed", routed);
-        if (routed) {
-            router.waiterName(order).ifPresent(waiter -> facts.put("waiter", waiter));
+        facts.put("routed", routed.delivered());
+        if (routed.delivered() && routed.waiterName() != null) {
+            facts.put("waiter", routed.waiterName());
         }
         return CapabilityResult.ok(facts);
     }

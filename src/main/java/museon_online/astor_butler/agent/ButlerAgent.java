@@ -16,6 +16,8 @@ import museon_online.astor_butler.domain.ledger.TurnKind;
 import museon_online.astor_butler.domain.ledger.TurnSide;
 import museon_online.astor_butler.domain.ledger.VisitTurnDraft;
 import museon_online.astor_butler.domain.ledger.VisitTurnRepository;
+import museon_online.astor_butler.domain.lunch.BusinessLunchCatalog;
+import museon_online.astor_butler.domain.lunch.BusinessLunchOffer;
 import museon_online.astor_butler.domain.summary.AgentLessonRepository;
 import museon_online.astor_butler.domain.summary.GuestMemory;
 import museon_online.astor_butler.model.ModelChatMessage;
@@ -79,6 +81,7 @@ public class ButlerAgent {
     private final VisitTurnRepository turns;
     private final GuestVisitRepository visits;
     private final AgentHistory history;
+    private BusinessLunchCatalog lunchCatalog;
     private Clock clock = Clock.systemUTC();
     private ZoneId zone = ZoneId.of(DEFAULT_ZONE);
 
@@ -109,6 +112,37 @@ public class ButlerAgent {
                 log.warn("Butler agent keeps the zone {}: reason={}", DEFAULT_ZONE, e.getClass().getSimpleName());
             }
         }
+    }
+
+    /** The lunch menu whose dish codes never reach the guest ({@link LunchDishNames}); absent in tests that need none. */
+    @Autowired(required = false)
+    public void setLunchCatalog(BusinessLunchCatalog lunchCatalog) {
+        this.lunchCatalog = lunchCatalog;
+    }
+
+    /**
+     * The reply as the guest reads it: no internal dish code (live test 16.10: «Напишите коды блюд… SALAD_COLESLAW»),
+     * no booking confirmed or lunch «оформлен» that the tools did not say.
+     */
+    private String guestText(AgentOutcome outcome) {
+        String text = outcome.text();
+        if (lunchCatalog != null && text != null) {
+            try {
+                Optional<BusinessLunchOffer> offer = lunchCatalog.find(capabilities.getVenueCode());
+                if (offer.isPresent()) {
+                    text = LunchDishNames.replaceCodes(text, offer.get());
+                }
+            } catch (RuntimeException e) {
+                log.warn("Butler reply kept its text: dish names failed, reason={}", e.getClass().getSimpleName());
+            }
+        }
+        return HonestBookingStatus.guard(text, outcome.uses());
+    }
+
+    private static String joined(String first, String second) {
+        String a = first == null ? "" : first.trim();
+        String b = second == null ? "" : second.trim();
+        return a.isEmpty() ? b : b.isEmpty() ? a : a + "\n" + b;
     }
 
     /** For tests: «today» in the prompt. */
@@ -142,7 +176,8 @@ public class ButlerAgent {
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.CONCIERGE, null, sessionId, visitId,
                 turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()),
                 GuestAgreement.of(turn.guestText(), history.proposed(key), history.cancellations(key),
-                        history.changes(key)), turn.conciergePosition());
+                        history.changes(key)).withTakeaway(joined(turn.guestText(), turn.conciergeMessage()),
+                        history.lastSaid(key)), turn.conciergePosition());
         // Without consent the model audit keeps no words of this turn either.
         AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null, consent, properties.getTurnTimeoutMs());
 
@@ -163,7 +198,7 @@ public class ButlerAgent {
             return new NegotiationReply(null, null, facts, visitId, true);
         }
         Map<String, Object> offer = offer(outcome);
-        String text = HonestBookingStatus.guard(outcome.text(), outcome.uses());
+        String text = guestText(outcome);
         history.add(key, said, text, digest(outcome), proposed(outcome), cancellations(outcome), changes(outcome));
         Map<String, Object> payload = new LinkedHashMap<>();
         if (offer != null) {
@@ -205,7 +240,7 @@ public class ButlerAgent {
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.BUTLER_AGENT, chatId, null, visit,
                 turnKey("tg:" + chatId, history.nextTurn(key)), blankToNull(incoming.firstName()), blankToNull(incoming.contactPhone()),
                 GuestAgreement.of(incoming.text(), history.proposed(key), history.cancellations(key),
-                        history.changes(key)));
+                        history.changes(key)).withTakeaway(incoming.text(), history.lastSaid(key)));
         // The bot's single update thread waits the bot budget at most; on expiry the scenarios answer.
         AgentOutcome outcome = run(key, said, ctx, incoming.contactPhone(), chatId, true, properties.getBotTurnTimeoutMs());
         if (outcome.fallback()) {
@@ -216,7 +251,7 @@ public class ButlerAgent {
             write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), visit != null);
             return Optional.empty();
         }
-        String text = HonestBookingStatus.guard(outcome.text(), outcome.uses());
+        String text = guestText(outcome);
         history.add(key, said, text, digest(outcome), proposed(outcome), cancellations(outcome), changes(outcome));
         return Optional.of(text);
     }

@@ -166,8 +166,10 @@ services:
       SABY_CRM_JOURNEY_REGULATION_ID: ${SABY_CRM_JOURNEY_REGULATION_ID:-}
       SABY_CRM_PHASE_DIRECTIONS: ${SABY_CRM_PHASE_DIRECTIONS:-}
       SABY_CRM_RESPONSIBLE_ID: ${SABY_CRM_RESPONSIBLE_ID:-}
-      # Saby codes that mean «the guest is at the table» (#151), e.g. 50/1002; empty (default) — nothing is SEATED from Saby.
-      ASTOR_SABY_SEATED_STATES: ${ASTOR_SABY_SEATED_STATES:-}
+      # Saby codes that mean «the guest is at the table» (#151); default 50/1002, «off» — nothing is SEATED from Saby.
+      ASTOR_SABY_SEATED_STATES: ${ASTOR_SABY_SEATED_STATES:-50/1002}
+      # Send the Butler table to Saby on order/create; false — the Saby administrator picks the table (woTable=true).
+      ASTOR_SABY_SEND_TABLE: ${ASTOR_SABY_SEND_TABLE:-true}
       ASTOR_BILLING_REVIEW_DELAY_MINUTES: ${ASTOR_BILLING_REVIEW_DELAY_MINUTES:-60}
       # Morning reconfirmation of today's bookings (#149): off by default; the venue clock is Asia/Yekaterinburg.
       ASTOR_BOOKING_MORNING_CHECK_ENABLED: ${AERIS_BOOKING_MORNING_CHECK_ENABLED:-${ASTOR_BOOKING_MORNING_CHECK_ENABLED:-false}}

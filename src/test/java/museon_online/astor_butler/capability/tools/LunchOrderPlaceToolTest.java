@@ -323,4 +323,195 @@ class LunchOrderPlaceToolTest {
         assertThat(result.facts()).containsEntry("unknownDishCodes", List.of("PIZZA"))
                 .containsEntry("menu", List.of(Map.of("code", "BORSCHT", "title", "Борщ"), Map.of("code", "PIKE", "title", "Щука")));
     }
+
+    private void placesWith(ExternalLunchOrderProvider.Result external) {
+        when(lunch.placeFor(eq(reservation), any())).thenReturn(new BusinessLunchService.Placement(reservation, false,
+                mock(BusinessLunchOrder.class), external));
+    }
+
+    private static final ExternalLunchOrderProvider.Result SABY_OK =
+            new ExternalLunchOrderProvider.Result(true, "saby", "SABY_LUNCH_ATTACHED", "S-1", "ok");
+
+    /** Live test 16.10: «SALAD_HERRING_APPLE 2шт» ordered one portion, 2230 instead of 2510 ₽. */
+    @Test
+    void aCountWrittenWithTheDishOrdersThatManyPortions() {
+        placesWith(SABY_OK);
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), args(true, List.of("BORSCHT 2шт", "PIKE")));
+
+        ArgumentCaptor<BusinessLunchService.Request> request = ArgumentCaptor.forClass(BusinessLunchService.Request.class);
+        verify(lunch).placeFor(eq(reservation), request.capture());
+        assertThat(request.getValue().dishCodes()).containsExactly("BORSCHT", "BORSCHT", "PIKE");
+        assertThat(result.facts()).containsEntry("totalRub", 990)
+                .containsEntry("dishes", List.of(Map.of("title", "Борщ", "count", 2, "priceRub", 270),
+                        Map.of("title", "Щука", "count", 1, "priceRub", 450)));
+    }
+
+    @Test
+    void itemsWithCountsAreExpandedIntoPortionsAndTheTotalFollows() {
+        placesWith(SABY_OK);
+        Map<String, Object> given = args(true, List.of("PIKE"));
+        given.put("items", List.of(Map.of("dish", "борщ", "count", 3)));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), given);
+
+        ArgumentCaptor<BusinessLunchService.Request> request = ArgumentCaptor.forClass(BusinessLunchService.Request.class);
+        verify(lunch).placeFor(eq(reservation), request.capture());
+        assertThat(request.getValue().dishCodes()).containsExactly("PIKE", "BORSCHT", "BORSCHT", "BORSCHT");
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("totalRub", 450 + 3 * 270);
+    }
+
+    @Test
+    void onlyItemsAreEnoughWithoutDishCodes() {
+        placesWith(SABY_OK);
+        Map<String, Object> given = args(true, List.of());
+        given.remove("dishCodes");
+        given.put("items", List.of(Map.of("dish", "PIKE", "count", 2)));
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), given);
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("totalRub", 900);
+    }
+
+    @Test
+    void aCountOutsideOneToTenIsABadArgument() {
+        for (int count : List.of(0, 11, -2)) {
+            Map<String, Object> given = args(true, List.of());
+            given.put("items", List.of(Map.of("dish", "BORSCHT", "count", count)));
+
+            CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), given);
+
+            assertThat(result.error()).isEqualTo(CapabilityResult.BAD_ARGUMENT);
+            assertThat(result.facts()).containsEntry("reason", LunchOrderPlaceTool.COUNT_OUT_OF_RANGE)
+                    .containsEntry("maxCount", DishCodes.MAX_COUNT);
+        }
+        verifyNoInteractions(lunch);
+    }
+
+    /**
+     * Live test 16.10: the guest with booking #68 today said «Да» to the lunch; the Concierge position was empty and the
+     * model sent no reservationId, so the tool answered needs_date_time. The only booking is the one meant.
+     */
+    @Test
+    void withoutIdOrSlotTheGuestsOnlyBookingIsUsed() {
+        LunchOrderPlaceTool tool = booking();
+        when(access.onlyUpcoming(any(), any(), any())).thenReturn(Optional.of(reservation));
+        Map<String, Object> noId = args(true, List.of("BORSCHT"));
+        noId.remove("reservationId");
+
+        CapabilityResult result = tool.invoke(conciergeYes(Map.of()), noId);
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("reservationId", 41L).containsEntry("reservationCreated", false);
+        verify(create, never()).invoke(any(), anyMap());
+        verify(lunch).placeFor(eq(reservation), any());
+    }
+
+    /** The Butler's own chat, through the real access check: one booking not over yet, no booking path needed. */
+    @Test
+    void theButlerChatsOnlyBookingIsUsedWithoutTheBookingPath() {
+        placesWith(SABY_OK);
+        when(orders.findActiveOrdersByChatId(CapabilityFixtures.BUTLER_CHAT, "AERIS")).thenReturn(List.of(reservation));
+        Map<String, Object> noId = args(true, List.of("BORSCHT"));
+        noId.remove("reservationId");
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), noId);
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.facts()).containsEntry("reservationId", 41L);
+    }
+
+    @Test
+    void twoBookingsOrABookingAlreadyOverAreNotGuessed() {
+        TableReservationOrder over = CapabilityFixtures.order(40L, CapabilityFixtures.BUTLER_CHAT, TableReservationStatus.CONFIRMED,
+                Instant.parse("2026-10-15T08:00:00Z"));
+        TableReservationOrder other = CapabilityFixtures.order(42L, CapabilityFixtures.BUTLER_CHAT, TableReservationStatus.CONFIRMED,
+                LUNCH.plus(Duration.ofDays(6)));
+        ReservationAccess real = new ReservationAccess(orders, mock(GuestVisitRepository.class), mock(VisitTurnRepository.class));
+        CapabilityContext ctx = CapabilityFixtures.butler("k1");
+
+        when(orders.findActiveOrdersByChatId(CapabilityFixtures.BUTLER_CHAT, "AERIS")).thenReturn(List.of(reservation, other));
+        assertThat(real.onlyUpcoming(ctx, "AERIS", FRIDAY_MORNING.instant())).isEmpty();
+        when(orders.findActiveOrdersByChatId(CapabilityFixtures.BUTLER_CHAT, "AERIS")).thenReturn(List.of(over, reservation));
+        assertThat(real.onlyUpcoming(ctx, "AERIS", FRIDAY_MORNING.instant())).contains(reservation);
+    }
+
+    /** Live test 16.10: «Хочу чизкейк с собой» about the cheesecake in the order made a second order. */
+    @Test
+    void packingADishAlreadyOrderedIsNotANewOrder() {
+        placesWith(SABY_OK);
+        assertThat(tool.invoke(CapabilityFixtures.butler("k1", GuestAgreement.of("Да", List.of())),
+                args(true, List.of("BORSCHT", "PIKE"))).ok()).isTrue();
+        GuestAgreement packIt = GuestAgreement.of("Да", List.of()).withTakeaway("Да", "Гость: упакуйте мой борщ");
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k2", packIt), args(true, List.of("BORSCHT")));
+
+        assertThat(result.error()).isEqualTo(CapabilityResult.NOT_ALLOWED);
+        assertThat(result.facts()).containsEntry("reason", LunchOrderPlaceTool.ALREADY_ORDERED_TAKEAWAY)
+                .containsEntry("ask", "Завернуть то, что в заказе, или добавить ещё одну порцию?");
+        verify(lunch, org.mockito.Mockito.times(1)).placeFor(eq(reservation), any());
+    }
+
+    @Test
+    void oneMorePortionToGoIsOrderedAfterTheGuestsYes() {
+        placesWith(SABY_OK);
+        tool.invoke(CapabilityFixtures.butler("k1", GuestAgreement.of("Да", List.of())), args(true, List.of("BORSCHT")));
+        GuestAgreement more = GuestAgreement.of("Да, добавьте ещё одну", List.of())
+                .withTakeaway("Да, добавьте ещё одну", "Гость: хочу борщ с собой");
+        GuestAgreement newDish = GuestAgreement.of("Да", List.of()).withTakeaway("Да", "Гость: щуку с собой");
+
+        assertThat(tool.invoke(CapabilityFixtures.butler("k2", more), args(true, List.of("BORSCHT"))).ok()).isTrue();
+        assertThat(tool.invoke(CapabilityFixtures.butler("k3", newDish), args(true, List.of("PIKE"))).ok()).isTrue();
+    }
+
+    @Test
+    void theBillsLinesCountAsAlreadyOrdered() {
+        placesWith(SABY_OK);
+        museon_online.astor_butler.domain.billing.GuestBillService bills = mock(museon_online.astor_butler.domain.billing.GuestBillService.class);
+        museon_online.astor_butler.domain.billing.GuestBill bill = mock(museon_online.astor_butler.domain.billing.GuestBill.class);
+        when(bill.id()).thenReturn(77L);
+        when(bill.kind()).thenReturn(museon_online.astor_butler.domain.billing.GuestBillKind.BUSINESS_LUNCH);
+        when(bills.findByReservation(41L)).thenReturn(Optional.of(bill));
+        when(bills.linesOf(77L)).thenReturn(List.of(new museon_online.astor_butler.domain.billing.GuestBillLine(
+                1L, 77L, 1, "PIKE", "Щука", 1, 45_000L, false)));
+        tool.setBills(bills);
+        GuestAgreement packIt = GuestAgreement.of("Да, заверните щуку", List.of());
+
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1", packIt), args(true, List.of("PIKE")));
+
+        assertThat(result.facts()).containsEntry("reason", LunchOrderPlaceTool.ALREADY_ORDERED_TAKEAWAY);
+        verifyNoInteractions(lunch);
+    }
+
+    /** Live test 16.10: Saby answered PROVIDER_RESULT_UNKNOWN and the guest read «оформлен». */
+    @Test
+    void aLunchSabyHasNotTakenSaysSoInItsFacts() {
+        for (ExternalLunchOrderProvider.Result external : List.of(ExternalLunchOrderProvider.Result.manualEntry(),
+                new ExternalLunchOrderProvider.Result(false, "saby", "PROVIDER_RESULT_UNKNOWN", "", "timeout"),
+                ExternalLunchOrderProvider.Result.failed("saby", "HTTP_ERROR"))) {
+            placesWith(external);
+
+            CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), args(true, List.of("BORSCHT")));
+
+            assertThat(result.ok()).isTrue();
+            assertThat(result.facts()).containsEntry("kitchenConfirmed", false).containsEntry("manualEntry", true)
+                    .containsEntry("tellGuest", "Заказ передал официанту, он внесёт его в кассу.");
+        }
+        placesWith(SABY_OK);
+        CapabilityResult taken = tool.invoke(CapabilityFixtures.butler("k1"), args(true, List.of("BORSCHT")));
+        assertThat(taken.facts()).containsEntry("kitchenConfirmed", true).containsEntry("manualEntry", false)
+                .doesNotContainKey("tellGuest");
+    }
+
+    @Test
+    void theDescriptionsTellTheModelHowToOrder() {
+        String description = tool.description();
+        assertThat(description).contains("так, как их назвал гость", "коды не спрашивай", "items",
+                "manualEntry=true", "Заказ передал официанту, он внесёт его в кассу", "никогда не пиши «оформлен»",
+                "Завернуть то, что в заказе, или добавить ещё одну порцию?", "table_request с WAITER",
+                LunchOrderPlaceTool.ALREADY_ORDERED_TAKEAWAY);
+        assertThat(tool.parameters()).extracting(map -> map.get("required")).isEqualTo(List.of("confirmedByGuest"));
+    }
 }

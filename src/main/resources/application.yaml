@@ -216,7 +216,9 @@ astor:
       # waiter's own tip link in the staff directory (/чаевые). With a waiter and a link, the guest's tip goes to that person by
       # name and link; otherwise the venue's default recipient, as before. Off by default: the commands are unknown and the
       # recipient is the default one, word for word. The directory is astor_staff_members of this tenant; the shift day is
-      # counted in the venue's time zone.
+      # counted in the venue's time zone. /зона <ЗОНА|столы> <имя> keeps the zone a waiter usually works (waiter_zones): a
+      # table request on a table nobody was given for the day goes to the waiter on shift (staff schedule) of that zone,
+      # kept for the day as an 'auto' assignment that /официант overrides. The same tenant is read by the table requests.
       enabled: ${ASTOR_TIPS_PERSONAL_ENABLED:false}
       tenant: ${ASTOR_TIPS_PERSONAL_TENANT:AERIS}
       timezone: ${ASTOR_TIPS_PERSONAL_TIMEZONE:Asia/Yekaterinburg}
@@ -380,9 +382,13 @@ astor:
       timeout-ms: ${SABY_TIMEOUT_MS:3000}
       max-retries: ${SABY_MAX_RETRIES:1}
       # Which order/{id}/state codes mean «the guest is at the table» (#151): a comma list of state or
-      # state/productState, e.g. 50/1002. Empty (default): nothing is ever SEATED from Saby. The real codes behind the
-      # green tick in Presto Waiter are recorded on the live test: docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
-      seated-states: ${ASTOR_SABY_SEATED_STATES:}
+      # state/productState. Default 50/1002 («принята в работу» + «выполнение»: the order is open at the table);
+      # «off» switches it off. Butler seats from Saby no earlier than 2 h before the booking time.
+      # Check the code behind the green tick in Presto Waiter: docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
+      seated-states: ${ASTOR_SABY_SEATED_STATES:50/1002}
+      # Send the table Butler holds to Saby on order/create (booking.table, matched by name from hall/list);
+      # false leaves the table to the Saby administrator (woTable=true), as before 16.10.
+      send-table: ${ASTOR_SABY_SEND_TABLE:true}
   billing:
     # Butler never takes the money. On: a bill and its journal are kept for every order Butler places.
     enabled: ${ASTOR_BILLING_ENABLED:false}

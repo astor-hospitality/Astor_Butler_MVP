@@ -72,4 +72,30 @@ class DishCodesTest {
     private static Optional<String> resolve(String code) {
         return DishCodes.resolve(AERIS, code);
     }
+
+    /** Live test 16.10: «SALAD_HERRING_APPLE 2шт» was ordered once. */
+    @Test
+    void aCountWrittenWithTheDishIsReadOffIt() {
+        assertThat(DishCodes.portion("SALAD_HERRING_APPLE 2шт")).isEqualTo(new DishCodes.Portion("SALAD_HERRING_APPLE", 2));
+        assertThat(DishCodes.portion("борщ x2")).isEqualTo(new DishCodes.Portion("борщ", 2));
+        assertThat(DishCodes.portion("борщ ×3")).isEqualTo(new DishCodes.Portion("борщ", 3));
+        assertThat(DishCodes.portion("суп 2 порции")).isEqualTo(new DishCodes.Portion("суп", 2));
+        assertThat(DishCodes.portion("Паста болоньезе, 2 шт.")).isEqualTo(new DishCodes.Portion("Паста болоньезе", 2));
+        assertThat(DishCodes.portion("2 x щука")).isEqualTo(new DishCodes.Portion("щука", 2));
+        assertThat(DishCodes.portion("3 порции борща")).isEqualTo(new DishCodes.Portion("борща", 3));
+        assertThat(DishCodes.portion("SALAD_COLESLAW")).isEqualTo(new DishCodes.Portion("SALAD_COLESLAW", 1));
+    }
+
+    @Test
+    void aNumberThatIsPartOfTheDishIsNoCount() {
+        assertThat(DishCodes.portion("Чай ассам, 500 мл")).isEqualTo(new DishCodes.Portion("Чай ассам, 500 мл", 1));
+        assertThat(DishCodes.portion("Клюквенный морс, 200 мл")).isEqualTo(new DishCodes.Portion("Клюквенный морс, 200 мл", 1));
+        assertThat(resolve(DishCodes.portion("SALAD_HERRING_APPLE 2шт").dish())).contains("SALAD_HERRING_APPLE");
+    }
+
+    @Test
+    void theTitleOfACodeIsTheMenus() {
+        assertThat(DishCodes.title(AERIS, "SALAD_COLESLAW")).isEqualTo("Салат коул слоу");
+        assertThat(DishCodes.title(AERIS, "NOPE")).isEqualTo("NOPE");
+    }
 }

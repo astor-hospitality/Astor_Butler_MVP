@@ -101,7 +101,7 @@
 | `booking.woTable` | нет | boolean | `true` — стол выбирает администратор, зал и стол можно не указывать |
 | `nomenclatures[]` | нет | array | Предзаказ блюд. Butler в `create` не передаёт: блюда ланча уходят вторым шагом, `PUT order/{id}/update` (4.5, PR #51) |
 
-Что Butler отправляет на самом деле (`SabyOrderPayload.create`): `product`, `pointId`, `datetime`, `comment` (`Astor Butler #<номер заявки>` и пожелание), `customer.name`, `customer.phone` (только цифры, российский номер), `booking.visitors`, `booking.woTable: true` и `booking.hall`, если задан `SABY_HALL_ID`. `booking.table` Butler не передаёт никогда: стол выбирает администратор Saby (см. 6.7).
+Что Butler отправляет на самом деле (`SabyOrderPayload.create`): `product`, `pointId`, `datetime`, `comment` (`Astor Butler #<номер заявки>` и пожелание), `customer.name`, `customer.phone` (только цифры, российский номер), `booking.visitors` и стол. С 16.10 (бронь #68 на проде легла в Saby без стола, хостес переносила её на стол 4 руками) Butler передаёт **свой** стол: `venue_tables.table_code` сопоставляется с именем стола из `hall/list` (`ExternalTableCodes.key`: «4» ↔ «Стол 4», «13» ↔ «VIP 13», `BAR` ↔ «Бар»), уходят `booking.table` = id стола, `booking.hall` = id его зала, `booking.woTable: false`. Список столов кешируется на 6 ч; код без пары (или с двумя одноимёнными столами) пишется в лог один раз и бронь уходит как раньше — `woTable: true` (+ `booking.hall`, если задан `SABY_HALL_ID`). Если Saby отвечает на бронь со столом 4xx, тот же create один раз повторяется без стола (4xx — ничего не создано); 5xx/таймаут не повторяются. Выключатель — `ASTOR_SABY_SEND_TABLE=false` (см. 6.7). В `metadata` результата: `tableSelection` (`BUTLER` / `SABY_ADMINISTRATOR`), `tableMatch` (`MATCHED`, `UNMATCHED`, `AMBIGUOUS`, `NO_TABLE_CODE`, `HALL_LIST_FAILED`, `TABLE_REJECTED`, `SEND_TABLE_OFF`), `sabyTableId`, `sabyHallId`. **Живым вызовом не проверено**: принимает ли Presto `table` + `woTable=false` в этой форме.
 
 Где собирается `comment` (единственное поле брони, которое видит кухня):
 
@@ -151,6 +151,8 @@
 | `order/states` | не используется: опрос читает брони по одной |
 | `order/{id}/payment-link` | `GuestBillPaymentPrompter` после подтверждения брони (PR #59) |
 
+**Подтверждения в API нет (проверено по документации 16.10).** Операции с бронью — только `create`, `update`, `cancel`, `state`/`states`, `payment-link`; вызова, который переводит бронь в «подтверждена» (`state` 20), нет, и менять `state` через `update` документация не предлагает. Поэтому «Да» хостес в Telegram в Saby ничего не пишет (`HostessReservationApprovalService`), стол уходит уже в `create`; «Нет» хостес отменяет бронь в Saby (`TableReservationService.reject` → `PUT order/{id}/cancel`, при неудаче хостес получает «бронь не снялась в Presto»). `POST /__admin/confirm/{id}` в `scripts/saby_stub` — служебный вызов стаба, не Saby.
+
 Ответ статуса: `state` (статус брони), `payState` (статус оплаты), `payments[]`, `productState` (продуктовый статус). Значения выписаны со страницы документации 06.10.2026 (B5 закрыт):
 
 | `state` | | `productState` | | `payState` | |
@@ -166,7 +168,7 @@
 
 Карта для Butler (`SabyBookingState`, PR #47): 5/10/1000 → PENDING; 20/50/1001/1002 → CONFIRMED; 180/200/1999 → COMPLETED; 220/1998 → CANCELLED, отмена побеждает; 150 и всё вне списка → UNKNOWN (не подтверждено). Форма ответа `order/create` и `GET order/{externalId}` в документации **не описана** — проверяется первым живым вызовом (B4), удобнее всего через записывающий прокси `scripts/saby_stub` (режим `record`, PR #52).
 
-**«Гость сел» (`SEATED`, #151).** Зелёная галочка у брони в Presto Waiter (интервью с хостес 12.10, вопрос 19) в документации кодом не названа — в таблице выше её нет. Поэтому `SabyBookingState.SEATED` ставится **только** по кодам из настройки `ASTOR_SABY_SEATED_STATES` (`astor.integrations.saby.seated-states`): список через запятую из `state` или `state/productState`, например `50/1002,60`; запись без `productState` подходит при любом продуктовом статусе, запись с ним — только для пары. По умолчанию пусто — из Saby ничего не становится `SEATED`, всё как раньше. Порядок проверки: отмена (220/1998) побеждает всегда; затем настроенные коды посадки (они сильнее догадки из документации — если галочка окажется, например, 180, задайте `180`, и он перестанет читаться как COMPLETED); затем COMPLETED / CONFIRMED / PENDING как выше. Опрос `ExternalBookingSync` переводит локальную бронь `CONFIRMED → SEATED` (`TableReservationService.seatFromVenue`, `seated_at`), ожидающую сначала подтверждает — один шаг за опрос.
+**«Гость сел» (`SEATED`, #151).** Зелёная галочка у брони в Presto Waiter (интервью с хостес 12.10, вопрос 19) в документации кодом не названа — в таблице выше её нет. Поэтому `SabyBookingState.SEATED` ставится **только** по кодам из настройки `ASTOR_SABY_SEATED_STATES` (`astor.integrations.saby.seated-states`): список через запятую из `state` или `state/productState`, например `50/1002,60`; запись без `productState` подходит при любом продуктовом статусе, запись с ним — только для пары. С 16.10 по умолчанию `50/1002` — «принята в работу» + «выполнение»: заказ открыт за столом (на проде 16.10 хостес посадила гостя в Saby, а Butler остался CONFIRMED — переменная была пуста). `50` с другим `productState` и `20` остаются CONFIRMED, коды вне таблицы — UNKNOWN, по ним никто не садится. Выключить: `ASTOR_SABY_SEATED_STATES=off`. Дополнительно `ExternalBookingSync` не сажает по коду посадки раньше чем за 2 ч до времени брони — так код, который на деле окажется «бронь принята», не посадит гостя заранее. **Живым вызовом не проверено**, что зелёная галочка даёт именно 50/1002 — это догадка по документации; проверка ниже. Порядок проверки: отмена (220/1998) побеждает всегда; затем настроенные коды посадки (они сильнее догадки из документации — если галочка окажется, например, 180, задайте `180`, и он перестанет читаться как COMPLETED); затем COMPLETED / CONFIRMED / PENDING как выше. Опрос `ExternalBookingSync` переводит локальную бронь `CONFIRMED → SEATED` (`TableReservationService.seatFromVenue`, `seated_at`), ожидающую сначала подтверждает — один шаг за опрос.
 
 **Что записать на тесте (Дима, §3.3 шаг 3а в `BUSINESS_LUNCH_FIRST_TEST.md`):** `state` и `productState` брони до и после галочки — из `saby_call_log` (при `ASTOR_SABY_CALL_LOG_ENABLED=true` путь `/retail/order/{id}/state` пишется, тело — нет; тело берётся из ответа `GET …/state` руками или через стаб в режиме `record`). Результат — сюда, в таблицу выше строкой «галочка «гость сел» → state N / productState M (живой Saby, дата)», и в `.env.production`: `ASTOR_SABY_SEATED_STATES=N/M` + `up -d aeris-astor-butler-bot`. Если галочка не меняет ни `state`, ни `productState`, из Saby посадку не узнать — остаётся кнопка хостес «🪑 Гость сел» (`ASTOR_BOOKING_SEATED_ENABLED`, #151).
 
@@ -195,12 +197,12 @@
 | `checkAvailability(request)` | `hall/list` на время начала: свободный стол — `!busy && !isBookingLocked && visible && capacity >= partySize` | Есть; занятость из Saby учитывается при выборе стола (`ExternalTableOccupancy`, PR #41) |
 | `reserve(command, idempotencyKey)` | `order/create` | Есть, без повторов POST |
 | `fetchReservationState(externalId)` | `order/{id}/state` | Есть; вызывает `ExternalBookingSync` (PR #48) |
-| `SEATED` («гость сел») | коды из `ASTOR_SABY_SEATED_STATES` в `order/{id}/state` | Есть (#151), но коды неизвестны до живого теста — по умолчанию выключено (4.5) |
+| `SEATED` («гость сел») | коды из `ASTOR_SABY_SEATED_STATES` в `order/{id}/state` | Есть (#151); по умолчанию `50/1002`, не раньше чем за 2 ч до брони; код галочки подтверждается на живом тесте (4.5) |
 | `cancelReservation(externalId)` | `order/{id}/cancel` | Есть; при отмене гостем |
 | `updateReservation(externalId, command, ref)` | `order/{id}/update` | Есть; при изменении гостем (PR #49) |
 | `sbisExternalId` в заявке | UUID брони из ответа `create` | Заполняется (`TableReservationService.attachExternalId`) |
 | `venueCode` (`AERIS`) | `pointId` | Маппинг через настройку |
-| `tableCode` Butler | `booking.table` | Не передаётся: всегда `woTable=true`. Имена столов из `hall/list` сопоставляются с кодами Butler только для занятости (`ExternalTableCodes`) |
+| `tableCode` Butler | `booking.table` + `booking.hall` | Передаётся с 16.10: id стола и зала из `hall/list` по имени (`ExternalTableCodes`), `woTable=false`; без пары — `woTable=true`, как раньше (4.4) |
 | Блюда ланча | `nomenclatures[]` в `order/{id}/update` | Есть (`SabyLunchOrderProvider`, PR #51), см. 4.6 |
 | Оплата | `order/{id}/payment-link`, `payState` | Есть (`SabyPaymentProvider`, `BillingSync`, PR #59) |
 | `guestName`, `guestPhone` | `customer.name`, `customer.phone` | В Butler необязательны, в Saby обязательны |
@@ -214,7 +216,7 @@
 4. **«Создано в Saby» не значит «подтверждено».** Кто даёт гостю «подтверждено», задаёт `ASTOR_BOOKING_CONFIRMATION_SOURCE`: `HOSTESS` (по умолчанию, кнопка в Telegram) или `VENUE_SYSTEM` (только `state` 20 из опроса Saby; хостес может отклонить). PR #50.
 5. **Запись выключена отдельным флагом.** Чтение включается ключами, создание и отмена — только дополнительным `SABY_WRITE_ENABLED=true`.
 6. **Повторы только для GET и авторизации** — при `5xx`, `429` и сетевых ошибках, с таймаутом на каждый запрос.
-7. **Стол выбирает администратор** (`woTable=true`) — всегда: `booking.table` Butler не передаёт, хотя `SabyOrderPayload` это умеет. `SABY_HALL_ID` влияет только на фильтр `hall/list` и поле `booking.hall` в `create`; для выбора стола он не нужен.
+7. **Стол — тот, что держит Butler** (с 16.10, было `woTable=true` всегда): `booking.table` и `booking.hall` из `hall/list` по имени стола (4.4). Стол без пары в Saby, сбой `hall/list`, 4xx на бронь со столом или `ASTOR_SABY_SEND_TABLE=false` — стол выбирает администратор (`woTable=true`), как раньше. `SABY_HALL_ID` — фильтр `hall/list` и `booking.hall` для брони без стола.
 8. **Без имени и телефона гостя бронь в Saby не создаётся** — заявка идёт только хостес.
 9. **Реальные гостевые данные в тестах не используются.** Smoke-тест записи — только на тестовой точке, созданная бронь сразу отменяется.
 
@@ -259,7 +261,8 @@ SABY_PAYMENT_ENABLED      брать у Saby payment-link и отдавать г
 ASTOR_EXTERNAL_SYNC_DELAY_MS          по умолчанию 60000 — опрос статусов брони в Saby (PR #48)
 ASTOR_EXTERNAL_SYNC_INITIAL_DELAY_MS  по умолчанию 90000
 ASTOR_BOOKING_CONFIRMATION_SOURCE     HOSTESS (по умолчанию) | VENUE_SYSTEM — кто даёт гостю «подтверждено» (PR #50, B12)
-ASTOR_SABY_SEATED_STATES              пусто (по умолчанию) — коды «гость сел» в order/{id}/state: state или state/productState через запятую, например 50/1002; записываются на живом тесте (4.5, #151)
+ASTOR_SABY_SEATED_STATES              50/1002 (по умолчанию) — коды «гость сел» в order/{id}/state: state или state/productState через запятую; off — выключено; код галочки проверяется на живом тесте (4.5, #151)
+ASTOR_SABY_SEND_TABLE                 true (по умолчанию) — передавать стол Butler в order/create (booking.table по hall/list); false — стол выбирает администратор Saby (4.4)
 ```
 
 Поддержка Saby (чат 06.10): лицензия AERIS — Presto Профи, API бронирования входит; доступ «Подключения к Saby» выдаёт только руководитель организации; тестового контура нет; лимиты — ≤ 5 параллельных потоков, авторизация ≤ 300 вызовов/мин с одного IP.

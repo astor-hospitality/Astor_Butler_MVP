@@ -107,4 +107,24 @@ class GuestAgreementTest {
         assertThat(GuestAgreement.Table.of(refusal.facts().get("date"), refusal.facts().get("time"),
                 refusal.facts().get("partySize"))).contains(AT_SEVEN);
     }
+
+    /** Live test 16.10: «Хочу чизкейк с собой», «упакуйте мои котлеты» about dishes already ordered. */
+    @Test
+    void aRequestToPackIsReadFromThisTurnOrTheOneItAnswers() {
+        assertThat(GuestAgreement.asksTakeaway("Хочу чизкейк с собой", null)).isTrue();
+        assertThat(GuestAgreement.asksTakeaway("упакуйте мои котлеты", null)).isTrue();
+        assertThat(GuestAgreement.asksTakeaway("Заверните, пожалуйста", null)).isTrue();
+        assertThat(GuestAgreement.asksTakeaway("Да", "Гость: хочу чизкейк с собой")).isTrue();
+        assertThat(GuestAgreement.of("Упакуйте десерт, да", List.of()).takeaway()).isTrue();
+    }
+
+    @Test
+    void oneMorePortionOrNoTakeawayWordsIsNoPacking() {
+        assertThat(GuestAgreement.asksTakeaway("Добавьте ещё одну с собой", null)).isFalse();
+        assertThat(GuestAgreement.asksTakeaway("Да, ещё одну", "Гость: чизкейк с собой")).isFalse();
+        assertThat(GuestAgreement.asksTakeaway("Да", "Гость: борщ и щуку")).isFalse();
+        assertThat(GuestAgreement.asksTakeaway(null, null)).isFalse();
+        assertThat(GuestAgreement.of("Да", List.of()).takeaway()).isFalse();
+        assertThat(GuestAgreement.NONE.takeaway()).isFalse();
+    }
 }
