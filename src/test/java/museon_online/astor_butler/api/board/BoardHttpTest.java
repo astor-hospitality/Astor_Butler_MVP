@@ -59,6 +59,9 @@ class BoardHttpTest {
             return new BoardController(queries, new VisitTurnRepository(database.jdbc(), new ObjectMapper()),
                     new BoardMetrics(queries), mock(HealthMap.class), stream);
         }
+        @Bean BoardToday boardToday() {
+            return new BoardToday(new BoardQueries(database.jdbc(), new ObjectMapper()), "Asia/Yekaterinburg");
+        }
         @Bean VisitSummaryRepository summaries() { return new VisitSummaryRepository(database.jdbc(), new ObjectMapper()); }
         @Bean AgentLessonRepository lessons() { return new AgentLessonRepository(database.jdbc()); }
         @Bean VisitSummaryService summaryService(VisitSummaryRepository summaries, AgentLessonRepository lessons) {
@@ -95,6 +98,32 @@ class BoardHttpTest {
         mvc.perform(get("/api/board/v1/metrics").param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-02T00:00:00Z")
                 .header(BoardTokenFilter.HEADER, TOKEN)).andExpect(status().isOk());
         mvc.perform(get("/api/board/v1/visits/1/turns").header(BoardTokenFilter.HEADER, TOKEN)).andExpect(status().isOk());
+    }
+
+    @Test
+    void theManagersDayNeedsTheTokenAndHidesTestGuests() throws Exception {
+        java.time.Instant now = java.time.Instant.now();
+        long real = database.booking("Мария Кузнецова", "AWAITING_MANAGER_CONFIRMATION", "CONCIERGE", 2, 5001L, null, now, now, "Стол 4");
+        database.visit(real, "AERIS", "REQUESTED", null, now);
+        long test = database.booking("Тест", "CONFIRMED", "TELEGRAM", 2, 900_000_001L, null, now, now, null);
+        database.visit(test, "AERIS", "CONFIRMED", null, now);
+        String from = now.minus(java.time.Duration.ofHours(1)).toString();
+        String to = now.plus(java.time.Duration.ofHours(1)).toString();
+
+        mvc.perform(get("/api/board/v1/today")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/board/v1/today").param("from", from).param("to", to).param("venue", "AERIS")
+                        .header(BoardTokenFilter.HEADER, TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.venue").value("AERIS"))
+                .andExpect(jsonPath("$.venues[0]").value("AERIS"))
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].guest").value("Мария"))
+                .andExpect(jsonPath("$.items[0].status").value("WAITING"))
+                .andExpect(jsonPath("$.items[0].channel").value("CONCIERGE"))
+                .andExpect(jsonPath("$.totals.requests").value(1))
+                .andExpect(jsonPath("$.totals.waiting").value(1));
+        mvc.perform(get("/api/board/v1/today").param("venue", "A B").header(BoardTokenFilter.HEADER, TOKEN))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
