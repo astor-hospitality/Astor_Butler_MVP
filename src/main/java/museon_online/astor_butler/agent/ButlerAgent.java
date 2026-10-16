@@ -53,8 +53,8 @@ import java.util.function.Supplier;
  *
  * <p>Each turn carries the guest's {@link GuestAgreement}: whether the guest's own words (the Concierge's
  * {@code guestText}, the bot's message) say yes, and the tables the previous answered turn put to the guest
- * ({@link #proposed}) or offered to cancel ({@link #cancellations}). The tools, not the model, decide with it whether
- * a table request, a change, a cancellation or a lunch order may run.
+ * ({@link #proposed}), offered to cancel ({@link #cancellations}) or to change ({@link #changes}). The tools, not the
+ * model, decide with it whether a table request, a change, a cancellation or a lunch order may run.
  */
 @Component
 public class ButlerAgent {
@@ -141,7 +141,8 @@ public class ButlerAgent {
         String said = negotiationMessage(turn);
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.CONCIERGE, null, sessionId, visitId,
                 turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()),
-                GuestAgreement.of(turn.guestText(), history.proposed(key), history.cancellations(key)));
+                GuestAgreement.of(turn.guestText(), history.proposed(key), history.cancellations(key),
+                        history.changes(key)));
         // Without consent the model audit keeps no words of this turn either.
         AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null, consent, properties.getTurnTimeoutMs());
 
@@ -162,7 +163,8 @@ public class ButlerAgent {
             return new NegotiationReply(null, null, facts, visitId, true);
         }
         Map<String, Object> offer = offer(outcome);
-        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome), cancellations(outcome));
+        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome), cancellations(outcome),
+                changes(outcome));
         Map<String, Object> payload = new LinkedHashMap<>();
         if (offer != null) {
             payload.put("offerKind", offer.get("kind"));
@@ -190,7 +192,8 @@ public class ButlerAgent {
         }
         CapabilityContext ctx = new CapabilityContext(CapabilityContext.BUTLER_AGENT, chatId, null, visit,
                 turnKey("tg:" + chatId, history.nextTurn(key)), blankToNull(incoming.firstName()), blankToNull(incoming.contactPhone()),
-                GuestAgreement.of(incoming.text(), history.proposed(key), history.cancellations(key)));
+                GuestAgreement.of(incoming.text(), history.proposed(key), history.cancellations(key),
+                        history.changes(key)));
         // The bot's single update thread waits the bot budget at most; on expiry the scenarios answer.
         AgentOutcome outcome = run(key, said, ctx, incoming.contactPhone(), chatId, true, properties.getBotTurnTimeoutMs());
         if (outcome.fallback()) {
@@ -201,7 +204,8 @@ public class ButlerAgent {
             write(fallbackTurn(visit, null, TurnChannel.BUTLER_TG, outcome), visit != null);
             return Optional.empty();
         }
-        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome), cancellations(outcome));
+        history.add(key, said, outcome.text(), digest(outcome), proposed(outcome), cancellations(outcome),
+                changes(outcome));
         return Optional.of(outcome.text());
     }
 
@@ -405,6 +409,19 @@ public class ButlerAgent {
             }
         }
         return reservations;
+    }
+
+    /** The changes this turn offered the guest: a change refused for want of the guest's yes, with what it would set. */
+    static List<GuestAgreement.Change> changes(AgentOutcome outcome) {
+        List<GuestAgreement.Change> changes = new ArrayList<>();
+        for (AgentOutcome.ToolUse use : outcome.uses()) {
+            CapabilityResult result = use.result();
+            if ("reservation_change".equals(use.tool()) && result != null && !result.ok() && result.facts() != null
+                    && GuestAgreement.NEEDS_GUEST_YES.equals(result.facts().get("reason"))) {
+                GuestAgreement.Change.of(result.facts()).ifPresent(changes::add);
+            }
+        }
+        return changes;
     }
 
     private static List<Map<String, Object>> facts(AgentOutcome outcome) {

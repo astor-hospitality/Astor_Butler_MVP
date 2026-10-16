@@ -50,7 +50,7 @@ class GuestAgreementTest {
     @Test
     void theGuestsOwnWordsAskToCancel() {
         for (String words : List.of("Отмените бронь", "отмени заказ", "Хочу отменить бронирование", "Нет, отмените",
-                "Отмена брони", "Мы не придём", "К сожалению, не придем", "не сможем", "Не получится прийти",
+                "Отмена брони", "Сделайте отмену брони", "Мы не придём", "К сожалению, не придем", "не сможем", "Не получится прийти",
                 "не сможем прийти, отменяйте")) {
             assertThat(GuestAgreement.asksToCancel(words)).as(words).isTrue();
         }
@@ -59,7 +59,7 @@ class GuestAgreementTest {
     @Test
     void aQuestionANegationOrAMoveIsNotACancellation() {
         for (String words : java.util.Arrays.asList(null, "", "отменить?", "А можно отменить бронь?", "не надо отменять",
-                "Не отменяйте", "отмена", "да", "не сможем к 19, давайте в 20", "не придём в 19", "Не сможем, перенесите",
+                "Не отменяйте", "отмена", "это не отмена брони", "не надо отмену брони", "да", "не сможем к 19, давайте в 20", "не придём в 19", "Не сможем, перенесите",
                 "не получится вовремя", "Придём")) {
             assertThat(GuestAgreement.asksToCancel(words)).as(String.valueOf(words)).isFalse();
         }
@@ -68,10 +68,10 @@ class GuestAgreementTest {
     @Test
     void aCancellationNeedsTheGuestsRequestOrAYesToThatOffer() {
         assertThat(GuestAgreement.of("отмените бронь", List.of()).allowsCancel(42L)).isTrue();
-        assertThat(GuestAgreement.of("да", List.of(), List.of(42L)).allowsCancel(42L)).isTrue();
-        assertThat(GuestAgreement.of("да", List.of(), List.of(7L)).allowsCancel(42L)).isFalse();
+        assertThat(GuestAgreement.of("да", List.of(), List.of(42L), List.of()).allowsCancel(42L)).isTrue();
+        assertThat(GuestAgreement.of("да", List.of(), List.of(7L), List.of()).allowsCancel(42L)).isFalse();
         assertThat(GuestAgreement.of("да", List.of(AT_SEVEN)).allowsCancel(42L)).isFalse();
-        assertThat(GuestAgreement.of("отменить?", List.of(), List.of(42L)).allowsCancel(42L)).isFalse();
+        assertThat(GuestAgreement.of("отменить?", List.of(), List.of(42L), List.of()).allowsCancel(42L)).isFalse();
         assertThat(GuestAgreement.NONE.allowsCancel(42L)).isFalse();
     }
 

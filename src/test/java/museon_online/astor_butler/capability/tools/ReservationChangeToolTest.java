@@ -15,6 +15,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,12 +48,24 @@ class ReservationChangeToolTest {
                 new GuestJourneyProperties());
     }
 
+    /** The guest said «да» to this change, offered in the venue's previous answer. */
+    private static GuestAgreement yesTo(GuestAgreement.Change change) {
+        return GuestAgreement.of("да", List.of(), List.of(), List.of(change));
+    }
+
     @Test
     void withoutTheGuestsYesNothingChangesAndTheChangeIsNamed() {
         Map<String, GuestAgreement> agreements = new LinkedHashMap<>();
         agreements.put("no agreement (a REST call)", null);
         agreements.put("nothing said yet", GuestAgreement.NONE);
         agreements.put("a question", GuestAgreement.of("а на 20:30 можно?", List.of()));
+        // A yes is only for the change the venue offered just before: the same booking, time and party size.
+        agreements.put("a yes to a table", CapabilityFixtures.AGREED);
+        agreements.put("a yes to another time", yesTo(new GuestAgreement.Change(41L, null, LocalTime.of(21, 0), 3)));
+        agreements.put("a yes to the time alone", yesTo(new GuestAgreement.Change(41L, null, LocalTime.of(20, 30), null)));
+        agreements.put("a yes to another booking", yesTo(new GuestAgreement.Change(40L, null, LocalTime.of(20, 30), 3)));
+        agreements.put("the offer without a yes", GuestAgreement.of("а у окна будет?", List.of(), List.of(),
+                List.of(new GuestAgreement.Change(41L, null, LocalTime.of(20, 30), 3))));
 
         agreements.forEach((name, agreement) -> {
             CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1", agreement),
@@ -66,9 +79,23 @@ class ReservationChangeToolTest {
     }
 
     @Test
+    void theRefusalIsTheOfferTheNextYesAnswers() {
+        CapabilityResult refused = tool.invoke(CapabilityFixtures.butler("k1", GuestAgreement.NONE),
+                Map.of("reservationId", 41, "time", "20:30", "partySize", 3));
+        GuestAgreement.Change offered = GuestAgreement.Change.of(refused.facts()).orElseThrow();
+
+        CapabilityResult changed = tool.invoke(CapabilityFixtures.butler("k2", yesTo(offered)),
+                Map.of("reservationId", 41, "time", "20:30", "partySize", 3));
+
+        assertThat(offered).isEqualTo(new GuestAgreement.Change(41L, null, LocalTime.of(20, 30), 3));
+        assertThat(changed.ok()).isTrue();
+        verify(reservations).changeByGuest(eq(41L), any());
+    }
+
+    @Test
     void movesTheTimeKeepingTheDayAndAwaitsTheHostess() {
-        // CapabilityFixtures.butler carries the guest's «да».
-        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1"), Map.of("reservationId", 41, "time", "20:30"));
+        CapabilityResult result = tool.invoke(CapabilityFixtures.butler("k1",
+                yesTo(new GuestAgreement.Change(41L, null, LocalTime.of(20, 30), null))), Map.of("reservationId", 41, "time", "20:30"));
 
         ArgumentCaptor<TableReservationChangeCommand> command = ArgumentCaptor.forClass(TableReservationChangeCommand.class);
         verify(reservations).changeByGuest(eq(41L), command.capture());

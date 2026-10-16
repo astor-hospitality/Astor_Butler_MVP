@@ -87,7 +87,7 @@ class ReservationCancelToolTest {
         agreements.put("nothing said yet", GuestAgreement.NONE);
         agreements.put("a yes to something else", CapabilityFixtures.AGREED);
         agreements.put("a question about cancelling", GuestAgreement.of("А можно отменить?", List.of()));
-        agreements.put("a yes to cancelling another booking", GuestAgreement.of("да", List.of(), List.of(7L)));
+        agreements.put("a yes to cancelling another booking", GuestAgreement.of("да", List.of(), List.of(7L), List.of()));
 
         agreements.forEach((name, agreement) -> {
             CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", agreement), Map.of("reservationId", 42));
@@ -104,7 +104,7 @@ class ReservationCancelToolTest {
         sessionHolds42();
         when(reservations.cancelByGuest(42L)).thenReturn(CapabilityFixtures.order(42L, null, TableReservationStatus.CANCELLED));
 
-        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", GuestAgreement.of("Да", List.of(), List.of(42L))),
+        CapabilityResult result = tool.invoke(CapabilityFixtures.concierge("k1", GuestAgreement.of("Да", List.of(), List.of(42L), List.of())),
                 Map.of("reservationId", 42));
 
         assertThat(result.ok()).isTrue();

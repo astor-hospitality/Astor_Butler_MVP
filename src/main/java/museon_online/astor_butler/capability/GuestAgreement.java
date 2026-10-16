@@ -19,16 +19,18 @@ import java.util.regex.Pattern;
 
 /**
  * The guest's agreement a commitment needs, taken from the turn and never from the model: whether the guest's own words
- * this turn say yes ({@link #saysYes}) or ask to cancel ({@link #asksToCancel}), the tables the venue put to the guest
- * in its previous answer ({@code proposed}) and the reservations it offered there to cancel ({@code cancellations}).
- * A table request runs only for a proposed table after a yes ({@link #covers}); a lunch order or a change only after a
- * yes; a cancellation only on the guest's own request or a yes to the offered one ({@link #allowsCancel}). Only the
- * Butler's agent builds it, from the guest's words and its own previous turn; a REST caller cannot bring one.
+ * this turn say yes ({@link #saysYes}) or ask to cancel ({@link #asksToCancel}), and what the venue put to the guest in
+ * its previous answer: the tables ({@code proposed}), the reservations offered to cancel ({@code cancellations}) and
+ * the changes offered ({@code changes}). A table request runs only for a proposed table after a yes ({@link #covers});
+ * a change only for that very offered change after a yes ({@link #allowsChange}); a lunch order only after a yes; a
+ * cancellation only on the guest's own request or a yes to the offered one ({@link #allowsCancel}). Only the Butler's
+ * agent builds it, from the guest's words and its own previous turn; a REST caller cannot bring one.
  *
  * <p>The yes is a word check, not a model's reading: any agreement word («да», «ок», «бронируйте»…), no negation and
  * no question. A false «no» costs one more question to the guest; a false «yes» still needs a proposed table.
  */
-public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels, List<Long> cancellations) {
+public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels, List<Long> cancellations,
+                             List<Change> changes) {
 
     /** The reason of the {@code NOT_ALLOWED} a commitment answers without the guest's yes. */
     public static final String NEEDS_GUEST_YES = "needs_guest_yes";
@@ -51,7 +53,8 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
     /** «Отмените», «отменить бронь»: the refusal words that cancel, and their kin. */
     private static final Set<String> CANCEL_WORDS = Set.of("отмени", "отмените", "отменить", "отменять", "отменяй", "отменяйте",
             "отменим", "отменяем");
-    /** «Отмена» alone stops the last offer; «отмена брони» asks to cancel. */
+    /** «Отмена» alone stops the last offer; «отмена брони», «сделайте отмену брони» ask to cancel. */
+    private static final Set<String> CANCEL_NOUNS = Set.of("отмена", "отмену");
     private static final Set<String> BOOKING_WORDS = Set.of("бронь", "брони", "бронирования", "заказ", "заказа", "заявки", "стола");
     /** After «не»: the guest will not come («не придём»). */
     private static final Set<String> NOT_COMING = Set.of("придем", "приду", "придут", "придет", "приедем", "приеду", "приедут");
@@ -84,26 +87,78 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
         }
     }
 
+    /**
+     * A change the venue offered: the reservation and what it would set (null stays as it was). Its facts are those of
+     * the {@code needs_guest_yes} refusal, so the offer is read back from them exactly.
+     */
+    public record Change(long reservationId, LocalDate date, LocalTime time, Integer partySize) {
+
+        /** The change from a refusal's facts; empty when unreadable. Numbers may come back from JSON as any kind. */
+        public static Optional<Change> of(Map<String, Object> facts) {
+            if (facts == null || !(facts.get("reservationId") instanceof Number id)) {
+                return Optional.empty();
+            }
+            try {
+                Object date = facts.get("date");
+                Object time = facts.get("time");
+                Object size = facts.get("partySize");
+                return Optional.of(new Change(id.longValue(),
+                        date == null ? null : LocalDate.parse(date.toString().trim()),
+                        time == null ? null : LocalTime.parse(time.toString().trim(), TIME),
+                        size == null ? null : size instanceof Number number ? Integer.valueOf(number.intValue())
+                                : Integer.valueOf(size.toString().trim())));
+            } catch (DateTimeParseException | NumberFormatException e) {
+                return Optional.empty();
+            }
+        }
+
+        /** What the change would set, as the facts write it. */
+        public Map<String, Object> facts() {
+            Map<String, Object> facts = new LinkedHashMap<>();
+            if (date != null) {
+                facts.put("date", date.toString());
+            }
+            if (time != null) {
+                facts.put("time", time.format(FACT_TIME));
+            }
+            if (partySize != null) {
+                facts.put("partySize", partySize);
+            }
+            return facts;
+        }
+    }
+
     public GuestAgreement {
         proposed = proposed == null ? List.of() : List.copyOf(proposed);
         cancellations = cancellations == null ? List.of() : List.copyOf(cancellations);
+        changes = changes == null ? List.of() : List.copyOf(changes);
     }
 
     /** Also how JSON reads one: a REST context may carry an agreement, which the controller drops anyway. */
     @JsonCreator
     public GuestAgreement(@JsonProperty("yes") boolean yes, @JsonProperty("proposed") List<Table> proposed) {
-        this(yes, proposed, false, List.of());
+        this(yes, proposed, false, List.of(), List.of());
     }
 
     /** @param guestWords the guest's own words this turn, as the guest wrote them */
     public static GuestAgreement of(String guestWords, List<Table> proposed) {
-        return of(guestWords, proposed, List.of());
+        return of(guestWords, proposed, List.of(), List.of());
     }
 
-    /** @param cancellations the reservations the venue's previous answer offered to cancel */
-    public static GuestAgreement of(String guestWords, List<Table> proposed, Collection<Long> cancellations) {
+    /**
+     * @param cancellations the reservations the venue's previous answer offered to cancel
+     * @param changes the changes it offered
+     */
+    public static GuestAgreement of(String guestWords, List<Table> proposed, Collection<Long> cancellations,
+                                    Collection<Change> changes) {
         return new GuestAgreement(saysYes(guestWords), proposed, asksToCancel(guestWords),
-                cancellations == null ? List.of() : List.copyOf(cancellations));
+                cancellations == null ? List.of() : List.copyOf(cancellations),
+                changes == null ? List.of() : List.copyOf(changes));
+    }
+
+    /** Whether the guest said yes to this very change, offered in the venue's previous answer. */
+    public boolean allowsChange(Change change) {
+        return yes && changes.contains(change);
     }
 
     /** Whether the guest said yes to this very table, offered in the venue's previous answer. */
@@ -163,9 +218,10 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
     }
 
     /**
-     * The guest's own request to cancel, as words, like the yes: a cancel word not under «не» («отмените бронь», but not
-     * «не надо отменять»), «отмена брони», or «не придём» / «не сможем (прийти)» with no time named and no move. A
-     * question («отменить?») asks, it does not request. A false «no» costs one question; the model then asks.
+     * The guest's own request to cancel, as words, like the yes: a cancel word or «отмена брони» not under «не» (one or
+     * two words before: «отмените бронь», but not «не надо отменять» or «это не отмена брони»), or «не придём» /
+     * «не сможем (прийти)» with no time named and no move. A question («отменить?») asks, it does not request. A false
+     * «no» costs one question; the model then asks.
      */
     public static boolean asksToCancel(String words) {
         if (words == null || words.isBlank() || words.contains("?")) {
@@ -178,12 +234,15 @@ public record GuestAgreement(boolean yes, List<Table> proposed, boolean cancels,
         for (int i = 0; i < said.size(); i++) {
             String word = said.get(i);
             boolean afterNot = i > 0 && "не".equals(said.get(i - 1));
+            boolean negated = afterNot || i > 1 && "не".equals(said.get(i - 2));
             if (CANCEL_WORDS.contains(word)) {
-                if (!afterNot && !(i > 1 && "не".equals(said.get(i - 2)))) {
+                if (!negated) {
                     return true;
                 }
-            } else if ("отмена".equals(word) && i + 1 < said.size() && BOOKING_WORDS.contains(said.get(i + 1))) {
-                return true;
+            } else if (CANCEL_NOUNS.contains(word)) {
+                if (!negated && i + 1 < said.size() && BOOKING_WORDS.contains(said.get(i + 1))) {
+                    return true;
+                }
             } else if (afterNot && !moves && (NOT_COMING.contains(word)
                     || CANNOT.contains(word) && (i + 1 == said.size() || COME.contains(said.get(i + 1))))) {
                 return true;
