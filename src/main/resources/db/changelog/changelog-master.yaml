@@ -103,3 +103,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-16-agent-budget.yaml
   - include:
       file: db/changelog/2026-10-16-staff-shift-schedule.yaml
+  - include:
+      file: db/changelog/2026-10-16-waiter-zones.yaml

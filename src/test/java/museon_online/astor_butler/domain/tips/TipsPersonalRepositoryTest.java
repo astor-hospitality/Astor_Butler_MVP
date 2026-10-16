@@ -99,4 +99,19 @@ class TipsPersonalRepositoryTest {
         assertThat(repository.unassign("AERIS", "2", DAY)).isFalse();
         assertThat(repository.assignments("AERIS", DAY)).extracting(TableWaiterAssignment::tableCode).containsExactly("1", "10");
     }
+
+    @Test
+    void anAutomaticPickNeverReplacesAnAssignmentAndTheManagerReplacesThePick() {
+        assertThat(repository.assignIfFree("AERIS", "5", DAY, "daniil", "auto")).isTrue();
+        assertThat(repository.assignIfFree("AERIS", "5", DAY, "anna", "auto")).isFalse();
+        assertThat(repository.waiterOfTable("AERIS", "5", DAY)).get().extracting(TipStaffMember::staffId).isEqualTo("daniil");
+        assertThat(repository.assignments("AERIS", DAY)).extracting(TableWaiterAssignment::assignedBy).containsExactly("auto");
+
+        repository.assign("AERIS", "5", DAY, "anna", "Даша (@dasha)");
+
+        assertThat(repository.waiterOfTable("AERIS", "5", DAY)).get().extracting(TipStaffMember::staffId).isEqualTo("anna");
+        assertThat(repository.assignments("AERIS", DAY)).extracting(TableWaiterAssignment::assignedBy).containsExactly("Даша (@dasha)");
+        assertThat(repository.assignIfFree("AERIS", "5", DAY, "daniil", "auto")).isFalse();
+        assertThat(repository.assignIfFree("AERIS", "5", DAY.plusDays(1), "daniil", "auto")).isTrue();
+    }
 }

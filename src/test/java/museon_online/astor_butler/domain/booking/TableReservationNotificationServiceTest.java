@@ -414,9 +414,12 @@ class TableReservationNotificationServiceTest {
         ConciergeWebhook webhook = mock(ConciergeWebhook.class);
         TableReservationNotificationService wired = wired(mock(TelegramBot.class), webhook);
         TableReservationOrder concierge = conciergeOrder();
-        // The wiring of ButlerTalkConfiguration: the capability tool's router sends the staff card through this service.
+        // The wiring of ButlerTalkConfiguration: the capability tool's router sends the staff card through the table
+        // request cards, which fall back to this service without the wishes topic.
+        museon_online.astor_butler.domain.journey.talk.TableRequestCards cards = new museon_online.astor_butler.domain.journey.talk.TableRequestCards(
+                mock(ObjectProvider.class), wired, true, true, "", "");
         museon_online.astor_butler.domain.journey.talk.TableRequestRouter router = new museon_online.astor_butler.domain.journey.talk.TableRequestRouter(
-                id -> Optional.of(concierge), (table, day) -> Optional.of("Ольга"), wired::notifyStaffGuestRequest,
+                id -> Optional.of(concierge), (table, day) -> Optional.of("Ольга"), cards,
                 java.time.Clock.systemUTC(), "Asia/Yekaterinburg");
 
         String answer = router.route(44L, museon_online.astor_butler.domain.journey.talk.TableRequest.WATER, "воду");
