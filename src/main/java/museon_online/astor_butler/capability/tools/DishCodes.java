@@ -11,7 +11,8 @@ import java.util.Optional;
 
 /**
  * A dish code as the model wrote it, read against the lunch menu. The exact code wins; otherwise the one dish whose code
- * or title the words clearly name («COLSLAW» → SALAD_COLESLAW, «PEAS_SOUP» → PEA_SOUP_SMOKED, «паста болоньезе»).
+ * or title the words clearly name («COLSLAW» → SALAD_COLESLAW, «PEAS_SOUP» → PEA_SOUP_SMOKED, «drink_mors» →
+ * CRANBERRY_MORS, «паста болоньезе»). Course words («drink», «soup») only place the dish and are not required to match.
  * Two dishes that fit equally well, or none, give nothing: the model gets the menu codes back instead of a guess.
  */
 final class DishCodes {
@@ -26,7 +27,18 @@ final class DishCodes {
         if (offer.dish(asked.trim()).isPresent()) {
             return Optional.of(asked.trim());
         }
-        List<String> words = words(asked);
+        // A course word («drink», «soup», «салат») says where the dish is, not which: it is not required to match.
+        List<String> courseWords = new ArrayList<>();
+        for (BusinessLunchOffer.Course course : offer.courses()) {
+            courseWords.addAll(words(course.code()));
+            courseWords.addAll(words(course.title()));
+        }
+        List<String> words = new ArrayList<>();
+        for (String word : words(asked)) {
+            if (courseWords.stream().noneMatch(course -> same(word, course))) {
+                words.add(word);
+            }
+        }
         if (words.isEmpty()) {
             return Optional.empty();
         }

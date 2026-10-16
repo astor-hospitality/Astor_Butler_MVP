@@ -40,6 +40,11 @@ class DishCodesTest {
         assertThat(resolve("CHEESECAKE")).contains("CHEESECAKE_SAN_SEBASTIAN");
         assertThat(resolve("ESPRESSO")).contains("ESPRESSO");
         assertThat(resolve("SALAD_COLESLAW")).contains("SALAD_COLESLAW");
+        // Prod run 16.10, phase 2: «крем-суп и морс» came as drink_mors.
+        assertThat(resolve("drink_mors")).contains("CRANBERRY_MORS");
+        assertThat(resolve("SOUP_MUSHROOM")).contains("MUSHROOM_CREAM_SOUP");
+        assertThat(resolve("MAIN_BOLOGNESE")).contains("PASTA_BOLOGNESE");
+        assertThat(resolve("DESSERT_CHEESECAKE")).contains("CHEESECAKE_SAN_SEBASTIAN");
     }
 
     @Test
@@ -53,6 +58,8 @@ class DishCodesTest {
     @Test
     void neverGuessesBetweenDishesOrOutsideTheMenu() {
         assertThat(resolve("SOUP")).isEmpty();
+        assertThat(resolve("DRINK")).isEmpty();
+        assertThat(resolve("SALAD")).isEmpty();
         assertThat(resolve("LEMONADE")).isEmpty();
         assertThat(resolve("TEA")).isEmpty();
         assertThat(resolve("PIZZA")).isEmpty();
