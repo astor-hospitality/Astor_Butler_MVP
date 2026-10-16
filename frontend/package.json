@@ -6,27 +6,31 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
-    "lint": "eslint .",
-    "test:voice": "node scripts/test-clio-voice.mjs",
-    "check:archive": "node scripts/archive-check.mjs",
-    "check:referer": "node scripts/referer-check.mjs",
-    "check:referer:build": "node scripts/referer-check.mjs --build"
+    "lint": "eslint",
+    "typecheck": "next typegen && tsc --noEmit",
+    "media:manifest": "node scripts/media-manifest.mjs",
+    "media:check": "node scripts/media-manifest.mjs --check",
+    "media:upload-plan": "node scripts/media-upload-plan.mjs"
   },
   "dependencies": {
-    "framer-motion": "^12.0.0",
-    "gsap": "^3.12.7",
-    "lenis": "^1.1.20",
-    "lucide-react": "^0.468.0",
-    "next": "^15.1.6",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@gsap/react": "^2.1.2",
+    "gsap": "^3.15.0",
+    "lenis": "^1.3.26",
+    "next": "16.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.7",
-    "@types/react": "^19.0.8",
-    "@types/react-dom": "^19.0.3",
-    "eslint": "^9.18.0",
-    "eslint-config-next": "^15.1.6",
-    "typescript": "^5.7.3"
+    "@tailwindcss/turbopack": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.4.0",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20.9"
   }
 }
