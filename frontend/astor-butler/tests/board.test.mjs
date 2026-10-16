@@ -111,3 +111,12 @@ test('the page loads board.js as a module and keeps the token out of localStorag
   assert.doesNotMatch(js, /localStorage\.setItem\([^)]*token/i);
   assert.match(js, /sessionStorage/);
 });
+
+test('signInLinkCarriesTheTokenInTheFragment', async () => {
+  const { tokenFromHash } = await import('../js/board.js');
+  assert.equal(tokenFromHash('#t=abc123'), 'abc123');
+  assert.equal(tokenFromHash('#t=a%2Bb'), 'a+b');
+  assert.equal(tokenFromHash('#visits'), null);
+  assert.equal(tokenFromHash(''), null);
+  assert.equal(tokenFromHash('#t='), null);
+});

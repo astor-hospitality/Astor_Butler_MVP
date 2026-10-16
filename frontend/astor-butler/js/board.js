@@ -1,5 +1,5 @@
 /* Astor board (/board): kanban of visits, the open visit in three lanes, metrics, architecture, lessons.
-   Closed by the board token (X-Astor-Board-Token); the token lives in sessionStorage only.
+   Closed by the board token (X-Astor-Board-Token); the token lives in sessionStorage only; a sign-in link /board/#t=<token> sets it.
    ES module: the pure functions below are imported by tests/board.test.mjs; the DOM part runs only in a browser. */
 
 export const API = "/api/board/v1";
@@ -213,6 +213,13 @@ export function streamUrl(token) {
   return API + "/stream?t=" + encodeURIComponent(token);
 }
 
+/** Sign-in link /board/#t=<token>: the fragment never reaches the server or its logs. */
+export function tokenFromHash(hash) {
+  const match = /^#t=(.+)$/.exec(hash || "");
+  if (!match) return null;
+  try { return decodeURIComponent(match[1]) || null; } catch (e) { return null; }
+}
+
 /** Reconnect delay: 2 s, doubling, at most 30 s. */
 export function nextBackoff(previous) {
   return previous ? Math.min(previous * 2, 30000) : 2000;
@@ -293,6 +300,13 @@ function startBoard() {
     setStatus("подключаюсь…");
     start();
   }
+  // A sign-in link opens the board straight away and the token leaves the address bar.
+  const linked = tokenFromHash(window.location.hash);
+  if (linked) {
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    state.token = linked;
+    store.set(TOKEN_KEY, linked);
+  }
   $("loginForm").addEventListener("submit", (event) => {
     event.preventDefault();
     const token = $("token").value.trim();
@@ -304,10 +318,10 @@ function startBoard() {
   function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
     $("theme").textContent = theme === "dark" ? "Светлая" : "Тёмная";
-    try { window.localStorage.setItem(THEME_KEY, theme); } catch (e) { /* not remembered */ }
+    try { window.sessionStorage.setItem(THEME_KEY, theme); } catch (e) { /* not remembered */ }
   }
   let savedTheme = null;
-  try { savedTheme = window.localStorage.getItem(THEME_KEY); } catch (e) { /* default */ }
+  try { savedTheme = window.sessionStorage.getItem(THEME_KEY); } catch (e) { /* default */ }
   applyTheme(savedTheme === "light" ? "light" : "dark");
   $("theme").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
 
