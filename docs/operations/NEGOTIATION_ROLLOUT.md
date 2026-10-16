@@ -32,7 +32,7 @@ SQL ниже — через `docker exec -i astor_postgres_test sh -c 'psql -U "
 | 3 | `ASTOR_VISIT_SUMMARY_ENABLED=true`, `GIGACHAT_MAX_TOKENS` ≥ 700 | — | ничего: саммари визита и уроки агентам ждут менеджера на табло | через ≤10 мин после закрытого визита: `SELECT visit_id, left(outcome, 60), created_at FROM visit_summaries ORDER BY created_at DESC LIMIT 5;`; `SELECT side, status, left(text, 60) FROM agent_lessons ORDER BY id DESC LIMIT 5;` — `PROPOSED`; в логах нет `Visit summary parked` и `not the expected JSON` |
 | 4 | `ASTOR_CAPABILITIES_ENABLED=true` | — | ничего: новые эндпоинты | `docker run --rm --network edge curlimages/curl -sS -H "X-Astor-Internal-Token: $I" http://astor-api-gateway:8080/api/capabilities/v1/tools` — список инструментов; без токена — 404 от шлюза; `SELECT count(*) FROM capability_calls;` растёт только при вызовах |
 | 5 | `ASTOR_CONCIERGE_WEBHOOK_ENABLED=true`, `ASTOR_WEBHOOK_SECRET` | `ASTOR_WEBHOOK_SECRET` (то же значение) | ничего, пока нет брони из чата Консьержа | тестовое событие (ниже): подписанное — `404` (бронь неизвестна, подпись принята), без подписи — `401`, без секрета у Консьержа — `503` |
-| 6 | `ASTOR_AGENT_ENABLED=true`, `ASTOR_AGENT_ALLOWLIST=<id>,<id>` | `AGENT_ENABLED=true`, `AGENT_ALLOWLIST=<id>,<id>`, `LLM_PROVIDER=gigachat` | только чаты из списка: Консьерж договаривается с Батлером, в чате два голоса (`AERIS · Батлер: …`) | тестовый чат пишет Консьержу «где пообедать у Мамина-Сибиряка» → ответ с вариантами; бронь → строка `AERIS · Батлер: …`, карточка у хостес; в ленте `TOOL_CALL`/`TOOL_RESULT` по каждому вызову; чат вне списка — прежний поток |
+| 6 | `ASTOR_AGENT_ENABLED=true`, `ASTOR_AGENT_ALLOWLIST=<id>,<id>` (живой тест с гостями — `ASTOR_AGENT_ALLOWLIST=*`; откат — `ASTOR_AGENT_ENABLED=false`) | `AGENT_ENABLED=true`, `AGENT_ALLOWLIST=<id>,<id>`, `LLM_PROVIDER=gigachat` | только чаты из списка: Консьерж договаривается с Батлером, в чате два голоса (`AERIS · Батлер: …`) | тестовый чат пишет Консьержу «где пообедать у Мамина-Сибиряка» → ответ с вариантами; бронь → строка `AERIS · Батлер: …`, карточка у хостес; в ленте `TOOL_CALL`/`TOOL_RESULT` по каждому вызову; чат вне списка — прежний поток |
 
 ### Перед шагом 6: модель агента умеет функции на нашем ключе
 
@@ -92,6 +92,9 @@ ASTOR_CONCIERGE_WEBHOOK_URL=http://astor-concierge-concierge-1:8096
 ASTOR_WEBHOOK_SECRET=<openssl rand -hex 32; одинаковый в обоих сервисах>
 ASTOR_AGENT_ENABLED=true
 ASTOR_AGENT_ALLOWLIST=<chat id Михаила>,<chat id Тариэля>
+# Живой тест с гостями, чьи chat id заранее неизвестны: ASTOR_AGENT_ALLOWLIST=* (или all; «*,123» — тоже все).
+# Только личные чаты: группы (отрицательный id) агент не берёт и со «*». Пустой список — по-прежнему никто.
+# Откат: ASTOR_AGENT_ENABLED=false и пересоздать контейнер — бот Батлера и /api/negotiation/v1/turn сразу уходят в прежний поток.
 # Проверено 14.10 на ключе скоупа GIGACHAT_API_PERS: GigaChat-3-Pro отвечает 404 «No such model»,
 # GigaChat-2-Pro возвращает корректный function_call. Перед шагом 6 — проверка ниже.
 ASTOR_AGENT_MODEL=GigaChat-2-Pro
@@ -162,6 +165,8 @@ docker run --rm --network astor-butler_default curlimages/curl -sS -o /dev/null 
    `SELECT DISTINCT chat_id FROM guest_visits WHERE chat_id IS NOT NULL ORDER BY 1;` и сверить с ними.
 2. Вписать оба id через запятую в `ASTOR_AGENT_ALLOWLIST` (Батлер) и `AGENT_ALLOWLIST` (Консьерж), пересоздать оба
    контейнера. Пустой список — агент не отвечает никому, даже с `*_AGENT_ENABLED=true`.
+   Для живого теста с гостями, которых нет в списке, у Батлера — `ASTOR_AGENT_ALLOWLIST=*` (все личные чаты, группы —
+   никогда); откат — `ASTOR_AGENT_ENABLED=false`.
 3. Прогон — [scripts/e2e/negotiation-run.txt](../../scripts/e2e/negotiation-run.txt), 40 реплик гостя в чате **Консьержа**
    (не бота Батлера); строки `# хостес: …` — действия в рабочей группе между репликами.
 4. Расширять список — только после прогона без `FALLBACK` в ленте:
