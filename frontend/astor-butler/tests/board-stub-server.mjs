@@ -1,5 +1,6 @@
 // Local stub for the board page: serves the site and fixture answers for /api/board/v1/** (no Butler needed).
-//   node frontend/astor-butler/tests/board-stub-server.mjs [port]   → http://127.0.0.1:8095/board/
+//   node frontend/astor-butler/tests/board-stub-server.mjs [port] [legacy]   → http://127.0.0.1:8095/board/
+// "legacy" answers /today with 404, as a Butler without the manager's day does: the «Сегодня» tab then reads /visits.
 // Token: stub-board-token-0001 (fixture only). /__login stores it in sessionStorage and opens the board.
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -8,11 +9,14 @@ import { fileURLToPath } from 'node:url';
 
 const site = fileURLToPath(new URL('..', import.meta.url));
 const port = Number(process.argv[2] || 8095);
+const legacy = process.argv[3] === 'legacy';
 const TOKEN = 'stub-board-token-0001';
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
-const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+// The venue's date (Asia/Yekaterinburg, UTC+5), so the fixtures fall on the board's «today» at any hour.
+const today = new Date(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Yekaterinburg' }).format(new Date()) + 'T00:00:00Z');
 const at = (days, hh, mm) => new Date(today.getTime() + days * 86400000 + ((hh - 5) * 60 + mm) * 60000).toISOString();
+const ago = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
 
 const visits = [
   { id: 40, reservationId: 116, stage: 'REQUESTED', visitDay: at(1, 13, 30), guest: 'Андрей Л.', phone: '+7 912 ***-**-41', table: null, guestMessages: 6, lastTurnAt: at(0, 11, 2), hasSummary: false },
@@ -38,6 +42,44 @@ const turns = [
   { at: at(0, 13, 21), side: 'GUEST', channel: 'BUTLER_TG', kind: 'MESSAGE', text: 'Можно ещё хлеба?', payload: null, goal: null },
   { at: at(0, 13, 21), side: 'STAFF', channel: 'GLASSES', kind: 'STAFF_ACTION', text: 'Карточка официанту Кириллу: хлеб, стол 4', payload: null, goal: null },
 ];
+// The manager's day as Butler's rows hold it; telegramUserId and sessionId never leave the server (see /today below).
+const dayRows = [
+  { visitId: 50, reservationId: 130, venue: 'AERIS', at: at(0, 12, 30), guest: 'Андрей', table: '3', guests: 2, status: 'CONFIRMED', lunchRub: 1160, channel: 'BUTLER', waitingSince: null, stars: null },
+  { visitId: 51, reservationId: 131, venue: 'AERIS', at: at(0, 12, 45), guest: 'Сергей', table: '2', guests: 1, status: 'BILL', lunchRub: 580, channel: 'BUTLER', waitingSince: null, stars: 4 },
+  { visitId: 52, reservationId: 132, venue: 'AERIS', at: at(0, 13, 0), guest: 'Ольга', table: '7', guests: 4, status: 'WAITING', lunchRub: 2320, channel: 'CONCIERGE', waitingSince: ago(14), stars: null },
+  { visitId: 53, reservationId: 133, venue: 'AERIS', at: at(0, 13, 5), guest: 'Тест', table: null, guests: 2, status: 'WAITING', lunchRub: 99999, channel: 'BUTLER', waitingSince: ago(30), stars: null, telegramUserId: 900000123 },
+  { visitId: 42, reservationId: 118, venue: 'AERIS', at: at(0, 13, 15), guest: 'Мария', table: '4', guests: 2, status: 'BILL', lunchRub: 980, channel: 'CONCIERGE', waitingSince: null, stars: 5 },
+  { visitId: 54, reservationId: 134, venue: 'AERIS', at: at(0, 13, 30), guest: 'Дмитрий', table: null, guests: 3, status: 'WAITING', lunchRub: null, channel: 'BUTLER', waitingSince: ago(4), stars: null },
+  { visitId: 55, reservationId: 135, venue: 'AERIS', at: at(0, 13, 40), guest: 'Лиза', table: '6', guests: 2, status: 'CONFIRMED', lunchRub: 1160, channel: 'CONCIERGE', waitingSince: null, stars: 5, sessionId: 'c-uxtest-0007' },
+  { visitId: 56, reservationId: 136, venue: 'AERIS', at: at(0, 14, 0), guest: 'Игорь', table: '9', guests: 2, status: 'CANCELLED', lunchRub: 1160, channel: 'BUTLER', waitingSince: null, stars: null },
+  { visitId: 57, reservationId: 137, venue: 'AERIS', at: at(0, 19, 0), guest: 'Татьяна', table: '5', guests: 6, status: 'CONFIRMED', lunchRub: null, channel: 'CONCIERGE', waitingSince: null, stars: null },
+  { visitId: 60, reservationId: 140, venue: 'LOFT', at: at(0, 14, 30), guest: 'Павел', table: '12', guests: 2, status: 'CONFIRMED', lunchRub: 1300, channel: 'CONCIERGE', waitingSince: null, stars: null },
+  { visitId: 61, reservationId: 141, venue: 'LOFT', at: at(0, 15, 0), guest: 'Ксения', table: null, guests: 2, status: 'WAITING', lunchRub: null, channel: 'BUTLER', waitingSince: ago(2), stars: null },
+];
+// The server's rule (BoardQueries.todayRows): synthetic Telegram ids 900000001–900000999 and Concierge sessions c-uxtest-*.
+const testGuest = (row) => (row.telegramUserId >= 900000001 && row.telegramUserId <= 900000999)
+  || String(row.sessionId || '').startsWith('c-uxtest-');
+
+function managersDay(url) {
+  const venue = (url.searchParams.get('venue') || '').toUpperCase() || null;
+  const items = dayRows.filter(row => !testGuest(row) && (!venue || row.venue === venue))
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.visitId - b.visitId)
+    .map(({ telegramUserId, sessionId, ...item }) => item);
+  const live = items.filter(item => item.status !== 'CANCELLED' && item.status !== 'NO_SHOW');
+  const stars = items.map(item => item.stars).filter(value => value != null);
+  const waiting = items.filter(item => item.status === 'WAITING');
+  return {
+    from: url.searchParams.get('from'), to: url.searchParams.get('to'), venue,
+    venues: [...new Set(dayRows.map(row => row.venue))].sort(), items,
+    totals: {
+      requests: items.length, confirmed: items.filter(item => item.status === 'CONFIRMED' || item.status === 'BILL').length,
+      waiting: waiting.length, waitingOverdue: waiting.filter(item => Date.now() - Date.parse(item.waitingSince) >= 600000).length,
+      lunchRub: live.reduce((sum, item) => sum + (item.lunchRub || 0), 0),
+      ratingAvg: stars.length ? Math.round(stars.reduce((a, b) => a + b, 0) / stars.length * 10) / 10 : null, ratings: stars.length,
+    },
+  };
+}
+
 const summary = { visitId: 42, guestWanted: 'быстро пообедать вдвоём, без лука', venueOffered: '13:15 у окна, ланч заранее → подача 10 мин',
   outcome: 'бронь #118, ланч 1 160 ₽, подача за 9 минут', stuck: [], nextTimeGuest: ['предложить столик у окна сразу'], nextTimeAgents: [], createdAt: at(0, 13, 30) };
 const metrics = { visits: 8, guestMessagesAvg: 27.4, visitsWith40Plus: 1, negotiationsClosed: 6, negotiationsTotal: 8, confirmMedianSeconds: 54,
@@ -82,6 +124,7 @@ createServer(async (req, res) => {
       return req.on('close', () => clearInterval(timer));
     }
     if (route === '/visits') return send(res, 200, visits);
+    if (route === '/today') return legacy ? send(res, 404) : send(res, 200, managersDay(url));
     if (route === '/metrics') return send(res, 200, metrics);
     if (route === '/health-map') return send(res, 200, health);
     if (route === '/lessons') return send(res, 200, lessons.filter(l => l.status === 'PROPOSED'));
