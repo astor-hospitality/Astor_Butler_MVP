@@ -177,7 +177,7 @@ public class ButlerAgent {
                 turnKey(sessionId, turnOf(turn, key)), blankToNull(turn.guestName()), blankToNull(turn.guestPhone()),
                 GuestAgreement.of(turn.guestText(), history.proposed(key), history.cancellations(key),
                         history.changes(key)).withTakeaway(joined(turn.guestText(), turn.conciergeMessage()),
-                        history.lastSaid(key)), turn.conciergePosition());
+                        history.lastSaid(key)), turn.conciergePosition(), turn.guestTelegramUserId());
         // Without consent the model audit keeps no words of this turn either.
         AgentOutcome outcome = run(key, said, ctx, turn.guestPhone(), null, consent, properties.getTurnTimeoutMs());
 

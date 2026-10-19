@@ -4,6 +4,7 @@ import museon_online.astor_butler.api.common.ApiException;
 import museon_online.astor_butler.capability.CapabilityArguments;
 import museon_online.astor_butler.capability.CapabilityContext;
 import museon_online.astor_butler.capability.CapabilityResult;
+import museon_online.astor_butler.domain.booking.TableReservationCommand;
 import museon_online.astor_butler.domain.booking.TableReservationOrder;
 import museon_online.astor_butler.domain.booking.TableReservationRepository;
 import museon_online.astor_butler.domain.booking.TableReservationStatus;
@@ -19,14 +20,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Whose reservation it is, for the tools that act on one. The Butler's agent may touch only a reservation of its own
- * chat; the Concierge only one whose visit is linked to its session (its chat ids are another namespace). Anything
+ * chat; the Concierge one whose visit is linked to its session (its chat ids are another namespace), or one it made
+ * through its booking form for the very guest of this turn: channel {@link TableReservationCommand#CHANNEL_CONCIERGE}
+ * or {@link TableReservationCommand#CHANNEL_TELEGRAM} (what POST /api/bookings/table-reservations stores, it takes no
+ * channel) and the {@code telegram_user_id} the turn's {@link CapabilityContext#guestTelegramUserId()} names. Anything
  * else is {@code NOT_ALLOWED}, an unknown id {@code NOT_FOUND}.
  */
 @Component
 public class ReservationAccess {
+
+    /**
+     * The channels of a booking the Concierge made itself: its negotiation ({@code CONCIERGE}) or its booking form, whose
+     * POST /api/bookings/table-reservations stores the default {@code TELEGRAM}.
+     */
+    static final Set<String> CONCIERGE_MADE = Set.of(TableReservationCommand.CHANNEL_CONCIERGE,
+            TableReservationCommand.CHANNEL_TELEGRAM);
 
     private final TableReservationRepository orders;
     private final GuestVisitRepository visits;
@@ -117,7 +129,14 @@ public class ReservationAccess {
         if (ctx.butlerAgent()) {
             return ctx.chatId() != null && Objects.equals(ctx.chatId(), order.chatId());
         }
-        if (!CapabilityContext.CONCIERGE.equals(ctx.caller()) || ctx.sessionId() == null || ctx.sessionId().isBlank()) {
+        if (!CapabilityContext.CONCIERGE.equals(ctx.caller())) {
+            return false;
+        }
+        return linkedToSession(ctx, order) || madeForThisGuest(ctx, order);
+    }
+
+    private boolean linkedToSession(CapabilityContext ctx, TableReservationOrder order) {
+        if (ctx.sessionId() == null || ctx.sessionId().isBlank()) {
             return false;
         }
         Optional<GuestVisit> visit = visits.findByReservation(order.id());
@@ -125,6 +144,17 @@ public class ReservationAccess {
             return false;
         }
         return turns.existsLink(visit.get().id(), ctx.sessionId());
+    }
+
+    /**
+     * A booking the Concierge's form made for the guest of this turn: «Мои заявки» in its mini app are such bookings,
+     * never linked to a session, and «Изменить»/«Отменить» there came back {@code NOT_ALLOWED}. Only with the guest's
+     * Telegram user id sent and equal to the booking's; another guest's booking, or one with no user id, stays out.
+     */
+    private static boolean madeForThisGuest(CapabilityContext ctx, TableReservationOrder order) {
+        Long guest = ctx.guestTelegramUserId();
+        return guest != null && guest > 0 && guest.equals(order.telegramUserId())
+                && order.source() != null && CONCIERGE_MADE.contains(order.source());
     }
 
     /** The status as the agents read it: the hostess has not answered yet is {@code AWAITING_HOSTESS}. */

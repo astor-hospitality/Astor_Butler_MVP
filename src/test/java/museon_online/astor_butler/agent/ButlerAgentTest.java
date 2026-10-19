@@ -118,6 +118,20 @@ class ButlerAgentTest {
         assertThat(ctx.sessionId()).isEqualTo("c-1");
         assertThat(ctx.guestPhone()).isEqualTo("+79120000060");
         assertThat(ctx.idempotencyKey()).isEqualTo("c-1:1");
+        assertThat(ctx.guestTelegramUserId()).isNull();
+    }
+
+    /** The mini app's «Изменить»/«Отменить» name the guest: the tools see the Telegram user id the Concierge sent. */
+    @Test
+    void theGuestsTelegramUserIdReachesTheTools() {
+        loopAnswers(new AgentOutcome("Отменили.", List.of(), false, 0));
+        NegotiationTurn given = turn(null, "Отмените, пожалуйста, мою бронь C-12.");
+
+        agent.negotiate(new NegotiationTurn("app-r12", null, given.guestText(), given.conciergePosition(), given.guestName(),
+                given.guestPhone(), given.conciergeMessage(), "t-1", true, 777001L));
+
+        assertThat(contexts.get(0).guestTelegramUserId()).isEqualTo(777001L);
+        assertThat(contexts.get(0).sessionId()).isEqualTo("app-r12");
     }
 
     @Test
