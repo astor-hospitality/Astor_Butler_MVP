@@ -120,3 +120,78 @@ test('signInLinkCarriesTheTokenInTheFragment', async () => {
   assert.equal(tokenFromHash(''), null);
   assert.equal(tokenFromHash('#t='), null);
 });
+
+test('«Сегодня» without /today reads /visits: first names, status by stage, the venue day only, time order', async () => {
+  const { dayFromVisits } = await import('../js/board.js');
+  const window = { from: '2026-10-14T19:00:00.000Z', to: '2026-10-15T19:00:00.000Z' };
+  const items = dayFromVisits([
+    { id: 2, reservationId: 12, stage: 'SEATED', visitDay: '2026-10-15T08:15:00Z', guest: 'Мария К.', table: '4' },
+    { id: 1, reservationId: 11, stage: 'REQUESTED', visitDay: '2026-10-15T08:00:00Z', guest: 'Гость', table: null },
+    { id: 3, reservationId: 13, stage: 'AFTER', visitDay: '2026-10-15T09:00:00Z', guest: 'Пётр', table: '2' },
+    { id: 4, reservationId: 14, stage: 'NO_SHOW', visitDay: '2026-10-15T10:00:00Z', guest: 'Игорь П.', table: '9' },
+    { id: 5, reservationId: 15, stage: 'CANCELLED', visitDay: '2026-10-15T11:00:00Z', guest: 'Анна', table: null },
+    { id: 6, reservationId: 16, stage: 'CONFIRMED', visitDay: '2026-10-15T19:00:00Z', guest: 'Завтра', table: null },
+    { id: 7, reservationId: 17, stage: 'CONFIRMED', visitDay: '2026-10-14T18:59:00Z', guest: 'Вчера', table: null },
+  ], window);
+  assert.deepEqual(items.map(i => [i.guest, i.status]), [
+    ['Гость', 'WAITING'], ['Мария', 'CONFIRMED'], ['Пётр', 'BILL'], ['Игорь', 'NO_SHOW'], ['Анна', 'CANCELLED']]);
+  assert.equal(items[1].table, '4');
+  assert.equal(items[1].lunchRub, null, 'what /visits does not hold stays empty, not zero');
+  assert.equal(items[1].channel, null);
+  assert.equal(items[1].guests, null);
+});
+
+test('day counters: confirmed counts the bill, waiting over 10 minutes is overdue, cancelled lunches earn nothing', async () => {
+  const { dayTotals, dayCounters, waitingMinutes, isOverdue } = await import('../js/board.js');
+  const now = new Date('2026-10-15T09:00:00Z');
+  const items = [
+    { status: 'WAITING', waitingSince: '2026-10-15T08:50:00Z', lunchRub: 1160, stars: null, channel: 'BUTLER' },
+    { status: 'WAITING', waitingSince: '2026-10-15T08:51:00Z', lunchRub: null, stars: null, channel: 'CONCIERGE' },
+    { status: 'CONFIRMED', waitingSince: null, lunchRub: 980, stars: 5, channel: 'CONCIERGE' },
+    { status: 'BILL', waitingSince: null, lunchRub: 580, stars: 4, channel: 'BUTLER' },
+    { status: 'CANCELLED', waitingSince: null, lunchRub: 1160, stars: null, channel: 'BUTLER' },
+  ];
+  assert.equal(waitingMinutes(items[0], now), 10);
+  assert.equal(isOverdue(items[0], now), true);
+  assert.equal(isOverdue(items[1], now), false);
+  assert.equal(waitingMinutes(items[2], now), null);
+  const totals = dayTotals(items, now);
+  assert.deepEqual(totals, { requests: 5, confirmed: 2, waiting: 2, overdue: 1, lunchRub: 2720, ratingAvg: 4.5, ratings: 2 });
+  const tiles = dayCounters(totals);
+  assert.deepEqual(tiles.map(t => t.label),
+    ['Заявок', 'Подтверждено', 'Ждут ответа хостес', 'Выручка ланча', 'Оценка гостей']);
+  const byKey = Object.fromEntries(tiles.map(t => [t.key, t]));
+  assert.equal(byKey.waiting.alert, true);
+  assert.equal(byKey.waiting.note, 'дольше 10 минут: 1');
+  assert.equal(byKey.lunch.value, '2 720 ₽');
+  assert.equal(byKey.rating.value, '4,5');
+  assert.equal(byKey.rating.note, 'средняя из 2 оценок');
+  assert.equal(dayCounters({ ...totals, ratings: 1 }).at(-1).note, 'средняя из 1 оценки');
+  const limited = dayCounters(dayTotals(items.map(i => ({ ...i, waitingSince: null })), now), { full: false });
+  assert.deepEqual(limited.map(t => t.key), ['requests', 'confirmed', 'waiting'], 'a server without /today: no lunch, no rating');
+  assert.equal(limited[2].alert, false);
+});
+
+test('the day asks /today for one venue or for all; first names and plurals for the hall', async () => {
+  const { dayPath, firstName, plural, DAY_STATUS, DAY_CHANNEL } = await import('../js/board.js');
+  const window = { from: '2026-10-14T19:00:00.000Z', to: '2026-10-15T19:00:00.000Z' };
+  assert.equal(dayPath(window, 'AERIS'),
+    '/today?from=2026-10-14T19%3A00%3A00.000Z&to=2026-10-15T19%3A00%3A00.000Z&venue=AERIS');
+  assert.equal(dayPath(window, null), '/today?from=2026-10-14T19%3A00%3A00.000Z&to=2026-10-15T19%3A00%3A00.000Z');
+  assert.equal(firstName('Мария К.'), 'Мария');
+  assert.equal(firstName(''), 'Гость');
+  assert.deepEqual([1, 2, 5, 11, 22].map(n => plural(n, ['гость', 'гостя', 'гостей'])), ['гость', 'гостя', 'гостей', 'гостей', 'гостя']);
+  assert.deepEqual(Object.values(DAY_STATUS).map(s => s.label), ['ждёт хостес', 'подтверждена', 'счёт', 'отменена', 'не пришёл']);
+  assert.deepEqual(DAY_CHANNEL, { CONCIERGE: 'Консьерж', BUTLER: 'бот ресторана' });
+});
+
+test('«Сегодня» only reads: the tab never posts and keeps the token out of localStorage', () => {
+  const js = readFileSync(new URL('../js/board.js', import.meta.url), 'utf8');
+  const day = js.slice(js.indexOf('// ---- today: the shift manager'), js.indexOf('// ---- health ----'));
+  assert.ok(day.length > 0);
+  assert.doesNotMatch(day, /method:\s*"POST"/);
+  assert.doesNotMatch(js, /localStorage\.setItem\([^)]*TOKEN/);
+  const html = readFileSync(new URL('../board/index.html', import.meta.url), 'utf8');
+  assert.match(html, /data-tab="today"[^>]*>Сегодня</);
+  for (const tab of ['today', 'visits', 'metrics', 'arch', 'lessons']) assert.match(html, new RegExp('id="tab-' + tab + '"'));
+});
