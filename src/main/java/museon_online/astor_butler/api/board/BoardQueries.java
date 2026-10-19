@@ -38,9 +38,14 @@ public class BoardQueries {
     /** Concierge sessions of UX tests. */
     static final String TEST_SESSION_PREFIX = "c-uxtest-";
     private static final String TODAY_TIME = "COALESCE(r.requested_start_at, v.visit_day, v.opened_at)";
-    /** A test guest: a synthetic id on the reservation or the visit, or a UX-test Concierge session in the visit's ledger. */
+    /** «Тест» or «Test» as a whole word of the guest name (prod autotests under real accounts); «Тестов» is a real guest. */
+    private static final String TEST_NAME = testWord("ТЕСТ") + " OR " + testWord("TEST");
+    /**
+     * A test guest: a synthetic id on the reservation or the visit, «Тест» in the guest name, or a UX-test Concierge
+     * session in the visit's ledger.
+     */
     private static final String TEST_GUEST = "(" + testId("r.telegram_user_id") + " OR " + testId("r.chat_id") + " OR "
-            + testId("v.chat_id") + " OR EXISTS (SELECT 1 FROM visit_turns s WHERE s.visit_id = v.id AND s.session_id LIKE '"
+            + testId("v.chat_id") + " OR " + TEST_NAME + " OR EXISTS (SELECT 1 FROM visit_turns s WHERE s.visit_id = v.id AND s.session_id LIKE '"
             + TEST_SESSION_PREFIX + "%'))";
 
     private final JdbcTemplate jdbc;
@@ -123,6 +128,12 @@ public class BoardQueries {
     public List<String> venues(Instant since) {
         return jdbc.queryForList("SELECT DISTINCT venue_code FROM guest_visits WHERE " + VISIT_TIME.replace("v.", "")
                 + " >= ? ORDER BY venue_code", String.class, ts(since));
+    }
+
+    private static String testWord(String word) {
+        String name = "UPPER(COALESCE(r.guest_name, ''))";
+        return "(" + name + " = '" + word + "' OR " + name + " LIKE '" + word + " %' OR " + name + " LIKE '% " + word
+                + "' OR " + name + " LIKE '% " + word + " %')";
     }
 
     private static String testId(String column) {

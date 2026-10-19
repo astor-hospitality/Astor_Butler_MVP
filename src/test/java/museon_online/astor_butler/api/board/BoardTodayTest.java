@@ -101,13 +101,16 @@ class BoardTodayTest {
         long conciergeVisit = database.visit(concierge, "AERIS", "CONFIRMED", null, NOW);
         database.lunchBill(concierge, 500_000L, null);
         database.sessionTurn(conciergeVisit, "c-uxtest-0042", NOW);
+        booking("Тест Astor", "CONFIRMED", "TELEGRAM", 2, 7L, LUNCH, NOW, null, "AERIS", "CONFIRMED");
+        booking("Astor TEST", "CONFIRMED", "TELEGRAM", 2, 8L, LUNCH, NOW, null, "AERIS", "CONFIRMED");
+        booking("Тестов", "CONFIRMED", "TELEGRAM", 2, 9L, LUNCH, NOW, null, "AERIS", "CONFIRMED");
         long realSession = database.booking("Консьерж", "CONFIRMED", "CONCIERGE", 2, null, null, LUNCH, NOW, null);
         database.sessionTurn(database.visit(realSession, "AERIS", "CONFIRMED", null, NOW), "c-7f3a", NOW);
 
         BoardToday.Day day = today.day(DAY_START, DAY_END, null);
 
-        assertThat(day.items()).extracting(Item::guest).containsExactlyInAnyOrder("Настоящий", "Тоже", "Консьерж");
-        assertThat(day.totals().requests()).isEqualTo(3);
+        assertThat(day.items()).extracting(Item::guest).containsExactlyInAnyOrder("Настоящий", "Тоже", "Тестов", "Консьерж");
+        assertThat(day.totals().requests()).isEqualTo(4);
         assertThat(day.totals().waiting()).isZero();
         assertThat(day.totals().lunchRub()).isZero();
     }
