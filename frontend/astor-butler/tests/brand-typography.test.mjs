@@ -54,13 +54,17 @@ test('site stylesheets take the family and weights from the brand tokens', () =>
   }
 });
 
-test('c3ag Next.js layout loads the same family as the brand tokens', () => {
-  const tokens = readFileSync(source, 'utf8');
-  const family = /--brand-font-family:\s*"([^"]+)"/.exec(tokens)?.[1];
-  assert.ok(family, 'first family in --brand-font-family must be quoted');
-  const layout = readFileSync(join(repo, 'frontend', 'app', 'layout.tsx'), 'utf8');
-  const viaGoogle = new RegExp(String.raw`import\s*\{[^}]*\b${family}\b[^}]*\}\s*from\s*["']next/font/google["']`);
-  const viaLocal = /localFont\(/.test(layout) && new RegExp(String.raw`src:[^}]*${family}`).test(layout);
-  assert.ok(viaGoogle.test(layout) || viaLocal,
-    `frontend/app/layout.tsx must load "${family}" via next/font/google or localFont (see design-system/brand/README.md)`);
+// c3ag.ru is now the C3 studio site (frontend/src): it has the studio's own face, not the Astor brand tokens, and loads
+// it from the media storage (S3) by @font-face in one file, src/app/fonts.ts. The guard keeps that in one place and
+// keeps font services out (see frontend/DEPLOY_C3_SITE.md).
+test('c3ag site declares its faces in src/app/fonts.ts only and uses no font service', () => {
+  const app = join(repo, 'frontend', 'src', 'app');
+  const fonts = readFileSync(join(app, 'fonts.ts'), 'utf8');
+  assert.match(fonts, /@font-face/, 'frontend/src/app/fonts.ts must declare the faces with @font-face');
+  for (const file of ['layout.tsx', 'globals.css', 'fonts.ts']) {
+    const text = readFileSync(join(app, file), 'utf8');
+    assert.doesNotMatch(text, /fonts\.googleapis\.com|next\/font\/google/, `frontend/src/app/${file}: no font service`);
+  }
+  const css = readFileSync(join(app, 'globals.css'), 'utf8');
+  assert.doesNotMatch(css, /@font-face/, 'frontend/src/app/globals.css: faces belong in fonts.ts only');
 });
