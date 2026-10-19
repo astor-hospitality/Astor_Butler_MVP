@@ -8,6 +8,8 @@ import museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decisi
 import museon_online.astor_butler.domain.booking.external.ExternalReservationResult;
 import museon_online.astor_butler.domain.entry.GuestEntryService;
 import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
+import museon_online.astor_butler.domain.roster.StaffRole;
+import museon_online.astor_butler.domain.roster.StaffRoster;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
 import museon_online.astor_butler.integration.concierge.ConciergeEvent;
 import museon_online.astor_butler.integration.concierge.ConciergeWebhook;
@@ -30,6 +32,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -129,6 +132,17 @@ public class TableReservationNotificationService {
     }
 
     /**
+     * Who is on shift by the confirmed schedule from the «График» topic: one line on the new-request card naming the
+     * hostess and the manager. Optional so the constructor stays; knows nobody while the schedule is off.
+     */
+    private StaffRoster staffRoster;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setStaffRoster(StaffRoster staffRoster) {
+        this.staffRoster = staffRoster;
+    }
+
+    /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
      */
@@ -137,7 +151,7 @@ public class TableReservationNotificationService {
         String chatId = hostessChatId(order);
         Message sent = send(
                 chatId,
-                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync) + handoffLine(order) + preorderLine(order) + modeLine(order, decision),
+                hostessApprovalRequestText(order) + externalSyncLine(order, externalSync) + handoffLine(order) + preorderLine(order) + shiftLine() + modeLine(order, decision),
                 approvalKeyboard(order.id()),
                 "hostess-approval-request"
         );
@@ -859,6 +873,37 @@ public class TableReservationNotificationService {
 
     void setPreorderMark(LunchPreorderMark preorderMark) {
         this.preorderMark = preorderMark;
+    }
+
+    /**
+     * «На смене: хостес Мария; менеджер Марина» — the hostess and the manager the confirmed schedule puts on shift now,
+     * names only. Empty while the schedule is off, knows nobody of the two roles now or cannot be read, so the card
+     * stays as it was.
+     */
+    String shiftLine() {
+        if (staffRoster == null) {
+            return "";
+        }
+        List<StaffRoster.OnShift> shifts;
+        try {
+            shifts = staffRoster.onShiftNow();
+        } catch (RuntimeException e) {
+            log.warn("Hostess card: the shift schedule could not be read: {}", e.toString());
+            return "";
+        }
+        Map<StaffRole, List<String>> byRole = new EnumMap<>(StaffRole.class);
+        for (StaffRoster.OnShift shift : shifts) {
+            if ((shift.role() == StaffRole.HOSTESS || shift.role() == StaffRole.MANAGER)
+                    && shift.displayName() != null && !shift.displayName().isBlank()) {
+                byRole.computeIfAbsent(shift.role(), role -> new ArrayList<>()).add(escape(shift.displayName().trim()));
+            }
+        }
+        if (byRole.isEmpty()) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        byRole.forEach((role, people) -> parts.add(role.label(people.size()) + " " + String.join(", ", people)));
+        return "\n<b>На смене:</b> " + String.join("; ", parts) + "\n";
     }
 
     private String hostessText(TableReservationOrder order) {
