@@ -32,6 +32,21 @@ public class BoardQueries {
     private static final String SABY_FAILED = "(outcome <> 'OK' OR http_status < 200 OR http_status >= 300)";
     private static final TypeReference<Map<String, Object>> MAP = new TypeReference<>() {
     };
+    /** Synthetic Telegram ids of UX tests. */
+    static final long TEST_ID_FROM = 900_000_001L;
+    static final long TEST_ID_TO = 900_000_999L;
+    /** Concierge sessions of UX tests. */
+    static final String TEST_SESSION_PREFIX = "c-uxtest-";
+    private static final String TODAY_TIME = "COALESCE(r.requested_start_at, v.visit_day, v.opened_at)";
+    /** «Тест» or «Test» as a whole word of the guest name (prod autotests under real accounts); «Тестов» is a real guest. */
+    private static final String TEST_NAME = testWord("ТЕСТ") + " OR " + testWord("TEST");
+    /**
+     * A test guest: a synthetic id on the reservation or the visit, «Тест» in the guest name, or a UX-test Concierge
+     * session in the visit's ledger.
+     */
+    private static final String TEST_GUEST = "(" + testId("r.telegram_user_id") + " OR " + testId("r.chat_id") + " OR "
+            + testId("v.chat_id") + " OR " + TEST_NAME + " OR EXISTS (SELECT 1 FROM visit_turns s WHERE s.visit_id = v.id AND s.session_id LIKE '"
+            + TEST_SESSION_PREFIX + "%'))";
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -47,6 +62,13 @@ public class BoardQueries {
     }
 
     public record VisitTotals(long visits, double guestMessagesAvg, long visitsWith40Plus) {
+    }
+
+    /** One booking or lunch order of the manager's day: the visit, its reservation, its lunch bill and the guest's stars. */
+    public record TodayRow(long visitId, long reservationId, String venue, String stage, Instant visitDay, Instant openedAt,
+                           String reservationStatus, String source, Integer partySize, String guestName, Instant startAt,
+                           Instant createdAt, String table, boolean lunch, Long lunchEstimateMinor, Long lunchVenueMinor,
+                           Integer stars) {
     }
 
     public record ModelTotals(long calls, long errors) {
@@ -67,6 +89,55 @@ public class BoardQueries {
                         instant(rs, "visit_day"), rs.getString("guest_name"), rs.getString("phone"), rs.getString("table_name"),
                         rs.getInt("guest_messages"), instant(rs, "last_turn_at")),
                 ts(from), ts(to));
+    }
+
+    /**
+     * The window's bookings and lunch orders by their start (the reservation's time, else the visit's day), oldest first;
+     * test guests never come back: synthetic Telegram ids {@value #TEST_ID_FROM}–{@value #TEST_ID_TO} and Concierge
+     * sessions {@code c-uxtest-*}.
+     *
+     * @param venue a venue code, or null for every venue
+     */
+    public List<TodayRow> todayRows(Instant from, Instant to, String venue) {
+        List<Object> args = new ArrayList<>(List.of(ts(from), ts(to)));
+        String venueFilter = "";
+        if (venue != null) {
+            venueFilter = "AND v.venue_code = ? ";
+            args.add(venue);
+        }
+        return jdbc.query("SELECT v.id, v.reservation_id, v.venue_code, v.stage, v.visit_day, v.opened_at, r.status, r.source, "
+                        + "r.party_size, r.guest_name, r.requested_start_at, r.created_at, "
+                        + "COALESCE(t.display_name, t.table_code) AS table_name, b.id AS lunch_bill, b.estimate_minor, "
+                        + "b.venue_amount_minor, (SELECT max(w.stars) FROM visit_reviews w JOIN guest_bills wb ON wb.id = w.bill_id "
+                        + "WHERE wb.table_reservation_id = v.reservation_id) AS stars "
+                        + "FROM guest_visits v LEFT JOIN table_reservation_orders r ON r.id = v.reservation_id "
+                        + "LEFT JOIN venue_tables t ON t.id = r.table_id "
+                        + "LEFT JOIN guest_bills b ON b.table_reservation_id = v.reservation_id AND b.kind = 'BUSINESS_LUNCH' "
+                        + "WHERE " + TODAY_TIME + " >= ? AND " + TODAY_TIME + " < ? " + venueFilter + "AND NOT " + TEST_GUEST
+                        + " ORDER BY " + TODAY_TIME + ", v.id LIMIT " + MAX_VISITS,
+                (rs, row) -> new TodayRow(rs.getLong("id"), rs.getLong("reservation_id"), rs.getString("venue_code"),
+                        rs.getString("stage"), instant(rs, "visit_day"), instant(rs, "opened_at"), rs.getString("status"),
+                        rs.getString("source"), rs.getObject("party_size", Integer.class), rs.getString("guest_name"),
+                        instant(rs, "requested_start_at"), instant(rs, "created_at"), rs.getString("table_name"),
+                        rs.getObject("lunch_bill") != null, rs.getObject("estimate_minor", Long.class),
+                        rs.getObject("venue_amount_minor", Long.class), rs.getObject("stars", Integer.class)),
+                args.toArray());
+    }
+
+    /** Venue codes with visits since this instant, for the board's venue picker. */
+    public List<String> venues(Instant since) {
+        return jdbc.queryForList("SELECT DISTINCT venue_code FROM guest_visits WHERE " + VISIT_TIME.replace("v.", "")
+                + " >= ? ORDER BY venue_code", String.class, ts(since));
+    }
+
+    private static String testWord(String word) {
+        String name = "UPPER(COALESCE(r.guest_name, ''))";
+        return "(" + name + " = '" + word + "' OR " + name + " LIKE '" + word + " %' OR " + name + " LIKE '% " + word
+                + "' OR " + name + " LIKE '% " + word + " %')";
+    }
+
+    private static String testId(String column) {
+        return "COALESCE(" + column + ", 0) BETWEEN " + TEST_ID_FROM + " AND " + TEST_ID_TO;
     }
 
     public VisitTotals visitTotals(Instant from, Instant to) {
