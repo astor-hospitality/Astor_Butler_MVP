@@ -2,217 +2,294 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Astor Assist — система гостевого внимания</title>
-<meta name="description" content="Astor помогает ресторанам, отелям и событиям внимательнее работать с гостями: принимать запросы, помнить контекст и передавать команде понятные действия.">
-<meta property="og:title" content="Astor Assist — система гостевого внимания">
-<meta property="og:description" content="Сервис, понятные сценарии и бережная работа с гостевыми запросами.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Astor – бизнес-ланч и стол в Telegram за пару сообщений</title>
+<meta name="description" content="Гость пишет ИИ-консьержу в Telegram, консьерж договаривается с ботом ресторана, хостес только подтверждает. Сейчас работает в гастробаре AERIS.">
+<link rel="canonical" href="https://astor-ai.ru/">
+<meta property="og:title" content="Astor – бизнес-ланч и стол в Telegram за пару сообщений">
+<meta property="og:description" content="ИИ-консьерж гостя договаривается с ботом ресторана, хостес только подтверждает.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
-<meta property="og:image:secure_url" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
+<meta property="og:url" content="https://astor-ai.ru/">
+<meta property="og:image" content="https://astor-ai.ru/assets/og-astor-assist.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Astor Assist — система гостевого внимания">
+<meta property="og:image:alt" content="Astor – система гостевого внимания">
 <meta property="og:locale" content="ru_RU">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
-<meta name="theme-color" content="#0b0a08">
+<meta name="twitter:image" content="https://astor-ai.ru/assets/og-astor-assist.png">
+<meta name="theme-color" content="#080a0d">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=20260707-aa">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="css/brand-typography.css">
-<link rel="stylesheet" href="css/style.css">
-<noscript><style>
-  .reveal, .rise, .title-word { opacity: 1 !important; transform: none !important; filter: none !important; }
-  .letterbox, .grain, .film-progress, .hero-dust { display: none !important; }
-</style></noscript>
+<link rel="stylesheet" href="css/story.css">
 </head>
 <body>
 
 <a class="skip-link" href="#main">Перейти к содержанию</a>
 
-<div class="letterbox letterbox-top" aria-hidden="true"></div>
-<div class="letterbox letterbox-bottom" aria-hidden="true"></div>
-<div class="grain" aria-hidden="true"></div>
-<div class="film-progress" aria-hidden="true"><span id="filmProgressBar"></span></div>
-
-<div class="cursor-key" id="cursorKey" aria-hidden="true">
-  <svg viewBox="0 0 48 48" width="34" height="34">
-    <g fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round">
-      <circle cx="15" cy="15" r="7.5"/>
-      <path d="M20.5 20.5 L38 38"/>
-      <path d="M31 31 L36 26"/>
-      <path d="M35 35 L40 30"/>
-    </g>
-  </svg>
-</div>
-<div class="ripple-layer" id="rippleLayer" aria-hidden="true"></div>
-<button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему" aria-pressed="false">
-  <span class="theme-toggle-icon" aria-hidden="true"></span>
-  <span class="theme-toggle-text">Светлая тема</span>
-</button>
-
-<header class="hero hero-platform" id="hero">
-  <div class="hero-bg" aria-hidden="true"></div>
-  <canvas class="hero-dust" id="heroDust" aria-hidden="true"></canvas>
-  <div class="hero-inner">
-    <div class="hero-brand rise" style="--d:0" aria-label="Astor Assist">
-      <span class="brand-monogram" aria-hidden="true">AA</span>
-      <span class="hero-brand-name">Astor Assist</span>
-    </div>
-
-    <h1 class="hero-hook">
-      <span class="hook-line rise" style="--d:1">Гостеприимство начинается</span>
-      <span class="hook-line hook-accent rise" style="--d:2">до первого слова гостя.</span>
-    </h1>
-
-    <p class="hero-sub rise" style="--d:3">Astor помогает ресторанам, отелям, организаторам событий и их командам внимательнее принимать гостей: вести запросы, помнить контекст и передавать людям то, что уже можно делать.</p>
-
-    <div class="hero-cta rise" style="--d:4">
-      <a href="astor_butler/" class="btn btn-quiet">Для заведений</a>
-      <a href="astor_concierge/" class="btn btn-quiet">Для событий</a>
-      <a href="astor_glass/" class="btn btn-quiet">Для команды</a>
-    </div>
+<header class="top">
+  <div class="wrap top-row">
+    <a class="mark" href="./" aria-label="Astor&nbsp;– на главную">
+      <span class="mark-ring" aria-hidden="true">A</span>
+      <span>Astor</span>
+    </a>
+    <nav class="top-nav" aria-label="Разделы страницы">
+      <a href="#how">Как это работает</a>
+      <a href="#restaurants">Для ресторанов</a>
+      <a href="#products">Продукты</a>
+    </nav>
   </div>
-
-  <button class="hero-scroll-hint rise" style="--d:5" id="scrollHint" aria-label="Прокрутить вниз">
-    <span>Выбрать направление</span>
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 9l6 6 6-6"/></svg>
-  </button>
 </header>
 
 <main id="main">
 
-<section class="section astor-choice" id="what" aria-labelledby="choice-title">
-  <p class="chapter">Три продукта</p>
-  <h2 class="section-title" id="choice-title">Один стандарт сервиса для гостя, события и команды.</h2>
-  <p class="lede">У ресторана и фестиваля разный ритм: заведение работает каждый день, а событие собирает большой поток гостей за короткое время. А у команды в смене заняты руки. Поэтому у Astor три продукта на одном основании.</p>
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="kicker">Система гостевого внимания</p>
+      <h1 id="hero-title">Бизнес-ланч или стол&nbsp;– за&nbsp;пару сообщений в&nbsp;Telegram</h1>
+      <p class="hero-lead">Гость пишет ИИ-консьержу, консьерж договаривается с&nbsp;ботом ресторана, а&nbsp;хостес только подтверждает.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://t.me/astor_concierge_bot?start=lunch_aeris" target="_blank" rel="noopener">Заказать ланч в&nbsp;AERIS</a>
+        <a class="btn btn-quiet" href="#restaurants">Для ресторанов</a>
+      </div>
+      <p class="hero-note">Работает в&nbsp;гастробаре AERIS, Екатеринбург. Бизнес-ланч&nbsp;– по&nbsp;будням с&nbsp;12:00 до&nbsp;16:00.</p>
+    </div>
 
-  <div class="product-split product-split-3">
-    <article class="product-panel reveal">
-      <p class="product-kicker">Рестораны и отели</p>
-      <h3>Astor Butler</h3>
-      <p>Дворецкий для заведения: принимает брони, отвечает по меню и правилам, собирает заявки на мероприятия, передает хостес и менеджеру понятные карточки действий.</p>
-      <ul>
-        <li>Брони столов и пожелания к посадке</li>
-        <li>Банкеты, корпоративы и частные мероприятия</li>
-        <li>Меню, винная карта, афиша и правила заведения</li>
-        <li>Интеграции с учетными и сервисными системами</li>
-      </ul>
-      <a href="astor_butler/" class="btn btn-quiet">Открыть Astor Butler</a>
-    </article>
-
-    <article class="product-panel product-panel-accent reveal">
-      <p class="product-kicker">События и городские программы</p>
-      <h3>Astor Concierge</h3>
-      <p>Консьерж для события: помогает гостям разобраться с программой, площадкой, билетами, партнерами, закрытыми зонами и обращениями к организаторам.</p>
-      <ul>
-        <li>Расписание, карта, зоны и правила доступа</li>
-        <li>Вопросы гостей за 1-2 пиковых дня</li>
-        <li>Закрытые зоны, столы, отели, партнерские предложения</li>
-        <li>Сбор обращений, контактов и итоговая аналитика</li>
-      </ul>
-      <a href="astor_concierge/" class="btn btn-quiet">Открыть Astor Concierge</a>
-    </article>
-
-    <article class="product-panel reveal">
-      <p class="product-kicker">Команда в смене</p>
-      <h3>Astor Glass</h3>
-      <p>Умные очки и iPhone для сотрудника: вопрос голосом или фото стола, ответ текстом и голосом Астора. Руки остаются свободными, подсказка - в очках. Сейчас продукт проходит пилот.</p>
-      <ul>
-        <li>Вопрос голосом - ответ по материалам заведения</li>
-        <li>Фото сервировки и проверка по шагам</li>
-        <li>Служебные сообщения заведения - в очки</li>
-        <li>Журнал смены для менеджера</li>
-      </ul>
-      <a href="astor_glass/" class="btn btn-quiet">Открыть Astor Glass</a>
-    </article>
+    <figure class="hero-shot">
+      <div class="phone" role="img" aria-label="Чат с консьержем: гость просит бизнес-ланч на двоих в 13:00, консьерж договаривается с AERIS, бот ресторана сообщает, что стол подтверждён">
+        <div class="phone-head">
+          <span class="avatar">A</span>
+          <span class="phone-title">Astor Concierge<small>бот</small></span>
+        </div>
+        <div class="chat">
+          <p class="msg out">Бизнес-ланч в&nbsp;AERIS на&nbsp;двоих, к&nbsp;13:00</p>
+          <p class="msg in"><span class="who">Консьерж</span>Договорился с&nbsp;AERIS: стол на&nbsp;двоих в&nbsp;13:00, два ланча. Ждём подтверждения хостес.</p>
+          <p class="msg in"><span class="who">AERIS · Батлер</span>Стол подтверждён: стол 12 на&nbsp;13:00. Ждём вас.</p>
+        </div>
+      </div>
+    </figure>
   </div>
 </section>
 
-<section class="section" aria-labelledby="personal-title">
-  <p class="chapter">Персонализация</p>
-  <h2 class="section-title" id="personal-title">Astor принимает имя заказчика.</h2>
-  <p class="lede">Внутри работает общий Astor, а снаружи гость видит сервис знакомого бренда: заведения, отеля, фестиваля или городской программы.</p>
+<section class="section" id="how" aria-labelledby="how-title">
+  <div class="wrap">
+    <p class="kicker">Как это работает</p>
+    <h2 class="section-title" id="how-title">Четыре шага от&nbsp;первого сообщения до&nbsp;отзыва</h2>
 
-  <div class="identity-grid">
-    <div class="identity-card reveal">
-      <span>AERIS Butler</span>
-      <p>Дворецкий ресторана: бронь, меню, посадка, хостес, банкеты.</p>
+    <ol class="steps">
+      <li class="step">
+        <div class="step-text">
+          <p class="step-num"><span>1</span>агент гостя</p>
+          <h3>Консьерж</h3>
+          <p>Гость пишет в&nbsp;Telegram своими словами&nbsp;– текстом или голосом. Консьерж уточняет время и&nbsp;число гостей и&nbsp;сам идёт договариваться с&nbsp;рестораном.</p>
+        </div>
+        <div class="phone" role="img" aria-label="Гость отправляет консьержу голосовое сообщение про бизнес-ланч на двоих к 13:00, консьерж отвечает, что спрашивает AERIS">
+          <div class="phone-head">
+            <span class="avatar">A</span>
+            <span class="phone-title">Astor Concierge<small>бот</small></span>
+          </div>
+          <div class="chat">
+            <p class="msg out voice"><svg class="wave" viewBox="0 0 97 18" aria-hidden="true"><rect x="0" y="7" width="2" height="4" rx="1"/><rect x="5" y="5.5" width="2" height="7" rx="1"/><rect x="10" y="3.5" width="2" height="11" rx="1"/><rect x="15" y="6" width="2" height="6" rx="1"/><rect x="20" y="2" width="2" height="14" rx="1"/><rect x="25" y="4.5" width="2" height="9" rx="1"/><rect x="30" y="1" width="2" height="16" rx="1"/><rect x="35" y="3" width="2" height="12" rx="1"/><rect x="40" y="5.5" width="2" height="7" rx="1"/><rect x="45" y="4" width="2" height="10" rx="1"/><rect x="50" y="1.5" width="2" height="15" rx="1"/><rect x="55" y="5" width="2" height="8" rx="1"/><rect x="60" y="6.5" width="2" height="5" rx="1"/><rect x="65" y="3.5" width="2" height="11" rx="1"/><rect x="70" y="2.5" width="2" height="13" rx="1"/><rect x="75" y="6" width="2" height="6" rx="1"/><rect x="80" y="4.5" width="2" height="9" rx="1"/><rect x="85" y="7" width="2" height="4" rx="1"/><rect x="90" y="5.5" width="2" height="7" rx="1"/><rect x="95" y="6.5" width="2" height="5" rx="1"/></svg><span class="dur">0:04</span></p>
+            <p class="msg out quote">«Бизнес-ланч в&nbsp;AERIS, нас двое, к&nbsp;13:00»</p>
+            <p class="msg in"><span class="who">Консьерж</span>Двое, сегодня в&nbsp;13:00. Спрашиваю AERIS про стол и&nbsp;меню ланча.</p>
+          </div>
+        </div>
+      </li>
+
+      <li class="step">
+        <div class="step-text">
+          <p class="step-num"><span>2</span>агент ресторана</p>
+          <h3>Батлер</h3>
+          <p>Бот ресторана отвечает в&nbsp;том же чате: свободный стол, меню ланча и&nbsp;итог по&nbsp;прайсу Saby. Заказ оформляется только после «да» гостя на&nbsp;показанную сумму.</p>
+        </div>
+        <div class="phone" role="img" aria-label="Бот ресторана предлагает стол на двоих в 13:00 и два бизнес-ланча с итоговой суммой, гость отвечает «Да», бот передаёт заявку хостес">
+          <div class="phone-head">
+            <span class="avatar">A</span>
+            <span class="phone-title">Astor Concierge<small>бот</small></span>
+          </div>
+          <div class="chat">
+            <div class="msg in"><span class="who">AERIS · Батлер</span>Стол на&nbsp;двоих в&nbsp;13:00 свободен. Ланч сегодня:
+              <span class="menu"><span>Салат</span><span>Суп</span><span>Горячее</span><span>Напиток</span></span>
+              <span class="total">2 ланча <b>1&nbsp;240&nbsp;₽</b></span>Оформить?</div>
+            <p class="msg out">Да</p>
+            <p class="msg in"><span class="who">AERIS · Батлер</span>Передал хостес. Как подтвердит&nbsp;– напишу.</p>
+          </div>
+        </div>
+      </li>
+
+      <li class="step">
+        <div class="step-text">
+          <p class="step-num"><span>3</span>решение за&nbsp;человеком</p>
+          <h3>Хостес</h3>
+          <p>Заявка приходит карточкой в&nbsp;рабочую Telegram-группу персонала. Хостес нажимает «Да»&nbsp;– гость сразу получает подтверждение. Бронь подтверждает ресторан, а&nbsp;не&nbsp;бот.</p>
+        </div>
+        <div class="phone" role="img" aria-label="Рабочая группа персонала AERIS, тема «Брони»: карточка новой заявки на бронь стола с временем, столом, числом гостей и ланчем, кнопки «Да» и «Нет»">
+          <div class="phone-head">
+            <span class="avatar avatar-group">AE</span>
+            <span class="phone-title">AERIS · персонал<small>рабочая группа</small></span>
+          </div>
+          <div class="topics" aria-hidden="true"><span class="on">Брони</span><span>Пожелания</span><span>Отзывы</span></div>
+          <div class="chat">
+            <div class="msg in card"><span class="who">Aeris Butler</span><b>Новая заявка на&nbsp;бронь стола</b>
+              <span class="rows"><span>Гость</span><span>Анна</span><span>Стол</span><span>12</span><span>Время</span><span>13:00–14:30</span><span>Гостей</span><span>2</span><span>Ланч</span><span>2 × бизнес-ланч</span></span>
+              <span class="keys"><span class="key on">Да</span><span class="key">Нет</span></span>
+            </div>
+            <p class="sys">Хостес: «Да» · гость получил подтверждение</p>
+          </div>
+        </div>
+      </li>
+
+      <li class="step">
+        <div class="step-text">
+          <p class="step-num"><span>4</span>после визита</p>
+          <h3>Счёт и&nbsp;отзыв</h3>
+          <p>Гость просит счёт в&nbsp;чате&nbsp;– команда получает карточку, официант несёт счёт; сумму называет касса ресторана. После визита&nbsp;– оценка от&nbsp;1&nbsp;до&nbsp;5, её видит команда.</p>
+        </div>
+        <div class="phone" role="img" aria-label="Гость просит счёт, бот ресторана называет сумму из кассы и пишет, что официант несёт счёт, затем просит оценить визит от 1 до 5, гость ставит 5">
+          <div class="phone-head">
+            <span class="avatar">A</span>
+            <span class="phone-title">Astor Concierge<small>бот</small></span>
+          </div>
+          <div class="chat">
+            <p class="msg out">Можно счёт?</p>
+            <p class="msg in"><span class="who">AERIS · Батлер</span>Счёт&nbsp;– 1&nbsp;240&nbsp;₽, официант несёт его.</p>
+            <p class="msg in"><span class="who">AERIS · Батлер</span>Как вам сегодня? Оцените от&nbsp;1&nbsp;до&nbsp;5 одной цифрой&nbsp;– передам команде.</p>
+            <p class="msg out">5</p>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section class="section section-alt" id="restaurants" aria-labelledby="restaurants-title">
+  <div class="wrap venue-grid">
+    <div class="venue-head">
+      <p class="kicker">Для ресторанов</p>
+      <h2 class="section-title" id="restaurants-title">Ресторан получает готовые заявки, а&nbsp;не&nbsp;переписку</h2>
+      <p class="lede">Astor работает в&nbsp;том, чем команда уже пользуется: Telegram и&nbsp;Saby. Хостес не&nbsp;нужен новый экран&nbsp;– достаточно рабочей группы.</p>
     </div>
-    <div class="identity-card reveal">
-      <span>Gastreet Concierge</span>
-      <p>Консьерж события: программа, карта, доступы, проживание, партнеры.</p>
-    </div>
-    <div class="identity-card reveal">
-      <span>The Carlton Butler</span>
-      <p>Гостевой помощник отеля: заселение, услуги, ресторан, запросы гостя.</p>
+
+    <ul class="gets">
+      <li class="get">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H9l-5 4z"/></svg>
+        <h3>Заявки в&nbsp;группу хостес</h3>
+        <p>Бронь и&nbsp;заказ ланча приходят карточкой в&nbsp;рабочую Telegram-группу: время, стол, гости, состав ланча. Хостес отвечает кнопкой «Да» или «Нет».</p>
+      </li>
+      <li class="get">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6"/></svg>
+        <h3>Меню и&nbsp;заказ в&nbsp;Saby</h3>
+        <p>Меню ланча и&nbsp;цены берутся из&nbsp;прайса Saby, бронь с&nbsp;блюдами записывается в&nbsp;Presto. Счёт считает касса ресторана, а&nbsp;не&nbsp;бот.</p>
+      </li>
+      <li class="get">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18v13H3zM8 21h8M7 13V9M12 13V7M17 13v-2"/></svg>
+        <h3>Табло менеджера</h3>
+        <p>Визиты по&nbsp;этапам: заявка, подтверждена, за&nbsp;столом, счёт, отзыв&nbsp;– и&nbsp;время до&nbsp;подтверждения. Табло только показывает, решения остаются за&nbsp;командой.</p>
+      </li>
+      <li class="get">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>
+        <h3>Отзывы гостей</h3>
+        <p>После визита гость ставит оценку от&nbsp;1&nbsp;до&nbsp;5. Оценки приходят команде и&nbsp;собираются на&nbsp;табло менеджера.</p>
+      </li>
+    </ul>
+
+    <div class="connect">
+      <h3>Как подключиться</h3>
+      <ol class="connect-steps">
+        <li>Бот ресторана под вашим именем&nbsp;– как AERIS Butler.</li>
+        <li>Бот добавляется в&nbsp;рабочую Telegram-группу персонала.</li>
+        <li>Сервисное подключение к&nbsp;Saby: меню ланча и&nbsp;брони.</li>
+      </ol>
+      <a class="btn btn-primary" href="mailto:michael.poedinenko.mxr@gmail.com?subject=%D0%9F%D0%BE%D0%B4%D0%BA%D0%BB%D1%8E%D1%87%D0%B5%D0%BD%D0%B8%D0%B5%20%D1%80%D0%B5%D1%81%D1%82%D0%BE%D1%80%D0%B0%D0%BD%D0%B0%20%D0%BA%20Astor">Написать о&nbsp;подключении</a>
+      <p class="connect-note">michael.poedinenko.mxr@gmail.com</p>
     </div>
   </div>
 </section>
 
-<section class="section" aria-labelledby="service-title">
-  <p class="chapter">Принцип</p>
-  <h2 class="section-title" id="service-title">Сначала сервис, потом технология.</h2>
-  <p class="lede">Astor продается через понятную работу с гостем: принять запрос, уточнить детали, обещать только то, что можно выполнить, передать ответственному человеку и сохранить контекст.</p>
-
-  <div class="features-list compact-features">
-    <div class="feature reveal">
-      <h3>Гость говорит свободно</h3>
-      <p>Система принимает текст и голос, а ответы остаются в рамках правил сервиса.</p>
-    </div>
-    <div class="feature reveal">
-      <h3>Команда видит действие</h3>
-      <p>Хостес, менеджер или координатор получают карточку с сутью запроса вместо сырого чата.</p>
-    </div>
-    <div class="feature reveal">
-      <h3>Спорное подтверждает человек</h3>
-      <p>Бронь, перенос, отказ, платеж или особое условие уходят гостю после подтверждения ответственного человека.</p>
-    </div>
-    <div class="feature reveal">
-      <h3>Контекст остается в системе</h3>
-      <p>История запросов, согласия, предпочтения и решения доступны для разбора и улучшения сервиса.</p>
-    </div>
+<section class="section" id="rules" aria-labelledby="rules-title">
+  <div class="wrap">
+    <p class="kicker">Правила Astor</p>
+    <h2 class="section-title" id="rules-title">ИИ ведёт разговор, обязательства держит ресторан</h2>
+    <ul class="rules">
+      <li><h3>Бронь подтверждает ресторан</h3><p>ИИ собирает заявку, а&nbsp;статус «подтверждена» ставит хостес или касса.</p></li>
+      <li><h3>Сумму называет касса</h3><p>Счёт и&nbsp;оплата&nbsp;– из&nbsp;Saby. Бот не&nbsp;придумывает цифры.</p></li>
+      <li><h3>Одно согласие гостя</h3><p>Одно согласие на&nbsp;консьержа и&nbsp;бот ресторана. На&nbsp;табло телефоны скрыты.</p></li>
+      <li><h3>Данные в&nbsp;России</h3><p>Серверы&nbsp;– Cloud.ru, языковые модели&nbsp;– GigaChat.</p></li>
+    </ul>
   </div>
 </section>
 
-<section class="section" aria-labelledby="axes-title">
-  <p class="chapter">Восемь осей развития</p>
-  <h2 class="section-title" id="axes-title">Astor начинается с гостя и постепенно закрывает весь контур сервиса.</h2>
-  <p class="lede">Будущие возможности описаны как план развития. Они растут из того же основания: понятные сценарии, подтверждения, память контекста и ответственность команды.</p>
-
-  <div class="axis-grid">
-    <div class="axis-card reveal"><strong>Бронирование и загрузка</strong><span>столы, зоны, окна посещения, подтверждения хостес</span></div>
-    <div class="axis-card reveal"><strong>Предпочтения гостя</strong><span>явно названные привычки, ограничения, любимые места</span></div>
-    <div class="axis-card reveal"><strong>Тихий гид</strong><span>меню, афиша, рекомендации без давления и лишней рекламы</span></div>
-    <div class="axis-card reveal"><strong>Чаевые</strong><span>благодарность команде после явного подтверждения гостя</span></div>
-    <div class="axis-card reveal"><strong>Благотворительные взносы</strong><span>прозрачные сборы и отчеты по культурным или социальным инициативам</span></div>
-    <div class="axis-card reveal"><strong>Показатель вклада</strong><span>агрегированная польза события, команды и гостей без раскрытия личного</span></div>
-    <div class="axis-card reveal"><strong>Безопасные активности</strong><span>ритуалы, дегустации и специальные просьбы только через команду</span></div>
-    <div class="axis-card reveal"><strong>Канал прямой связи</strong><span>гость, команда, организаторы и партнеры в одном управляемом контуре</span></div>
+<section class="section section-alt" id="products" aria-labelledby="products-title">
+  <div class="wrap">
+    <p class="kicker">Продукты Astor</p>
+    <h2 class="section-title" id="products-title">Одна основа&nbsp;– три продукта</h2>
+    <ul class="products">
+      <li>
+        <a class="product" href="astor_butler/">
+          <span class="product-kicker">Рестораны и&nbsp;отели</span>
+          <span class="product-name">Astor Butler</span>
+          <span class="product-text">Бот заведения: брони, бизнес-ланч, меню, счёт и&nbsp;отзывы.</span>
+          <span class="product-more">Подробнее</span>
+        </a>
+      </li>
+      <li>
+        <a class="product" href="astor_concierge/">
+          <span class="product-kicker">Гости, события, город</span>
+          <span class="product-name">Astor Concierge</span>
+          <span class="product-text">Агент гостя и&nbsp;лента заведений; консьерж для фестивалей и&nbsp;городских программ.</span>
+          <span class="product-more">Подробнее</span>
+        </a>
+      </li>
+      <li>
+        <a class="product" href="astor_glass/">
+          <span class="product-kicker">Команда в&nbsp;смене · пилот</span>
+          <span class="product-name">Astor Glass</span>
+          <span class="product-text">Умные очки для персонала: вопрос голосом или фото, ответ текстом и&nbsp;голосом.</span>
+          <span class="product-more">Подробнее</span>
+        </a>
+      </li>
+    </ul>
   </div>
-</section>
-
-<section class="section section-final" id="final" aria-labelledby="final-title">
-  <p class="chapter">Следующий шаг</p>
-  <h2 class="section-title" id="final-title">С чего начнем: заведение, событие или команда?</h2>
-  <p class="lede">В заведении чаще всего начинают с брони, меню, банкетов и пожеланий к столу. На событии - с расписания, карты, доступов, потока вопросов и обращений к организаторам. Команде в смене - с подсказки в очках.</p>
-
-  <div class="final-cta">
-    <a href="astor_butler/" class="btn btn-quiet btn-lg">Для ресторана или отеля</a>
-    <a href="astor_concierge/" class="btn btn-quiet btn-lg">Для события</a>
-    <a href="astor_glass/" class="btn btn-quiet btn-lg">Для команды</a>
-  </div>
-
-  <footer class="footer">
-    <div class="footer-logo">ASTOR ASSIST</div>
-    <p>Система гостевого внимания для заведений, событий, городских программ и команды · 2026</p>
-    <p><a class="footer-link" href="policy.html">Политика конфиденциальности</a></p>
-  </footer>
 </section>
 
 </main>
 
-<script src="js/main.js" defer></script>
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <a class="mark" href="./" aria-label="Astor&nbsp;– на главную">
+        <span class="mark-ring" aria-hidden="true">A</span>
+        <span>Astor</span>
+      </a>
+      <p>Система гостевого внимания для ресторанов, событий и&nbsp;команды.</p>
+    </div>
+    <div class="footer-col">
+      <h2>Боты в&nbsp;Telegram</h2>
+      <ul>
+        <li><a href="https://t.me/astor_concierge_bot" target="_blank" rel="noopener">@astor_concierge_bot</a><span>консьерж гостя</span></li>
+        <li><a href="https://t.me/aeris_butler_bot" target="_blank" rel="noopener">@aeris_butler_bot</a><span>бот гастробара AERIS</span></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h2>Продукты</h2>
+      <ul>
+        <li><a href="astor_butler/">Astor Butler</a></li>
+        <li><a href="astor_concierge/">Astor Concierge</a></li>
+        <li><a href="astor_glass/">Astor Glass</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h2>Контакты</h2>
+      <ul>
+        <li><a href="mailto:michael.poedinenko.mxr@gmail.com">michael.poedinenko.mxr@gmail.com</a></li>
+        <li><a href="policy.html">Политика конфиденциальности</a></li>
+      </ul>
+    </div>
+  </div>
+  <p class="wrap footer-copy">© 2026 Astor</p>
+</footer>
+
 </body>
 </html>
