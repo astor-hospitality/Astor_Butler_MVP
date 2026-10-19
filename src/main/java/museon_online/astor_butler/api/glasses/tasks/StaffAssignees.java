@@ -3,6 +3,8 @@ package museon_online.astor_butler.api.glasses.tasks;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Who a spoken name or role points at in the venue's staff directory.
@@ -11,6 +13,11 @@ import java.util.Locale;
  * its stem so «Анне» and «Анну» find «Анна», a role word («официанту») finds the one person with that
  * role, and anything that fits two people fits nobody. A task that cannot be placed stays with the
  * person who gave it; it is never guessed onto someone.
+ *
+ * With the shift schedule on ({@code astor.staff.schedule.enabled}, {@code StaffRoster}) a role word follows the
+ * schedule: «официанту» means the waiters the confirmed schedule puts on shift now, not everyone of that role who
+ * left a shift open — and still only those with an open shift, since a task cannot go to anyone else. A role the
+ * schedule names nobody for right now is matched as before.
  */
 public final class StaffAssignees {
     private static final int EXACT = 3;
@@ -21,6 +28,17 @@ public final class StaffAssignees {
 
     /** The one member the words point at, or null when none or several do. */
     public static StaffPortalService.Member resolve(List<StaffPortalService.Member> members, String spoken) {
+        return resolve(members, spoken, Map.of());
+    }
+
+    /**
+     * The same, with who the shift schedule puts on shift now: staff ids by the role they work today. A role word
+     * finds only those of them, whatever role the directory gives them; a role absent from the map is matched by
+     * the directory, as without a schedule.
+     */
+    public static StaffPortalService.Member resolve(List<StaffPortalService.Member> members, String spoken,
+                                                    Map<StaffScope.Role, Set<String>> scheduled) {
+        if (scheduled == null) scheduled = Map.of();
         List<String> words = words(spoken);
         if (words.isEmpty() || members == null) return null;
         StaffPortalService.Member best = null;
@@ -28,7 +46,7 @@ public final class StaffAssignees {
         boolean tie = false;
         for (StaffPortalService.Member member : members) {
             if (member == null || !member.active() || !"OPEN".equals(member.shift())) continue;
-            int score = score(member, words);
+            int score = score(member, words, scheduled);
             if (score == 0) continue;
             if (score > bestScore) {
                 best = member;
@@ -42,7 +60,8 @@ public final class StaffAssignees {
     }
 
     /** Every spoken word adds its best match, so «Анне Сидоровой» outweighs the other Анна. */
-    private static int score(StaffPortalService.Member member, List<String> words) {
+    private static int score(StaffPortalService.Member member, List<String> words,
+                             Map<StaffScope.Role, Set<String>> scheduled) {
         int score = 0;
         List<String> name = words(member.displayName());
         String id = member.staffId() == null ? "" : member.staffId().toLowerCase(Locale.ROOT);
@@ -53,10 +72,18 @@ public final class StaffAssignees {
                 else if (stems(word, part)) best = Math.max(best, STEM);
             }
             StaffScope.Role role = role(word);
-            if (role != null && role.name().equals(member.role())) best = Math.max(best, ROLE);
+            if (role != null && plays(member, role, scheduled)) best = Math.max(best, ROLE);
             score += best;
         }
         return score;
+    }
+
+    /** On shift in that role by the schedule when it names anyone for the role; by the directory otherwise. */
+    private static boolean plays(StaffPortalService.Member member, StaffScope.Role role,
+                                 Map<StaffScope.Role, Set<String>> scheduled) {
+        Set<String> onShift = scheduled.get(role);
+        if (onShift == null || onShift.isEmpty()) return role.name().equals(member.role());
+        return onShift.contains(member.staffId());
     }
 
     /**

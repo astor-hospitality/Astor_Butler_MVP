@@ -6,6 +6,9 @@ import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import museon_online.astor_butler.domain.entry.GuestEntryService;
 import museon_online.astor_butler.domain.lunch.BusinessLunchService;
 import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
+import museon_online.astor_butler.domain.roster.StaffRole;
+import museon_online.astor_butler.domain.roster.StaffRoster;
+import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
 import museon_online.astor_butler.integration.concierge.ConciergeWebhook;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,8 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -340,6 +345,62 @@ class TableReservationNotificationServiceTest {
         assertThat(service.preorderLine(lunch(order()))).isEqualTo("\n<b>⏱ Готовить ко времени 12:50</b>\n");
         assertThat(service.preorderLine(order())).isEmpty();
         assertThat(service.preorderLine(null)).isEmpty();
+    }
+
+    /** The shift schedule off, knowing nobody of the two roles now, or unreadable: exactly the old card. */
+    @Test
+    void hostessCardIsUnchangedWhileTheScheduleKnowsNoHostessOrManager() {
+        assertThat(service.shiftLine()).isEmpty();
+
+        StaffRoster roster = mock(StaffRoster.class);
+        service.setStaffRoster(roster);
+        when(roster.onShiftNow()).thenReturn(List.of());
+        assertThat(service.shiftLine()).isEmpty();
+
+        when(roster.onShiftNow()).thenReturn(List.of(onShift("vera", "Вера", StaffRole.WAITER)));
+        assertThat(service.shiftLine()).as("waiters are not named on the card").isEmpty();
+
+        when(roster.onShiftNow()).thenThrow(new IllegalStateException("db down"));
+        assertThat(service.shiftLine()).isEmpty();
+    }
+
+    /** One line with the names of the hostess and the manager on shift now; no phones, no hours, no waiters. */
+    @Test
+    void hostessCardNamesTheHostessAndTheManagerOnShift() {
+        StaffRoster roster = mock(StaffRoster.class);
+        service.setStaffRoster(roster);
+        when(roster.onShiftNow()).thenReturn(List.of(onShift("vera", "Вера", StaffRole.WAITER),
+                onShift("boris", "Борис Примеров", StaffRole.MANAGER), onShift("alisa", "Алиса <Т>", StaffRole.HOSTESS),
+                onShift("dina", "Дина", StaffRole.HOSTESS)));
+
+        assertThat(service.shiftLine())
+                .isEqualTo("\n<b>На смене:</b> хостес Алиса &lt;Т&gt;, Дина; менеджер Борис Примеров\n");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theNewRequestCardCarriesTheShiftLine() throws Exception {
+        TelegramBot bot = mock(TelegramBot.class);
+        ObjectProvider<TelegramBot> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(bot);
+        TableReservationNotificationService wired = new TableReservationNotificationService(provider,
+                mock(TableReservationPendingIntentService.class), mock(TelegramGuestContextRepository.class), policy,
+                mock(BookingHostessStateStorage.class));
+        ReflectionTestUtils.setField(wired, "telegramEnabled", true);
+        ReflectionTestUtils.setField(wired, "notificationsEnabled", true);
+        ReflectionTestUtils.setField(wired, "defaultHostessChatId", "-100500");
+        StaffRoster roster = mock(StaffRoster.class);
+        wired.setStaffRoster(roster);
+        when(roster.onShiftNow()).thenReturn(List.of(onShift("alisa", "Алиса", StaffRole.HOSTESS)));
+
+        wired.notifyHostessApprovalRequest(order(), null);
+
+        verify(bot).execute(argThat((SendMessage message) -> message.getText().contains("<b>На смене:</b> хостес Алиса")
+                && message.getText().contains("Новая заявка на бронь стола")));
+    }
+
+    private static StaffRoster.OnShift onShift(String id, String name, StaffRole role) {
+        return new StaffRoster.OnShift(id, name, role, LocalDate.of(2026, 10, 7), LocalTime.of(10, 0), LocalTime.of(22, 0));
     }
 
     private static TableReservationOrder lunch(TableReservationOrder order) {

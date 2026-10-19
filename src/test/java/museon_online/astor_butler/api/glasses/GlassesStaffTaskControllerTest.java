@@ -7,6 +7,8 @@ import museon_online.astor_butler.api.glasses.tasks.StaffScope;
 import museon_online.astor_butler.api.glasses.tasks.StaffTask;
 import museon_online.astor_butler.api.glasses.tasks.StaffTaskFailure;
 import museon_online.astor_butler.api.glasses.tasks.StaffTaskService;
+import museon_online.astor_butler.domain.roster.StaffRole;
+import museon_online.astor_butler.domain.roster.StaffRoster;
 import museon_online.astor_butler.domain.tips.TipStaffMember;
 import museon_online.astor_butler.domain.tips.TipsPersonalProperties;
 import museon_online.astor_butler.domain.tips.TipsPersonalRepository;
@@ -20,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -339,5 +342,66 @@ class GlassesStaffTaskControllerTest {
         }
         verify(portal, never()).create(any(), any(), any());
         verifyNoInteractions(notifier);
+    }
+
+    /* ---------- a role word and the shift schedule (StaffRoster) ---------- */
+
+    private final List<Member> twoWaitersOpen = List.of(member("manager-1", "Марина Менеджер", "MANAGER", "OPEN"),
+            member("anna", "Анна", "WAITER", "OPEN"), member("ilya", "Илья", "WAITER", "OPEN"));
+
+    private StaffRoster roster(String tenant, StaffRoster.OnShift... shifts) {
+        StaffRoster roster = mock(StaffRoster.class);
+        when(roster.tenant()).thenReturn(tenant);
+        when(roster.onShiftNow()).thenReturn(List.of(shifts));
+        return roster;
+    }
+
+    private static StaffRoster.OnShift waiter(String id, String name) {
+        return new StaffRoster.OnShift(id, name, StaffRole.WAITER, SHIFT_DAY, LocalTime.of(10, 0), LocalTime.of(23, 0));
+    }
+
+    private String assigneeOf(GlassesStaffTaskController controller, String spoken) throws Exception {
+        clearInvocations(portal);
+        when(portal.create(eq(WEARER), eq(ID), any())).thenReturn(task("manager-1", "5"));
+        assertThat(controller.create(request(payload(Map.of(), Map.of("assignee", spoken)), TOKEN)).getStatusCode().value())
+                .isEqualTo(200);
+        var draft = ArgumentCaptor.forClass(StaffTaskService.Draft.class);
+        verify(portal).create(eq(WEARER), eq(ID), draft.capture());
+        return draft.getValue().assigneeStaffId();
+    }
+
+    @Test void aRoleWordGoesToTheWaiterTheScheduleHasOnShift() throws Exception {
+        ready();
+        when(portal.members("AERIS")).thenReturn(twoWaitersOpen);
+        assertThat(assigneeOf(controller, "официанту")).as("two open shifts, no schedule: stays with the wearer")
+                .isEqualTo("manager-1");
+
+        controller.setRoster(roster("AERIS", waiter("ilya", "Илья")));
+        assertThat(assigneeOf(controller, "официанту")).isEqualTo("ilya");
+        assertThat(assigneeOf(controller, "Анне")).as("a name is not overridden by the schedule").isEqualTo("anna");
+    }
+
+    @Test void twoOnTheScheduleAnotherVenueOrAnUnreadableScheduleGuessNobody() throws Exception {
+        ready();
+        when(portal.members("AERIS")).thenReturn(twoWaitersOpen);
+
+        controller.setRoster(roster("AERIS", waiter("anna", "Анна"), waiter("ilya", "Илья")));
+        assertThat(assigneeOf(controller, "официанту")).isEqualTo("manager-1");
+
+        controller.setRoster(roster("OTHER", waiter("ilya", "Илья")));
+        assertThat(assigneeOf(controller, "официанту")).as("another venue's schedule is not used").isEqualTo("manager-1");
+
+        StaffRoster broken = mock(StaffRoster.class);
+        when(broken.tenant()).thenReturn("AERIS");
+        when(broken.onShiftNow()).thenThrow(new IllegalStateException("db down"));
+        controller.setRoster(broken);
+        assertThat(assigneeOf(controller, "официанту")).isEqualTo("manager-1");
+    }
+
+    @Test void anEmptyScheduleLeavesTheOldMatching() throws Exception {
+        ready();
+        controller.setRoster(roster("AERIS"));
+        // The default staff: Анна is the one waiter with an open shift.
+        assertThat(assigneeOf(controller, "официанту")).isEqualTo("anna");
     }
 }

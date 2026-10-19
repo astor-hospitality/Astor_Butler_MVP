@@ -11,6 +11,7 @@ import museon_online.astor_butler.api.glasses.tasks.StaffScope;
 import museon_online.astor_butler.api.glasses.tasks.StaffTask;
 import museon_online.astor_butler.api.glasses.tasks.StaffTaskFailure;
 import museon_online.astor_butler.api.glasses.tasks.StaffTaskService;
+import museon_online.astor_butler.domain.roster.StaffRoster;
 import museon_online.astor_butler.domain.tips.TipStaffMember;
 import museon_online.astor_butler.domain.tips.TipsPersonalProperties;
 import museon_online.astor_butler.domain.tips.TipsPersonalRepository;
@@ -28,6 +29,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -51,6 +54,10 @@ import java.util.UUID;
  * the title «Стол 12: Борщ ×1 (голосовой заказ)» and the spoken phrase, and the assignee is the table's waiter of
  * the day ({@code table_waiter_assignments}, #179) when there is one on an open shift — otherwise, as with any
  * task nobody was named for, it stays with the wearer. Nothing is written to Saby/Presto here.
+ *
+ * A role word («официанту», «хостес») follows the confirmed shift schedule while it is on ({@link StaffRoster}): of
+ * those with an open shift, only the people the schedule puts on shift now in that role. Off, or nobody of the role
+ * in the schedule now, it is matched as before.
  */
 @RestController
 public class GlassesStaffTaskController {
@@ -73,6 +80,8 @@ public class GlassesStaffTaskController {
     private final ObjectProvider<TipsPersonalRepository> waiters;
     private final ObjectProvider<TipsPersonalProperties> tips;
     private final Clock clock;
+    // Who the shift schedule puts on shift now; absent in a context without the schedule.
+    private StaffRoster roster;
 
     @org.springframework.beans.factory.annotation.Autowired
     public GlassesStaffTaskController(ObjectProvider<StaffPortalService> portal, TelegramSystemNotifier notifier,
@@ -101,6 +110,11 @@ public class GlassesStaffTaskController {
     GlassesStaffTaskController(ObjectProvider<StaffPortalService> portal, TelegramSystemNotifier notifier, String token,
                                String role, ObjectMapper mapper) {
         this(portal, notifier, token, role, mapper, null, null, Clock.systemUTC());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setRoster(StaffRoster roster) {
+        this.roster = roster;
     }
 
     static StaffScope.Role role(String value) {
@@ -152,7 +166,7 @@ public class GlassesStaffTaskController {
             if (replayed.isPresent()) return ok(created(replayed.get(), staff, members));
 
             StaffPortalService.Member assignee = KIND_ORDER.equals(kind) ? waiterOfTable(tenant, tableCode, members)
-                    : StaffAssignees.resolve(members, spokenAssignee);
+                    : StaffAssignees.resolve(members, spokenAssignee, spokenAssignee == null ? Map.of() : scheduled(tenant));
             String assigneeId = assignee == null ? staff : assignee.staffId();
             StaffScope scope = new StaffScope(tenant, staff, role);
             StaffTask task = service.create(scope, requestId, new StaffTaskService.Draft(SOURCE,
@@ -195,6 +209,26 @@ public class GlassesStaffTaskController {
         String staffId = waiter.get().staffId();
         return members.stream().filter(member -> staffId.equals(member.staffId()) && member.active()
                 && "OPEN".equalsIgnoreCase(member.shift())).findFirst().orElse(null);
+    }
+
+    /**
+     * Staff ids by the role they work now by the confirmed shift schedule, for a role word. Empty — the words are
+     * matched as before the schedule — while it is off or knows nobody now, for another venue, and when it cannot be read.
+     */
+    private Map<StaffScope.Role, Set<String>> scheduled(String tenant) {
+        if (roster == null) return Map.of();
+        try {
+            if (!roster.tenant().equals(tenant)) return Map.of();
+            Map<StaffScope.Role, Set<String>> byRole = new EnumMap<>(StaffScope.Role.class);
+            for (StaffRoster.OnShift shift : roster.onShiftNow()) {
+                if (shift.role() == null || shift.staffId() == null) continue;
+                byRole.computeIfAbsent(StaffScope.Role.valueOf(shift.role().name()), role -> new HashSet<>()).add(shift.staffId());
+            }
+            return byRole;
+        } catch (RuntimeException e) {
+            log.warn("Glasses task: the shift schedule could not be read: {}", e.getClass().getSimpleName());
+            return Map.of();
+        }
     }
 
     private static String kind(String value) {

@@ -101,6 +101,11 @@ public class StaffRoster {
                 .orElse(List.of());
     }
 
+    /** The venue whose directory the schedule's names were matched against. */
+    public String tenant() {
+        return properties.tenantOrDefault();
+    }
+
     public LocalDate today() {
         return LocalDate.now(clock.withZone(properties.zone()));
     }
