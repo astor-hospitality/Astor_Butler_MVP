@@ -32,7 +32,7 @@ public class OperationalChatPreviewNotifier {
     @Value("${telegram.bot.enabled:false}")
     private boolean telegramEnabled;
 
-    @Value("${astor.startup.operational-preview-enabled:true}")
+    @Value("${astor.startup.operational-preview-enabled:false}")
     private boolean enabled;
 
     @Value("${telegram.admin.chat-id:}")

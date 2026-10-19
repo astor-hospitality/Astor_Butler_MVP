@@ -9,6 +9,8 @@ import museon_online.astor_butler.domain.booking.external.ExternalReservationRes
 import museon_online.astor_butler.domain.entry.GuestEntryService;
 import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
 import museon_online.astor_butler.domain.telegram.TelegramGuestContextRepository;
+import museon_online.astor_butler.integration.concierge.ConciergeEvent;
+import museon_online.astor_butler.integration.concierge.ConciergeWebhook;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import museon_online.astor_butler.telegram.utils.TelegramBot;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,7 +30,9 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -106,6 +110,25 @@ public class TableReservationNotificationService {
     private LunchPreorderMark preorderMark;
 
     /**
+     * The Butler → Concierge webhook (negotiation plan, task 9): a booking made in the Concierge's chat has no chat here,
+     * so what its guest would hear goes to the Concierge instead. Optional so the constructor and its tests stay as they are.
+     */
+    private ConciergeWebhook conciergeWebhook;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setConciergeWebhook(ConciergeWebhook conciergeWebhook) {
+        this.conciergeWebhook = conciergeWebhook;
+    }
+
+    /** The guest's wishes as a note in the staff group's wishes topic: optional so the constructor and its tests stay as they are. */
+    private GuestWishNotifier wishNotifier;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setWishNotifier(GuestWishNotifier wishNotifier) {
+        this.wishNotifier = wishNotifier;
+    }
+
+    /**
      * @param externalSync outcome of writing the order to the restaurant's own system; the card
      *                     tells the hostess what is already there and what she has to enter herself
      */
@@ -120,6 +143,9 @@ public class TableReservationNotificationService {
         );
         if (sent != null && ((decision != null && decision != Decision.OFF) || holdExpiryEnabled)) {
             rememberHostessCard(order, chatId, sent);
+        }
+        if (wishNotifier != null) {
+            wishNotifier.onBooking(order);
         }
     }
 
@@ -140,6 +166,7 @@ public class TableReservationNotificationService {
     /** «Команда не успела подтвердить бронь за N минут»: the guest may wait for the manager or pick another time. */
     public void notifyGuestHoldExpired(TableReservationOrder order, int afterMinutes) {
         if (order.chatId() == null) {
+            toConcierge(ConciergeEvent.EXPIRED, order, Map.of());
             return;
         }
         send(order.chatId().toString(), guestHoldExpiredText(order, afterMinutes), guestMainMenuKeyboard(), "guest-hold-expired");
@@ -182,6 +209,19 @@ public class TableReservationNotificationService {
         send(hostessChatId(order), """
                 <b>Saby:</b> бронь #%s не снялась в Presto автоматически. Проверьте и отмените её там вручную.
                 """.formatted(order.id()), null, "hostess-external-cancel-failed");
+    }
+
+    /** One line under the booking's card: the guest's move stayed in Butler, the till still has the old time. */
+    public void notifyHostessChangeNotSynced(TableReservationOrder order) {
+        Optional<BookingHostessStateStorage.CardRef> card = hostessCard(order)
+                .filter(ref -> ref.chatId() != null && !ref.chatId().isBlank());
+        send(card.map(BookingHostessStateStorage.CardRef::chatId).orElseGet(() -> hostessChatId(order)),
+                hostessChangeNotSyncedText(order), null,
+                card.map(BookingHostessStateStorage.CardRef::messageId).orElse(null), "hostess-change-not-synced");
+    }
+
+    static String hostessChangeNotSyncedText(TableReservationOrder order) {
+        return "Перенос брони #%s не дошёл до Saby — поправьте время в кассе".formatted(order.id());
     }
 
     public void notifyHostessConfirmed(TableReservationOrder order) {
@@ -277,7 +317,27 @@ public class TableReservationNotificationService {
                 <b>Официант:</b> %s
                 """.formatted(escape(tableName(order)), escape(request.what()), escape(blank(order.guestName(), "гость из Telegram")),
                 escape(guestText == null ? "" : guestText), escape(blank(waiterName, "не назначен")));
+        // No STAFF_COMING to the Concierge: its table requests come through the capability tool, whose result says it.
         send(hostessChatId(order), text, null, "staff-guest-request");
+    }
+
+    /** The guest of a Concierge booking sat down (#151): the Concierge hears it; a Butler chat hears the seated hint instead. */
+    public void notifyGuestSeated(TableReservationOrder order) {
+        if (order != null && order.chatId() == null) {
+            toConcierge(ConciergeEvent.SEATED, order, Map.of());
+        }
+    }
+
+    /** The webhook for a booking without a Butler chat; silent while it is off or not wired, never throws. */
+    private void toConcierge(String type, TableReservationOrder order, Map<String, Object> facts) {
+        if (conciergeWebhook == null) {
+            return;
+        }
+        try {
+            conciergeWebhook.announce(type, order, facts);
+        } catch (RuntimeException e) {
+            log.warn("Concierge event not announced: type={}, orderId={}, reason={}", type, order.id(), e.getClass().getSimpleName());
+        }
     }
 
     /** A guest's question the bot has no confirmed answer to, for the team. */
@@ -341,6 +401,7 @@ public class TableReservationNotificationService {
             journeyEvents.onReservation(order, museon_online.astor_butler.domain.journey.VisitEventKind.CONFIRMED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
         }
         if (order.chatId() == null) {
+            toConcierge(ConciergeEvent.CONFIRMED, order, Map.of());
             return;
         }
         if (usefulnessPolicy != null && !usefulnessPolicy.permits(order.id(), order.chatId(), museon_online.astor_butler.domain.journey.ProactiveMessage.CONFIRMED)) {
@@ -357,6 +418,9 @@ public class TableReservationNotificationService {
 
     public void notifyGuestRejected(TableReservationOrder order, List<VenueTable> alternatives) {
         if (order.chatId() == null) {
+            // A confirmed booking the venue dropped is cancelled rather than refused.
+            toConcierge(order.status() == TableReservationStatus.CANCELLED ? ConciergeEvent.CANCELLED : ConciergeEvent.REJECTED,
+                    order, Map.of());
             return;
         }
         send(order.chatId().toString(), guestRejectedText(order, alternatives), guestMainMenuKeyboard(), "guest-rejected");
@@ -364,6 +428,7 @@ public class TableReservationNotificationService {
 
     public void notifyGuestCancelled(TableReservationOrder order) {
         if (order.chatId() == null) {
+            toConcierge(ConciergeEvent.CANCELLED, order, Map.of());
             return;
         }
         send(order.chatId().toString(), guestCancelledText(order), guestMainMenuKeyboard(), "guest-cancelled");
@@ -375,6 +440,11 @@ public class TableReservationNotificationService {
             journeyEvents.onReservation(changed, museon_online.astor_butler.domain.journey.VisitEventKind.MOVED, museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
         }
         if (changed.chatId() == null) {
+            Map<String, Object> facts = new LinkedHashMap<>();
+            if (before != null && before.requestedStartAt() != null) {
+                facts.put("previousStartAt", before.requestedStartAt().toString());
+            }
+            toConcierge(ConciergeEvent.MOVED, changed, facts);
             return;
         }
         send(changed.chatId().toString(), guestMovedByStaffText(changed, before), guestMainMenuKeyboard(), "guest-moved-by-staff");
@@ -1025,7 +1095,7 @@ public class TableReservationNotificationService {
     }
 
     /** «Стол 5 (5)», «Стол VIP 13 (13)» or «не выбран», as every card names the table. */
-    static String tableName(TableReservationOrder order) {
+    public static String tableName(TableReservationOrder order) {
         if (order.tableCode() == null) {
             return "не выбран";
         }

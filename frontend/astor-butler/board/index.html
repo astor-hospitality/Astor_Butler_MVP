@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Astor — табло</title>
+<meta name="description" content="Закрытое табло Astor: визиты, переговоры агентов, метрики и здоровье систем.">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#0e1216">
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=20260707-aa">
+<link rel="stylesheet" href="../css/brand-typography.css">
+<link rel="stylesheet" href="../css/board.css">
+<script type="module" src="../js/board.js"></script>
+</head>
+<body class="locked">
+
+<div class="login" id="login">
+  <form class="login-box" id="loginForm" autocomplete="off">
+    <h1>Astor · Табло</h1>
+    <p>Табло закрыто. Введите токен табло.</p>
+    <label for="token">Токен</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" spellcheck="false" required>
+    <p class="error" id="loginError" role="alert"></p>
+    <button class="btn primary" type="submit">Войти</button>
+  </form>
+</div>
+
+<div class="frame">
+  <header class="topbar">
+    <div class="brand">Astor · Табло <small>AERIS · <span id="today"></span> · <span id="status" role="status">—</span></small></div>
+    <nav class="nav" role="tablist" aria-label="Разделы табло">
+      <button type="button" role="tab" data-tab="visits" aria-selected="true">Визиты</button>
+      <button type="button" role="tab" data-tab="metrics" aria-selected="false">Метрики</button>
+      <button type="button" role="tab" data-tab="arch" aria-selected="false">Архитектура</button>
+      <button type="button" role="tab" data-tab="lessons" aria-selected="false">Уроки</button>
+    </nav>
+    <div class="tools">
+      <button type="button" class="btn small" id="theme">Светлая</button>
+      <button type="button" class="btn small" id="logout">Выйти</button>
+    </div>
+  </header>
+
+  <main class="grid" id="tab-visits" role="tabpanel">
+    <div class="kanban" id="kanban" aria-label="Визиты по этапам"></div>
+    <p class="empty" id="noVisit">Визитов в окне нет.</p>
+    <section class="visit" id="visit" hidden>
+      <header><h2 id="visitTitle"></h2><span class="meta" id="visitMeta"></span></header>
+      <div class="summary" id="summary"></div>
+      <div class="summary-actions">
+        <form id="nextTimeForm" class="next-time">
+          <label class="sr-only" for="nextTime">В следующий раз</label>
+          <input id="nextTime" type="text" maxlength="500" placeholder="В следующий раз: заметка для агентов">
+          <button class="btn" type="submit">Добавить</button>
+        </form>
+        <button class="btn" type="button" id="rebuild">Пересобрать</button>
+        <span class="note" id="summaryNote" role="status"></span>
+      </div>
+      <div class="lanes" id="lanes"></div>
+    </section>
+    <div class="metrics" id="todayTiles" aria-label="Метрики за сегодня"></div>
+    <div class="health" id="health" aria-label="Здоровье систем"></div>
+  </main>
+
+  <main class="grid" id="tab-metrics" role="tabpanel" hidden>
+    <div class="picker" role="group" aria-label="Окно метрик">
+      <button type="button" class="btn small" data-window="today" aria-pressed="true">Сегодня</button>
+      <button type="button" class="btn small" data-window="7d" aria-pressed="false">7 дней</button>
+      <button type="button" class="btn small" data-window="30d" aria-pressed="false">30 дней</button>
+    </div>
+    <div class="metrics" id="metricTiles"></div>
+  </main>
+
+  <main class="grid" id="tab-arch" role="tabpanel" hidden>
+    <p class="note">Цвет узла — из карты здоровья, обновляется каждые 30 секунд · <span id="archUpdated"></span></p>
+    <div class="arch">
+      <svg viewBox="0 0 780 520" role="img" aria-label="Архитектура Astor: гость, Консьерж и Батлер, ресторан, модель и данные">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" class="arrowhead"/>
+          </marker>
+        </defs>
+        <g class="edges">
+          <path d="M170 230 C200 230 200 100 228 100"/>
+          <path d="M170 250 C200 250 200 350 228 350"/>
+          <path d="M300 142 L300 318"/>
+          <path d="M350 318 L350 142"/>
+          <path d="M412 330 C470 330 470 58 528 58"/>
+          <path d="M412 345 C480 345 480 160 528 160"/>
+          <path d="M412 92 C470 92 470 256 528 256"/>
+          <path d="M412 360 C480 360 480 272 528 272"/>
+          <path d="M412 375 C470 375 470 362 528 362"/>
+          <path d="M290 392 L200 438"/>
+          <path d="M320 392 L370 438"/>
+          <path d="M350 392 L540 438"/>
+        </g>
+        <text class="edge-label" x="208" y="236">переговоры ↓</text>
+        <text class="edge-label" x="360" y="222">события ↑</text>
+        <text class="edge-label" x="360" y="238">статус, счёт,</text>
+        <text class="edge-label" x="360" y="254">отзыв</text>
+        <g class="anode" data-node="guest" transform="translate(20 205)"><rect width="150" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Гость</text><text class="detail" x="16" y="44">Telegram · мини-апп</text><text class="sub" x="16" y="62">QR в зале · MAX</text></g>
+        <g class="anode" data-health="concierge" transform="translate(230 70)"><rect width="180" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Консьерж</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">агент гостя · SQLite: согласия</text></g>
+        <g class="anode" data-health="butler" transform="translate(230 320)"><rect width="180" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Батлер</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">агент ресторана · FSM · табло</text></g>
+        <g class="anode" data-health="saby" transform="translate(530 20)"><rect width="230" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Saby</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">брони и заказы ланча · Presto</text></g>
+        <g class="anode" data-node="staff" transform="translate(530 120)"><rect width="230" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Группа персонала</text><text class="detail" x="16" y="44">Telegram, темы:</text><text class="sub" x="16" y="62">Брони · Пожелания · Отзывы · График</text></g>
+        <g class="anode" data-health="gigachat" transform="translate(530 220)"><rect width="230" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">gigachat-3-pro</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">API Sber500 · агенты обоих ботов</text></g>
+        <g class="anode" data-node="glasses" transform="translate(530 325)"><rect width="230" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Очки персонала</text><text class="detail" x="16" y="44">пилот</text><text class="sub" x="16" y="62">без проверки здоровья</text></g>
+        <g class="anode" data-health="postgres" transform="translate(130 440)"><rect width="150" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Postgres</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">брони, визиты, журнал</text></g>
+        <g class="anode" data-health="redis" transform="translate(300 440)"><rect width="150" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Redis</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">FSM, идемпотентность</text></g>
+        <g class="anode" data-health="kafka" transform="translate(470 440)"><rect width="170" height="70" rx="10"/><circle cx="16" cy="20" r="5"/><text class="name" x="28" y="24">Kafka</text><text class="detail" x="16" y="44">—</text><text class="sub" x="16" y="62">события гостя · outbox</text></g>
+      </svg>
+    </div>
+    <section class="channels" aria-label="Каналы AERIS">
+      <div class="channel-col">
+        <h3>Подключено сейчас</h3>
+        <ul>
+          <li><b>Бот ресторана</b> @aeris_butler_bot — гости в зале по QR: бизнес-ланч, стол, счёт, отзыв</li>
+          <li><b>Astor Concierge</b> @astor_concierge_bot — агент гостя, ссылка «бизнес-ланч в AERIS», мини-апп</li>
+          <li><b>Группа персонала AERIS</b> — темы: Брони (карточки хостес), Пожелания, Обратная связь, График смен</li>
+          <li><b>Saby / Presto</b> — брони и заказы ланча в кассе ресторана</li>
+          <li><b>Сайт astor-ai.ru</b> — витрина и табло</li>
+          <li><b>Приглашения друзей</b> — кнопка «Пригласить друга» с меткой источника</li>
+        </ul>
+      </div>
+      <div class="channel-col">
+        <h3>Подключаем для трафика</h3>
+        <ul>
+          <li><b>QR «Бизнес-ланч в 2 сообщения»</b> на столах и стойке AERIS — неделя 1</li>
+          <li><b>Канал AERIS</b> t.me/aeris_gastrobar — посты про ланч — неделя 1</li>
+          <li><b>Чаты бизнес-центров рядом и городские Telegram-каналы</b> Екатеринбурга — платный тест ≈15 000 ₽, недели 3–4</li>
+          <li><b>Партнёрские рестораны</b> (3–5) — их боты, QR и гости — недели 3–4</li>
+          <li><b>MAX</b> — второй мессенджер для гостей, после теста в Telegram</li>
+          <li><b>Очки персонала</b> — пилот: поручения голосом в зале</li>
+        </ul>
+      </div>
+    </section>
+    <p class="legend"><span><i class="dot" style="background:var(--good)"></i>работает</span><span><i class="dot" style="background:var(--warn)"></i>есть ошибки</span><span><i class="dot" style="background:var(--bad)"></i>не отвечает</span><span><i class="dot" style="background:var(--idle)"></i>нет данных</span></p>
+  </main>
+
+  <main class="grid" id="tab-lessons" role="tabpanel" hidden>
+    <p class="note">Уроки, которые агенты предложили после визитов. Принятый урок (текст можно поправить) агент учитывает дальше; отклонённый до агента не доходит.</p>
+    <p class="empty" id="lessonsEmpty" hidden>Новых уроков нет.</p>
+    <div class="lessons" id="lessons"></div>
+  </main>
+</div>
+
+</body>
+</html>

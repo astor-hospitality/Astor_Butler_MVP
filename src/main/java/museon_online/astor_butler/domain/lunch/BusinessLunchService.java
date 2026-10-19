@@ -37,6 +37,8 @@ public class BusinessLunchService {
     /** How the guest's wish reads on the hostess card and in the Saby comment: every wish is agreed with the kitchen, never promised. */
     public static final String WISH_PREFIX = "Пожелание гостя: ";
     public static final String WISH_SUFFIX = " — согласовать с кухней";
+    /** How far {@link #nextLunchDay} looks ahead, as far as the bot's day buttons do. */
+    private static final int LOOK_AHEAD_DAYS = 21;
 
     private final TableReservationService tableReservationService;
     private final List<ExternalLunchOrderProvider> externalProviders;
@@ -54,6 +56,14 @@ public class BusinessLunchService {
 
     @Autowired(required = false)
     private List<BusinessLunchOrderListener> listeners = List.of();
+
+    /** The «Внести в кассу вручную» card for a lunch the venue's till did not take. Optional so the tests' constructors stay as they are. */
+    @Autowired(required = false)
+    private LunchManualEntryNotifier manualEntryNotifier;
+
+    void setManualEntryNotifier(LunchManualEntryNotifier manualEntryNotifier) {
+        this.manualEntryNotifier = manualEntryNotifier;
+    }
 
     public enum WindowIssue {
         NOT_A_LUNCH_DAY,
@@ -102,18 +112,57 @@ public class BusinessLunchService {
         }
     }
 
+    /** Where the dishes of a placed lunch are now. */
+    public enum KitchenHandoff {
+        /** The venue's till (Saby) took the dishes: the kitchen has them. */
+        TILL_CONFIRMED,
+        /**
+         * The till refused, failed, did not say (a 500, a timeout) or is not connected: the order stays in Butler and the
+         * staff enter it by hand. The guest is told the waiter enters it, never that it is placed.
+         */
+        MANUAL_ENTRY,
+        /** Nothing was placed: the guest's earlier request was in the way. */
+        NOT_PLACED
+    }
+
     /**
      * @param reservation the table held for this lunch; when {@code alreadyPlaced}, the guest's earlier request that is in its way
      * @param alreadyPlaced the guest already holds a request at this venue for a time that crosses the lunch, so no second table was held
      * @param order what was ordered; null when nothing was placed
      * @param external what the venue's own system answered; {@code MANUAL_ENTRY} when none is switched on; null when nothing was placed
+     * @param handoff whether the kitchen has the dishes from the till ({@link KitchenHandoff#TILL_CONFIRMED}) or staff enter them by hand
+     * @param staffNotified the staff group has the «Внести в кассу вручную» card for this order (sent now or before)
      */
     public record Placement(
             TableReservationOrder reservation,
             boolean alreadyPlaced,
             BusinessLunchOrder order,
-            ExternalLunchOrderProvider.Result external
+            ExternalLunchOrderProvider.Result external,
+            KitchenHandoff handoff,
+            boolean staffNotified
     ) {
+        public Placement(TableReservationOrder reservation, boolean alreadyPlaced, BusinessLunchOrder order,
+                         ExternalLunchOrderProvider.Result external) {
+            this(reservation, alreadyPlaced, order, external, handoffOf(alreadyPlaced, order, external), false);
+        }
+
+        /** Only an accepted answer of the till is a confirmed kitchen order; anything else is entered by hand. */
+        public static KitchenHandoff handoffOf(boolean alreadyPlaced, BusinessLunchOrder order, ExternalLunchOrderProvider.Result external) {
+            if (alreadyPlaced || order == null) {
+                return KitchenHandoff.NOT_PLACED;
+            }
+            return external != null && external.accepted() ? KitchenHandoff.TILL_CONFIRMED : KitchenHandoff.MANUAL_ENTRY;
+        }
+
+        /** The till took the dishes; false for a failure, an unknown result and a venue without a till connection. */
+        public boolean kitchenConfirmed() {
+            return handoff == KitchenHandoff.TILL_CONFIRMED;
+        }
+
+        /** The dishes are to be entered by hand: the guest hears «Заказ передал официанту, он внесёт его в кассу». */
+        public boolean manualEntry() {
+            return handoff == KitchenHandoff.MANUAL_ENTRY;
+        }
     }
 
     /**
@@ -131,17 +180,25 @@ public class BusinessLunchService {
 
     /** Why this day or time cannot be a business lunch. A null time checks the day alone. */
     public Optional<WindowIssue> windowIssue(BusinessLunchOffer offer, LocalDate date, LocalTime time) {
+        return windowIssue(offer, date, time, timeProvider.today(), timeProvider.nowTime());
+    }
+
+    /**
+     * The rule of {@link #windowIssue(BusinessLunchOffer, LocalDate, LocalTime)} with the venue's «today» and «now»
+     * given: the agents' tools keep their own clock and must refuse exactly what the bot refuses.
+     */
+    public static Optional<WindowIssue> windowIssue(BusinessLunchOffer offer, LocalDate date, LocalTime time, LocalDate today,
+                                                    LocalTime now) {
         if (date == null) {
             return Optional.empty();
         }
-        LocalDate today = timeProvider.today();
         if (date.isBefore(today)) {
             return Optional.of(WindowIssue.ALREADY_PASSED);
         }
         if (!offer.days().contains(date.getDayOfWeek())) {
             return Optional.of(WindowIssue.NOT_A_LUNCH_DAY);
         }
-        if (date.equals(today) && !timeProvider.nowTime().isBefore(offer.to())) {
+        if (date.equals(today) && !now.isBefore(offer.to())) {
             return Optional.of(WindowIssue.ALREADY_PASSED);
         }
         if (time == null) {
@@ -150,8 +207,23 @@ public class BusinessLunchService {
         if (time.isBefore(offer.from()) || !time.isBefore(offer.to())) {
             return Optional.of(WindowIssue.OUTSIDE_LUNCH_HOURS);
         }
-        if (date.equals(today) && !time.isAfter(timeProvider.nowTime())) {
+        if (date.equals(today) && !time.isAfter(now)) {
             return Optional.of(WindowIssue.ALREADY_PASSED);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * The nearest day from {@code from} on (never before today) whose lunch is still ahead, by the same rule: on a
+     * Saturday it is Monday, on a weekday after the lunch hours the next lunch day. Empty when none falls within
+     * three weeks.
+     */
+    public static Optional<LocalDate> nextLunchDay(BusinessLunchOffer offer, LocalDate from, LocalDate today, LocalTime now) {
+        LocalDate day = from == null || from.isBefore(today) ? today : from;
+        for (int ahead = 0; ahead < LOOK_AHEAD_DAYS; ahead++, day = day.plusDays(1)) {
+            if (windowIssue(offer, day, null, today, now).isEmpty()) {
+                return Optional.of(day);
+            }
         }
         return Optional.empty();
     }
@@ -203,8 +275,109 @@ public class BusinessLunchService {
         ));
         BusinessLunchOrder order = order(request, set, dishes, reservation, startAt, endAt);
         ExternalLunchOrderProvider.Result external = provider.map(ready -> submit(ready, order)).orElseGet(ExternalLunchOrderProvider.Result::manualEntry);
+        // Without a till the reservation card above already lists the dishes with «В Saby внести вручную».
+        boolean staffNotified = external.attempted() ? announceManualEntry(order, external) : provider.isEmpty();
         notifyListeners(request, order, external);
-        return new Placement(reservation, false, order, external);
+        return placed(reservation, order, external, staffNotified);
+    }
+
+    /**
+     * The lunch ordered into a reservation the guest already holds (the agents' {@code lunch_order_place}): no second
+     * table is held, the order is handed to the venue's system and to the listeners as {@link #place} does. The
+     * reservation's time must fall on a lunch day within the lunch hours; the hostess still confirms the reservation.
+     *
+     * @throws IllegalStateException when the reservation no longer holds a table (see {@link #holdsATable})
+     */
+    public Placement placeFor(TableReservationOrder reservation, Request request) {
+        if (!holdsATable(reservation)) {
+            throw new IllegalStateException("Business lunch cannot be placed into a reservation that holds no table: "
+                    + (reservation == null ? null : reservation.status()));
+        }
+        BusinessLunchOffer offer = request.offer();
+        BusinessLunchOffer.LunchSet set = offer.aLaCarte() ? null : offer.set(request.setCode())
+                .orElseThrow(() -> new IllegalArgumentException("Unknown business lunch set: " + request.setCode()));
+        if (request.guests() < 1 || request.guests() > MAX_GUESTS) {
+            throw new IllegalArgumentException("Business lunch is for 1 to " + MAX_GUESTS + " guests");
+        }
+        lunchTimeIssue(offer, request.date(), request.time()).ifPresent(issue -> {
+            throw new IllegalArgumentException("Business lunch cannot be placed: " + issue);
+        });
+        List<BusinessLunchOrder.Item> dishes = items(offer, request.dishCodes(), set == null ? 1 : request.guests());
+        if (dishes.isEmpty()) {
+            throw new IllegalArgumentException("Business lunch order has no dishes");
+        }
+        Optional<ExternalLunchOrderProvider> provider = externalProviders.stream()
+                .filter(candidate -> isReady(candidate.status()))
+                .findFirst();
+        BusinessLunchOrder order = order(request, set, dishes, reservation, reservation.requestedStartAt(), reservation.requestedEndAt());
+        ExternalLunchOrderProvider.Result external = provider.map(ready -> submit(ready, order)).orElseGet(ExternalLunchOrderProvider.Result::manualEntry);
+        // The reservation's card was sent long before: the dishes reach the staff by this card or by the till.
+        boolean staffNotified = announceManualEntry(order, external);
+        notifyListeners(request, order, external);
+        return placed(reservation, order, external, staffNotified);
+    }
+
+    private static Placement placed(TableReservationOrder reservation, BusinessLunchOrder order,
+                                    ExternalLunchOrderProvider.Result external, boolean staffNotified) {
+        KitchenHandoff handoff = Placement.handoffOf(false, order, external);
+        if (handoff == KitchenHandoff.MANUAL_ENTRY) {
+            log.warn("Business lunch is not in the till, staff enter it by hand: reservation={}, status={}, staffNotified={}",
+                    order.tableReservationId(), external.status(), staffNotified);
+        }
+        return new Placement(reservation, false, order, external, handoff, handoff == KitchenHandoff.MANUAL_ENTRY && staffNotified);
+    }
+
+    /**
+     * The «Внести в кассу вручную» card, only when the till did not take the dishes. Whether the staff have it, now or
+     * from an earlier placement of the same order.
+     */
+    private boolean announceManualEntry(BusinessLunchOrder order, ExternalLunchOrderProvider.Result external) {
+        if (external.accepted() || manualEntryNotifier == null) {
+            return false;
+        }
+        LunchManualEntryNotifier.Outcome outcome = manualEntryNotifier.manualEntry(order, external);
+        return outcome == LunchManualEntryNotifier.Outcome.SENT || outcome == LunchManualEntryNotifier.Outcome.ALREADY_SENT;
+    }
+
+    /** A reservation still waiting for the hostess, confirmed or seated: the only ones a lunch may be ordered into. */
+    public static boolean holdsATable(TableReservationOrder reservation) {
+        if (reservation == null || reservation.status() == null) {
+            return false;
+        }
+        return switch (reservation.status()) {
+            case AWAITING_MANAGER_CONFIRMATION, CONFIRMED, SEATED -> true;
+            default -> false;
+        };
+    }
+
+    /** Whether a held reservation's time can carry a lunch: the day and the hours only, the time may have begun. */
+    public static Optional<WindowIssue> lunchTimeIssue(BusinessLunchOffer offer, LocalDate date, LocalTime time) {
+        if (date == null || time == null) {
+            return Optional.empty();
+        }
+        if (!offer.days().contains(date.getDayOfWeek())) {
+            return Optional.of(WindowIssue.NOT_A_LUNCH_DAY);
+        }
+        if (time.isBefore(offer.from()) || !time.isBefore(offer.to())) {
+            return Optional.of(WindowIssue.OUTSIDE_LUNCH_HOURS);
+        }
+        return Optional.empty();
+    }
+
+    /** What the guest pays for these dishes by the offer's prices; null when a price is not published. */
+    public static Integer totalRub(BusinessLunchOffer offer, String setCode, List<String> dishCodes, int guests) {
+        if (!offer.aLaCarte()) {
+            return offer.set(setCode).map(BusinessLunchOffer.LunchSet::priceRub).map(price -> price * guests).orElse(null);
+        }
+        int total = 0;
+        for (String code : dishCodes) {
+            Integer price = offer.dish(code).map(BusinessLunchOffer.Dish::priceRub).orElse(null);
+            if (price == null) {
+                return null;
+            }
+            total += price;
+        }
+        return total;
     }
 
     private void notifyListeners(Request request, BusinessLunchOrder order, ExternalLunchOrderProvider.Result external) {

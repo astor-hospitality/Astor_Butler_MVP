@@ -35,6 +35,14 @@ public class JourneyRecorder {
         this.clock = clock;
     }
 
+    /** The visit ledger (negotiation plan, task 1): staff and Presto actions; optional, writes nothing while off. */
+    private museon_online.astor_butler.domain.ledger.LedgerWriter ledgerWriter;
+
+    @Autowired(required = false)
+    public void setLedgerWriter(museon_online.astor_butler.domain.ledger.LedgerWriter ledgerWriter) {
+        this.ledgerWriter = ledgerWriter;
+    }
+
     public boolean enabled() {
         return properties.isEnabled();
     }
@@ -54,6 +62,9 @@ public class JourneyRecorder {
             if (written && kind.stage() != null && moves(visit.stage(), kind.stage())) {
                 visits.moveStage(visit.id(), kind.stage());
             }
+            if (written) {
+                ledgerStaffAction(visit.id(), kind, source);
+            }
             return visits.findByReservation(reservationId);
         } catch (RuntimeException e) {
             log.warn("Guest journey event not recorded: reservation={}, kind={}, reason={}", reservationId, kind, e.toString());
@@ -61,9 +72,21 @@ public class JourneyRecorder {
         }
     }
 
+    private void ledgerStaffAction(long visitId, VisitEventKind kind, String source) {
+        boolean staff = JourneyEvents.STAFF.equals(source);
+        if (ledgerWriter == null || !(staff || JourneyEvents.PRESTO.equals(source))) {
+            return;
+        }
+        ledgerWriter.write(new museon_online.astor_butler.domain.ledger.VisitTurnDraft(visitId, null,
+                staff ? museon_online.astor_butler.domain.ledger.TurnSide.STAFF : museon_online.astor_butler.domain.ledger.TurnSide.SYSTEM,
+                staff ? museon_online.astor_butler.domain.ledger.TurnChannel.STAFF_GROUP : museon_online.astor_butler.domain.ledger.TurnChannel.SABY,
+                museon_online.astor_butler.domain.ledger.TurnKind.STAFF_ACTION, kind.name(), null, null));
+    }
+
     private GuestVisit open(long reservationId, Long chatId, String guestPhone, String venueCode, Instant visitDay) {
         try {
-            return visits.open(reservationId, chatId, guestPhone, venueCode == null ? "AERIS" : venueCode, visitDay);
+            return visits.open(reservationId, chatId, guestPhone, venueCode == null ? "AERIS" : venueCode, visitDay,
+                    clock.instant());
         } catch (DataIntegrityViolationException concurrentlyOpened) {
             return visits.findByReservation(reservationId).orElseThrow(() -> concurrentlyOpened);
         }

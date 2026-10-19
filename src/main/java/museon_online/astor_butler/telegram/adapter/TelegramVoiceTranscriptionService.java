@@ -13,6 +13,8 @@ import org.telegram.telegrambots.meta.api.methods.GetFile;
 import org.telegram.telegrambots.meta.bots.AbsSender;
 
 import java.io.InputStream;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.net.URI;
 import java.net.URLConnection;
 import java.nio.file.Files;
@@ -45,6 +47,16 @@ public class TelegramVoiceTranscriptionService {
 
     @Value("${telegram.bot.token:}")
     private String botToken;
+
+    /** The bot's own proxy (see TelegramBotConfig): where Telegram is reachable only through it, so is the file. */
+    @Value("${telegram.bot.proxy.type:NO_PROXY}")
+    private String proxyType;
+
+    @Value("${telegram.bot.proxy.host:}")
+    private String proxyHost;
+
+    @Value("${telegram.bot.proxy.port:0}")
+    private int proxyPort;
 
     @Value("${telegram.voice.download-timeout-ms:15000}")
     private int downloadTimeoutMs;
@@ -159,7 +171,7 @@ public class TelegramVoiceTranscriptionService {
             throw new IllegalStateException("Telegram bot token is empty");
         }
 
-        URLConnection connection = URI.create(telegramFile.getFileUrl(botToken)).toURL().openConnection();
+        URLConnection connection = URI.create(telegramFile.getFileUrl(botToken)).toURL().openConnection(downloadProxy());
         int timeout = Math.max(1000, downloadTimeoutMs);
         connection.setConnectTimeout(timeout);
         connection.setReadTimeout(timeout);
@@ -167,6 +179,19 @@ public class TelegramVoiceTranscriptionService {
             Files.copy(inputStream, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         }
         return target;
+    }
+
+    Proxy downloadProxy() {
+        if (proxyType == null || proxyHost == null || proxyHost.isBlank() || proxyPort <= 0) {
+            return Proxy.NO_PROXY;
+        }
+        Proxy.Type type = switch (proxyType.trim().toUpperCase(java.util.Locale.ROOT).replace("-", "_")) {
+            case "HTTP" -> Proxy.Type.HTTP;
+            case "SOCKS4", "SOCKS5" -> Proxy.Type.SOCKS;
+            default -> Proxy.Type.DIRECT;
+        };
+        return type == Proxy.Type.DIRECT ? Proxy.NO_PROXY
+                : new Proxy(type, InetSocketAddress.createUnresolved(proxyHost.trim(), proxyPort));
     }
 
     private String suffix(String filePath, Map<String, Object> payload) {

@@ -133,6 +133,97 @@ class VisitReviewServiceTest {
         verify(notifier, times(2)).reviewPrompt(due);
     }
 
+    @Test
+    void submitRecordsTheStarsOnceWithTheJourneyEvent() {
+        museon_online.astor_butler.domain.journey.JourneyEvents journey = org.mockito.Mockito.mock(museon_online.astor_butler.domain.journey.JourneyEvents.class);
+        reviews.setJourneyEvents(journey);
+        GuestBill bill = bill(79L, NOW.minus(Duration.ofHours(2)));
+
+        assertThat(reviews.submit(79L, 4, "Очень вкусно")).isTrue();
+        assertThat(reviews.submit(79L, 5, null)).isFalse();
+        assertThat(reviews.submit(80L, 5, null)).isFalse();
+
+        assertThat(reviews.reviewOf(bill.id()).orElseThrow().stars()).isEqualTo(4);
+        verify(journey).onReservationId(79L, museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW,
+                museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=4");
+        verify(notifier, never()).reviewPrompt(any());
+        assertThat(bills.historyOf(bill.id())).extracting(BillOperation::type).contains(BillOperationType.REVIEW_RECEIVED);
+    }
+
+    @Test
+    void submitWorksForABillWithoutAChat() {
+        GuestBill bill = bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", 92L, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.minus(Duration.ofHours(1))));
+
+        assertThat(reviews.submit(92L, 5, null)).isTrue();
+        assertThat(reviews.submit(92L, 4, null)).isFalse();
+
+        VisitReview review = reviews.reviewOf(bill.id()).orElseThrow();
+        assertThat(review.stars()).isEqualTo(5);
+        assertThat(review.chatId()).isNull();
+        assertThat(reviews.prompt(bill)).isEmpty();
+    }
+
+    @Test
+    void aConciergeBillIsAskedOnceThroughTheConciergeAndATelegramOneAsBefore() {
+        GuestBill concierge = bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", 93L, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.minus(Duration.ofHours(2))));
+        org.mockito.Mockito.when(notifier.reachesConcierge(concierge)).thenReturn(true);
+
+        assertThat(reviews.prompt(concierge)).isPresent();
+        assertThat(reviews.prompt(concierge)).isPresent();
+        verify(notifier, times(1)).reviewPrompt(concierge);
+
+        GuestBill orphan = bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", 94L, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.minus(Duration.ofHours(2))));
+        assertThat(reviews.prompt(orphan)).isEmpty();
+        verify(notifier, never()).reviewPrompt(orphan);
+
+        GuestBill telegram = bill(77L, NOW.minus(Duration.ofHours(2)));
+        assertThat(reviews.prompt(telegram)).isPresent();
+        verify(notifier).reviewPrompt(telegram);
+    }
+
+    @Test
+    void theConciergeQuestionIsDeliveredOutsideTheLockAndAFailureLeavesNothingBehind() {
+        GuestBill concierge = conciergeBill(95L);
+        org.mockito.Mockito.when(notifier.reachesConcierge(concierge)).thenReturn(true);
+        java.util.List<Boolean> lockHeld = new java.util.ArrayList<>();
+        org.mockito.Mockito.when(notifier.reviewPrompt(concierge)).thenAnswer(call -> {
+            lockHeld.add(Thread.holdsLock(reviews));
+            return lockHeld.size() > 1;
+        });
+
+        assertThat(reviews.prompt(concierge)).isEmpty();
+        assertThat(reviews.reviewOf(concierge.id())).isEmpty();
+        assertThat(reviews.prompt(concierge)).isPresent();
+
+        assertThat(lockHeld).containsExactly(false, false);
+        assertThat(bills.historyOf(concierge.id())).extracting(BillOperation::type)
+                .containsExactly(BillOperationType.ESTIMATE_CREATED, BillOperationType.REVIEW_PROMPTED);
+    }
+
+    @Test
+    void anInteractiveAskQueuesTheConciergeQuestionAndTheClockDeliversIt() {
+        GuestBill queued = conciergeBill(96L);
+        GuestBill clocked = conciergeBill(97L);
+        org.mockito.Mockito.when(notifier.reachesConcierge(any())).thenReturn(true);
+        org.mockito.Mockito.when(notifier.reviewPromptQueued(queued)).thenReturn(true);
+
+        assertThat(reviews.promptQueued(queued, "trigger=hostess")).isPresent();
+        assertThat(reviews.prompt(clocked)).isPresent();
+
+        verify(notifier).reviewPromptQueued(queued);
+        verify(notifier, never()).reviewPrompt(queued);
+        verify(notifier).reviewPrompt(clocked);
+        verify(notifier, never()).reviewPromptQueued(clocked);
+    }
+
+    private GuestBill conciergeBill(long reservationId) {
+        return bills.open(new BillDraft(null, null, "AERIS", GuestBillKind.BUSINESS_LUNCH, "CONCIERGE", reservationId, "test",
+                OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 1, 270))), NOW.minus(Duration.ofHours(2))));
+    }
+
     private GuestBill bill(long reservationId, Instant visitEndsAt) {
         return bills.open(new BillDraft(CHAT, CHAT, "AERIS", GuestBillKind.BUSINESS_LUNCH, "DIRECT", reservationId, "test",
                 OrderEstimate.of(List.of(OrderEstimate.Line.priced("BORSCHT", "Борщ", 2, 270))), visitEndsAt));
@@ -150,5 +241,50 @@ class VisitReviewServiceTest {
 
         org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=5");
         org.mockito.Mockito.verify(journey).onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.TIP, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
+    }
+
+    @Test
+    void theTeamSeesEachAnswerInItsTopicButNotTheTip() {
+        VisitReviewStaffCard card = mock(VisitReviewStaffCard.class);
+        reviews.setStaffCard(card);
+        GuestBill bill = bill(77L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(bill);
+
+        reviews.handleCallback("visit_review:" + bill.id() + ":stars:4", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":thumb:DOWN", CHAT);
+        reviews.handleCallback("visit_review:" + bill.id() + ":tip", CHAT);
+
+        org.mockito.ArgumentCaptor<VisitReview> seen = org.mockito.ArgumentCaptor.forClass(VisitReview.class);
+        verify(card, times(2)).publish(org.mockito.ArgumentMatchers.argThat(b -> b.id().equals(bill.id())), seen.capture(), org.mockito.ArgumentMatchers.isNull());
+        assertThat(seen.getAllValues()).extracting(VisitReview::stars, VisitReview::thumb)
+                .containsExactly(tuple(4, null), tuple(4, VisitReview.Thumb.DOWN));
+    }
+
+    @Test
+    void theAgentsStarsReachTheTeamWithTheGuestsWords() {
+        VisitReviewStaffCard card = mock(VisitReviewStaffCard.class);
+        reviews.setStaffCard(card);
+        GuestBill bill = bill(79L, NOW.minus(Duration.ofHours(2)));
+
+        assertThat(reviews.submit(79L, 5, "Очень вкусно")).isTrue();
+        assertThat(reviews.submit(79L, 4, null)).isFalse();
+
+        verify(card, times(1)).publish(org.mockito.ArgumentMatchers.argThat(b -> b.id().equals(bill.id())),
+                org.mockito.ArgumentMatchers.argThat(r -> r.stars() == 5), org.mockito.ArgumentMatchers.eq("Очень вкусно"));
+    }
+
+    @Test
+    void aCardThatFailsNeverLosesTheGuestsAnswer() {
+        VisitReviewStaffCard card = mock(VisitReviewStaffCard.class);
+        org.mockito.Mockito.when(card.publish(any(), any(), any())).thenThrow(new IllegalStateException("telegram down"));
+        reviews.setStaffCard(card);
+        GuestBill bill = bill(77L, NOW.minus(Duration.ofHours(2)));
+        reviews.prompt(bill);
+
+        VisitReviewService.CallbackResult stars = reviews.handleCallback("visit_review:" + bill.id() + ":stars:2", CHAT);
+
+        assertThat(stars.answerText()).isEqualTo("Спасибо за оценку!");
+        assertThat(reviews.reviewOf(bill.id()).orElseThrow().stars()).isEqualTo(2);
+        verify(notifier).reviewThanks(any(), any());
     }
 }

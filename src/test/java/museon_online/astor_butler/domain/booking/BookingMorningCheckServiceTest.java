@@ -242,6 +242,34 @@ class BookingMorningCheckServiceTest {
     }
 
     /** The morning question has gone out to today's guests. */
+    @Test
+    void aConciergeBookingIsAskedThroughTheConciergeOnce() {
+        Instant start = ZonedDateTime.of(DAY, LocalTime.of(19, 0), VENUE).toInstant();
+        Instant created = DAY.minusDays(1).atTime(12, 0).atZone(VENUE).toInstant();
+        TableReservationOrder concierge = new TableReservationOrder(50L, null, null, null, 5L, "5", "Table 5", null, null,
+                TableReservationStatus.CONFIRMED, "CONCIERGE", start, start.plusSeconds(7200), 2, "Мария", null, null, null, null,
+                null, null, created, created);
+        TableReservationOrder orphan = new TableReservationOrder(51L, null, null, null, 5L, "5", "Table 5", null, null,
+                TableReservationStatus.CONFIRMED, "CONCIERGE", start, start.plusSeconds(7200), 2, "Олег", null, null, null, null,
+                null, null, created, created);
+        when(reservations.findOrdersStartingBetween(eq("AERIS"), any(), any(), anyInt())).thenReturn(List.of(concierge, orphan));
+        museon_online.astor_butler.integration.concierge.ConciergeWebhook webhook =
+                mock(museon_online.astor_butler.integration.concierge.ConciergeWebhook.class);
+        when(webhook.reaches(50L)).thenReturn(true);
+        when(webhook.announceNow("MORNING", concierge)).thenReturn(true);
+        service.setConciergeWebhook(webhook);
+
+        asked();
+        clock.advance(Duration.ofMinutes(5));
+        service.run();
+
+        verify(webhook, times(1)).announceNow("MORNING", concierge);
+        verify(webhook, never()).announceNow(eq("MORNING"), eq(orphan));
+        verifyNoInteractions(notifier);
+        assertThat(checks.find(50L)).hasValueSatisfying(check -> assertThat(check.sentAt()).isNotNull());
+        assertThat(checks.find(51L)).isEmpty();
+    }
+
     private void asked() {
         clock.advance(Duration.ofSeconds(60));
         service.run();

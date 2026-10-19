@@ -69,6 +69,14 @@ public class BookingMorningCheckService {
         this.journeyEvents = journeyEvents;
     }
 
+    /** The Butler → Concierge webhook (negotiation plan, task 9): optional so the constructor and its tests stay as they are. */
+    private museon_online.astor_butler.integration.concierge.ConciergeWebhook conciergeWebhook;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setConciergeWebhook(museon_online.astor_butler.integration.concierge.ConciergeWebhook conciergeWebhook) {
+        this.conciergeWebhook = conciergeWebhook;
+    }
+
     @Autowired
     public BookingMorningCheckService(BookingMorningCheckProperties properties, TableReservationRepository reservations,
                                       BookingMorningCheckRepository checks, BookingMorningCheckNotifier notifier) {
@@ -120,12 +128,17 @@ public class BookingMorningCheckService {
                 skipped++;
                 continue;
             }
-            if (!checks.claim(order.id(), order.chatId(), today)) {
+            // A Concierge booking has no chat here (claimed with chat 0, which no button can answer): asked through the webhook.
+            boolean viaConcierge = order.chatId() == null;
+            if (!checks.claim(order.id(), viaConcierge ? 0L : order.chatId(), today)) {
                 skipped++;
                 continue;
             }
             try {
-                if (notifier.ask(order, startTime(order, zone))) {
+                boolean asked = viaConcierge
+                        ? conciergeWebhook.announceNow(museon_online.astor_butler.integration.concierge.ConciergeEvent.MORNING, order)
+                        : notifier.ask(order, startTime(order, zone));
+                if (asked) {
                     checks.markSent(order.id(), now);
                     sent++;
                 } else {
@@ -145,10 +158,13 @@ public class BookingMorningCheckService {
         if (!active(order)) {
             return Optional.of("status " + order.status());
         }
-        if (order.chatId() == null || order.chatId() <= 0) {
+        if (order.chatId() == null && !reachesConcierge(order)) {
             return Optional.of("no guest dialog");
         }
-        if (order.chatId() >= TELEGRAM_CHAT_ID_LIMIT) {
+        if (order.chatId() != null && order.chatId() <= 0) {
+            return Optional.of("no guest dialog");
+        }
+        if (order.chatId() != null && order.chatId() >= TELEGRAM_CHAT_ID_LIMIT) {
             return Optional.of("web/MAX chat without Telegram delivery");
         }
         if (order.requestedStartAt() == null) {
@@ -161,6 +177,10 @@ public class BookingMorningCheckService {
             return Optional.of("booked after the morning check time");
         }
         return Optional.empty();
+    }
+
+    private boolean reachesConcierge(TableReservationOrder order) {
+        return conciergeWebhook != null && order.id() != null && conciergeWebhook.reaches(order.id());
     }
 
     /** The button the guest pressed under the morning question. Only the guest who was asked can answer. */

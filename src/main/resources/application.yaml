@@ -19,6 +19,8 @@ astor:
       # Persona for free-text replies (what the Yandex AI Studio agent carried), read once at startup.
       # JSON understanding calls are sent without it. Empty: no system message.
       system-prompt-file: ${OPENAI_COMPATIBLE_SYSTEM_PROMPT_FILE:}
+      # parallel_tool_calls of agent tool requests: empty — not sent; false — one call per answer.
+      parallel-tool-calls: ${OPENAI_COMPATIBLE_PARALLEL_TOOL_CALLS:}
     # provider=cloudru: Cloud.ru Evolution Foundation Models (Sber), the OpenAI HTTP API with a bearer key
     # from the Cloud.ru console. Same shape and limits as openai-compatible, own variables so both can be
     # configured at once and switched by ASTOR_MODEL_PROVIDER. Model names are the catalogue's own (GET /models),
@@ -52,6 +54,28 @@ astor:
       timeout-ms: ${GIGACHAT_TIMEOUT_MS:15000}
       max-tokens: ${GIGACHAT_MAX_TOKENS:256}
       temperature: ${GIGACHAT_TEMPERATURE:0.1}
+  # The Butler's agent (negotiation plan, task 8): POST /api/negotiation/v1/turn for the Concierge and, in the
+  # Butler's own bot, chats from ASTOR_AGENT_ALLOWLIST (comma-separated chat ids; empty — nobody; * or all — every private chat). Off by default.
+  agent:
+    enabled: ${ASTOR_AGENT_ENABLED:false}
+    allowlist: ${ASTOR_AGENT_ALLOWLIST:}
+    # Model name for agent chats with function calling (replaces the configured GigaChat model). It must be a name of
+    # the agent's provider: GigaChat-2-Pro for gigachat, a GET /models name (e.g. gigachat-3-pro) for openai-compatible.
+    model: ${ASTOR_AGENT_MODEL:GigaChat-2-Pro}
+    # Empty: the agent uses ASTOR_MODEL_PROVIDER's model. openai-compatible: only the agent goes to OPENAI_COMPATIBLE_*
+    # (everything else stays on ASTOR_MODEL_PROVIDER). Rollback: empty again and ASTOR_AGENT_MODEL=GigaChat-2-Pro.
+    provider: ${ASTOR_AGENT_PROVIDER:}
+    # Rubles per venue day for the agent's model calls, kept in agent_budget_days (survives restarts); empty — no limit.
+    # Reached: agent turns fall back to the scenarios until the next day. On the Sber500 API: 1000 (decision of 15.10).
+    daily-budget-rub: ${ASTOR_AGENT_DAILY_BUDGET_RUB:}
+    # Reserved per model call before it is made (worst case: ~12k input tokens and 512 output on gigachat-3-pro ≈ 1 ₽);
+    # replaced by the charged price after the answer, kept whole for an unknown price, a timeout or a failure.
+    call-reserve-rub: ${ASTOR_AGENT_CALL_RESERVE_RUB:1}
+    # One negotiation turn (up to 5 tool calls, each model call at most 20 s) ends as a fallback after this long;
+    # under the Concierge's BUTLER_NEGOTIATION_TIMEOUT_MS (30 s).
+    turn-timeout-ms: ${ASTOR_AGENT_TURN_TIMEOUT_MS:25000}
+    # The Butler's own bot has one update thread: an agent turn there holds it this long at most, then the scenarios answer.
+    bot-turn-timeout-ms: ${ASTOR_AGENT_BOT_TURN_TIMEOUT_MS:12000}
   redis:
     fsm-ttl-seconds: ${FSM_REDIS_TTL_SECONDS:259200}
     idempotency-ttl-seconds: ${IDEMPOTENCY_REDIS_TTL_SECONDS:86400}
@@ -110,6 +134,37 @@ astor:
       provider: ${ASTOR_I18N_MT_PROVIDER:none}
       source-language: ${ASTOR_I18N_MT_SOURCE_LANGUAGE:ru}
       cache-max-entries: ${ASTOR_I18N_MT_CACHE_MAX_ENTRIES:5000}
+  # One visit ledger (negotiation plan, task 1): guest, Concierge, Butler, staff and Saby turns under one visit id.
+  ledger:
+    enabled: ${ASTOR_LEDGER_ENABLED:false}
+  # Closed board (negotiation plan, task 2): /api/board/** answers only with X-Astor-Board-Token (16+ characters).
+  board:
+    enabled: ${ASTOR_BOARD_ENABLED:false}
+    token: ${ASTOR_BOARD_TOKEN:}
+    concierge-health-url: ${ASTOR_BOARD_CONCIERGE_HEALTH_URL:http://astor-concierge:8080/readyz}
+  # Visit summaries (negotiation plan, task 3): one model call per finished visit, every 10 minutes; lessons for the
+  # agents wait for a manager on the board. ASTOR_SUMMARY_MODEL blank = the gateway's configured model (GIGACHAT_MODEL).
+  summary:
+    enabled: ${ASTOR_VISIT_SUMMARY_ENABLED:false}
+    model: ${ASTOR_SUMMARY_MODEL:}
+    poll-ms: ${ASTOR_SUMMARY_POLL_MS:600000}
+  # Capability API v1 (negotiation plan, task 6): tools for the Concierge (/api/capabilities/**, internal token) and the Butler's agent.
+  capabilities:
+    enabled: ${ASTOR_CAPABILITIES_ENABLED:false}
+  # Butler -> Concierge webhook (negotiation plan, task 9): events of bookings made in a Concierge session, signed with
+  # HMAC-SHA256 (X-Astor-Signature: sha256=<hex>); a secret shorter than 16 characters sends nothing.
+  concierge-webhook:
+    enabled: ${ASTOR_CONCIERGE_WEBHOOK_ENABLED:false}
+    url: ${ASTOR_CONCIERGE_WEBHOOK_URL:http://astor-concierge-concierge-1:8096}
+    secret: ${ASTOR_WEBHOOK_SECRET:}
+  # Unified call log for the accelerator report (docs/operations/CALL_LOG.md): LLM/Saby calls, guest messages, target actions.
+  call-log:
+    enabled: ${ASTOR_CALL_LOG_ENABLED:false}
+    # At least 16 characters, otherwise rows are written without pseudonymous user ids.
+    salt: ${ASTOR_CALL_LOG_SALT:}
+    # Overrides/additions to the built-in GigaChat tariffs, rubles per 1M tokens:
+    # "GigaChat-3-Pro=73,176;GigaChat/GigaChat-2-Max=569,569;yandexgpt-5-lite=40,40". Empty: the defaults of ModelTariff.
+    tariffs: ${ASTOR_CALL_LOG_TARIFFS:}
   # Guest journey (docs/superpowers/specs/2026-10-13-guest-journey-design.md): the visit ledger and guest message counter.
   guest-journey:
     enabled: ${ASTOR_GUEST_JOURNEY_ENABLED:false}
@@ -161,7 +216,9 @@ astor:
       # waiter's own tip link in the staff directory (/чаевые). With a waiter and a link, the guest's tip goes to that person by
       # name and link; otherwise the venue's default recipient, as before. Off by default: the commands are unknown and the
       # recipient is the default one, word for word. The directory is astor_staff_members of this tenant; the shift day is
-      # counted in the venue's time zone.
+      # counted in the venue's time zone. /зона <ЗОНА|столы> <имя> keeps the zone a waiter usually works (waiter_zones): a
+      # table request on a table nobody was given for the day goes to the waiter on shift (staff schedule) of that zone,
+      # kept for the day as an 'auto' assignment that /официант overrides. The same tenant is read by the table requests.
       enabled: ${ASTOR_TIPS_PERSONAL_ENABLED:false}
       tenant: ${ASTOR_TIPS_PERSONAL_TENANT:AERIS}
       timezone: ${ASTOR_TIPS_PERSONAL_TIMEZONE:Asia/Yekaterinburg}
@@ -213,6 +270,17 @@ astor:
       max-bytes: ${ASTOR_STAFF_EVIDENCE_MAX_BYTES:10485760}
       content-types: ${ASTOR_STAFF_EVIDENCE_CONTENT_TYPES:image/jpeg,image/png,image/webp,image/heic,image/heif}
       retention-days: ${ASTOR_STAFF_EVIDENCE_RETENTION_DAYS:30}
+    # The shift schedule from a photo in the staff group's «График» topic (docs/operations/STAFF_SHIFT_SCHEDULE.md):
+    # the vision model reads it, names are matched to astor_staff_members, «Верно» makes it the answer to «who is on
+    # shift» (StaffRoster, /смена). Off by default: the topic is not touched and /смена is unknown.
+    schedule:
+      enabled: ${ASTOR_STAFF_SCHEDULE_ENABLED:false}
+      chat-id: ${ASTOR_STAFF_SCHEDULE_CHAT_ID:-1002768239841}
+      thread-id: ${ASTOR_STAFF_SCHEDULE_THREAD_ID:4}
+      tenant: ${ASTOR_STAFF_SCHEDULE_TENANT:AERIS}
+      timezone: ${ASTOR_STAFF_SCHEDULE_TIMEZONE:Asia/Yekaterinburg}
+      max-tokens: ${ASTOR_STAFF_SCHEDULE_MAX_TOKENS:2048}
+      max-image-bytes: ${ASTOR_STAFF_SCHEDULE_MAX_IMAGE_BYTES:8388608}
   glasses:
     # The isolated glasses runtime repeats a staff question, Astor's answer and the photo of that request
     # to Butler, which puts them in the system chat and the shift feed. Off by default; both services need
@@ -314,9 +382,13 @@ astor:
       timeout-ms: ${SABY_TIMEOUT_MS:3000}
       max-retries: ${SABY_MAX_RETRIES:1}
       # Which order/{id}/state codes mean «the guest is at the table» (#151): a comma list of state or
-      # state/productState, e.g. 50/1002. Empty (default): nothing is ever SEATED from Saby. The real codes behind the
-      # green tick in Presto Waiter are recorded on the live test: docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
-      seated-states: ${ASTOR_SABY_SEATED_STATES:}
+      # state/productState. Default 50/1002 («принята в работу» + «выполнение»: the order is open at the table);
+      # «off» switches it off. Butler seats from Saby no earlier than 2 h before the booking time.
+      # Check the code behind the green tick in Presto Waiter: docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
+      seated-states: ${ASTOR_SABY_SEATED_STATES:50/1002}
+      # Send the table Butler holds to Saby on order/create (booking.table, matched by name from hall/list);
+      # false leaves the table to the Saby administrator (woTable=true), as before 16.10.
+      send-table: ${ASTOR_SABY_SEND_TABLE:true}
   billing:
     # Butler never takes the money. On: a bill and its journal are kept for every order Butler places.
     enabled: ${ASTOR_BILLING_ENABLED:false}
@@ -329,8 +401,10 @@ astor:
     guest-bill-request:
       # The guest asks for the bill in the bot (#153 A2): «счёт», «чек», «посчитайте», «рассчитайте», «оплатить», «закрыть стол»
       # as whole words, outside a dialogue step, from a guest with a visit today. Off (default): the words go to the usual flow.
-      # On: the staff chat gets «💳 Стол N просит счёт (гость написал в боте)» (no phone), the guest hears «передал команде»,
-      # and with astor.review.moment=on-bill the review is asked right there, as by the hostess «Счёт» button.
+      # On: the staff chat's wishes topic (bookings topic without it) gets «💳 Счёт · Стол N · официант · гость Имя» (no
+      # phone; the table's waiter of the day or of the zone on shift) with «Счёт» and «Отменить счёт»; the same card for the agents' bill_request (Butler bot and
+      # Concierge). The guest hears «передал команде»; with astor.review.moment=on-bill the review is asked right there, and
+      # with SABY_PAYMENT_ENABLED the venue's payment link goes to the guest (bot chat, or the Concierge's PAYMENT_LINK).
       enabled: ${ASTOR_GUEST_BILL_REQUEST_ENABLED:false}
       # A second «счёт» inside this window sends the team nothing and is answered with «уже передал».
       repeat-window-minutes: ${ASTOR_GUEST_BILL_REQUEST_REPEAT_WINDOW_MINUTES:10}
@@ -342,8 +416,8 @@ astor:
     # reservation card in the semi-automatic one. Asked once per visit either way; the close stays as the safety net.
     moment: ${ASTOR_REVIEW_MOMENT:after-close}
   startup:
-    admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:true}
-    operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:true}
+    admin-notification-enabled: ${ASTOR_STARTUP_ADMIN_NOTIFICATION_ENABLED:false}
+    operational-preview-enabled: ${ASTOR_OPERATIONAL_PREVIEW_ENABLED:false}
   # Public pages the bot links to (#86): the consent step, the AERIS guest card, the startup message and the pinned
   # admin/system notes. The policy lives on the Astor site; the guest guide and the FSM Viewer are the GitHub Pages of
   # this repository (docs/), served under the organisation since the move. Change them here, not in code.
@@ -566,6 +640,13 @@ spring:
   application:
     name: astor-butler
 
+  # Fifteen @Scheduled jobs share Spring's scheduler (one thread by default): a slow one (a visit summary's model call,
+  # a Saby poll) would delay the rest, the review clock and the Concierge webhook retries included.
+  task:
+    scheduling:
+      pool:
+        size: 2
+
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.cassandra.CassandraAutoConfiguration
@@ -584,6 +665,10 @@ spring:
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # 10 by default was spent by 50 parallel negotiations (16.10): each turn takes many short connections, a booking
+      # tool holds one over the venue's system call. PostgreSQL's max_connections must cover every replica's pool.
+      maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:20}
 
   jpa:
     hibernate:
@@ -629,6 +714,8 @@ telegram:
   system:
     chat-id: ${TELEGRAM_SYSTEM_CHAT_ID:}
     notifications-enabled: ${TELEGRAM_SYSTEM_NOTIFICATIONS_ENABLED:false}
+    # Per-message «system trace» copy of guest dialogs (debug only); group chats are never traced.
+    trace-enabled: ${TELEGRAM_SYSTEM_TRACE_ENABLED:false}
   ops:
     chat-id: ${TELEGRAM_OPS_CHAT_ID:${TELEGRAM_HOSTESS_CHAT_ID:}}
     group-qa:
@@ -644,6 +731,15 @@ telegram:
     notifications-enabled: ${TELEGRAM_BOOKING_NOTIFICATIONS_ENABLED:true}
     manager-chat-id: ${TELEGRAM_BOOKING_MANAGER_CHAT_ID:876857557}
     hostess-chat-id: ${TELEGRAM_HOSTESS_CHAT_ID:}
+    # The staff group is a forum: the bot's messages to it without a topic of their own go to this topic (AERIS «Брони»).
+    # Blank: General, as before topics.
+    hostess-thread-id: ${TELEGRAM_HOSTESS_THREAD_ID:}
+    # The guest's review of the visit (stars, 👍/👎) is published to this topic of the same group (AERIS «Обратная связь»).
+    # Blank: reviews are not published.
+    feedback-thread-id: ${TELEGRAM_FEEDBACK_THREAD_ID:}
+    # The guest's wishes for the visit (без лука, allergy, occasion, high chair, table) as a short note in this topic
+    # (AERIS «Пожелания»); the hostess card keeps its line. Blank: no separate note.
+    wishes-thread-id: ${TELEGRAM_WISHES_THREAD_ID:}
     plan-pdf-asset-code: ${TELEGRAM_BOOKING_PLAN_PDF_ASSET_CODE:AERIS_FLOOR_PLAN}
   quiet-guide:
     interior-video-asset-code: ${TELEGRAM_QUIET_GUIDE_INTERIOR_VIDEO_ASSET_CODE:AERIS_INTERIOR_TOUR}

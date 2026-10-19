@@ -423,6 +423,39 @@ Future provider adapters must keep the same boundary:
 - Telephony/SIP providers are transport adapters. STT/TTS live behind Model Gateway capability contracts; call control lives behind telephony adapter/domain ports.
 - Provider choice is configuration/runtime policy; scenarios still receive typed text, slots, RAG context and model failure, not vendor SDK objects.
 
+### Модель агента переговоров (tool calling, 2026-10-15)
+
+Агент Батлера (`AgentLoop`) и агент Консьержа вызывают инструменты через модель, умеющую function calling. Этот выбор
+отделён от `ASTOR_MODEL_PROVIDER`: понимание FSM, ответы, саммари, embeddings, STT/TTS остаются на своём провайдере.
+
+```mermaid
+flowchart LR
+    Loop["AgentLoop<br/>≤5 инструментов, 20 с на вызов,<br/>ход 25 с (бот 12 с)"]
+    Default["ToolCallingModel приложения<br/>ASTOR_MODEL_PROVIDER=gigachat → GigaChatModelGateway<br/>(functions / function_call)"]
+    Agent["Своя модель агента<br/>ASTOR_AGENT_PROVIDER=openai-compatible →<br/>OpenAiCompatibleModelGateway (tools / tool_calls)"]
+    API["Sber500 × Disrupt API<br/>OpenAI-совместимый, LiteLLM"]
+    Giga["GigaChat API"]
+    Tools["CapabilityRegistry<br/>идемпотентность по ключу хода,<br/>валидация домена"]
+    FB["fallback: сценарии FSM / ответ Консьержу fallback=true"]
+
+    Loop -->|"ASTOR_AGENT_PROVIDER пуст"| Default --> Giga
+    Loop -->|"ASTOR_AGENT_PROVIDER=openai-compatible"| Agent --> API
+    Loop --> Tools
+    Loop -->|"401/402/403/408/429/5xx, таймаут, ошибка"| FB
+```
+
+- Откат — пустой `ASTOR_AGENT_PROVIDER` и `ASTOR_AGENT_MODEL=GigaChat-2-Pro`: агент возвращается на модель приложения.
+- Неудачный вызов модели не повторяется ни здесь, ни через другого провайдера: ход уходит в fallback, а инструмент,
+  уже выполненный в этом ходе, сохраняет ключ `<ход>:<номер вызова>`, поэтому повтор хода с тем же `turnId` воспроизводит
+  бронь, а не создаёт вторую.
+- `OpenAiCompatibleModelGateway` берёт первый из нескольких `tool_calls` (агент выполняет один инструмент за шаг),
+  возвращает результат сообщением `tool` под `tool_call_id` вызова, нечитаемые аргументы передаёт инструменту как `{}`
+  (его валидация отвечает `BAD_ARGUMENT`). Ошибка содержит только HTTP-статус и короткий код сервиса, без тела ответа.
+- Метрики: `astor.agent.model.calls` (таймер p50/p95/p99 по provider/model/outcome), `astor.agent.model.tokens`,
+  `astor.agent.turns`, `astor.agent.tool.calls`; построчно — call log (`CALL_LOG.md`) и `model_interaction_audit`.
+- Проверка API, выбор модели, нагрузка и стоимость: `docs/operations/SBER500_LLM_ACCEPTANCE.md`; выкладка и откат:
+  `docs/operations/SBER500_LLM_ROLLOUT.md`.
+
 ### Semantic Response Cache and Learning Loop
 
 LLM latency is allowed to be high only on the first useful generation. Repeated guest questions must be answered through a semantic response cache before the system spends another long local inference call.

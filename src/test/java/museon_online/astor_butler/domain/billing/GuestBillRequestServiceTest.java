@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -267,6 +268,95 @@ class GuestBillRequestServiceTest {
                 order(83L, TableReservationStatus.CONFIRMED, tomorrowMorning), order(84L, TableReservationStatus.CONFIRMED, lateTonight)));
         assertThat(service.visitToday(CHAT)).map(TableReservationOrder::id).contains(84L);
         assertThat(service.visitToday(CHAT)).isEqualTo(Optional.of(order(84L, TableReservationStatus.CONFIRMED, lateTonight)));
+    }
+
+    @Test
+    void byReservationTheTeamIsToldOnceAndTheBillComesBack() {
+        when(reservations.findOrder(77L)).thenReturn(Optional.of(order(77L, TableReservationStatus.SEATED, NOW.minus(Duration.ofMinutes(30)))));
+        GuestBill bill = bill(77L);
+        when(values.setIfAbsent(anyString(), anyString(), any(Duration.class))).thenReturn(true, false);
+
+        BillRequestOutcome first = service.requestByReservation(77L, "GUEST");
+        BillRequestOutcome second = service.requestByReservation(77L, "GUEST");
+
+        assertThat(first.status()).isEqualTo(BillRequestOutcome.Status.STAFF_NOTIFIED);
+        assertThat(first.billId()).isEqualTo(bill.id());
+        assertThat(first.totalRub()).as("Butler's estimate (540 ₽) is not the bill").isNull();
+        assertThat(first.paymentUrl()).isNull();
+        assertThat(second.status()).isEqualTo(BillRequestOutcome.Status.ALREADY_SENT);
+        verify(notifications, times(1)).notifyHostessGuestAskedForBill(any());
+        verify(notifier, never()).billRequestReply(any(), anyString());
+    }
+
+    /** 16.10: the guest was told Butler's 2230 ₽ while Saby had 2510 ₽; only the venue's sum is told. */
+    @Test
+    void byReservationTheSumIsTheVenuesWhenItReportedOne() {
+        when(reservations.findOrder(77L)).thenReturn(Optional.of(order(77L, TableReservationStatus.SEATED, NOW.minus(Duration.ofMinutes(30)))));
+        GuestBill bill = bill(77L);
+        bills.issued(bill.id(), "SABY", "order-77");
+        bills.venueReported("SABY", "order-77", BillPayState.UNPAID, 251000L);
+
+        BillRequestOutcome outcome = service.requestByReservation(77L, "GUEST");
+
+        assertThat(outcome.totalRub()).isEqualTo(2510L);
+    }
+
+    @Test
+    void anAgentsRequestPostsTheBillCardWithTheWaiterAndDeliversThePaymentLink() {
+        GuestBillStaffCard card = mock(GuestBillStaffCard.class);
+        when(card.billAsked(any(), any())).thenReturn(true);
+        service.setStaffCard(card);
+        ExternalPaymentProvider saby = mock(ExternalPaymentProvider.class);
+        when(saby.enabled()).thenReturn(true);
+        when(saby.providerId()).thenReturn("SABY");
+        when(saby.paymentLink("order-77")).thenReturn(Optional.of(new ExternalPaymentProvider.PaymentLink("https://pay.test/77", null)));
+        service.setPaymentProviders(List.of(saby));
+        when(notifier.paymentLinkQueued(any(), eq("https://pay.test/77"))).thenReturn(true);
+        when(reservations.findOrder(77L)).thenReturn(Optional.of(order(77L, TableReservationStatus.SEATED, NOW.minus(Duration.ofMinutes(30)))));
+        GuestBill bill = bill(77L);
+        bills.issued(bill.id(), "SABY", "order-77");
+
+        BillRequestOutcome outcome = service.requestByReservation(77L, "GUEST");
+
+        assertThat(outcome.status()).isEqualTo(BillRequestOutcome.Status.STAFF_NOTIFIED);
+        assertThat(outcome.paymentUrl()).isEqualTo("https://pay.test/77");
+        assertThat(outcome.paymentLinkSent()).isTrue();
+        assertThat(outcome.totalRub()).isNull();
+        verify(card).billAsked(argThat(order -> order.id() == 77L), argThat(found -> found.id().equals(bill.id())));
+        verify(notifications, never()).notifyHostessGuestAskedForBill(any());
+        assertThat(bills.find(bill.id()).orElseThrow().paymentLinkSentAt()).as("a bot guest's link is marked sent").isNotNull();
+    }
+
+    @Test
+    void withTheStaffChatUnreachableTheLinkIsNotHandedOut() {
+        GuestBillStaffCard card = mock(GuestBillStaffCard.class);
+        when(card.billAsked(any(), any())).thenReturn(false);
+        service.setStaffCard(card);
+        ExternalPaymentProvider saby = mock(ExternalPaymentProvider.class);
+        when(saby.enabled()).thenReturn(true);
+        when(saby.providerId()).thenReturn("SABY");
+        service.setPaymentProviders(List.of(saby));
+        when(reservations.findOrder(77L)).thenReturn(Optional.of(order(77L, TableReservationStatus.SEATED, NOW.minus(Duration.ofMinutes(30)))));
+        bills.issued(bill(77L).id(), "SABY", "order-77");
+
+        BillRequestOutcome outcome = service.requestByReservation(77L, "GUEST");
+
+        assertThat(outcome.status()).isEqualTo(BillRequestOutcome.Status.STAFF_NOT_REACHED);
+        assertThat(outcome.paymentUrl()).isNull();
+        verify(saby, never()).paymentLink(anyString());
+        verify(notifier, never()).paymentLinkQueued(any(), anyString());
+    }
+
+    @Test
+    void byReservationOnlyAVisitOfToday() {
+        when(reservations.findOrder(78L)).thenReturn(Optional.of(order(78L, TableReservationStatus.CONFIRMED, NOW.plus(Duration.ofDays(2)))));
+        when(reservations.findOrder(79L)).thenReturn(Optional.empty());
+
+        assertThat(service.requestByReservation(78L, "GUEST").status()).isEqualTo(BillRequestOutcome.Status.NO_VISIT);
+        assertThat(service.requestByReservation(79L, "GUEST").status()).isEqualTo(BillRequestOutcome.Status.NO_VISIT);
+        properties.setEnabled(false);
+        assertThat(service.requestByReservation(78L, "GUEST").status()).isEqualTo(BillRequestOutcome.Status.OFF);
+        verify(notifications, never()).notifyHostessGuestAskedForBill(any());
     }
 
     private GuestBill bill(long reservationId) {

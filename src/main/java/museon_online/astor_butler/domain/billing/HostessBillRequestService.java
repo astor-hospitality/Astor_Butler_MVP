@@ -21,6 +21,7 @@ public class HostessBillRequestService {
     public static final String CALLBACK_PREFIX = "table_booking:bill:";
     static final String TRIGGER = "trigger=hostess";
     private static final Pattern CALLBACK = Pattern.compile("^table_booking:bill:(\\d{1,18})$");
+    private static final Pattern CANCEL_CALLBACK = Pattern.compile("^table_booking:bill-cancel:(\\d{1,18})$");
 
     private final BillingProperties properties;
     private final GuestBillService bills;
@@ -28,6 +29,14 @@ public class HostessBillRequestService {
 
     @Value("${telegram.booking.hostess-chat-id:}")
     private String hostessChatId;
+
+    /** «Отменить счёт» on the bill card: optional so the constructor and its tests stay as they are. */
+    private GuestBillCancelService cancellations;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCancellations(GuestBillCancelService cancellations) {
+        this.cancellations = cancellations;
+    }
 
     public HostessBillRequestService(BillingProperties properties, GuestBillService bills, VisitReviewService reviews) {
         this.properties = properties;
@@ -55,7 +64,7 @@ public class HostessBillRequestService {
         ALREADY_ASKED,
         /** The question went out now. */
         SENT,
-        /** Telegram did not take the question; nothing is recorded, so it can be tried again. */
+        /** The question could not be delivered; nothing is recorded, so it can be tried again. */
         NOT_DELIVERED;
 
         public boolean asked() {
@@ -72,6 +81,10 @@ public class HostessBillRequestService {
         if (callbackData == null || !isHostessChat(chatId)) {
             return CallbackResult.NOT_HANDLED;
         }
+        Matcher cancel = CANCEL_CALLBACK.matcher(callbackData.trim());
+        if (cancel.matches()) {
+            return cancelBill(Long.parseLong(cancel.group(1)));
+        }
         Matcher matcher = CALLBACK.matcher(callbackData.trim());
         if (!matcher.matches()) {
             return CallbackResult.NOT_HANDLED;
@@ -83,7 +96,7 @@ public class HostessBillRequestService {
             case CANCELLED -> "Счёт по брони #" + orderId + " отменён, вопрос гостю не отправлен";
             case ALREADY_ASKED -> "Гостю по брони #" + orderId + " вопрос об оценке уже задан";
             case SENT -> "Гостю по брони #" + orderId + " отправлен вопрос об оценке";
-            case NOT_DELIVERED -> "Гостю по брони #" + orderId + " не удалось отправить вопрос: Telegram недоступен, попробуйте ещё раз";
+            case NOT_DELIVERED -> "Гостю по брони #" + orderId + " не удалось доставить вопрос, попробуйте ещё раз";
         });
     }
 
@@ -108,11 +121,37 @@ public class HostessBillRequestService {
         if (reviews.reviewOf(bill.id()).isPresent()) {
             return ReviewAsk.ALREADY_ASKED;
         }
-        if (reviews.prompt(bill, trigger).isPresent()) {
+        // Called on the Telegram update thread or a request thread: the Concierge's question is only queued here.
+        if (reviews.promptQueued(bill, trigger).isPresent()) {
             return ReviewAsk.SENT;
         }
         log.warn("Review of bill {} (reservation {}) was asked for ({}), but the guest could not be reached", bill.id(), orderId, trigger);
         return ReviewAsk.NOT_DELIVERED;
+    }
+
+    /** The hostess «Отменить счёт» on the bill card: a paid bill stays, the refund is made at the till. */
+    private CallbackResult cancelBill(long orderId) {
+        if (cancellations == null) {
+            return CallbackResult.handled("Отмена счёта сейчас недоступна");
+        }
+        GuestBillCancelService.Result result = cancellations.cancelByReservation(orderId, BillActor.STAFF, "trigger=hostess");
+        return CallbackResult.handled(switch (result.outcome()) {
+            case BILLING_OFF -> "Счета выключены (ASTOR_BILLING_ENABLED)";
+            case NO_BILL -> "По брони #" + orderId + " счёта в Батлере нет";
+            case PAID -> "Счёт по брони #" + orderId + " уже оплачен: возврат — через кассу";
+            case ALREADY_CANCELLED -> "Счёт по брони #" + orderId + " уже отменён";
+            case CANCELLED -> "Счёт по брони #" + orderId + " отменён";
+        });
+    }
+
+    /** Marks the venue's payment link as handed to the guest. */
+    void paymentLinkSent(GuestBill bill) {
+        bills.paymentLinkSent(bill.id(), bill.externalProvider());
+    }
+
+    /** The newest bill of the reservation, whatever its state. */
+    public Optional<GuestBill> billOf(long orderId) {
+        return bills.findByReservation(orderId);
     }
 
     void setHostessChatId(String hostessChatId) {

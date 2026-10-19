@@ -14,7 +14,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import museon_online.astor_butler.telegram.utils.TelegramBot;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -68,6 +71,36 @@ class BusinessLunchServiceTest {
         assertThat(service.windowIssue(offer, TODAY, LocalTime.of(14, 0))).contains(BusinessLunchService.WindowIssue.ALREADY_PASSED);
     }
 
+    /** The agents' tools keep their own clock: with the same «today» and «now» they get the bot's answer. */
+    @Test
+    void theRuleWithAGivenNowIsTheBotsRule() {
+        BusinessLunchService service = service(List.of());
+        LocalTime now = LocalTime.of(14, 0);
+
+        for (int ahead = -1; ahead <= 7; ahead++) {
+            for (LocalTime time : java.util.Arrays.asList(null, LocalTime.of(11, 59), LocalTime.of(13, 0), LocalTime.of(14, 30), LocalTime.of(16, 0))) {
+                LocalDate day = TODAY.plusDays(ahead);
+                assertThat(BusinessLunchService.windowIssue(offer, day, time, TODAY, now)).as(day + " " + time)
+                        .isEqualTo(service.windowIssue(offer, day, time));
+            }
+        }
+    }
+
+    @Test
+    void theNextLunchDaySkipsTheWeekendAndATodayThatIsOver() {
+        LocalDate friday = LocalDate.of(2026, 10, 16);
+        LocalDate saturday = friday.plusDays(1);
+        LocalDate monday = LocalDate.of(2026, 10, 19);
+
+        // Friday 10:00: «завтра» is Saturday, the lunch is on Monday; Friday itself still has its lunch ahead.
+        assertThat(BusinessLunchService.nextLunchDay(offer, saturday, friday, LocalTime.of(10, 0))).contains(monday);
+        assertThat(BusinessLunchService.nextLunchDay(offer, friday, friday, LocalTime.of(10, 0))).contains(friday);
+        // Friday after 16:00: today's lunch is over.
+        assertThat(BusinessLunchService.nextLunchDay(offer, friday, friday, LocalTime.of(16, 0))).contains(monday);
+        // A day already gone counts from today.
+        assertThat(BusinessLunchService.nextLunchDay(offer, friday.minusDays(3), friday, LocalTime.of(10, 0))).contains(friday);
+    }
+
     @Test
     void holdsATableAndLeavesTheOrderToTheStaffWhenNoExternalSystemIsOn() {
         BusinessLunchService service = service(List.of(new FakeProvider(false, false, null)));
@@ -113,6 +146,40 @@ class BusinessLunchServiceTest {
         // Without a wish the card reads as before and the order carries none.
         when(tableReservationService.createReservation(any())).thenReturn(BusinessLunchFixtures.reservation(78, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2));
         assertThat(service.place(request("DIRECT", null)).order().wishes()).isNull();
+    }
+
+    @Test
+    void placeForRefusesAReservationThatNoLongerHoldsATable() {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-503", ""));
+        BusinessLunchService service = service(List.of(saby));
+        var held = BusinessLunchFixtures.reservation(80, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+        var cancelled = new museon_online.astor_butler.domain.booking.TableReservationOrder(held.id(), held.chatId(), held.telegramUserId(),
+                held.userId(), held.tableId(), held.tableCode(), held.tableDisplayName(), held.preferredZone(), held.seatingPreference(),
+                museon_online.astor_butler.domain.booking.TableReservationStatus.CANCELLED, held.source(), held.requestedStartAt(),
+                held.requestedEndAt(), held.partySize(), held.guestName(), held.guestPhone(), held.guestComment(), held.managerTelegramId(),
+                held.managerUserId(), held.hostessChatId(), held.sbisExternalId(), held.createdAt(), held.updatedAt());
+
+        assertThatThrownBy(() -> service.placeFor(cancelled, request("CONCIERGE", null))).isInstanceOf(IllegalStateException.class);
+        assertThat(saby.order).isNull();
+        assertThat(BusinessLunchService.holdsATable(held)).isTrue();
+        assertThat(BusinessLunchService.holdsATable(cancelled)).isFalse();
+    }
+
+    @Test
+    void placesIntoAHeldReservationWithoutHoldingASecondTable() {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "ACCEPTED", "SABY-502", ""));
+        BusinessLunchService service = service(List.of(saby));
+        var reservation = BusinessLunchFixtures.reservation(79, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+
+        BusinessLunchService.Placement placement = service.placeFor(reservation, request("CONCIERGE", null));
+
+        verify(tableReservationService, never()).createReservation(any());
+        assertThat(placement.reservation()).isEqualTo(reservation);
+        assertThat(placement.order().tableReservationId()).isEqualTo(79L);
+        assertThat(placement.external().status()).isEqualTo("ACCEPTED");
+        assertThat(BusinessLunchService.lunchTimeIssue(offer, TODAY.plusDays(1), LocalTime.of(17, 0)))
+                .contains(BusinessLunchService.WindowIssue.OUTSIDE_LUNCH_HOURS);
+        assertThat(BusinessLunchService.lunchTimeIssue(offer, TODAY, LocalTime.of(13, 0))).isEmpty();
     }
 
     @Test
@@ -327,6 +394,122 @@ class BusinessLunchServiceTest {
         assertThat(placement.order()).isNotNull();
         assertThat(placement.external().attempted()).isFalse();
         assertThat(heard).containsExactly(placement.order());
+    }
+
+    /** 16.10, AERIS: Saby answered the dishes' update with 500; the order stays, the staff get one card, the result says so. */
+    @Test
+    void aFailedTillUpdateIsAManualEntryWithOneCardForTheStaff() throws Exception {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(false, "SABY", "SABY_LUNCH_NOT_ATTACHED", "", "500 twice"));
+        BusinessLunchService service = service(List.of(saby));
+        TelegramBot bot = mock(TelegramBot.class);
+        service.setManualEntryNotifier(notifier(bot));
+        var reservation = BusinessLunchFixtures.reservation(68, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+
+        BusinessLunchService.Placement placement = service.placeFor(reservation, request("TELEGRAM", null));
+
+        assertThat(placement.order()).isNotNull();
+        assertThat(placement.handoff()).isEqualTo(BusinessLunchService.KitchenHandoff.MANUAL_ENTRY);
+        assertThat(placement.kitchenConfirmed()).isFalse();
+        assertThat(placement.manualEntry()).isTrue();
+        assertThat(placement.staffNotified()).isTrue();
+        assertThat(placement.external().status()).isEqualTo("SABY_LUNCH_NOT_ATTACHED");
+        var card = forClass(SendMessage.class);
+        verify(bot, times(1)).execute(card.capture());
+        assertThat(card.getValue().getChatId()).isEqualTo("-100500");
+        assertThat(card.getValue().getMessageThreadId()).isEqualTo(7);
+        assertThat(card.getValue().getText())
+                .startsWith("✍️ <b>Внести в кассу вручную · бронь #68 · стол 4 · Наталья</b>")
+                .contains("• Куриный бульон × 2", "• Паста с томатами × 2", "<b>Итого:</b> 1300 ₽", "SABY_LUNCH_NOT_ATTACHED");
+
+        // The same order placed again (the agent repeats the tool): the staff already have the card.
+        BusinessLunchService.Placement again = service.placeFor(reservation, request("TELEGRAM", null));
+        assertThat(again.staffNotified()).isTrue();
+        verify(bot, times(1)).execute(any(SendMessage.class));
+    }
+
+    @Test
+    void anUnknownTillResultIsAManualEntryWithACard() throws Exception {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(false, "SABY", "PROVIDER_RESULT_UNKNOWN", "", "HTTP 500"));
+        BusinessLunchService service = service(List.of(saby));
+        TelegramBot bot = mock(TelegramBot.class);
+        service.setManualEntryNotifier(notifier(bot));
+        when(tableReservationService.createReservation(any())).thenReturn(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2));
+
+        BusinessLunchService.Placement placement = service.place(request("DIRECT", null));
+
+        assertThat(placement.manualEntry()).isTrue();
+        assertThat(placement.staffNotified()).isTrue();
+        var card = forClass(SendMessage.class);
+        verify(bot, times(1)).execute(card.capture());
+        assertThat(card.getValue().getText()).contains("бронь #77", "PROVIDER_RESULT_UNKNOWN", "проверьте бронь в Presto");
+        verify(tableReservationService, never()).attachExternalId(anyLong(), anyString());
+    }
+
+    @Test
+    void aThrowingProviderIsAManualEntryWithACard() throws Exception {
+        BusinessLunchService service = service(List.of(new FakeProvider(true, true, null)));
+        TelegramBot bot = mock(TelegramBot.class);
+        service.setManualEntryNotifier(notifier(bot));
+        var reservation = BusinessLunchFixtures.reservation(69, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+
+        BusinessLunchService.Placement placement = service.placeFor(reservation, request("TELEGRAM", null));
+
+        assertThat(placement.manualEntry()).isTrue();
+        verify(bot, times(1)).execute(any(SendMessage.class));
+    }
+
+    @Test
+    void anAcceptedOrderSendsNoCard() throws Exception {
+        FakeProvider saby = new FakeProvider(true, true, new ExternalLunchOrderProvider.Result(true, "SABY", "SABY_LUNCH_ATTACHED", "SABY-501", ""));
+        BusinessLunchService service = service(List.of(saby));
+        TelegramBot bot = mock(TelegramBot.class);
+        service.setManualEntryNotifier(notifier(bot));
+        var reservation = BusinessLunchFixtures.reservation(70, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+
+        BusinessLunchService.Placement placement = service.placeFor(reservation, request("TELEGRAM", null));
+
+        assertThat(placement.handoff()).isEqualTo(BusinessLunchService.KitchenHandoff.TILL_CONFIRMED);
+        assertThat(placement.kitchenConfirmed()).isTrue();
+        assertThat(placement.manualEntry()).isFalse();
+        assertThat(placement.staffNotified()).isFalse();
+        verify(bot, never()).execute(any(SendMessage.class));
+    }
+
+    /** Without a till the reservation card already lists the dishes with «В Saby внести вручную»: no second card. */
+    @Test
+    void withoutATillTheReservationCardIsTheOnlyCard() throws Exception {
+        BusinessLunchService service = service(List.of(new FakeProvider(false, false, null)));
+        TelegramBot bot = mock(TelegramBot.class);
+        service.setManualEntryNotifier(notifier(bot));
+        when(tableReservationService.createReservation(any())).thenReturn(BusinessLunchFixtures.reservation(77, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2));
+
+        BusinessLunchService.Placement placement = service.place(request("DIRECT", null));
+
+        assertThat(placement.manualEntry()).isTrue();
+        assertThat(placement.staffNotified()).isTrue();
+        verify(bot, never()).execute(any(SendMessage.class));
+    }
+
+    /** The four-field constructor the callers and their tests use still says where the dishes are. */
+    @Test
+    void theOldPlacementConstructorDerivesTheHandoff() {
+        var reservation = BusinessLunchFixtures.reservation(71, CHAT, TUESDAY_13_00, TUESDAY_13_00.plusSeconds(5400), 2);
+        BusinessLunchOrder order = new BusinessLunchOrder("AERIS", 71L, "4", TUESDAY_13_00, TUESDAY_13_00, 2, null, null, null,
+                List.of(new BusinessLunchOrder.Item("SOUP", "BROTH", "Куриный бульон", 1, 250)), 250, "Наталья", null, null, "DIRECT", null, null);
+
+        assertThat(new BusinessLunchService.Placement(reservation, false, order,
+                new ExternalLunchOrderProvider.Result(true, "SABY", "SABY_LUNCH_ATTACHED", "X", "")).kitchenConfirmed()).isTrue();
+        assertThat(new BusinessLunchService.Placement(reservation, false, order,
+                new ExternalLunchOrderProvider.Result(false, "SABY", "PROVIDER_RESULT_UNKNOWN", "", "")).manualEntry()).isTrue();
+        assertThat(new BusinessLunchService.Placement(reservation, false, order, ExternalLunchOrderProvider.Result.manualEntry()).manualEntry()).isTrue();
+        assertThat(new BusinessLunchService.Placement(reservation, true, null, null).handoff()).isEqualTo(BusinessLunchService.KitchenHandoff.NOT_PLACED);
+    }
+
+    private static LunchManualEntryNotifier notifier(TelegramBot bot) {
+        @SuppressWarnings("unchecked")
+        ObjectProvider<TelegramBot> provider = mock(ObjectProvider.class);
+        org.mockito.Mockito.lenient().when(provider.getIfAvailable()).thenReturn(bot);
+        return new LunchManualEntryNotifier(provider, true, true, "-100500", "7");
     }
 
     private BusinessLunchService.Request request(String source, String comment) {

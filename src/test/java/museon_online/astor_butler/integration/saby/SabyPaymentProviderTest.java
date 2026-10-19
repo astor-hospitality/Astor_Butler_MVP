@@ -124,4 +124,16 @@ class SabyPaymentProviderTest {
 
     private record Fixture(SabyPaymentProvider provider, MockRestServiceServer server) {
     }
+
+    /** An unexpected answer is logged by its shape only: field names, never the values (the link, a token). */
+    @Test
+    void theShapeOfAnUnexpectedAnswerHasNoValues() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode answer = new ObjectMapper()
+                .readTree("{\"data\":{\"qr\":\"http://pay.example/secret-token\",\"sum\":2510},\"status\":\"ok\"}");
+
+        String shape = SabyPaymentProvider.fieldNames(answer);
+
+        assertThat(shape).isEqualTo("data{qr,sum},status");
+        assertThat(SabyPaymentProvider.link(answer)).as("plain http is not a payment page").isNull();
+    }
 }

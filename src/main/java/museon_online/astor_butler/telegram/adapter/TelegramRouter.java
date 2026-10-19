@@ -14,6 +14,7 @@ import museon_online.astor_butler.domain.booking.HostessReservationApprovalServi
 import museon_online.astor_butler.domain.booking.HostessSeatedService;
 import museon_online.astor_butler.domain.entry.StaffHandoffLinkCommandService;
 import museon_online.astor_butler.domain.lunch.scoreboard.LunchScoreboardCommandService;
+import museon_online.astor_butler.domain.roster.StaffScheduleTelegram;
 import museon_online.astor_butler.domain.shift.ButlerPauseCommandService;
 import museon_online.astor_butler.domain.tips.TipsStaffCommandService;
 import museon_online.astor_butler.service.message.IncomingMessage;
@@ -21,6 +22,7 @@ import museon_online.astor_butler.service.message.MessageGatewayService;
 import museon_online.astor_butler.service.message.OutgoingMessage;
 import museon_online.astor_butler.telegram.exeption.TelegramExceptionHandler;
 import museon_online.astor_butler.telegram.voice.TelegramVoiceReplyService;
+import museon_online.astor_butler.telegram.utils.HostessTopicRouter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
@@ -113,6 +115,10 @@ public class TelegramRouter {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private LunchScoreboardCommandService lunchScoreboardCommandService;
 
+    /** The schedule photo in the «График» topic, its buttons and /смена: optional for the same reason. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private StaffScheduleTelegram staffScheduleTelegram;
+
 
     public void handle(Update update, AbsSender sender) {
         try {
@@ -121,6 +127,10 @@ public class TelegramRouter {
             }
 
             if (handleCallback(update, sender)) {
+                return;
+            }
+            // The schedule topic and /смена in the staff group: before the hostess boundary, which consumes every staff text.
+            if (staffScheduleTelegram != null && staffScheduleTelegram.handle(update.getMessage(), sender)) {
                 return;
             }
 
@@ -157,7 +167,8 @@ public class TelegramRouter {
             }
 
             OutgoingMessage outgoing = messageGatewayService.handle(incoming);
-            ensurePreview(incoming, sender, isStartCommand(incoming));
+            // The visiting card is sent once and stays pinned; /start no longer re-sends it (Task 15: short first screen).
+            ensurePreview(incoming, sender);
             telegramMediaSender.sendDocumentIfPresent(outgoing.chatId(), outgoing.metadata(), sender);
             telegramMediaSender.sendVideoIfPresent(outgoing.chatId(), outgoing.metadata(), sender);
             IncomingMessage request = incoming;
@@ -181,6 +192,10 @@ public class TelegramRouter {
         Long chatId = callbackQuery.getMessage() == null ? null : callbackQuery.getMessage().getChatId();
         if (journeyEvents != null) {
             journeyEvents.guestMessage(chatId);
+        }
+
+        if (staffScheduleTelegram != null && staffScheduleTelegram.handleCallback(callbackQuery, sender)) {
+            return true;
         }
 
         TelegramVoiceReplyService.CallbackResult fullReply = voiceReplyService.handleCallback(callbackQuery.getData(), chatId, sender);
@@ -559,24 +574,24 @@ public class TelegramRouter {
                 && !outgoing.requestContact();
     }
 
-    private void ensurePreview(IncomingMessage incoming, AbsSender sender, boolean force) {
+    void ensurePreview(IncomingMessage incoming, AbsSender sender) {
         if (!previewEnabled
                 || incoming == null
                 || incoming.chatId() == null
                 || incoming.telegramUserId() == null
                 || incoming.chatId() < 0
-                || (!force && chatViewService.findPreviewMessageId(incoming.telegramUserId(), previewVersion) != null)) {
+                || chatViewService.findPreviewMessageId(incoming.telegramUserId(), previewVersion) != null) {
             return;
         }
 
         String filename = previewAvatar.getFilename() == null ? "aeris-butler-preview.png" : previewAvatar.getFilename();
         try (InputStream inputStream = previewAvatar.getInputStream()) {
-            Message preview = sender.execute(SendPhoto.builder()
+            Message preview = sender.execute(HostessTopicRouter.route(sender, SendPhoto.builder()
                     .chatId(incoming.chatId().toString())
                     .photo(new InputFile(inputStream, filename))
                     .caption(previewText())
                     .parseMode("HTML")
-                    .build());
+                    .build()));
 
             if (preview != null) {
                 chatViewService.savePreviewMessageId(incoming.telegramUserId(), preview.getMessageId(), previewVersion);
@@ -600,10 +615,6 @@ public class TelegramRouter {
         } catch (Exception e) {
             log.debug("Telegram preview pin skipped: {}", e.getMessage());
         }
-    }
-
-    private boolean isStartCommand(IncomingMessage incoming) {
-        return incoming != null && incoming.text() != null && "/start".equalsIgnoreCase(incoming.text().trim());
     }
 
     private boolean isAdminChat(Long chatId) {

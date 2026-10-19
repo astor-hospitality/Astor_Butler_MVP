@@ -11,7 +11,8 @@ import java.util.Optional;
 /**
  * Builds the {@code retail/order/create} body for a Presto table booking.
  * Without a Saby table id the table is left to the Saby administrator ({@code woTable=true}); with one, the hall is
- * required by the Saby contract and {@code woTable} is false.
+ * required by the Saby contract and {@code woTable} is false. The table Butler holds is matched to its Saby id by
+ * {@link SabyReservationProvider} from {@code retail/hall/list} (16.10, booking #68 landed without a table).
  */
 final class SabyOrderPayload {
 
@@ -42,6 +43,22 @@ final class SabyOrderPayload {
             String localStart,
             Long sabyTableId
     ) {
+        return create(command, idempotencyKey, properties, localStart, null, sabyTableId);
+    }
+
+    /**
+     * The booking on the table Butler holds: {@code sabyHallId} and {@code sabyTableId} come from the same
+     * {@code retail/hall/list} entry, so the hall is the table's own and {@code SABY_HALL_ID} is not needed. A null hall
+     * falls back to {@code SABY_HALL_ID}; a null table leaves the choice to the Saby administrator ({@code woTable=true}).
+     */
+    static Map<String, Object> create(
+            TableReservationCommand command,
+            String idempotencyKey,
+            SabyReservationProperties properties,
+            String localStart,
+            Long sabyHallId,
+            Long sabyTableId
+    ) {
         Map<String, Object> customer = new LinkedHashMap<>();
         customer.put("name", command.guestName().trim());
         customer.put("phone", phone(command.guestPhone())
@@ -49,11 +66,13 @@ final class SabyOrderPayload {
 
         Map<String, Object> booking = new LinkedHashMap<>();
         booking.put("visitors", command.partySize());
-        boolean hallKnown = !isBlank(properties.getHallId());
+        boolean hallKnown = sabyHallId != null || !isBlank(properties.getHallId());
         if (sabyTableId != null && !hallKnown) {
             throw new IllegalArgumentException("Saby needs the hall id when Butler names the table (SABY_HALL_ID)");
         }
-        if (hallKnown) {
+        if (sabyHallId != null) {
+            booking.put("hall", sabyHallId);
+        } else if (hallKnown) {
             booking.put("hall", idValue(properties.getHallId()));
         }
         if (sabyTableId != null) {

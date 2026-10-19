@@ -28,12 +28,23 @@ public class TelegramIntakeService {
     private final ObjectMapper objectMapper;
     private final IdentityService identityService;
 
+    /** The unified call log (docs/operations/CALL_LOG.md): optional so the constructor and its tests stay as they are. */
+    private museon_online.astor_butler.domain.calllog.CallLogWriter callLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCallLog(museon_online.astor_butler.domain.calllog.CallLogWriter callLog) {
+        this.callLog = callLog;
+    }
+
     public void capture(IncomingMessage incoming) {
         if (incoming == null || incoming.chatId() == null) {
             return;
         }
         if (incoming.channel() != MessageChannel.TELEGRAM) {
             return;
+        }
+        if (callLog != null && callLog.enabled()) {
+            callLog.guestMessage("telegram", museon_online.astor_butler.domain.calllog.CallLogWriter.firstId(incoming.telegramUserId(), incoming.chatId()), incoming.correlationId());
         }
 
         IdentityRecord identity = identityService.identifyTelegram(incoming);

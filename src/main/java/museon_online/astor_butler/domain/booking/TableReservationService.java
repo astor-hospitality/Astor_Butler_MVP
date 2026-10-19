@@ -51,6 +51,21 @@ public class TableReservationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private museon_online.astor_butler.domain.journey.ReturnMatcher returnMatcher;
 
+    /** The unified call log (docs/operations/CALL_LOG.md): optional so the constructor and its tests stay as they are. */
+    private museon_online.astor_butler.domain.calllog.CallLogWriter callLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCallLog(museon_online.astor_butler.domain.calllog.CallLogWriter callLog) {
+        this.callLog = callLog;
+    }
+
+    private void callLog(String name, TableReservationOrder order) {
+        if (callLog != null && callLog.enabled() && order != null) {
+            callLog.targetAction(name, order.status() == null ? null : order.status().name(), order.source(),
+                    museon_online.astor_butler.domain.calllog.CallLogWriter.firstId(order.telegramUserId(), order.chatId()));
+        }
+    }
+
     public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
         this.journeyEvents = journeyEvents;
     }
@@ -108,7 +123,23 @@ public class TableReservationService {
         if (startAt == null || endAt == null) {
             return Optional.empty();
         }
-        return repository.findActiveOrdersByChatId(chatId, venueCode).stream()
+        return firstCrossing(repository.findActiveOrdersByChatId(chatId, venueCode), startAt, endAt);
+    }
+
+    /**
+     * The same for the guest of a Concierge session, whose bookings have no chat: the ones of its visit or linked to the
+     * session in the visit ledger ({@link TableReservationRepository#findActiveOrdersOfSession}). Empty without either.
+     */
+    public Optional<TableReservationOrder> findOverlappingSessionReservation(String sessionId, Long visitId, String venueCode,
+                                                                             Instant startAt, Instant endAt) {
+        if (startAt == null || endAt == null) {
+            return Optional.empty();
+        }
+        return firstCrossing(repository.findActiveOrdersOfSession(sessionId, visitId, venueCode), startAt, endAt);
+    }
+
+    private static Optional<TableReservationOrder> firstCrossing(List<TableReservationOrder> orders, Instant startAt, Instant endAt) {
+        return orders.stream()
                 .filter(TableReservationService::holdsATable)
                 .filter(order -> order.requestedStartAt() != null && order.requestedEndAt() != null)
                 .filter(order -> order.requestedStartAt().isBefore(endAt) && startAt.isBefore(order.requestedEndAt()))
@@ -140,6 +171,7 @@ public class TableReservationService {
         order = rememberExternalId(order, sync);
         notificationService.notifyHostessApprovalRequest(order, sync);
         journey(order, museon_online.astor_butler.domain.journey.VisitEventKind.REQUESTED, museon_online.astor_butler.domain.journey.JourneyEvents.BOT);
+        callLog("reservation:create", order);
         if (returnMatcher != null && order != null && order.id() != null) {
             returnMatcher.onNewReservation(order.id(), order.guestPhone());
         }
@@ -169,6 +201,7 @@ public class TableReservationService {
         TableReservationOrder confirmed = repository.confirm(id);
         notificationService.notifyHostessConfirmed(confirmed);
         notificationService.notifyGuestConfirmed(confirmed);
+        callLog("reservation:confirm", confirmed);
         return confirmed;
     }
 
@@ -186,6 +219,7 @@ public class TableReservationService {
         TableReservationOrder confirmed = requireOrder(current.id());
         notificationService.notifyHostessConfirmed(confirmed);
         notificationService.notifyGuestConfirmed(confirmed);
+        callLog("reservation:confirm", confirmed);
         return confirmed;
     }
 
@@ -240,6 +274,7 @@ public class TableReservationService {
         TableReservationOrder confirmed = repository.confirm(id);
         notificationService.notifyHostessAutoConfirmed(confirmed, afterMinutes);
         notificationService.notifyGuestConfirmed(confirmed);
+        callLog("reservation:confirm", confirmed);
         return confirmed;
     }
 
@@ -261,6 +296,7 @@ public class TableReservationService {
         TableReservationOrder confirmed = repository.confirm(id);
         notificationService.notifyHostessConfirmed(confirmed);
         notificationService.notifyGuestConfirmed(confirmed);
+        callLog("reservation:confirm", confirmed);
         return confirmed;
     }
 
@@ -336,6 +372,10 @@ public class TableReservationService {
         if (seatedHint != null) {
             seatedHint.send(seated);
         }
+        if (seated.chatId() == null) {
+            notificationService.notifyGuestSeated(seated);
+        }
+        callLog("reservation:seated", seated);
         journey(seated, museon_online.astor_butler.domain.journey.VisitEventKind.SEATED, "Presto".equals(who) ? museon_online.astor_butler.domain.journey.JourneyEvents.PRESTO : museon_online.astor_butler.domain.journey.JourneyEvents.STAFF);
         return seated;
     }
@@ -406,13 +446,37 @@ public class TableReservationService {
 
         TableReservationOrder changed = repository.changeReservation(current.id(), resolved, table);
         // A booking already in the restaurant's system is rewritten there; one that never got there is created now.
-        ExternalReservationResult sync = hasExternalId(changed)
+        boolean inVenueSystem = hasExternalId(changed);
+        ExternalReservationResult sync = inVenueSystem
                 ? updateExternally(changed, resolved.venueCode())
                 : reserveExternally(changed, resolved.venueCode());
         changed = rememberExternalId(changed, sync);
         notificationService.notifyHostessApprovalRequest(changed, sync);
+        if (movedOrResized(current, changed) && !reachedVenueSystem(sync, inVenueSystem)) {
+            // The change stays in Butler; the hostess gets one line to fix the time in the till by hand.
+            notificationService.notifyHostessChangeNotSynced(changed);
+        }
         journey(changed, museon_online.astor_butler.domain.journey.VisitEventKind.MOVED, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST);
         return changed;
+    }
+
+    /**
+     * Whether the venue's system now holds the changed time and party size: nothing to hold while it is off, the
+     * rewritten booking, or a booking created now at the new time. A rejected or unknown update, or a create that only
+     * replays an earlier answer (e.g. «Saby did not say»), leaves the old data there.
+     */
+    static boolean reachedVenueSystem(ExternalReservationResult sync, boolean wasInVenueSystem) {
+        if (sync == null || !sync.providerConfigured()) {
+            return true;
+        }
+        if (EXTERNAL_CHANGE_SYNCED.equals(sync.status())) {
+            return true;
+        }
+        return !wasInVenueSystem && sync.created();
+    }
+
+    static boolean movedOrResized(TableReservationOrder before, TableReservationOrder after) {
+        return timeChanged(before, after) || !java.util.Objects.equals(before.partySize(), after.partySize());
     }
 
     /**
@@ -783,7 +847,8 @@ public class TableReservationService {
         if (command == null) {
             throw badRequest("Request body is required");
         }
-        if (command.chatId() == null) {
+        // A booking from the Concierge's chat has no chat of the Butler's bot; one from the bot always has.
+        if (command.chatId() == null && !command.concierge()) {
             throw badRequest("chatId is required");
         }
         validateWindow(command.requestedStartAt(), command.requestedEndAt());

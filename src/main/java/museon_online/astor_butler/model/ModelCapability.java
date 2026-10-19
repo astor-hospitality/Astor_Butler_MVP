@@ -5,5 +5,6 @@ public enum ModelCapability {
     SLOT_EXTRACTION,
     SPEECH_TO_TEXT,
     IMAGE_UNDERSTANDING,
-    EMBEDDING
+    EMBEDDING,
+    TOOL_CALLING
 }

@@ -207,6 +207,19 @@ class BookingSeatedJdbcTest {
         assertThat(TableReservationTestDatabase.holdStatus(jdbc, 61L)).isEqualTo("RELEASED");
     }
 
+    @Test
+    void aConciergeGuestWhoSatDownIsAnnouncedAndATelegramGuestIsNot() {
+        confirmed(62L, TABLE_4, null);
+        confirmed(63L, TABLE_5, null);
+        jdbc.update("UPDATE table_reservation_orders SET chat_id = NULL, telegram_user_id = NULL, source = 'CONCIERGE' WHERE id = 62");
+
+        TableReservationOrder concierge = reservations.seatByStaff(62L, "@dasha");
+        reservations.seatByStaff(63L, "@dasha");
+
+        verify(notifications).notifyGuestSeated(concierge);
+        verify(notifications, times(1)).notifyGuestSeated(any());
+    }
+
     private void confirmed(long id, long tableId, String externalId) {
         TableReservationTestDatabase.order(jdbc, id, GUEST, tableId, TableReservationStatus.CONFIRMED,
                 VISIT_START, VISIT_END, externalId, NOW.minus(Duration.ofHours(2)));

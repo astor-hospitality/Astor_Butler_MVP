@@ -36,11 +36,19 @@ public class SabyReservationProperties {
     private long timeoutMs = 3000;
     private int maxRetries = 1;
     /**
-     * Codes of «the guest is at the table» (#151), {@code state} or {@code state/productState} separated by commas;
-     * empty (default) — nothing is ever SEATED from Saby. The real codes are recorded on the live test, see
-     * docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
+     * Codes of «the guest is at the table» (#151), {@code state} or {@code state/productState} separated by commas.
+     * Default {@value #DEFAULT_SEATED_STATES}: the documented «принята в работу» together with the product state
+     * «выполнение» — the order is open at the table; a plain 50 or 20 stays CONFIRMED. {@code off} (or any value
+     * without a number) switches the mapping off. See docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5.
      */
-    private String seatedStates = "";
+    private String seatedStates = DEFAULT_SEATED_STATES;
+    /**
+     * Send the table Butler holds to Saby on {@code order/create} ({@code booking.table}, {@code woTable=false}),
+     * matched by name from {@code retail/hall/list}. Off — the table is left to the Saby administrator as before.
+     */
+    private boolean sendTable = true;
+
+    public static final String DEFAULT_SEATED_STATES = "50/1002";
 
     public boolean configured() {
         return missingConfiguration().isEmpty();

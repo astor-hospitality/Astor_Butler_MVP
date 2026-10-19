@@ -34,7 +34,7 @@ public class GuestBillRepository {
                     """,
                     new String[]{"id"}
             );
-            statement.setLong(1, draft.chatId());
+            statement.setObject(1, draft.chatId(), Types.BIGINT);
             statement.setObject(2, draft.telegramUserId(), Types.BIGINT);
             statement.setString(3, normalizeVenue(draft.venueCode()));
             statement.setString(4, draft.kind().name());
@@ -285,7 +285,7 @@ public class GuestBillRepository {
     private RowMapper<GuestBill> billMapper() {
         return (rs, rowNum) -> new GuestBill(
                 rs.getLong("id"),
-                rs.getLong("chat_id"),
+                nullableLong(rs, "chat_id"),
                 nullableLong(rs, "telegram_user_id"),
                 rs.getString("venue_code"),
                 GuestBillKind.valueOf(rs.getString("kind")),

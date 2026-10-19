@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
  * to leave a tip. The question goes out when the venue closes the order, or after the visit ends by the clock; with
  * {@code astor.review.moment=on-bill} it goes out earlier, at the bill (payment link or the hostess «Счёт» button),
  * and the close stays as the safety net. Words from the guest are not collected here; the feedback scenario does that.
+ * Each answer is also shown to the team in the reviews topic of the staff group ({@link VisitReviewStaffCard}).
  */
 @Service
 @Slf4j
@@ -39,6 +40,14 @@ public class VisitReviewService {
 
     public void setJourneyEvents(museon_online.astor_butler.domain.journey.JourneyEvents journeyEvents) {
         this.journeyEvents = journeyEvents;
+    }
+
+    /** The review card in the staff group's reviews topic: optional for the same reason; publishes nothing while off. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private VisitReviewStaffCard staffCard;
+
+    public void setStaffCard(VisitReviewStaffCard staffCard) {
+        this.staffCard = staffCard;
     }
 
     @Autowired
@@ -72,20 +81,70 @@ public class VisitReviewService {
      *
      * @param trigger journal detail such as {@code trigger=payment-link}; null for the close and the clock, as before
      */
-    public synchronized Optional<VisitReview> prompt(GuestBill bill, String trigger) {
-        if (bill == null || bill.chatId() == null || bill.status() == GuestBillStatus.CANCELLED) {
+    public Optional<VisitReview> prompt(GuestBill bill, String trigger) {
+        return ask(bill, trigger, false);
+    }
+
+    /**
+     * The same for a Telegram update or a request thread (the hostess «Счёт», the guest's or the agent's «счёт»): the
+     * Concierge's question is only queued there, so a slow or absent Concierge never holds that thread. The clock and
+     * the payment prompter use {@link #prompt}, which delivers it on their own thread.
+     */
+    public Optional<VisitReview> promptQueued(GuestBill bill, String trigger) {
+        return ask(bill, trigger, true);
+    }
+
+    private Optional<VisitReview> ask(GuestBill bill, String trigger, boolean queued) {
+        if (bill == null || bill.status() == GuestBillStatus.CANCELLED) {
             return Optional.empty();
         }
-        Optional<VisitReview> existing = reviews.findByBill(bill.id());
-        if (existing.isPresent()) {
-            return existing;
+        if (GuestBillNotifier.concierge(bill)) {
+            return askThroughTheConcierge(bill, trigger, queued);
         }
-        if (!notifier.reviewPrompt(bill)) {
+        synchronized (this) {
+            Optional<VisitReview> existing = reviews.findByBill(bill.id());
+            if (existing.isPresent()) {
+                return existing;
+            }
+            if (!notifier.reviewPrompt(bill)) {
+                return Optional.empty();
+            }
+            VisitReview review = reviews.open(bill.id(), bill.chatId());
+            bills.reviewNoted(bill.id(), BillOperationType.REVIEW_PROMPTED, trigger);
+            return Optional.of(review);
+        }
+    }
+
+    /**
+     * A bill without a chat is asked only when its booking belongs to a Concierge session (REVIEW through the webhook).
+     * The review row is reserved under the lock, so it is asked once; the call to the Concierge happens outside it, and a
+     * question that did not go out drops the reserved row, so it can be asked again.
+     */
+    private Optional<VisitReview> askThroughTheConcierge(GuestBill bill, String trigger, boolean queued) {
+        if (!notifier.reachesConcierge(bill)) {
             return Optional.empty();
         }
-        VisitReview review = reviews.open(bill.id(), bill.chatId());
+        VisitReview reserved;
+        synchronized (this) {
+            Optional<VisitReview> existing = reviews.findByBill(bill.id());
+            if (existing.isPresent()) {
+                return existing;
+            }
+            reserved = reviews.open(bill.id(), null);
+        }
+        boolean sent;
+        try {
+            sent = queued ? notifier.reviewPromptQueued(bill) : notifier.reviewPrompt(bill);
+        } catch (RuntimeException e) {
+            log.warn("Review question for bill {} did not reach the Concierge: {}", bill.id(), e.getClass().getSimpleName());
+            sent = false;
+        }
+        if (!sent) {
+            reviews.dropUnanswered(bill.id());
+            return Optional.empty();
+        }
         bills.reviewNoted(bill.id(), BillOperationType.REVIEW_PROMPTED, trigger);
-        return Optional.of(review);
+        return Optional.of(reserved);
     }
 
     /** Visits that ended long enough ago and were not asked about yet. */
@@ -148,6 +207,7 @@ public class VisitReviewService {
             }
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "stars=" + review.stars());
             notifier.reviewThanks(bill, review);
+            toStaff(bill, review, null);
             return new CallbackResult(true, "Спасибо за оценку!", null);
         }
         if (matcher.group(4) != null) {
@@ -157,6 +217,7 @@ public class VisitReviewService {
             }
             bills.reviewNoted(billId, BillOperationType.REVIEW_RECEIVED, "thumb=" + review.thumb());
             notifier.reviewThanks(bill, review);
+            toStaff(bill, review, null);
             return new CallbackResult(true, "Спасибо!", null);
         }
         reviews.tipRequested(billId);
@@ -165,6 +226,50 @@ public class VisitReviewService {
         }
         bills.reviewNoted(billId, BillOperationType.TIP_REQUESTED, null);
         return new CallbackResult(true, "Сейчас предложу, как оставить чаевые.", TIP_PHRASE);
+    }
+
+    /**
+     * The guest's stars given through an agent instead of the buttons: recorded on the latest bill of the reservation
+     * as the stars button records them, journey REVIEW event included. The guest's words are not kept here, as with
+     * the buttons. False when the reservation has no bill, the bill is cancelled, or the visit was rated already. Works
+     * for a bill without a chat (a Concierge booking); no thanks is sent, the agent answers.
+     */
+    public synchronized boolean submit(long reservationId, int stars, String text) {
+        if (stars < 1 || stars > 5) {
+            return false;
+        }
+        Optional<GuestBill> found = bills.findByReservation(reservationId);
+        if (found.isEmpty() || found.get().status() == GuestBillStatus.CANCELLED) {
+            return false;
+        }
+        GuestBill bill = found.get();
+        Optional<VisitReview> existing = reviews.findByBill(bill.id());
+        if (existing.isPresent() && (existing.get().stars() != null || existing.get().ratedAt() != null)) {
+            return false;
+        }
+        if (existing.isEmpty()) {
+            // A bill of a Concierge booking has no chat: the review row has none either.
+            reviews.open(bill.id(), bill.chatId());
+        }
+        VisitReview review = reviews.rate(bill.id(), stars);
+        if (journeyEvents != null) {
+            journeyEvents.onReservationId(bill.tableReservationId(), museon_online.astor_butler.domain.journey.VisitEventKind.REVIEW, museon_online.astor_butler.domain.journey.JourneyEvents.GUEST, "stars=" + review.stars());
+        }
+        bills.reviewNoted(bill.id(), BillOperationType.REVIEW_RECEIVED, "stars=" + review.stars());
+        toStaff(bill, review, text);
+        return true;
+    }
+
+    /** The team sees the review in its topic; a card that does not go out never changes the guest's answer. */
+    private void toStaff(GuestBill bill, VisitReview review, String comment) {
+        if (staffCard == null) {
+            return;
+        }
+        try {
+            staffCard.publish(bill, review, comment);
+        } catch (RuntimeException e) {
+            log.warn("Visit review card for bill {} failed: {}", bill.id(), e.getClass().getSimpleName());
+        }
     }
 
     public Optional<VisitReview> reviewOf(Long billId) {

@@ -71,6 +71,26 @@ class JourneyRecorderTest {
     }
 
     @Test
+    void staffAndPrestoActionsReachTheVisitLedger() {
+        museon_online.astor_butler.domain.ledger.LedgerWriter ledger = mock(museon_online.astor_butler.domain.ledger.LedgerWriter.class);
+        JourneyRecorder recorder = recorder();
+        recorder.setLedgerWriter(ledger);
+
+        long visitId = recorder.record(42L, 421L, "+79120000000", "AERIS", VISIT, VisitEventKind.REQUESTED, "BOT", null).orElseThrow().id();
+        recorder.record(42L, 421L, "+79120000000", "AERIS", VISIT, VisitEventKind.CONFIRMED, JourneyEvents.STAFF, null);
+        recorder.record(42L, 421L, "+79120000000", "AERIS", VISIT, VisitEventKind.SEATED, JourneyEvents.PRESTO, null);
+        recorder.record(42L, 421L, "+79120000000", "AERIS", VISIT, VisitEventKind.SEATED, JourneyEvents.PRESTO, null);
+
+        org.mockito.Mockito.verify(ledger).write(new museon_online.astor_butler.domain.ledger.VisitTurnDraft(visitId, null,
+                museon_online.astor_butler.domain.ledger.TurnSide.STAFF, museon_online.astor_butler.domain.ledger.TurnChannel.STAFF_GROUP,
+                museon_online.astor_butler.domain.ledger.TurnKind.STAFF_ACTION, "CONFIRMED", null, null));
+        org.mockito.Mockito.verify(ledger).write(new museon_online.astor_butler.domain.ledger.VisitTurnDraft(visitId, null,
+                museon_online.astor_butler.domain.ledger.TurnSide.SYSTEM, museon_online.astor_butler.domain.ledger.TurnChannel.SABY,
+                museon_online.astor_butler.domain.ledger.TurnKind.STAFF_ACTION, "SEATED", null, null));
+        org.mockito.Mockito.verifyNoMoreInteractions(ledger);
+    }
+
+    @Test
     void oneShotEventIsWrittenOnce() {
         record(42L, "+79120000000", VisitEventKind.REQUESTED, "BOT");
         record(42L, "+79120000000", VisitEventKind.SEATED, "PRESTO");

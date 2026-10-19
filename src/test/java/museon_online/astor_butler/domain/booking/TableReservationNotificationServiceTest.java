@@ -6,7 +6,12 @@ import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import museon_online.astor_butler.domain.entry.GuestEntryService;
 import museon_online.astor_butler.domain.lunch.BusinessLunchService;
 import museon_online.astor_butler.domain.lunch.LunchPreorderMark;
+import museon_online.astor_butler.integration.concierge.ConciergeWebhook;
+import museon_online.astor_butler.telegram.utils.TelegramBot;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
 
@@ -18,8 +23,12 @@ import java.util.Optional;
 import static museon_online.astor_butler.domain.booking.BookingAutoConfirmPolicy.Decision;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -366,6 +375,76 @@ class TableReservationNotificationServiceTest {
                 .startsWith("💳 <b>Гость просит счёт</b> (гость написал в боте)")
                 .contains("<b>Стол:</b> не выбран", "<b>Гость:</b> гость из Telegram", "<b>Гостей:</b> не указано")
                 .doesNotContain("+79990000000");
+    }
+
+    @Test
+    void conciergeBookingIsNotSentToTelegram() throws Exception {
+        TelegramBot bot = mock(TelegramBot.class);
+        ConciergeWebhook webhook = mock(ConciergeWebhook.class);
+        TableReservationNotificationService wired = wired(bot, webhook);
+        TableReservationOrder concierge = conciergeOrder();
+
+        wired.notifyGuestConfirmed(concierge);
+        wired.notifyGuestRejected(concierge, List.of());
+        wired.notifyGuestHoldExpired(concierge, 7);
+        wired.notifyGuestMovedByStaff(concierge, order());
+
+        verify(bot, never()).execute(any(SendMessage.class));
+        verify(webhook).announce(eq("CONFIRMED"), eq(concierge), any());
+        verify(webhook).announce(eq("REJECTED"), eq(concierge), any());
+        verify(webhook).announce(eq("EXPIRED"), eq(concierge), any());
+        verify(webhook).announce(eq("MOVED"), eq(concierge), any());
+    }
+
+    @Test
+    void telegramBookingIsUnchanged() throws Exception {
+        TelegramBot bot = mock(TelegramBot.class);
+        ConciergeWebhook webhook = mock(ConciergeWebhook.class);
+        TableReservationNotificationService wired = wired(bot, webhook);
+
+        wired.notifyGuestConfirmed(order());
+
+        verify(bot).execute(argThat((SendMessage message) -> "1773317437".equals(message.getChatId())
+                && message.getText().contains("Бронь подтверждена")));
+        verify(webhook, never()).announce(anyString(), any(TableReservationOrder.class), any());
+    }
+
+    @Test
+    void aConciergeTableRequestSendsNoWebhookEventSinceTheToolResultCarriesTheLine() {
+        ConciergeWebhook webhook = mock(ConciergeWebhook.class);
+        TableReservationNotificationService wired = wired(mock(TelegramBot.class), webhook);
+        TableReservationOrder concierge = conciergeOrder();
+        // The wiring of ButlerTalkConfiguration: the capability tool's router sends the staff card through the table
+        // request cards, which fall back to this service without the wishes topic.
+        museon_online.astor_butler.domain.journey.talk.TableRequestCards cards = new museon_online.astor_butler.domain.journey.talk.TableRequestCards(
+                mock(ObjectProvider.class), wired, true, true, "", "");
+        museon_online.astor_butler.domain.journey.talk.TableRequestRouter router = new museon_online.astor_butler.domain.journey.talk.TableRequestRouter(
+                id -> Optional.of(concierge), (table, day) -> Optional.of("Ольга"), cards,
+                java.time.Clock.systemUTC(), "Asia/Yekaterinburg");
+
+        String answer = router.route(44L, museon_online.astor_butler.domain.journey.talk.TableRequest.WATER, "воду");
+
+        assertThat(answer).isEqualTo("Передал. Ольга скоро подойдёт.");
+        org.mockito.Mockito.verifyNoInteractions(webhook);
+    }
+
+    @SuppressWarnings("unchecked")
+    private TableReservationNotificationService wired(TelegramBot bot, ConciergeWebhook webhook) {
+        ObjectProvider<TelegramBot> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(bot);
+        TableReservationNotificationService wired = new TableReservationNotificationService(provider,
+                mock(TableReservationPendingIntentService.class), null, policy, null);
+        ReflectionTestUtils.setField(wired, "telegramEnabled", true);
+        ReflectionTestUtils.setField(wired, "notificationsEnabled", true);
+        wired.setConciergeWebhook(webhook);
+        return wired;
+    }
+
+    private TableReservationOrder conciergeOrder() {
+        TableReservationOrder o = order();
+        return new TableReservationOrder(o.id(), null, null, null, o.tableId(), o.tableCode(), o.tableDisplayName(), null, null,
+                TableReservationStatus.CONFIRMED, "CONCIERGE", o.requestedStartAt(), o.requestedEndAt(), o.partySize(), o.guestName(),
+                null, null, null, null, null, null, o.createdAt(), o.updatedAt());
     }
 
     private TableReservationOrder order() {

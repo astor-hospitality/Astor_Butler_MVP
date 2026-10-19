@@ -1,6 +1,8 @@
 package museon_online.astor_butler.domain.tips;
 
 import museon_online.astor_butler.domain.booking.TableReservationNotificationService;
+import museon_online.astor_butler.domain.roster.FloorZones;
+import museon_online.astor_butler.domain.roster.WaiterZoneRepository;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import org.junit.jupiter.api.BeforeEach;
@@ -206,6 +208,105 @@ class TipsStaffCommandServiceTest {
         assertThat(TipsStaffCommandService.tables("1-99")).isNull();
         assertThat(TipsStaffCommandService.tables("")).isNull();
         assertThat(TipsStaffCommandService.tables("5?")).isNull();
+    }
+
+    // ---- /зона ----------------------------------------------------------------------------------------------------
+
+    private WaiterZoneRepository zonesWithFloor() {
+        WaiterZoneRepository zones = mock(WaiterZoneRepository.class);
+        FloorZones floor = mock(FloorZones.class);
+        when(floor.zone(anyString())).thenReturn(null);
+        when(floor.zone("WINDOW")).thenReturn("WINDOW");
+        when(floor.zone("окно")).thenReturn("WINDOW");
+        when(floor.zone("BAR")).thenReturn("BAR");
+        when(floor.zoneOfTable(anyString())).thenReturn(java.util.Optional.empty());
+        for (String table : List.of("1", "2", "3", "4", "5", "6")) {
+            when(floor.zoneOfTable(table)).thenReturn(java.util.Optional.of("WINDOW"));
+        }
+        when(floor.zoneOfTable("9")).thenReturn(java.util.Optional.of("BAR"));
+        when(floor.tablesOf("WINDOW")).thenReturn(List.of("1", "2", "3", "4", "5", "6"));
+        when(floor.tablesOf("BAR")).thenReturn(List.of("9", "10", "BAR"));
+        when(floor.zones()).thenReturn(List.of("WINDOW", "BAR"));
+        service.setZones(zones, floor);
+        return zones;
+    }
+
+    @Test
+    void aWaiterIsGivenAStandingZoneByItsNameOrByItsTables() {
+        WaiterZoneRepository zones = zonesWithFloor();
+
+        assertThat(service.handle(staff(500L, "/зона WINDOW Даниил"))).isTrue();
+        verify(zones).add("AERIS", "daniil", "WINDOW", "Даша (@dasha)");
+        assertThat(reply("500")).startsWith("Даниил (daniil) — зона WINDOW (у окна): столы 1, 2, 3, 4, 5, 6.");
+
+        assertThat(service.handle(staff(500L, "/зона 9 Анну"))).isTrue();
+        verify(zones).add("AERIS", "anna", "BAR", "Даша (@dasha)");
+
+        assertThat(service.handle(staff(500L, "/зона окно Даша"))).isTrue();
+        assertThat(replies("500").get(2)).contains("в справочнике не официант");
+    }
+
+    @Test
+    void aZoneIsTakenFromOneWaiterOrFromEveryone() {
+        WaiterZoneRepository zones = zonesWithFloor();
+        when(zones.remove("AERIS", "daniil", "WINDOW")).thenReturn(true);
+        when(zones.clearZone("AERIS", "BAR")).thenReturn(2);
+
+        assertThat(service.handle(staff(600L, "/зона WINDOW Даниил -"))).isTrue();
+        verify(zones).remove("AERIS", "daniil", "WINDOW");
+        assertThat(reply("600")).isEqualTo("Даниил (daniil) больше не в зоне WINDOW (у окна).");
+
+        assertThat(service.handle(staff(600L, "/зона BAR -"))).isTrue();
+        verify(zones).clearZone("AERIS", "BAR");
+        assertThat(replies("600").get(1)).isEqualTo("Зона BAR (бар): убрал всех (2).");
+        verify(zones, never()).add(any(), any(), any(), any());
+    }
+
+    @Test
+    void theZonesAreListedWithTheirTablesAndWaiters() {
+        WaiterZoneRepository zones = zonesWithFloor();
+        when(zones.all("AERIS")).thenReturn(List.of(
+                new WaiterZoneRepository.WaiterZone("anna", "Анна", "WINDOW"),
+                new WaiterZoneRepository.WaiterZone("daniil", "Даниил", "WINDOW")));
+
+        assertThat(service.handle(staff(500L, "/зона"))).isTrue();
+
+        assertThat(reply("500"))
+                .contains("• WINDOW (у окна) · столы 1, 2, 3, 4, 5, 6 — Анна, Даниил")
+                .contains("• BAR (бар) · столы 9, 10, BAR — никого");
+    }
+
+    @Test
+    void anUnknownZoneOrTableIsSaidAndNothingIsWritten() {
+        WaiterZoneRepository zones = zonesWithFloor();
+
+        service.handle(staff(500L, "/зона террасa Даниил"));
+        service.handle(staff(500L, "/зона 77 Даниил"));
+        service.handle(staff(500L, "/зона WINDOW"));
+
+        List<String> replies = replies("500");
+        assertThat(replies.get(0)).startsWith("Не понял зону «террасa». Зоны: WINDOW, BAR.");
+        assertThat(replies.get(1)).startsWith("На плане зала нет: стол 77.");
+        assertThat(replies.get(2)).startsWith("Кого поставить в зону WINDOW (у окна)?");
+        verify(zones, never()).add(any(), any(), any(), any());
+    }
+
+    @Test
+    void aGuestTypingTheZoneCommandIsNotHeard() {
+        WaiterZoneRepository zones = zonesWithFloor();
+
+        assertThat(service.handle(staff(421L, "/зона WINDOW Даниил"))).isFalse();
+        verifyNoInteractions(zones);
+    }
+
+    @Test
+    void anAutomaticPickIsMarkedInTheDaysList() {
+        when(directory.assignments("AERIS", DAY)).thenReturn(List.of(
+                new TableWaiterAssignment("AERIS", "5", DAY, "daniil", "Даниил", "auto", NOW)));
+
+        service.handle(staff(500L, "/официант"));
+
+        assertThat(reply("500")).contains("стол 5 — Даниил (daniil) · авто, по зоне");
     }
 
     private String reply(String chatId) {

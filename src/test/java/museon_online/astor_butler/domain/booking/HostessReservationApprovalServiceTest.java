@@ -269,6 +269,34 @@ class HostessReservationApprovalServiceTest {
         return IncomingMessage.telegram(chatId, userId, 1, 1, text, null, "Даша", null, username, "ru", false, "c-1");
     }
 
+    /**
+     * Prod 16.10, booking #68: «Да» sent nothing to Saby. The Presto API has no call that confirms a booking, so «Да»
+     * still writes nothing there (the table goes on create instead); «Нет» cancels the Presto booking.
+     */
+    @Test
+    void yesWritesNothingToSabyAndNoCancelsTheSabyBooking() {
+        TableReservationRepository repository = mock(TableReservationRepository.class);
+        museon_online.astor_butler.domain.booking.external.ExternalReservationProvider saby =
+                mock(museon_online.astor_butler.domain.booking.external.ExternalReservationProvider.class);
+        TableReservationService real = new TableReservationService(repository, notifications, saby);
+        HostessReservationApprovalService withSaby = new HostessReservationApprovalService(real, notifications, storage, policy);
+        withSaby.setHostessChatId("500");
+        TableReservationOrder yes = order(68L, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, "saby-68");
+        TableReservationOrder no = order(69L, TableReservationStatus.AWAITING_MANAGER_CONFIRMATION, "saby-69");
+        when(repository.findOrder(68L)).thenReturn(java.util.Optional.of(yes));
+        when(repository.confirm(68L)).thenReturn(order(68L, TableReservationStatus.CONFIRMED, "saby-68"));
+        when(repository.findOrder(69L)).thenReturn(java.util.Optional.of(no));
+        when(repository.reject(69L)).thenReturn(order(69L, TableReservationStatus.REJECTED, "saby-69"));
+        when(saby.cancelReservation("saby-69")).thenReturn(true);
+
+        assertThat(withSaby.handleCallback("table_booking:confirm:68", 500L).answerText()).isEqualTo("Бронь #68 подтверждена");
+        org.mockito.Mockito.verifyNoInteractions(saby);
+
+        assertThat(withSaby.handleCallback("table_booking:reject:69", 500L).answerText()).isEqualTo("Бронь #69 отменена");
+        verify(saby).cancelReservation("saby-69");
+        verify(notifications, never()).notifyHostessExternalCancelFailed(any());
+    }
+
     private static TableReservationOrder order(Long id, TableReservationStatus status, String externalId) {
         Instant start = Instant.parse("2026-10-07T14:00:00Z");
         return new TableReservationOrder(id, 1773317437L, 1773317437L, null, 4L, "4", "Стол 4", "WINDOW", null, status,

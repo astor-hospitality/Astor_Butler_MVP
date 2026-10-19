@@ -42,7 +42,8 @@ class BusinessLunchCatalogTest {
                         "Салат коул слоу | Салат коул слоу ЛАНЧ | 230 | null",
                         "Салат с сельдью и яблоком | Салат с сельдью и яблоком Ланч | 280 | null",
                         "Блинный салат | Блинный салат Ланч | 280 | null",
-                        "Гороховый суп с копченостями | Гороховый суп с копченостями ЛАНЧ | 290 | null",
+                        // The guest reads «копчёностями»; Presto keeps its own spelling, which the lookup must match.
+                        "Гороховый суп с копчёностями | Гороховый суп с копченостями ЛАНЧ | 290 | null",
                         "Крем-суп грибной | Крем суп грибной Ланч | 230 | null",
                         "Паста болоньезе | Паста болоньезе Ланч | 420 | null",
                         "Рыбные котлеты с картофельным пюре | Рыбные котлеты с картофельным пюре ЛАНЧ | 490 | null",
@@ -62,6 +63,32 @@ class BusinessLunchCatalogTest {
                         "Вино дня белое | Вино дня белое 125 мл | 350 | 125 мл",
                         "Вино дня красное | Вино дня красное 125 мл | 350 | 125 мл");
         assertThat(catalog.find("NOWHERE")).isEmpty();
+    }
+
+    /**
+     * The menu as lunch_menu gives it to the agent (field {@code text}): every course and every dish with its portion and
+     * price. Run 16.10: the model folded the thirteen drinks into «кофе, чай и лимонады» and the cranberry mors was lost.
+     */
+    @Test
+    void theShippedAerisMenuReadsAsPrintedWithEveryDrink() {
+        BusinessLunchOffer aeris = new BusinessLunchCatalog(objectMapper).find("AERIS").orElseThrow();
+
+        String text = aeris.menuText();
+
+        assertThat(text).startsWith("Салаты\n• Салат коул слоу · 230 ₽\n• Салат с сельдью и яблоком · 280 ₽\n• Блинный салат · 280 ₽\n\nСуп\n"
+                + "• Гороховый суп с копчёностями · 290 ₽\n• Крем-суп грибной · 230 ₽\n\n");
+        assertThat(text).contains("\n\nНапитки\n• Эспрессо · 160 ₽\n", "• Чай ассам, 500 мл · 210 ₽", "• Клюквенный морс, 200 мл · 140 ₽")
+                .endsWith("• Вино дня красное, 125 мл · 350 ₽");
+        assertThat(text.lines().filter(line -> line.startsWith("• ")).count()).isEqualTo(22);
+        assertThat(text).doesNotContain("ЛАНЧ", "null");
+    }
+
+    @Test
+    void aDishWithoutAPublishedPriceIsListedWithoutOne() {
+        BusinessLunchOffer offer = new BusinessLunchOffer("X", "X", false, List.of(DayOfWeek.MONDAY), LocalTime.NOON, LocalTime.of(16, 0), 90, null,
+                List.of(new BusinessLunchOffer.Course("SOUP", "Суп", List.of(new BusinessLunchOffer.Dish("S", "Суп дня")))), List.of());
+
+        assertThat(offer.menuText()).isEqualTo("Суп\n• Суп дня");
     }
 
     /** The catalog reads every JSON in business-lunch/: a file there that is not an offer is logged as broken at start-up. */

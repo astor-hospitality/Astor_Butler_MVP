@@ -84,6 +84,59 @@ public class ConsentVaultService {
         );
     }
 
+    /** Consent the guest gave in Astor Concierge: the same operator and policy, so the Butler's bot does not ask again. */
+    public static final String CONCIERGE_SOURCE = "CONCIERGE_CONSENT";
+
+    /**
+     * Records the consent the guest gave in Astor Concierge (one operator, one policy for both bots), keyed by the same
+     * Telegram user id; the Butler's first touch then greets the guest without its own consent screen.
+     */
+    public void grantPrivacyPolicyFromConcierge(long telegramUserId) {
+        Map<String, Object> evidence = Map.of("channel", "CONCIERGE", "telegramUserId", telegramUserId,
+                "source", "astor-concierge");
+        Long userId = findUserIdByTelegramUserId(telegramUserId);
+        jdbcTemplate.update("""
+                INSERT INTO user_consents (
+                    id, user_id, telegram_user_id, chat_id, consent_type, policy_version, status,
+                    source, evidence, granted_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 'GRANTED', ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT ON CONSTRAINT uq_user_consents_telegram_policy
+                DO UPDATE SET
+                    user_id = COALESCE(user_consents.user_id, EXCLUDED.user_id),
+                    chat_id = COALESCE(user_consents.chat_id, EXCLUDED.chat_id),
+                    status = 'GRANTED',
+                    source = EXCLUDED.source,
+                    evidence = EXCLUDED.evidence,
+                    granted_at = EXCLUDED.granted_at,
+                    revoked_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                UUID.randomUUID(),
+                userId,
+                telegramUserId,
+                telegramUserId,
+                PRIVACY_POLICY,
+                CURRENT_POLICY_VERSION,
+                CONCIERGE_SOURCE,
+                jsonb(evidence),
+                OffsetDateTime.ofInstant(Instant.now(), ZoneOffset.UTC)
+        );
+        log.info("Consent granted from Concierge: userId={}, telegramUserId={}, version={}", userId, telegramUserId,
+                CURRENT_POLICY_VERSION);
+    }
+
+    /** The guest withdrew consent (in either bot): the privacy-policy consent of this Telegram user is revoked. */
+    public void revokePrivacyPolicy(long telegramUserId) {
+        int revoked = jdbcTemplate.update("""
+                UPDATE user_consents
+                SET status = 'REVOKED', revoked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE telegram_user_id = ? AND consent_type = ? AND revoked_at IS NULL
+                """,
+                telegramUserId, PRIVACY_POLICY);
+        log.info("Consent revoked: telegramUserId={}, rows={}", telegramUserId, revoked);
+    }
+
     public boolean hasGrantedPrivacyPolicy(Long telegramUserId) {
         if (telegramUserId == null) {
             return false;

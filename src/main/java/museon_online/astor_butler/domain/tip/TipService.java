@@ -54,6 +54,28 @@ public class TipService {
         return repository.createDraft(command, staff);
     }
 
+    /**
+     * A draft for the tip at the table of a reservation (the agents' {@code tip_create}): the recipient is the waiter
+     * of that table when personal tips are on, else as in {@link #createDraft}. The reservation, not a chat, says
+     * where the guest sits, so the draft may have no chat: a guest who booked through the Concierge has none here.
+     */
+    @Transactional
+    public TipOrder createDraftFor(museon_online.astor_butler.domain.booking.TableReservationOrder reservation, TipOrderCommand command) {
+        if (reservation == null || command == null) {
+            throw badRequest("Reservation and request body are required");
+        }
+        if (command.amountMinor() == null || command.amountMinor() < 1) {
+            throw badRequest("amountMinor must be positive");
+        }
+        if (command.staffId() == null && recipientResolver != null && recipientResolver.enabled()) {
+            TipRecipient recipient = recipientResolver.forOrder(reservation, command.venueCode());
+            if (recipient != null && recipient.personal()) {
+                return repository.createDraft(withRecipientName(command, recipient.name()), null, recipient.link());
+            }
+        }
+        return repository.createDraft(command, resolveStaff(command));
+    }
+
     /** The waiter of the guest's table today, when the feature is on and the caller did not name a recipient. */
     private TipRecipient personalRecipient(TipOrderCommand command) {
         if (command.staffId() != null || recipientResolver == null || !recipientResolver.enabled()) {

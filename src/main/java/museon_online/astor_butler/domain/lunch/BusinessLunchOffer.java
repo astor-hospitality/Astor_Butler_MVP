@@ -143,6 +143,27 @@ public record BusinessLunchOffer(
         return courses.stream().filter(course -> course.dishes().stream().anyMatch(dish -> dish.code().equals(dishCode))).findFirst();
     }
 
+    /**
+     * The whole menu the way the printed one reads: each course's title, then one dish a line with its portion and price
+     * («• Клюквенный морс, 200 мл · 140 ₽»), a blank line between courses; a dish without a published price is listed
+     * without one. The agents show it to the guest word for word, so no course is summed up in other words.
+     */
+    public String menuText() {
+        List<String> lines = new ArrayList<>();
+        for (Course course : courses) {
+            if (!lines.isEmpty()) {
+                lines.add("");
+            }
+            lines.add(course.title());
+            for (Dish dish : course.dishes()) {
+                String portion = dish.portion() == null || dish.portion().isBlank() ? "" : ", " + dish.portion().trim();
+                String price = dish.priceRub() == null ? "" : " · " + dish.priceRub() + " ₽";
+                lines.add("• " + dish.title() + portion + price);
+            }
+        }
+        return String.join("\n", lines);
+    }
+
     /** What the slot asks for, in words: "Салат" or "Салат или суп". */
     public String slotTitle(LunchSet set, int slot) {
         List<String> titles = set.slots().get(slot).stream()

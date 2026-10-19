@@ -102,12 +102,24 @@ public class SabyPaymentProvider implements ExternalPaymentProvider {
         return (https || localHttp) && trimmed.length() <= 2048 && !trimmed.contains(" ") ? trimmed : null;
     }
 
-    private static String fieldNames(JsonNode response) {
+    /**
+     * The shape of an answer without its values: field names, and one level down under the usual wrappers
+     * ({@code data{link,sum}}). Never the link, a token or any other value.
+     */
+    static String fieldNames(JsonNode response) {
         if (response == null || !response.isObject()) {
             return response == null ? "none" : response.getNodeType().name();
         }
         StringBuilder names = new StringBuilder();
-        response.fieldNames().forEachRemaining(name -> names.append(names.isEmpty() ? "" : ",").append(name));
+        response.fieldNames().forEachRemaining(name -> {
+            names.append(names.isEmpty() ? "" : ",").append(name);
+            JsonNode inner = response.path(name);
+            if (WRAPPERS.contains(name) && inner.isObject()) {
+                StringBuilder nested = new StringBuilder();
+                inner.fieldNames().forEachRemaining(child -> nested.append(nested.isEmpty() ? "" : ",").append(child));
+                names.append('{').append(nested).append('}');
+            }
+        });
         return names.toString();
     }
 }

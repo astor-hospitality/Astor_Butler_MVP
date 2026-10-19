@@ -67,7 +67,8 @@ class InternalApiGuardFilterTest {
         @Bean Stub stub() { return new Stub(); }
         @Bean CorsConfigurationSource cors() { return new SecurityConfig().corsConfigurationSource("http://localhost:3001"); }
         @Bean SecurityFilterChain chain(HttpSecurity http) throws Exception {
-            return new SecurityConfig().securityFilterChain(http, configuredToken);
+            return new SecurityConfig().securityFilterChain(http, configuredToken,
+                    new museon_online.astor_butler.api.board.BoardProperties());
         }
     }
 
@@ -122,7 +123,13 @@ class InternalApiGuardFilterTest {
                 "/api/fsm/telegram/1/state",
                 "/api/admin/anything",
                 "/api/internal/anything",
+                "/api/internal/call-log/export",
+                "/api/internal/call-log/summary",
                 "/api/concierge/requests/telegram/1",
+                "/api/ledger/v1/turns",
+                "/api/capabilities/v1/tools",
+                "/api/capabilities/v1/venue_info",
+                "/api/negotiation/v1/turn",
                 "/actuator/metrics",
                 "/actuator/env")) {
             mvc.perform(put(path).contentType("application/json").content("{}")).andExpect(status().isUnauthorized());

@@ -1,5 +1,7 @@
 package museon_online.astor_butler.model;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import javax.net.ssl.SSLContext;
@@ -31,6 +35,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -47,19 +52,28 @@ import java.util.UUID;
  * message by id, as the API has no inline data URLs. GigaChat has no {@code response_format}; prompts
  * that expect JSON rely on their own instructions.
  *
+ * <p>Function calling ({@link ToolCallingModel}) uses GigaChat's {@code functions} / {@code function_call}
+ * fields; every {@code chat} call is written to {@code model_interaction_audit} when the repository is wired.
+ *
  * <p>Outside Spring (the isolated glasses runtime) the explicit constructor builds the same client; it can
  * bound photo answers separately from text answers.
  */
 @Slf4j
 @Service
 @ConditionalOnProperty(prefix = "astor.model", name = "provider", havingValue = "gigachat", matchIfMissing = false)
-public class GigaChatModelGateway implements ModelGateway {
+public class GigaChatModelGateway implements ModelGateway, ToolCallingModel {
+
+    /** What the audit keeps of a text the guest has not agreed to store. */
+    static final String HIDDEN = ModelChatAudit.HIDDEN;
 
     static final String PROVIDER = "gigachat";
     static final String DEFAULT_OAUTH_URL = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth";
     static final String DEFAULT_BASE_URL = "https://gigachat.devices.sberbank.ru/api/v1";
     /** Tokens are refreshed this long before GigaChat says they expire. */
     static final Duration TOKEN_REFRESH_MARGIN = Duration.ofSeconds(60);
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> JSON_OBJECT = new TypeReference<>() {
+    };
 
     private final RestTemplate restTemplate;
     private final String oauthUrl;
@@ -75,6 +89,7 @@ public class GigaChatModelGateway implements ModelGateway {
     private final double temperature;
     private final Object tokenLock = new Object();
     private volatile AccessToken token;
+    private ModelInteractionAuditRepository auditRepository;
 
     @Autowired
     public GigaChatModelGateway(
@@ -136,7 +151,7 @@ public class GigaChatModelGateway implements ModelGateway {
     @Override
     public ModelTextResponse generateText(ModelTextRequest request) {
         String model = textModel(request.profile());
-        Map<String, Object> body = completionBody(model, Map.of("role", "user", "content", nullToEmpty(request.prompt())), maxTokens);
+        Map<String, Object> body = completionBody(model, List.of(Map.of("role", "user", "content", nullToEmpty(request.prompt()))), maxTokens);
         long startedAt = System.nanoTime();
 
         Map<?, ?> response = postJson("/chat/completions", body);
@@ -154,6 +169,129 @@ public class GigaChatModelGateway implements ModelGateway {
                 false,
                 completionMetadata(response)
         );
+    }
+
+    @Autowired(required = false)
+    public void setAuditRepository(ModelInteractionAuditRepository auditRepository) {
+        this.auditRepository = auditRepository;
+    }
+
+    @Override
+    public ModelChatResponse chat(ModelChatRequest request) {
+        String model = request.model() != null ? request.model().trim() : textModel(request.profile());
+        Map<String, Object> body = completionBody(
+                model, request.messages().stream().map(GigaChatModelGateway::chatMessage).toList(),
+                request.maxTokens() != null ? request.maxTokens() : maxTokens);
+        // An answer-only step goes without functions, as before answerOnly existed: GigaChat accepts the history as is.
+        if (!request.tools().isEmpty() && !request.answerOnly()) {
+            body.put("functions", request.tools().stream().map(GigaChatModelGateway::function).toList());
+            body.put("function_call", "auto");
+        }
+        long startedAt = System.nanoTime();
+        try {
+            Map<?, ?> response = chatExchange(body);
+            Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
+            Map<String, Object> metadata = completionMetadata(response);
+            Optional<ModelToolCall> toolCall = readToolCall(response, metadata);
+            ModelChatResponse result = new ModelChatResponse(
+                    readText(response), toolCall, PROVIDER, model, latency, Map.copyOf(metadata));
+            auditChat(request, model, result, latency, null);
+            log.debug("ModelGateway chat provider={} model={} purpose={} toolCall={} latencyMs={}",
+                    PROVIDER, model, request.purpose(), toolCall.map(ModelToolCall::name).orElse(""), latency.toMillis());
+            return result;
+        } catch (RuntimeException error) {
+            auditChat(request, model, null, Duration.ofNanos(System.nanoTime() - startedAt), error);
+            throw error;
+        }
+    }
+
+    /**
+     * Like {@link #exchange}, but 401 and 403 both get one fresh token, and every "model cannot be used now"
+     * answer (402, auth still rejected, 429, 5xx, timeout or I/O failure) becomes {@link ModelUnavailableException}.
+     */
+    private Map<?, ?> chatExchange(Map<String, Object> body) {
+        try {
+            try {
+                return send("/chat/completions", body, MediaType.APPLICATION_JSON, accessToken(false));
+            } catch (HttpClientErrorException error) {
+                if (!isAuthRejection(error)) {
+                    throw error;
+                }
+                log.info("GigaChat rejected the access token for a chat call, requesting a new one");
+                return send("/chat/completions", body, MediaType.APPLICATION_JSON, accessToken(true));
+            }
+        } catch (HttpClientErrorException error) {
+            int status = error.getStatusCode().value();
+            if (status == 402 || status == 429 || isAuthRejection(error)) {
+                throw new ModelUnavailableException("GigaChat is unavailable: HTTP " + status, error);
+            }
+            throw error;
+        } catch (HttpServerErrorException error) {
+            throw new ModelUnavailableException("GigaChat is unavailable: HTTP " + error.getStatusCode().value(), error);
+        } catch (ResourceAccessException error) {
+            throw new ModelUnavailableException("GigaChat did not answer in time or could not be reached", error);
+        }
+    }
+
+    private static boolean isAuthRejection(HttpClientErrorException error) {
+        return error.getStatusCode() == HttpStatus.UNAUTHORIZED || error.getStatusCode() == HttpStatus.FORBIDDEN;
+    }
+
+    private static Map<String, Object> chatMessage(ModelChatMessage message) {
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("role", message.role() == null ? "user" : message.role());
+        json.put("content", nullToEmpty(message.content()));
+        if (message.name() != null && !message.name().isBlank()) {
+            json.put("name", message.name());
+        }
+        if (message.functionCall() != null) {
+            Map<String, Object> call = new LinkedHashMap<>();
+            call.put("name", message.functionCall().name());
+            call.put("arguments", message.functionCall().arguments());
+            json.put("function_call", call);
+        }
+        return json;
+    }
+
+    private static Map<String, Object> function(ModelTool tool) {
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("name", tool.name());
+        json.put("description", nullToEmpty(tool.description()));
+        json.put("parameters", tool.parameters());
+        return json;
+    }
+
+    /** {@code arguments} may come as an object or as a JSON string; an unreadable string becomes {@code {}}. */
+    private Optional<ModelToolCall> readToolCall(Map<?, ?> response, Map<String, Object> metadata) {
+        if (!(firstChoice(response).get("message") instanceof Map<?, ?> message)
+                || !(message.get("function_call") instanceof Map<?, ?> call)
+                || !(call.get("name") instanceof String name)
+                || name.isBlank()) {
+            return Optional.empty();
+        }
+        Object arguments = call.get("arguments");
+        Map<String, Object> parsed = new LinkedHashMap<>();
+        if (arguments instanceof Map<?, ?> object) {
+            object.forEach((key, value) -> parsed.put(String.valueOf(key), value));
+        } else if (arguments instanceof String text && !text.isBlank()) {
+            try {
+                Map<String, Object> value = JSON.readValue(text, JSON_OBJECT);
+                if (value != null) {
+                    parsed.putAll(value);
+                }
+            } catch (Exception e) {
+                metadata.put("arguments_unparsed", true);
+            }
+        } else if (arguments != null && !(arguments instanceof String)) {
+            metadata.put("arguments_unparsed", true);
+        }
+        return Optional.of(new ModelToolCall(name, parsed));
+    }
+
+    /** The shared {@link ModelChatAudit} row; tool arguments are never stored. */
+    private void auditChat(ModelChatRequest request, String model, ModelChatResponse response, Duration latency,
+                           RuntimeException error) {
+        ModelChatAudit.record(auditRepository, PROVIDER, request, model, response, latency, error);
     }
 
     @Override
@@ -195,7 +333,8 @@ public class GigaChatModelGateway implements ModelGateway {
         message.put("content", nullToEmpty(request.prompt()));
         message.put("attachments", List.of(fileId));
 
-        Map<?, ?> response = postJson("/chat/completions", completionBody(visionModel, message, visionMaxTokens));
+        Map<?, ?> response = postJson("/chat/completions", completionBody(visionModel, List.of(message),
+                request.maxTokens() != null && request.maxTokens() > 0 ? request.maxTokens() : visionMaxTokens));
 
         Duration latency = Duration.ofNanos(System.nanoTime() - startedAt);
         String text = readText(response);
@@ -240,10 +379,10 @@ public class GigaChatModelGateway implements ModelGateway {
         return profile == ModelProfile.QUALITY && qualityModel != null ? qualityModel : frontlineModel;
     }
 
-    private Map<String, Object> completionBody(String model, Map<String, Object> message, int tokens) {
+    private Map<String, Object> completionBody(String model, List<? extends Map<String, ?>> messages, int tokens) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
-        body.put("messages", List.of(message));
+        body.put("messages", messages);
         body.put("max_tokens", tokens);
         if (temperature >= 0) {
             body.put("temperature", Math.min(2.0, temperature));

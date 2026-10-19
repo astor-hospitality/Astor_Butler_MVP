@@ -18,12 +18,17 @@ import java.util.regex.Pattern;
 
 /**
  * The butler as a useful conversation partner (spec 2026-10-13 §3.3): table requests become staff cards, questions about
- * a dish's weight and nutrition are answered from Saby, questions about the venue from confirmed facts or the team.
+ * a dish's weight and nutrition are answered from Saby, questions about the venue from confirmed facts (an unknown one is
+ * said to be unknown and goes to the staff chat).
  * Anything else stays with the scenarios. Off while {@code ASTOR_BUTLER_TALK_ENABLED} is off.
  */
 public class ButlerTalk {
 
-    public static final String ASK_TEAM = "Уточню у команды и вернусь с ответом.";
+    /**
+     * The answer when the venue has no confirmed fact. The question still goes to the staff chat so that the fact gets
+     * written down, but no answer comes back to the guest from there, so nothing is promised.
+     */
+    public static final String ASK_TEAM = "Точных сведений об этом у меня пока нет.";
 
     private static final Pattern NUTRITION = Pattern.compile(
             "калори|кбжу|ккал|белк|жир[аыо]|углевод|сколько\\s+(грамм|весит)|\\bвес\\b|граммовк", Pattern.UNICODE_CHARACTER_CLASS);

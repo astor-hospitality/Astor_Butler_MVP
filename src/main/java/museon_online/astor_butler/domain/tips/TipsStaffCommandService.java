@@ -2,6 +2,9 @@ package museon_online.astor_butler.domain.tips;
 
 import lombok.extern.slf4j.Slf4j;
 import museon_online.astor_butler.domain.booking.TableReservationNotificationService;
+import museon_online.astor_butler.domain.roster.FloorZones;
+import museon_online.astor_butler.domain.roster.TableWaiters;
+import museon_online.astor_butler.domain.roster.WaiterZoneRepository;
 import museon_online.astor_butler.service.message.IncomingMessage;
 import museon_online.astor_butler.telegram.adapter.TelegramSystemNotifier;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +32,10 @@ import java.util.regex.Pattern;
  *       {@code 1-6} assigns a range of numeric tables, {@code /официант <стол> -} clears; {@code /официант} lists today;</li>
  *   <li>{@code /чаевые <staff_id|имя> <ссылка> [заметка]} ({@code /tips}) — the waiter's own tip link;
  *       {@code /чаевые <staff> -} clears it; {@code /чаевые} lists the waiters with «ссылка есть / нет».</li>
+ *   <li>{@code /зона <ЗОНА|столы> <имя|staff_id>} ({@code /zone}) — the zone a waiter usually works (WINDOW, «окно»,
+ *       or tables, «1-6», which name their zones); a zone may have several. {@code /зона <ЗОНА> <имя> -} takes it
+ *       from that waiter, {@code /зона <ЗОНА> -} from everyone; {@code /зона} lists the zones. A table nobody was
+ *       given for the day goes, on the guest's first request, to the waiter on shift whose zone holds it.</li>
  * </ul>
  * The bot never prints a link into the chat: the listing says only whether there is one. With the feature off the
  * commands are unknown.
@@ -48,6 +55,8 @@ public class TipsStaffCommandService {
 
     static final String WAITER_USAGE = "Назначить: /официант &lt;стол&gt; &lt;имя|staff_id&gt;; несколько столов: /официант 1-6 Даниил; "
             + "снять: /официант &lt;стол&gt; -; список на сегодня: /официант";
+    static final String ZONE_USAGE = "Зона официанта: /зона &lt;ЗОНА|столы&gt; &lt;имя|staff_id&gt; (например /зона WINDOW Даниил "
+            + "или /зона 1-6 Даниил); убрать у одного: /зона &lt;ЗОНА&gt; &lt;имя&gt; -; убрать у всех: /зона &lt;ЗОНА&gt; -; список: /зона";
     static final String TIPS_USAGE = "Задать ссылку: /чаевые &lt;staff_id|имя&gt; &lt;ссылка&gt; [заметка]; убрать: /чаевые &lt;staff_id&gt; -; "
             + "список: /чаевые. Ссылку бот в чат не выводит.";
 
@@ -56,6 +65,9 @@ public class TipsStaffCommandService {
     private final TableReservationNotificationService notificationService;
     private final TelegramSystemNotifier systemNotifier;
     private final Clock clock;
+
+    private WaiterZoneRepository zones;
+    private FloorZones floor;
 
     private String hostessChatId;
     private String managerChatId;
@@ -84,6 +96,13 @@ public class TipsStaffCommandService {
         this.clock = clock;
     }
 
+    /** The standing zones for /зона; without them the command says it is not available. */
+    @Autowired(required = false)
+    public void setZones(WaiterZoneRepository zones, FloorZones floor) {
+        this.zones = zones;
+        this.floor = floor;
+    }
+
     /** True when the message was one of the commands from a staff chat and has been answered. */
     public boolean handle(IncomingMessage incoming) {
         if (incoming == null || !properties.isEnabled()) {
@@ -102,6 +121,7 @@ public class TipsStaffCommandService {
             reply = switch (command.kind()) {
                 case WAITER -> waiter(command.args(), incoming);
                 case TIPS -> tips(command.args(), incoming);
+                case ZONE -> zone(command.args(), incoming);
             };
         } catch (RuntimeException e) {
             log.warn("Tips staff command failed: {}", e.toString());
@@ -169,7 +189,8 @@ public class TipsStaffCommandService {
         StringBuilder text = new StringBuilder("<b>Официанты по столам на " + DAY.format(today) + "</b>\n");
         for (TableWaiterAssignment assignment : assignments) {
             text.append("стол ").append(escape(assignment.tableCode())).append(" — ")
-                    .append(escape(assignment.displayName())).append(" (").append(escape(assignment.staffId())).append(")\n");
+                    .append(escape(assignment.displayName())).append(" (").append(escape(assignment.staffId())).append(")")
+                    .append(TableWaiters.AUTO.equals(assignment.assignedBy()) ? " · авто, по зоне" : "").append("\n");
         }
         return text.append("\n").append(WAITER_USAGE).toString();
     }
@@ -210,6 +231,122 @@ public class TipsStaffCommandService {
             return "стол " + escape(tables.get(0));
         }
         return "столы " + tables.stream().map(TipsStaffCommandService::escape).reduce((a, b) -> a + ", " + b).orElse("");
+    }
+
+    // ---- /зона ----------------------------------------------------------------------------------------------------
+
+    /** The zones a /зона names: a zone word, or tables whose zones they are; a problem to say instead. */
+    record ZoneSpec(List<String> zones, String problem) {
+    }
+
+    private String zone(List<String> args, IncomingMessage incoming) {
+        if (zones == null || floor == null) {
+            return "Зоны официантов сейчас недоступны.";
+        }
+        String tenant = properties.tenantOrDefault();
+        if (args.isEmpty()) {
+            return zonesList(tenant);
+        }
+        List<String> rest = new ArrayList<>(args);
+        if (TABLE_WORDS.contains(rest.get(0).toLowerCase(Locale.ROOT)) && rest.size() > 1) {
+            rest.remove(0);
+        }
+        ZoneSpec spec = zoneSpec(rest.get(0));
+        if (spec.problem() != null) {
+            return spec.problem();
+        }
+        List<String> nameWords = new ArrayList<>(rest.subList(1, rest.size()));
+        boolean clear = !nameWords.isEmpty() && CLEAR_WORDS.contains(nameWords.get(nameWords.size() - 1).toLowerCase(Locale.ROOT));
+        if (clear) {
+            nameWords.remove(nameWords.size() - 1);
+        }
+        String by = who(incoming);
+        String zonesLabel = zonesLabel(spec.zones());
+        if (nameWords.isEmpty()) {
+            if (!clear) {
+                return "Кого поставить в зону " + zonesLabel + "? " + ZONE_USAGE;
+            }
+            int removed = 0;
+            for (String zone : spec.zones()) {
+                removed += zones.clearZone(tenant, zone);
+            }
+            log.info("AUDIT Зона {} снята со всех официантов — {}", spec.zones(), by);
+            return removed == 0 ? "В зоне " + zonesLabel + " никто не стоял." : "Зона " + zonesLabel + ": убрал всех (" + removed + ").";
+        }
+        Match match = findMember(nameWords);
+        if (match.member() == null) {
+            return match.ambiguous()
+                    ? "Нашёл несколько: " + names(match.candidates()) + ". Укажите staff_id."
+                    : "Не нашёл сотрудника «" + escape(String.join(" ", nameWords)) + "» в справочнике. Список: /чаевые";
+        }
+        TipStaffMember member = match.member();
+        if (clear) {
+            boolean removed = false;
+            for (String zone : spec.zones()) {
+                removed |= zones.remove(tenant, member.staffId(), zone);
+            }
+            log.info("AUDIT Официант {} убран из зоны {} — {}", member.staffId(), spec.zones(), by);
+            return removed ? name(member) + " больше не в зоне " + zonesLabel + "." : name(member) + " и не был в зоне " + zonesLabel + ".";
+        }
+        for (String zone : spec.zones()) {
+            zones.add(tenant, member.staffId(), zone, by);
+        }
+        log.info("AUDIT Официант {} поставлен в зону {} — {}", member.staffId(), spec.zones(), by);
+        StringBuilder text = new StringBuilder(name(member)).append(" — зона ").append(zonesLabel).append(": ");
+        text.append(spec.zones().stream().map(zone -> tablesOf(zone)).reduce((a, b) -> a + "; " + b).orElse("")).append('.');
+        text.append("\nКогда стол из зоны на сегодня никому не дан (/официант), просьба гостя уйдёт официанту этой зоны, если он на смене по графику.");
+        if (!"WAITER".equals(member.role())) {
+            text.append("\n").append(escape(member.displayName())).append(" в справочнике не официант — по зоне выбираются только официанты на смене.");
+        }
+        return text.toString();
+    }
+
+    private ZoneSpec zoneSpec(String word) {
+        String zone = floor.zone(word);
+        if (zone != null) {
+            return new ZoneSpec(List.of(zone), null);
+        }
+        List<String> tables = tables(word);
+        if (tables == null) {
+            return new ZoneSpec(null, "Не понял зону «" + escape(word) + "». Зоны: " + String.join(", ", floor.zones()) + ". " + ZONE_USAGE);
+        }
+        Set<String> found = new LinkedHashSet<>();
+        List<String> unknown = new ArrayList<>();
+        for (String table : tables) {
+            floor.zoneOfTable(table).ifPresentOrElse(found::add, () -> unknown.add(table));
+        }
+        if (!unknown.isEmpty() && unknown.stream().anyMatch(table -> !table.matches("\\d+"))) {
+            return new ZoneSpec(null, "Не понял зону «" + escape(word) + "». Зоны: " + String.join(", ", floor.zones()) + ". " + ZONE_USAGE);
+        }
+        if (!unknown.isEmpty()) {
+            return new ZoneSpec(null, "На плане зала нет: " + tablesLabel(unknown) + ". " + ZONE_USAGE);
+        }
+        return new ZoneSpec(new ArrayList<>(found), null);
+    }
+
+    private String zonesList(String tenant) {
+        List<WaiterZoneRepository.WaiterZone> standing = zones.all(tenant);
+        Set<String> listed = new LinkedHashSet<>(floor.zones());
+        standing.forEach(row -> listed.add(row.zone()));
+        StringBuilder text = new StringBuilder("<b>Зоны официантов</b>\n");
+        for (String zone : listed) {
+            List<String> who = standing.stream().filter(row -> zone.equals(row.zone()))
+                    .map(row -> escape(row.displayName())).toList();
+            text.append("• ").append(escape(FloorZones.label(zone))).append(" · ").append(tablesOf(zone)).append(" — ")
+                    .append(who.isEmpty() ? "никого" : String.join(", ", who)).append("\n");
+        }
+        return text.append("\nСтол без официанта на сегодня уходит официанту на смене из его зоны; нет такого — команде.\n")
+                .append(ZONE_USAGE).toString();
+    }
+
+    private String tablesOf(String zone) {
+        List<String> tables = floor.tablesOf(zone);
+        return tables.isEmpty() ? "столов нет на плане" : tablesLabel(tables);
+    }
+
+    private static String zonesLabel(List<String> zones) {
+        return zones.stream().map(zone -> escape(FloorZones.label(zone)))
+                .reduce((a, b) -> a + ", " + b).orElse("");
     }
 
     // ---- /чаевые ---------------------------------------------------------------------------------------------------
@@ -445,7 +582,7 @@ public class TipsStaffCommandService {
     /** {@code /официант}, {@code /waiter}; {@code /чаевые}, {@code /tips} — with or without {@code @bot}, with the rest as words. */
     record Command(Kind kind, List<String> args) {
 
-        enum Kind { WAITER, TIPS }
+        enum Kind { WAITER, TIPS, ZONE }
 
         static Command parse(String text) {
             String normalized = text == null ? "" : text.strip();
@@ -461,6 +598,7 @@ public class TipsStaffCommandService {
             Kind kind = switch (command) {
                 case "/официант", "/waiter" -> Kind.WAITER;
                 case "/чаевые", "/tips" -> Kind.TIPS;
+                case "/зона", "/зоны", "/zone", "/zones" -> Kind.ZONE;
                 default -> null;
             };
             if (kind == null) {

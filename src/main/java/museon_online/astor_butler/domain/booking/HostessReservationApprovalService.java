@@ -85,6 +85,9 @@ public class HostessReservationApprovalService {
         }
 
         if ("confirm".equals(action)) {
+            // «Да» is not sent to Saby: the Presto booking API has create, update, cancel and state, but no call that
+            // confirms a booking (docs/integrations/SABY_PRESTO_BOOKING_API.md 4.5, 16.10). The table the booking
+            // lands on is sent on create instead; «Нет» does reach Saby — reject() cancels the Presto booking.
             if (confirmedByVenueSystem(current)) {
                 return CallbackResult.handled("Бронь #" + orderId + " подтверждается в Presto: примите её там, гость получит ответ автоматически");
             }

@@ -72,4 +72,16 @@ class ConsentVaultServiceMaxTest {
         return IncomingMessage.max(CHAT_ID, 9_123_456L, "", "+79990000000", "Анна", null, null, "ru", false, "max-7",
                 Map.of("maxChatId", 555L, "maxMessageId", "mid.1"));
     }
+
+    @Test
+    void aConciergeConsentIsGrantedForTheSameTelegramUserAndCanBeRevoked() {
+        service.grantPrivacyPolicyFromConcierge(555L);
+        service.revokePrivacyPolicy(555L);
+
+        ArgumentCaptor<Object[]> insert = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbc).update(contains("INSERT INTO user_consents"), insert.capture());
+        assertThat(insert.getValue()).contains(555L, ConsentVaultService.PRIVACY_POLICY,
+                ConsentVaultService.CURRENT_POLICY_VERSION, ConsentVaultService.CONCIERGE_SOURCE);
+        verify(jdbc).update(contains("SET status = 'REVOKED'"), any(Object[].class));
+    }
 }

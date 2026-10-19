@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,19 +35,52 @@ class TableRequestRouterTest {
     @Test
     void breadBecomesACardForTheAssignedWaiter() {
         when(reservations.find(42L)).thenReturn(Optional.of(order()));
-        when(waiters.nameOf("13", LocalDate.of(2026, 10, 14))).thenReturn(Optional.of("Кирилл"));
+        when(waiters.forRequest("13", LocalDate.of(2026, 10, 14))).thenReturn(new TableRequestRouter.Addressee("Кирилл", "VIP_ZONE"));
 
         assertThat(router.route(42L, TableRequest.BREAD, "можно ещё хлеба")).isEqualTo("Передал. Кирилл скоро подойдёт.");
-        verify(staffChat).send(eq(order()), eq(TableRequest.BREAD), eq("можно ещё хлеба"), eq("Кирилл"));
+        verify(staffChat).send(eq(order()), eq(TableRequest.BREAD), eq("можно ещё хлеба"),
+                eq(new TableRequestRouter.Addressee("Кирилл", "VIP_ZONE")));
     }
 
     @Test
-    void noWaiterAssignedGoesToTheTeam() {
+    void noWaiterInTheZoneGoesToTheTeamWithTheZoneNamed() {
         when(reservations.find(42L)).thenReturn(Optional.of(order()));
-        when(waiters.nameOf(any(), any())).thenReturn(Optional.empty());
+        when(waiters.forRequest(any(), any())).thenReturn(TableRequestRouter.Addressee.team("VIP_ZONE"));
 
-        assertThat(router.route(42L, TableRequest.WATER, "можно воды")).isEqualTo("Передал команде, скоро подойдут.");
-        verify(staffChat).send(eq(order()), eq(TableRequest.WATER), eq("можно воды"), eq(null));
+        TableRequestRouter.Routed routed = router.deliver(42L, TableRequest.WATER, "можно воды");
+
+        assertThat(routed.answer()).isEqualTo("Передал команде, скоро подойдут.");
+        assertThat(routed.delivered()).isTrue();
+        assertThat(routed.waiterName()).isNull();
+        verify(staffChat).send(eq(order()), eq(TableRequest.WATER), eq("можно воды"), eq(TableRequestRouter.Addressee.team("VIP_ZONE")));
+    }
+
+    @Test
+    void theWaiterOfTheRequestIsNamedInTheResult() {
+        when(reservations.find(42L)).thenReturn(Optional.of(order()));
+        when(waiters.forRequest("13", LocalDate.of(2026, 10, 14))).thenReturn(new TableRequestRouter.Addressee("Даниил", "VIP_ZONE"));
+
+        TableRequestRouter.Routed routed = router.deliver(42L, TableRequest.TAKEAWAY, "упакуйте, пожалуйста, с собой");
+
+        assertThat(routed).isEqualTo(new TableRequestRouter.Routed("Передал. Даниил скоро подойдёт.", true, "Даниил"));
+    }
+
+    @Test
+    void theSeatedHintAndTheTipsReadTheAssignmentWithoutPickingAnyone() {
+        when(waiters.nameOf("13", LocalDate.of(2026, 10, 14))).thenReturn(Optional.empty());
+
+        assertThat(router.waiterName(order())).isEmpty();
+        verify(waiters, never()).forRequest(any(), any());
+    }
+
+    @Test
+    void aWaitersLookupWithoutZonesStillAnswersByTheAssignment() {
+        TableRequestRouter.Waiters onlyAssignments = (tableCode, day) -> Optional.of("Кирилл");
+        TableRequestRouter plain = new TableRequestRouter(reservations, onlyAssignments, staffChat,
+                Clock.fixed(NOW, ZoneOffset.UTC), "Asia/Yekaterinburg");
+        when(reservations.find(42L)).thenReturn(Optional.of(order()));
+
+        assertThat(plain.route(42L, TableRequest.CUTLERY, "нам нужны салфетки")).isEqualTo("Передал. Кирилл скоро подойдёт.");
     }
 
     @Test
@@ -65,5 +99,10 @@ class TableRequestRouterTest {
         assertThat(TableRequest.recognise("нам нужны приборы")).contains(TableRequest.CUTLERY);
         assertThat(TableRequest.recognise("без хлеба, пожалуйста")).isEmpty();
         assertThat(TableRequest.recognise("хочу ланч")).isEmpty();
+        assertThat(TableRequest.recognise("нам нужны салфетки")).contains(TableRequest.CUTLERY);
+        assertThat(TableRequest.recognise("упакуйте, пожалуйста, остатки")).contains(TableRequest.TAKEAWAY);
+        assertThat(TableRequest.recognise("можно забрать пасту с собой?")).contains(TableRequest.TAKEAWAY);
+        assertThat(TableRequest.recognise("можно с собой?")).contains(TableRequest.TAKEAWAY);
+        assertThat(TableRequest.recognise("у меня с собой торт")).isEmpty();
     }
 }

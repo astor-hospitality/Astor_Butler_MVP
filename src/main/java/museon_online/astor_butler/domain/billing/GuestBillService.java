@@ -21,11 +21,21 @@ public class GuestBillService {
     private final GuestBillRepository bills;
     private final BillOperationRepository journal;
 
+    /** The unified call log (docs/operations/CALL_LOG.md): optional so the constructor and its tests stay as they are. */
+    private museon_online.astor_butler.domain.calllog.CallLogWriter callLog;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setCallLog(museon_online.astor_butler.domain.calllog.CallLogWriter callLog) {
+        this.callLog = callLog;
+    }
+
     /** Opens the bill for an order, or returns the one already opened for the same reservation. */
     @Transactional
     public GuestBill open(BillDraft draft) {
-        if (draft == null || draft.chatId() == null || draft.kind() == null || draft.estimate() == null) {
-            throw new IllegalArgumentException("A bill needs a chat, a kind and an estimate");
+        // A Concierge booking has no chat of the Butler's bot: its bill is found by the reservation instead.
+        if (draft == null || (draft.chatId() == null && draft.tableReservationId() == null) || draft.kind() == null
+                || draft.estimate() == null) {
+            throw new IllegalArgumentException("A bill needs a chat or a reservation, a kind and an estimate");
         }
         if (draft.tableReservationId() != null) {
             Optional<GuestBill> existing = bills.findByReservation(draft.kind(), draft.tableReservationId());
@@ -38,6 +48,10 @@ public class GuestBillService {
                 draft.estimate().complete()
                         ? "estimate=" + draft.estimate().totalMinor()
                         : "no estimate: a price is not published");
+        if (callLog != null && callLog.enabled() && bill != null) {
+            callLog.targetAction("bill:open", bill.status() == null ? null : bill.status().name(), bill.source(),
+                    museon_online.astor_butler.domain.calllog.CallLogWriter.firstId(bill.telegramUserId(), bill.chatId()));
+        }
         return bill;
     }
 
