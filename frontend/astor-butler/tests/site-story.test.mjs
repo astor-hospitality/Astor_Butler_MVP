@@ -10,14 +10,22 @@ const text = s => s.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+
 const links = [...html.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => ({ href: m[1], label: text(m[2]) }));
 const body = text(html.replace(/<head>[\s\S]*?<\/head>/, '').replace(/<(script|style)[\s\S]*?<\/\1>/g, ''));
 
-test('the first screen offers the AERIS lunch in the Concierge and the way down to restaurants', () => {
+test('the first screen sells to the restaurant and lets you try Astor as a guest', () => {
   const hero = /<section class="hero"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
-  assert.match(text(hero), /Бизнес-ланч или стол/);
+  assert.match(text(hero), /Гости бронируют в Telegram, хостес только подтверждает/);
   const heroLinks = [...hero.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => [m[1], text(m[2])]);
   assert.deepEqual(heroLinks, [
-    ['https://t.me/astor_concierge_bot?start=lunch_aeris', 'Заказать ланч в AERIS'],
-    ['#restaurants', 'Для ресторанов'],
+    ['#connect', 'Подключить ресторан'],
+    ['https://t.me/astor_concierge_bot?start=lunch_aeris', 'Попробовать как гость'],
   ]);
+});
+
+test('the guest path starts at step 0, the Astor Mini App opened from the Concierge', () => {
+  const how = /<section class="section" id="how"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
+  const first = /<li class="step[^"]*">[\s\S]*?<\/li>\s*<li class="step"/.exec(how)?.[0] ?? '';
+  assert.match(text(first), /^0\s*вход гостя\s*Astor Mini App/);
+  assert.ok(first.includes('href="https://t.me/astor_concierge_bot"'), 'step 0 opens the Concierge');
+  assert.match(text(first), /Позвать друзей/);
 });
 
 test('every in-page anchor has its target', () => {
@@ -33,10 +41,10 @@ test('the footer links both bots and the policy', () => {
   }
 });
 
-test('Telegram links open only the two known bots', () => {
+test('Telegram links open only the two known bots and Mikhail for venues', () => {
   const tg = links.filter(l => l.href.includes('t.me/')).map(l => new URL(l.href).pathname);
   assert.ok(tg.length >= 3);
-  for (const path of tg) assert.ok(['/astor_concierge_bot', '/aeris_butler_bot'].includes(path), `unknown bot ${path}`);
+  for (const path of tg) assert.ok(['/astor_concierge_bot', '/aeris_butler_bot', '/michael_welly'].includes(path), `unknown Telegram link ${path}`);
 });
 
 test('copy speaks to the reader as «вы», with en dashes and no promise that the bot confirms', () => {
