@@ -265,6 +265,8 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 .connect-steps { counter-reset: c; display: grid; gap: 8px; margin-bottom: 22px; color: var(--paper-dim); }
 .connect-steps li { counter-increment: c; display: grid; grid-template-columns: 24px 1fr; }
 .connect-steps li::before { content: counter(c) "."; color: var(--paper); }
+.connect-price { margin: -6px 0 20px; color: var(--paper-dim); }
+.connect-price b { display: block; font-size: 1.4rem; color: var(--paper); font-family: var(--font-display); letter-spacing: var(--brand-subhead-tracking); }
 .connect .btn { width: 100%; }
 .connect-note { margin-top: 10px; font-size: 0.85rem; color: var(--silver); overflow-wrap: anywhere; text-align: center; }
 
