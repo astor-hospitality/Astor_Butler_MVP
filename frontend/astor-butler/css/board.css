@@ -88,6 +88,9 @@ body.locked .frame { visibility: hidden; }
 }
 .brand { font-weight: var(--brand-weight-semibold); letter-spacing: -.01em; min-width: 0; }
 .brand small { color: var(--muted); font-weight: var(--brand-weight-regular); margin-left: 8px; font-size: 13px; }
+/* Знак Astor – засечная «A» со звездой вместо перекладины, пути те же, что в assets/astor-mark.svg. */
+.brand .astor-mark { display: inline-block; width: 24px; height: 24px; margin-right: 8px; vertical-align: -6px; }
+.login-box .astor-mark { display: block; width: 44px; height: 44px; margin-bottom: 6px; }
 .nav { display: flex; gap: 4px; flex-wrap: wrap; }
 .nav button { border: 0; background: none; padding: 6px 10px; border-radius: 8px; color: var(--muted); font-size: 14px; cursor: pointer; }
 .nav button[aria-selected="true"] { background: var(--panel-2); color: var(--fg); font-weight: var(--brand-weight-medium); }

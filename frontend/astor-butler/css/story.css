@@ -108,13 +108,8 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
   font-size: 0.95rem; font-weight: var(--brand-weight-semibold);
   letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none;
 }
-.mark-ring {
-  display: inline-grid; place-items: center;
-  width: 30px; height: 30px; border-radius: 50%;
-  border: 1px solid rgba(200, 208, 216, 0.5);
-  background: radial-gradient(circle at 38% 32%, rgba(200, 208, 216, 0.28), transparent 60%), var(--ink-3);
-  font-size: 0.8rem; letter-spacing: 0;
-}
+/* Знак Astor – засечная «A» со звездой вместо перекладины, пути те же, что в assets/astor-mark.svg. */
+.astor-mark { display: block; flex: none; width: 32px; height: 32px; }
 
 .top-nav { display: none; gap: 28px; font-size: 0.92rem; color: var(--paper-dim); }
 .top-nav a { text-decoration: none; }
@@ -157,6 +152,7 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
   font-size: 0.8rem; font-weight: var(--brand-weight-semibold);
 }
 .avatar-group { background: radial-gradient(circle at 38% 32%, #3b424b, var(--ink)); font-size: 0.68rem; }
+.avatar .astor-mark { width: 20px; height: 20px; }
 .phone-title { display: grid; font-weight: var(--brand-weight-semibold); line-height: 1.25; }
 .phone-title small { font-size: 0.72rem; font-weight: var(--brand-weight-regular); color: var(--silver); }
 
