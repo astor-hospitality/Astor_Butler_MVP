@@ -1,21 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Astor Assist">
-  <defs>
-    <radialGradient id="metalGlow" cx="35%" cy="28%" r="72%">
-      <stop offset="0" stop-color="#e3e8ed"/>
-      <stop offset="0.34" stop-color="#3b424b"/>
-      <stop offset="1" stop-color="#080a0d"/>
-    </radialGradient>
-    <linearGradient id="ring" x1="14" y1="8" x2="52" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#f4f7f9"/>
-      <stop offset="0.42" stop-color="#8c96a0"/>
-      <stop offset="1" stop-color="#242c35"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="16" fill="#080a0d"/>
-  <circle cx="32" cy="32" r="23" fill="url(#metalGlow)" opacity="0.92"/>
-  <circle cx="32" cy="32" r="23" fill="none" stroke="url(#ring)" stroke-width="1.6"/>
-  <circle cx="25" cy="24" r="4.5" fill="#f4f7f9" opacity="0.12"/>
-  <g fill="#f4f7f9" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="800" letter-spacing="1.2">
-    <text x="16.8" y="38.2">AA</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Astor">
+  <!-- Знак Astor для вкладки: засечная «A» со звездой вместо перекладины.
+       Мелкий кегль: обводка утолщает волосные линии, звезда чуть крупнее и ниже, чтобы не слипалась с ножками в 16 px. -->
+  <rect width="64" height="64" rx="14" fill="#080a0d"/>
+  <g fill="#f4f7f9" stroke="#f4f7f9" stroke-width="8" stroke-linejoin="round" transform="translate(32 32) scale(0.1443) translate(-316.5 -313)">
+    <path d="M320 140L449 470H383L301 219Z"/>
+    <path d="M319 143L173 470H183L308 196Z" stroke-width="26"/>
+    <path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/>
+    <path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/>
+    <path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z" stroke="none" transform="translate(303 379) scale(1.18) translate(-303 -355)"/>
   </g>
 </svg>

@@ -643,22 +643,9 @@ body.light-theme .hero::before {
   border: 1px solid color-mix(in srgb, var(--metal) 36%, transparent);
 }
 
-.brand-monogram {
-  display: inline-grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--metal) 48%, transparent);
-  background:
-    radial-gradient(circle at 42% 34%, color-mix(in srgb, var(--metal) 24%, transparent), transparent 42%),
-    linear-gradient(145deg, var(--surface-strong), color-mix(in srgb, var(--ink-2) 88%, transparent));
-  color: var(--gold-soft);
-  font-weight: var(--brand-weight-semibold);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  box-shadow: 0 0 28px color-mix(in srgb, var(--metal) 18%, transparent), inset 0 0 18px rgba(0,0,0,0.24);
-}
+/* Знак Astor – засечная «A» со звездой вместо перекладины, пути те же, что в assets/astor-mark.svg. */
+.astor-mark { display: block; flex: none; width: 44px; height: 44px; }
+.hero-brand .astor-mark { color: var(--paper); }
 
 .hero-brand-name {
   font-family: var(--font-display);
@@ -1083,7 +1070,8 @@ body.light-theme .hero::before {
 .doc-links a:hover { color: var(--gold-soft); }
 
 .footer { margin-top: var(--space-3xl); padding-top: var(--space-2xl); border-top: 1px solid color-mix(in srgb, var(--paper) 7%, transparent); }
-.footer-logo { font-family: var(--font-display); letter-spacing: 0; font-size: 1rem; margin-bottom: 0.6em; }
+.footer-logo { display: inline-flex; align-items: center; gap: 0.6em; font-family: var(--font-display); letter-spacing: 0; font-size: 1rem; margin-bottom: 0.6em; }
+.footer-logo .astor-mark { width: 28px; height: 28px; }
 .footer-key { color: var(--gold); padding: 0 0.2em; }
 .footer p { color: var(--paper-dim); font-size: 0.82rem; }
 .footer-link { color: var(--paper-dim); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--paper) 25%, transparent); transition: color 0.25s, border-color 0.25s; }
@@ -1105,6 +1093,7 @@ body.light-theme .hero::before {
   box-shadow: 0 12px 32px rgba(0,0,0,0.5);
   transition: transform 0.25s var(--ease-lux), border-color 0.25s var(--ease-lux);
 }
+.chat-fab .astor-mark { width: 30px; height: 30px; }
 .chat-fab:hover { border-color: color-mix(in srgb, var(--gold-soft) 60%, transparent); }
 .chat-fab:hover, .chat-fab:focus-visible { transform: translateY(-3px) scale(1.05); }
 .chat-fab:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
@@ -1205,7 +1194,7 @@ body.light-theme .hero::before {
   .hero-inner { padding: 0 1.25rem; }
   .reveal { filter: none; }
   .hero-brand { margin-bottom: 1.6rem; }
-  .hero-brand-mark, .brand-monogram { width: 38px; height: 38px; }
+  .hero-brand-mark, .hero-brand .astor-mark { width: 38px; height: 38px; }
   .hero-hook { font-size: clamp(1.6rem, 8vw, 2rem); }
   .hero-sub { font-size: 0.98rem; max-width: 34ch; }
   .hero-cta { margin-top: 1.6rem; flex-direction: column; align-items: stretch; }
