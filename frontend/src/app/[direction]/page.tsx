@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { getImageProps } from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { catalog } from "@content/catalog";
 import { productLabels, products, type Product, type ProductLabels } from "@content/products";
 import { site, type Direction } from "@content/site";
 import type { Theme } from "@content/types";
 import { AskClio } from "@/components/assistant/AskClio";
-import { MaskWord } from "@/components/MaskWord";
 import { ThemeWatcher } from "@/components/motion/ThemeWatcher";
 import { Reveal } from "@/components/Reveal";
 import { Screen } from "@/components/Screen";
@@ -34,14 +32,13 @@ export async function generateMetadata({ params }: PageProps<"/[direction]">): P
   return { title: item.title, description: products[item.key].lead };
 }
 
-type Block = "works" | "packages" | "details";
+type Block = "packages" | "details" | "next";
 
 /**
- * A direction, in the same system as the home page: the dark first screen with its name as a massive word (its picture
- * is seen through the letters), what it is and where the prices start; then its works as a grid of the same cards,
- * the prices, what is included and how it goes, and the red last screen with the way into a talk with Clio.
- * Dark, light and red screens take turns, so the order of the blocks depends on which of them the direction has:
- * with works the light grid parts the dark first screen from the dark prices; without works the details do.
+ * A direction, in the same system as the home page and with no black on it (Sergey, 2026-10-26: «черные фоны табу»).
+ * The red first screen, as the studio liked it on the old site: the name of the direction in white, the row of its
+ * works playing under it, then its picture, what it is and where the prices start. After it the light and the red
+ * stage take turns: the prices, what is included and how it goes, and the last screen with the way into a talk with Clio.
  */
 export default async function DirectionPage({ params }: PageProps<"/[direction]">) {
   const { direction } = await params;
@@ -50,78 +47,68 @@ export default async function DirectionPage({ params }: PageProps<"/[direction]"
   const t = site;
   const l = productLabels;
   const product = products[item.key];
-  const works = catalog[item.key];
   const items = t.directions.items;
   const next = items[(items.indexOf(item) + 1) % items.length];
 
-  const hasWorks = works.length > 0;
-  const hasPackages = Boolean(product.packages);
-  const order: Block[] = hasWorks ? (hasPackages ? ["works", "packages", "details"] : ["works", "details"]) : hasPackages ? ["details", "packages"] : ["details"];
-  // the details stand on the light stage, unless the light grid of works is right above them
-  const detailsTheme: Theme = hasWorks && !hasPackages ? "ink" : "paper";
+  const order: Block[] = product.packages ? ["packages", "details", "next"] : ["details", "next"];
+  // the first screen is red, so the light stage comes next and the two take turns from there
+  const themeOf = (i: number): Theme => (i % 2 === 0 ? "paper" : "red");
 
   return (
     <>
       <ThemeWatcher />
       <Cover item={item} product={product} l={l} />
 
-      {order.map((block) => {
-        if (block === "works") {
-          return (
-            <Screen key={block} theme="paper" label={l.works} className="wrap air">
-              <Reveal as="h2" delay={0} className="caps mb-[clamp(1.5rem,5vh,3rem)] opacity-60">
-                {l.works}
-              </Reveal>
-              <WorksRail items={works.map((work) => toRail(work, item))} grid t={t.works} />
-            </Screen>
-          );
-        }
-        if (block === "packages") return <Packages key={block} product={product} l={l} />;
-        return <Details key={block} theme={detailsTheme} product={product} l={l} />;
+      {order.map((block, i) => {
+        const theme = themeOf(i);
+        if (block === "packages") return <Packages key={block} theme={theme} product={product} l={l} />;
+        if (block === "details") return <Details key={block} theme={theme} product={product} l={l} />;
+        return (
+          <Screen key={block} theme={theme} label={l.next} className="wrap air text-center">
+            <Reveal as="p" delay={0} className="caps">
+              {l.next}
+            </Reveal>
+            <Reveal>
+              <h2 className="display mx-auto mt-6 max-w-[18ch]">{item.title}</h2>
+            </Reveal>
+            <Reveal className="mt-[clamp(1.5rem,5vh,3rem)]">
+              <AskClio phrase={product.ask} label={`${l.write} «${product.ask}»`} />
+            </Reveal>
+            <Reveal as="p" className="copy mx-auto mt-5">
+              {product.packages ? l.afterFixed : l.afterQuote}
+            </Reveal>
+            <Reveal as="p" className="caps mt-[clamp(3rem,10vh,6rem)] flex flex-wrap justify-center gap-x-10 gap-y-2">
+              <Link href={`/${next.key}`} className="py-3 underline-offset-4 hover:underline">
+                {l.nextDirection}: {next.title}
+              </Link>
+              <Link href="/#products" className="py-3 underline-offset-4 hover:underline">
+                {l.all}
+              </Link>
+            </Reveal>
+          </Screen>
+        );
       })}
 
-      <Screen theme="red" label={l.next} className="wrap air text-center">
-        <Reveal as="p" delay={0} className="caps">
-          {l.next}
-        </Reveal>
-        <Reveal>
-          <h2 className="display mx-auto mt-6 max-w-[18ch]">{item.title}</h2>
-        </Reveal>
-        <Reveal className="mt-[clamp(1.5rem,5vh,3rem)]">
-          <AskClio phrase={product.ask} label={`${l.write} «${product.ask}»`} />
-        </Reveal>
-        <Reveal as="p" className="copy mx-auto mt-5">
-          {product.packages ? l.afterFixed : l.afterQuote}
-        </Reveal>
-        <Reveal as="p" className="caps mt-[clamp(3rem,10vh,6rem)] flex flex-wrap justify-center gap-x-10 gap-y-2">
-          <Link href={`/${next.key}`} className="py-3 underline-offset-4 hover:underline">
-            {l.nextDirection}: {next.title}
-          </Link>
-          <Link href="/#products" className="py-3 underline-offset-4 hover:underline">
-            {l.all}
-          </Link>
-        </Reveal>
-      </Screen>
-
-      <Footer t={t} />
+      {/* the footer stands on the colour of the last screen */}
+      <Footer t={t} theme={themeOf(order.length - 1)} />
     </>
   );
 }
 
 /**
- * The first screen: the name as a massive word with the direction's picture behind its letters,
- * under it one line about it, the plain facts and the price.
+ * The first screen, red (the header of the old site the studio liked, «C3 FILM» with a row of films on red): the name
+ * of the direction in white letters as wide as the page, the row of its works under it, playing by themselves, and then,
+ * next to the direction's picture, what it is, who it is for and where the prices start.
  */
 function Cover({ item, product, l }: { item: Direction; product: Product; l: ProductLabels }) {
   // the share of the width one em may take, so the longest line of the name reaches from margin to margin
   const share = (1000 / (Math.max(...item.lines.map((line) => inkWidth(line.toUpperCase()))) + 30)).toFixed(4);
-  // the page may have a picture of its own (the AI page shows the droid, the row of services the parrot)
+  // the page may have a picture of its own (the AI page shows the droid)
   const cover = item.pageCover ?? item.cover;
-  // the picture inside the letters comes through the image optimiser like any other (1920 px wide is plenty for a strip of letters)
-  const wordPicture = getImageProps({ src: cover.src, alt: "", width: 960, height: Math.round((960 * cover.height) / cover.width), quality: 80 }).props.src;
+  const works = catalog[item.key].map((work) => toRail(work, item));
   return (
-    <Screen theme="ink" id={item.key} label={item.title} className="wrap pb-[var(--air)] pt-[clamp(6.5rem,17vh,10rem)]">
-      <Reveal as="p" delay={0} className="caps flex justify-between gap-6 opacity-60">
+    <Screen theme="red" id={item.key} label={item.title} className="wrap overflow-x-clip pb-[var(--air)] pt-[clamp(6.5rem,17vh,10rem)]">
+      <Reveal as="p" delay={0} className="caps flex justify-between gap-6">
         <span className="tabular-nums">
           {item.num} / {site.directions.label}
         </span>
@@ -130,37 +117,29 @@ function Cover({ item, product, l }: { item: Direction; product: Product; l: Pro
         </Link>
       </Reveal>
 
-      <Reveal kind="clip" className="mt-[clamp(1.5rem,4vh,2.5rem)]">
-        <h1>
-          <span className="sr-only">{item.title}</span>
-          {/* a wide screen: the picture fills the letters, and around them the page shows as it is (no box of black) */}
-          <span className="hero-word block max-md:hidden" aria-hidden="true">
-            <MaskWord lines={item.lines} picture={wordPicture} outline />
-          </span>
-          {/* a phone: there the letters of a long name are too small to be windows, so the name is plain and the picture stands under it */}
-          <span className="mass block md:hidden" aria-hidden="true" style={{ fontSize: `min(calc(var(--w) * ${share}), 16.25rem)` }}>
-            {item.lines.map((line) => (
-              <span key={line} className="block">
-                {line}
-              </span>
-            ))}
-          </span>
+      <Reveal kind="clip" className="mt-[clamp(1.25rem,4vh,2.25rem)]">
+        <h1 className="mass page-name" style={{ "--share": share } as CSSProperties}>
+          {item.lines.map((line) => (
+            <span key={line} className="block">
+              {line}
+            </span>
+          ))}
         </h1>
       </Reveal>
-      <div className="mt-6 md:hidden">
-        <Visual visual={cover} missingLabel={site.missing} ratio="4/5" sizes="92vw" eager />
-      </div>
 
-      <div className="grid-12 mt-[clamp(2rem,6vh,3.5rem)] gap-y-8">
-        <Reveal as="p" className="dir-caption col-span-12 md:col-span-6">
-          {item.caption}
-        </Reveal>
-        <Reveal as="div" delay={0.45} className="col-span-12 md:col-span-5 md:col-start-8">
-          <p className="caps opacity-60">{item.audience}</p>
-          <p className="copy mt-3 opacity-80">{product.lead}</p>
+      <WorksRail items={works} label={l.works} note="what" t={site.works} className="mt-[clamp(1.75rem,5vh,3rem)]" />
+
+      <div className="grid-12 mt-[clamp(3rem,10vh,6rem)] items-end gap-y-8">
+        <div className="col-span-12 md:col-span-4">
+          <Visual visual={cover} missingLabel={site.missing} ratio="4/5" sizes="(min-width: 768px) 26vw, 80vw" className="page-pic" />
+        </div>
+        <Reveal as="div" className="col-span-12 md:col-span-7 md:col-start-6">
+          <p className="dir-caption">{item.caption}</p>
+          <p className="caps mt-5 opacity-80">{item.audience}</p>
+          <p className="copy mt-3">{product.lead}</p>
           <p className="caps mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <span className="border border-[color:var(--color-red)] px-3 py-2">{item.price}</span>
-            <span className="opacity-60">{product.priceNote}</span>
+            <span className="hairline px-3 py-2">{item.price}</span>
+            <span className="opacity-80">{product.priceNote}</span>
           </p>
         </Reveal>
       </div>
@@ -168,15 +147,15 @@ function Cover({ item, product, l }: { item: Direction; product: Product; l: Pro
   );
 }
 
-/** The packages side by side on the dark stage, each in a thin red frame: name, price, what the price covers. */
-function Packages({ product, l }: { product: Product; l: ProductLabels }) {
+/** The packages side by side, each in a thin frame in the line colour: name, price, what the price covers. */
+function Packages({ theme, product, l }: { theme: Theme; product: Product; l: ProductLabels }) {
   const packages = product.packages ?? [];
   // Two cards in a row at most: the price is set in the heading size and stays on one line, and a third or a fourth
   // column would be too narrow for it ("7 000 ₽ / час").
   const columns = packages.length >= 2 ? "sm:grid-cols-2" : "";
   const priceSize = "text-[length:var(--fs-m)]";
   return (
-    <Screen theme="ink" id="price" label={l.price} className="wrap air">
+    <Screen theme={theme} id="price" label={l.price} className="wrap air">
       <Reveal className="mb-[clamp(1.5rem,5vh,3rem)]">
         <h2 className="display">{l.price}</h2>
       </Reveal>
@@ -186,7 +165,7 @@ function Packages({ product, l }: { product: Product; l: ProductLabels }) {
             <Reveal kind="clip" delay={i * 0.08} className="hairline flex h-full flex-col p-[clamp(1.25rem,2.4vw,2rem)]">
               {/* «Чаще выбирают» only where there is a choice */}
               {packages.length > 1 ? (
-                <p className="caps mb-4 min-h-[1.6em] whitespace-nowrap">{pack.featured ? <span className="bg-red px-2 py-1 text-white">{l.featured}</span> : null}</p>
+                <p className="caps mb-4 min-h-[1.6em] whitespace-nowrap">{pack.featured ? <span className="bg-[color:var(--line)] px-2 py-1 text-[color:var(--on-line)]">{l.featured}</span> : null}</p>
               ) : null}
               <h3 className="caps">{pack.name}</h3>
               <p className={`mt-3 font-display leading-none font-medium tracking-[0.04em] whitespace-nowrap tabular-nums ${priceSize}`}>{pack.price}</p>
@@ -217,7 +196,7 @@ function Details({ theme, product, l }: { theme: Theme; product: Product; l: Pro
             <div className={`grid gap-x-8 gap-y-8 ${product.includes.length > 1 ? "sm:grid-cols-2" : ""}`}>
               {product.includes.map((group) => (
                 <div key={group.group}>
-                  <h3 className="caps text-red">{group.group}</h3>
+                  <h3 className="caps text-[color:var(--line)]">{group.group}</h3>
                   <List items={group.items} className="mt-2" />
                 </div>
               ))}
@@ -233,7 +212,7 @@ function Details({ theme, product, l }: { theme: Theme; product: Product; l: Pro
           <ol className="flex flex-col gap-5">
             {product.steps.map((step, i) => (
               <li key={step.title} className="grid grid-cols-[2.25rem_1fr] gap-x-2">
-                <span className="caps text-red tabular-nums">{String(i + 1).padStart(2, "0")}</span>
+                <span className="caps text-[color:var(--line)] tabular-nums">{String(i + 1).padStart(2, "0")}</span>
                 <div>
                   <h3 className="caps">{step.title}</h3>
                   <p className="copy mt-1 opacity-80">{step.text}</p>
@@ -270,7 +249,7 @@ function Details({ theme, product, l }: { theme: Theme; product: Product; l: Pro
 /** One row of the sheet. The name takes five columns of twelve: "что снимаем", the longest, fits them in one line. */
 function Row({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section aria-label={title} className="grid-12 gap-y-4 border-t-[1.5px] border-[color:var(--color-red)] py-[clamp(1.5rem,5vh,3rem)] first:border-t-0">
+    <section aria-label={title} className="grid-12 gap-y-4 border-t-[1.5px] border-[color:var(--line)] py-[clamp(1.5rem,5vh,3rem)] first:border-t-0">
       <h2 className="display-sm col-span-12 lg:col-span-5">{title}</h2>
       <div className="col-span-12 lg:col-span-7">{children}</div>
     </section>
