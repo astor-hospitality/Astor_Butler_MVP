@@ -27,10 +27,15 @@ export const media = {
   /** The first frame of the film of the first screen: painted before the film arrives, and instead of it when motion is off. */
   heroStill: picture("images/refs/hero-still.jpg", "Кадр из шоурила C3: зал в красном свете"),
   /**
-   * The frame seen through the letters of the first screen before the film arrives (and instead of it when motion is off):
-   * a black and white one, so the letters read at once against the red. The film starts from this very frame (`film.from`).
+   * The frame painted on the first screen before the film arrives (and instead of it when motion is off): the film's
+   * first frame (`film.from` is 0), made by tools/film/cut.py as bright as the page shows the film, so it fades in without a jump.
    */
-  heroMask: picture("images/refs/hero-mask.jpg", "Кадр из шоурила C3: съёмка сверху, чёрно-белая"),
+  heroMask: picture("images/refs/hero-mask.jpg", "Кадр из шоурила C3: шеф подбрасывает сковороду на кухне, чёрно-белый"),
+  /**
+   * The chrome mark turning on the brand red (the studio's logo.mov over #B80314, 4:5, 720 x 900): the cover of the directions
+   * Sergey has drawn no poster for yet, podcasts and weddings (Roma's word, 2026-10-26).
+   */
+  markRed: picture("images/refs/mark-red.jpg", "Хромированный знак C3 на красном фоне", { src: mediaUrl("videos/mark-red.mp4"), width: 720, height: 900, pictureShare: 1 }),
   lollipop: picture("images/refs/lollipop.webp", "Знак C3, запаянный в прозрачную упаковку, как леденец на палочке"),
   /** The parrot (Sergey's art, «папуг в качестве»): it leads the reportage, alive. */
   parrot: picture("images/refs/parrot.jpg", "Красно-белый попугай держит в клюве хромированную подвеску со знаком C3", { src: mediaUrl("videos/parrot.mp4"), width: 720, height: 900, pictureShare: 1 }),
@@ -48,6 +53,9 @@ export const media = {
   /** The portraits come from the current site. They are shown in black and white, like everything that is not red. */
   teamSergey: picture("images/refs/team-sergey.jpg", "Sergey Izyrow"),
   teamMichael: picture("images/refs/team-michael.jpg", "Michael Welly"),
+  /** Sent by Sergey 2026-10-27, cut to the 4:5 tile. */
+  teamVyacheslav: picture("images/refs/team-vyacheslav.jpg", "Вячеслав Жуйков"),
+  teamProducer: picture("images/refs/team-producer.jpg", "Линейный продюсер C3"),
   /**
    * Clio, the studio's assistant: the four-point star of the mark as a chrome tube, open in the middle (see tools/chrome).
    * Chrome shows what stands around it, so there are two of her: on a red screen the metal carries red,
@@ -58,11 +66,12 @@ export const media = {
 } satisfies Record<string, Picture>;
 
 /**
- * The film of the first screen: a short silent cut of the studio's showreel, compressed for the web (see tools/film).
+ * The film of the first screen: 18.25 silent seconds (49.75–68.0) of the studio's SHOWREEL C3AG 2025, compressed for the web
+ * (see tools/film/README.md): kitchen, food, stage, festival, factory, water, stadium, building site, summer field, smoke, flare.
  * `wide` is for landscape screens, `tall` is the middle of the same frames cut upright for phones;
  * `from` is the second the first screen starts it from (the frame of `media.heroMask`); it then runs in a loop.
  */
-export const film = { wide: mediaUrl("videos/hero.mp4"), tall: mediaUrl("videos/hero-m.mp4"), from: 10.2 };
+export const film = { wide: mediaUrl("videos/hero.mp4"), tall: mediaUrl("videos/hero-m.mp4"), from: 0 };
 
 /**
  * The studio's animation of the mark turning in chrome, with its alpha kept (VP9 WebM, from logo.mov): it plays on the red
@@ -78,14 +87,15 @@ export const work = {
   // covers of the directions that have no brand art of their own
   events: picture("images/work/dir-events.jpg", "Диджей за пультом в красном свете"),
   reels: picture("images/work/dir-reels.jpg", "Стейк на гриле, его поднимают щипцами"),
-  podcast: picture("images/work/dir-podcast.jpg", "Трое ведущих за столом с микрофонами"),
+  podcast: picture("images/work/dir-podcast.jpg", "Ведущий подкаста в наушниках у микрофона"),
   film: picture("images/work/dir-film.jpg", "Герой фильма даёт интервью в полутёмном кабинете"),
-  wedding: picture("images/work/dir-wedding.jpg", "Кинокамера перед свадебным залом, на столике букет и кольца"),
+  wedding: picture("images/work/dir-wedding.jpg", "Невеста в белом платье сидит на краю кровати в номере"),
 
   // works shown as cases: the cover first, then the feed
   viking: frames(["images/work/viking-1.jpg", "images/work/viking-2.jpg", "images/work/viking-3.jpg", "images/work/viking-4.jpg", "images/work/viking-5.jpg"], "ИИ-афиша для VIKING"),
   paralleli: frames(["images/work/paralleli-1.jpg", "images/work/paralleli-2.jpg", "images/work/paralleli-3.jpg", "images/work/paralleli-4.jpg"], "Вертикальный ролик для Paralleli"),
   ess11: frames(["images/work/ess11-1.jpg", "images/work/ess11-2.jpg", "images/work/ess11-3.jpg", "images/work/ess11-4.jpg"], "Короткий ролик к фильму «Электросетьстрой 11»"),
-  bloggers: frames(["images/work/bloggers-1.jpg", "images/work/bloggers-2.jpg"], "Репортаж «Блогеры России»"),
+  // the cover is the frame of the film on Drive (the work ev-1 of the catalogue)
+  bloggers: frames(["images/work/ev-1.jpg", "images/work/bloggers-2.jpg"], "Репортаж «Блогеры России»"),
   aeris: frames(["images/work/aeris-1.jpg", "images/work/aeris-2.jpg", "images/work/aeris-3.jpg", "images/work/aeris-4.jpg", "images/work/aeris-5.jpg"], "Афиша для AERIS"),
 };

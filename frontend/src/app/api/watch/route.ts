@@ -8,12 +8,13 @@ const FOLDER = "https://disk.yandex.ru/d/oopTdDN0CTuIig";
  * The full film of a work, for the player: `/api/watch?work=viking-1`.
  * The films live in the studio's Disk folder, and Yandex gives an address to a file only for a short while,
  * so the address is asked for at the moment of playing and the browser is sent on to it. The browser then reads the film
- * straight from Yandex, piece by piece. Only the works of the catalogue can be asked for (see content/work-media.ts).
+ * straight from Yandex, piece by piece. Only the works of the catalogue that live on the Disk can be asked for
+ * (see content/work-media.ts); the ones on Google Drive play in Drive's own player and never come here.
  */
 export async function GET(request: NextRequest) {
   const name = request.nextUrl.searchParams.get("work") ?? "";
   const media = Object.hasOwn(workMedia, name) ? workMedia[name] : undefined;
-  if (!media) return new Response("Not found", { status: 404 });
+  if (!media?.source) return new Response("Not found", { status: 404 });
 
   const ask = new URL("https://cloud-api.yandex.net/v1/disk/public/resources/download");
   ask.searchParams.set("public_key", FOLDER);
