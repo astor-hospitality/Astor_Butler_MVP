@@ -13,7 +13,8 @@ const ROOM = 0.78;
  * The word always stays inside the circle (Sergey, 2026-10-26: «текст кнопки тоже вылазит за кружок»): a long one,
  * «Подробнее» or «Смотреть», is set smaller, measured each time the word changes.
  * Only for a mouse, and only when motion is on: on touch screens and with "reduce motion" the system pointer stays.
- * What it reacts to is marked in the markup: `data-cursor="View"`.
+ * What it reacts to is marked in the markup: `data-cursor="View"`; `data-cursor=""` keeps the dot small there
+ * (Sergey, 2026-10-28: «Не наводится на плюсик», the open circle hid the plus on a tile).
  */
 export function Cursor() {
   const dot = useRef<HTMLDivElement>(null);
@@ -42,9 +43,10 @@ export function Cursor() {
     // what the pointer is over decides the word; the page can also move under a pointer that stands still
     const at = { x: -1, y: -1 };
     const read = (under: Element | null) => {
-      const target = under?.closest<HTMLElement>("[data-cursor]");
-      el.classList.toggle("is-open", Boolean(target));
-      if (target && label.current) fit(label.current, target.dataset.cursor ?? "");
+      // an empty word keeps the dot small, so a small control inside a marked area stays visible (the plus on a tile)
+      const word = under?.closest<HTMLElement>("[data-cursor]")?.dataset.cursor;
+      el.classList.toggle("is-open", Boolean(word));
+      if (word && label.current) fit(label.current, word);
     };
     const move = (e: PointerEvent) => {
       at.x = e.clientX;

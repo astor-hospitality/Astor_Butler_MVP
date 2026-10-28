@@ -219,7 +219,12 @@ export const mediaManifest = {
   "videos/work/w-157.mp4": { bytes: 288997, v: "17d5a0005d" },
   "videos/work/w-158.mp4": { bytes: 133878, v: "4f802eeb18" },
   "videos/work/wed-1.mp4": { bytes: 160146, v: "c7b44a734a" },
+  "videos/work/wed-11.mp4": { bytes: 175904, v: "e6686a3d68" },
+  "videos/work/wed-12.mp4": { bytes: 449367, v: "66bb59a22f" },
   "videos/work/wed-2.mp4": { bytes: 262542, v: "bd953bfc51" },
+  "videos/work/wed-3.mp4": { bytes: 246482, v: "64bc0aa9c8" },
+  "videos/work/wed-4.mp4": { bytes: 174474, v: "2b8fcba26b" },
+  "videos/work/wed-8.mp4": { bytes: 281553, v: "23da1f1970" },
 } as const satisfies Record<string, MediaEntry>;
 
 export type MediaPath = keyof typeof mediaManifest;

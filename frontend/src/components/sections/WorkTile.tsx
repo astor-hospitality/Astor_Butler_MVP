@@ -93,6 +93,7 @@ export function WorkTile({ item, onOpen, board, watch: watchLabel, title = item.
             aria-pressed={board.on}
             aria-label={`${board.on ? board.remove : board.add}: ${item.title}`}
             title={board.on ? board.remove : board.add}
+            data-cursor=""
             onClick={board.onToggle}
             className="tile-plus focus-visible:-outline-offset-4"
           >
