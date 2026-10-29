@@ -13,7 +13,6 @@
 | `NEXT_PUBLIC_MEDIA_BASE_URL` | да | Адрес медиа в S3 или CDN, без `/` в конце. Под ним лежат `images/…`, `videos/…`, `fonts/…`. Без неё сборка в Docker останавливается. | `https://storage.yandexcloud.net/<bucket>/<prefix>` |
 | `NEXT_PUBLIC_SITE_URL` | да (по умолчанию `https://c3ag.ru`) | Адрес сайта: база ссылок для превью в мессенджерах, `sitemap.xml`, `robots.txt`. | `https://c3ag.ru` |
 | `NEXT_PUBLIC_WEB_CHAT_ENDPOINT` | для чата | Куда окно Clio шлёт сообщения: `POST /api/messages` Butler, тот же контракт, что у прошлого сайта (канал `WEB`). Пусто – окно говорит, что чат не подключён. `/api/chat` – локальная заглушка с демо-ответами, только для разработки (на c3ag.ru Caddy её закрывает). | `https://c3ag.ru/api/messages` (тот же домен, CORS не нужен; Caddy уже пропускает) или `https://api.c3ag.ru/api/messages` (origin `https://c3ag.ru` должен быть в `ASTOR_WEB_ALLOWED_ORIGINS`) |
-| `NEXT_PUBLIC_VIDEO_BASE_URL` | нет (пока пусто) | Адрес HLS-копий фильмов для собственного плеера сайта, без `/` в конце: под ним `<ключ>/master.m3u8` (1080p/720p/480p, у 4K-фильмов ещё 2160p). Пусто – свой плеер выключен, фильмы играют как сейчас: работы с Google Drive – в плеере Drive (iframe), остальные – файлом с Яндекс Диска через `/api/watch`. Задавать, только когда фильмы залиты (раздел 3). | `https://storage.yandexcloud.net/c3ag-video/hls` |
 | `NEXT_PUBLIC_VIDEO_BASE_URL` | нет (пока пусто) | Адрес HLS-копий фильмов для собственного плеера сайта, без `/` в конце: под ним `<ключ>/master.m3u8` (1080p/720p/480p, у 4K-фильмов ещё 2160p). Пусто – свой плеер выключен, фильмы играют как сейчас: работы с Google Drive – в плеере Drive (iframe), остальные – файлом с Яндекс Диска через `/api/watch`. Задавать, только когда фильмы залиты и в `content/work-media.ts` появились ключи `hls` (раздел 3). | `https://storage.yandexcloud.net/c3ag-video/hls` |
 | `NEXT_PUBLIC_POLICY_URL` | нет | Политика обработки персональных данных, на которую ссылаются окно чата и подвал. По умолчанию `/docs/policy.html` – файл в репозитории, на него же ссылается `ConsentController`. Пустая строка выключает чат. | `/docs/policy.html` |
 
@@ -37,16 +36,6 @@
     ```yaml
             NEXT_PUBLIC_VIDEO_BASE_URL: ${C3_FRONTEND_VIDEO_BASE_URL:-}
     ```
-- `NEXT_PUBLIC_VIDEO_BASE_URL` workflow и compose пока не передают: в `Dockerfile` она пустая, свой плеер выключен, и для этого выпуска ничего добавлять не нужно. Когда HLS-копии фильмов будут в S3, добавить (это вне `frontend/`, правит владелец):
-  - `.github/workflows/deploy-cloudru-vm.yml`, job `build-frontend`, шаг «Build and push c3ag-frontend», в `build-args` после `NEXT_PUBLIC_MEDIA_BASE_URL`:
-    ```yaml
-                NEXT_PUBLIC_VIDEO_BASE_URL=${{ vars.C3AG_VIDEO_BASE_URL || '' }}
-    ```
-    и переменную репозитория `C3AG_VIDEO_BASE_URL` = адрес из таблицы выше;
-  - `docker-compose.yml` и `docker-compose.prod.yml` (`c3-agency-frontend` → `build.args`), а если образ собирается на VM – и `docker-compose.cloudru.yml`:
-    ```yaml
-            NEXT_PUBLIC_VIDEO_BASE_URL: ${C3_FRONTEND_VIDEO_BASE_URL:-}
-    ```
 - Старые аргументы (`NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_BRAND_LOGO_URL`, `NEXT_PUBLIC_CLIO_*`, `NEXT_PUBLIC_PRODUCT_CARD_SLIDES_AUTOPLAY`) новый сайт не читает; compose и workflow их ещё передают – Docker напишет, что они не использованы, это безвредно. Убрать их можно отдельной правкой compose и workflow.
 
 ## 2. S3
@@ -61,10 +50,10 @@
   images/refs/       18         фирменные картинки, знак на красном, Clio, команда (четыре человека)
   images/work/       92         кадры работ (74 работы каталога и кадры кейсов)
   videos/             9         шоурил первого экрана, анимация знака, знак на красном, живые фирменные картинки
-  videos/work/       61         короткие ролики карточек (превью работ в ленте)
+  videos/work/       66         короткие ролики карточек (превью работ в ленте)
 ```
 
-Итого 208 файлов, 45,7 МБ. Файлы передаются отдельно (архив той же папки); после распаковки в `frontend/public/media` команда `npm run media:check` скажет, совпадают ли они с описью.
+Итого 213 файлов, 46,9 МБ. Файлы передаются отдельно (архив той же папки); после распаковки в `frontend/public/media` команда `npm run media:check` скажет, совпадают ли они с описью.
 
 **Если в бакете уже лежит прошлая версия (110 файлов от PR #221).** Залить новую папку теми же командами поверх: `aws s3 sync` пошлёт только новые и изменённые файлы. Изменённые файлы (шоурил, его кадр, обложки подкастов и свадеб) получат в описи новый хеш, то есть новый адрес `?v=…`, поэтому годовой кэш не мешает. Файлы, которых в описи больше нет (кадры и ролики старого каталога), сайт не запрашивает; удалять их не обязательно.
 
@@ -113,7 +102,7 @@ aws s3 sync public/media/ s3://<bucket>/<prefix>/ --endpoint-url https://storage
 
 В каталоге 74 работы. Клик по карточке открывает плеер, и фильм берётся из одного из трёх мест, первое подходящее:
 
-1. **Свой плеер сайта (HLS)** – если задана `NEXT_PUBLIC_VIDEO_BASE_URL` и у работы в `content/work-media.ts` есть ключ `hls`. Сейчас ключей нет и переменная пустая: этот путь выключен (`hls.js` даже не загружается). Когда копии будут готовы: бакет (например `c3ag-video`) с публичным чтением и CORS `GET, HEAD` для `https://c3ag.ru`, `https://www.c3ag.ru` с `ExposeHeaders: Content-Length, Content-Range, ETag` (hls.js читает плейлисты и сегменты через fetch), затем переменная из раздела 1 и пересборка.
+1. **Свой плеер сайта (HLS)** – если задана `NEXT_PUBLIC_VIDEO_BASE_URL` и у работы в `content/work-media.ts` есть ключ `hls`. Ключи `hls` уже стоят у пережатых работ, но переменная пустая: этот путь выключен (`hls.js` даже не загружается). Когда копии будут готовы: бакет (например `c3ag-video`) с публичным чтением и CORS `GET, HEAD` для `https://c3ag.ru`, `https://www.c3ag.ru` с `ExposeHeaders: Content-Length, Content-Range, ETag` (hls.js читает плейлисты и сегменты через fetch), затем переменная из раздела 1 и пересборка.
 2. **Google Drive** – 58 работ (у них в `work-media.ts` ключ `drive`) играют в плеере самого Drive: iframe `https://drive.google.com/file/d/<id>/preview`. Серверу сайта для этого ничего не нужно; если когда-нибудь появится Content-Security-Policy, в `frame-src` нужен `https://drive.google.com`.
 3. **Яндекс Диск через `/api/watch`** – 16 работ (ключ `source`).
 
@@ -426,5 +415,10 @@ done
 | `videos/work/w-157.mp4` | 282 КБ |  |
 | `videos/work/w-158.mp4` | 131 КБ |  |
 | `videos/work/wed-1.mp4` | 156 КБ |  |
+| `videos/work/wed-11.mp4` | 172 КБ |  |
+| `videos/work/wed-12.mp4` | 439 КБ |  |
 | `videos/work/wed-2.mp4` | 256 КБ |  |
-| **Всего: 208 файлов** | **45,7 МБ** | |
+| `videos/work/wed-3.mp4` | 241 КБ |  |
+| `videos/work/wed-4.mp4` | 170 КБ |  |
+| `videos/work/wed-8.mp4` | 275 КБ |  |
+| **Всего: 213 файлов** | **46,9 МБ** | |
