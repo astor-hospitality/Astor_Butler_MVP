@@ -10,7 +10,7 @@
 
 | Переменная | Нужна | Что это | Пример |
 |---|---|---|---|
-| `NEXT_PUBLIC_MEDIA_BASE_URL` | да | Адрес медиа в S3 или CDN, без `/` в конце. Под ним лежат `images/…`, `videos/…`, `fonts/…`. Без неё сборка в Docker останавливается. | `https://c3ag-media.s3.cloud.ru` (c3ag.ru, Cloud.ru) |
+| `NEXT_PUBLIC_MEDIA_BASE_URL` | да | Адрес медиа в S3 или CDN, без `/` в конце. Под ним лежат `images/…`, `videos/…`, `fonts/…`. Без неё сборка в Docker останавливается. | `https://c3ag.ru/media` (c3ag.ru: файлы на ВМ) |
 | `NEXT_PUBLIC_SITE_URL` | да (по умолчанию `https://c3ag.ru`) | Адрес сайта: база ссылок для превью в мессенджерах, `sitemap.xml`, `robots.txt`. | `https://c3ag.ru` |
 | `NEXT_PUBLIC_WEB_CHAT_ENDPOINT` | для чата | Куда окно Clio шлёт сообщения: `POST /api/messages` Butler, тот же контракт, что у прошлого сайта (канал `WEB`). Пусто – окно говорит, что чат не подключён. `/api/chat` – локальная заглушка с демо-ответами, только для разработки (на c3ag.ru Caddy её закрывает). | `https://c3ag.ru/api/messages` (тот же домен, CORS не нужен; Caddy уже пропускает; `api.c3ag.ru` в DNS нет) |
 | `NEXT_PUBLIC_VIDEO_BASE_URL` | нет (в `Dockerfile` по умолчанию `https://c3ag.ru/video`) | Адрес HLS-копий фильмов для собственного плеера сайта, без `/` в конце: под ним `<ключ>/master.m3u8` (1080p/720p/480p). Фильмы лежат на ВМ в `/opt/c3ag-video/hls`, их отдаёт контейнер `c3ag-video` (nginx, сеть `edge`), Caddy ведёт на него `c3ag.ru/video/*` (с 29.10.2026). Работа без ключа `hls` в `content/work-media.ts` играет по-старому: Google Drive (iframe) или Яндекс Диск через `/api/watch`. Пусто – свой плеер выключен. | `https://c3ag.ru/video` |
@@ -20,7 +20,7 @@
 
 Где задать:
 
-- **GitHub Actions** (`deploy-cloudru-vm.yml`, scope `frontend`): переменные репозитория (не окружения: job сборки к environment не привязан) `C3AG_MEDIA_BASE_URL=https://c3ag-media.s3.cloud.ru`, `C3AG_WEB_CHAT_ENDPOINT=https://c3ag.ru/api/messages`, `C3AG_PUBLIC_URL`. Обе первые задать обязательно: без них workflow подставит старые адреса – Yandex (`storage.yandexcloud.net/c3ag-media`) и `api.c3ag.ru`, которого нет в DNS. `NEXT_PUBLIC_*` вшиваются при сборке: после смены переменной нужна пересборка, правка env живого контейнера ничего не даст.
+- **GitHub Actions** (`deploy-cloudru-vm.yml`, scope `frontend`): переменные репозитория `C3AG_MEDIA_BASE_URL`, `C3AG_WEB_CHAT_ENDPOINT`, `C3AG_PUBLIC_URL`. Задавать не обязательно: без них workflow берёт `https://c3ag.ru/media` и `https://c3ag.ru/api/messages` (с 30.10.2026; раньше были Yandex и `api.c3ag.ru`, которого нет в DNS). `NEXT_PUBLIC_*` вшиваются при сборке: после смены переменной нужна пересборка.
 - **docker compose** (`docker-compose.yml`, `docker-compose.prod.yml`): `C3_FRONTEND_MEDIA_BASE_URL`, `C3_FRONTEND_PUBLIC_URL`, `C3_FRONTEND_WEB_CHAT_ENDPOINT`. В локальном `docker-compose.yml` `C3_FRONTEND_MEDIA_BASE_URL` по умолчанию пустая – сборку образа без неё Dockerfile остановит, это нарочно.
 - `NEXT_PUBLIC_POLICY_URL` ни workflow, ни compose не передают: действует значение по умолчанию.
 - `NEXT_PUBLIC_VIDEO_BASE_URL` workflow и compose не передают: действует значение из `Dockerfile`, `https://c3ag.ru/video`, для этого выпуска ничего добавлять не нужно. Если фильмы переедут (например в бакет), передать новый адрес так (это вне `frontend/`, правит владелец):
@@ -40,7 +40,9 @@
 
 ## 2. S3
 
-**Где для c3ag.ru (проверено 29.10.2026).** Cloud.ru Object Storage, бакет `c3ag-media`, новые файлы в корень (старые `content/c3ag/…` и `brand/…` не трогать, `--delete` не нужен). Загрузка через S3 API `https://s3.cloud.ru`, браузер читает с `https://c3ag-media.s3.cloud.ru` (адрес `s3.cloud.ru/c3ag-media/…` отвечает 400). Нужны ключи Object Storage Cloud.ru: sudo на ВМ их не даёт. План: `C3_MEDIA_BUCKET=c3ag-media C3_MEDIA_PREFIX='' C3_S3_ENDPOINT=https://s3.cloud.ru C3_MEDIA_PUBLIC=https://c3ag-media.s3.cloud.ru C3_SITE_ORIGIN=https://c3ag.ru npm run media:upload-plan`. Сейчас CORS-запрос к бакету с `https://c3ag.ru` отвечает 403: правило из плана добавить к текущим, не затирая их.
+**Где для c3ag.ru (с 30.10.2026).** На ВМ: `/opt/c3ag-video/media` (`images/`, `videos/`, `fonts/`), отдаёт контейнер `c3ag-video` (nginx, сеть `edge`), Caddy ведёт на него `c3ag.ru/media/*`. Тот же домен, что у сайта, поэтому CORS не нужен. Картинки `next/image` сервер сайта скачивает сам, а ВМ не открывает свой публичный адрес: поэтому в `docker-compose.cloudru.yml` у `c3-agency-frontend` стоит `extra_hosts: c3ag.ru:host-gateway` (проверено: так контейнер получает файл с `https://c3ag.ru/media`, 200). Залить новые файлы: `tar -C public/media -cf - images videos fonts | ssh smart-vm "tar -C /opt/c3ag-video/media -xf -"`, старые не удалять.
+
+Запасной путь – Cloud.ru Object Storage, бакет `c3ag-media` (там лежат файлы прошлого сайта): загрузка через `https://s3.cloud.ru`, браузер читает `https://c3ag-media.s3.cloud.ru` (адрес `s3.cloud.ru/c3ag-media/…` отвечает 400), нужны ключи Object Storage Cloud.ru и правило CORS (сейчас 403). План: `C3_MEDIA_BUCKET=c3ag-media C3_MEDIA_PREFIX='' C3_S3_ENDPOINT=https://s3.cloud.ru C3_MEDIA_PUBLIC=https://c3ag-media.s3.cloud.ru npm run media:upload-plan`.
 
 Вообще – любой бакет и папка, доступные браузеру по HTTPS. Под `NEXT_PUBLIC_MEDIA_BASE_URL` должны лежать ровно те пути, что в таблице ниже (те же, что в папке `public/media` у разработчика):
 

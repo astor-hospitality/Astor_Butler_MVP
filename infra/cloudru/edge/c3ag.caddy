@@ -53,6 +53,10 @@ c3ag.ru, c3ag.176-123-165-162.nip.io {
 	handle_path /video/* {
 		reverse_proxy c3ag-video:80
 	}
+	# C3 site media (pictures, short clips, fonts) from /opt/c3ag-video/media, same container.
+	handle /media/* {
+		reverse_proxy c3ag-video:80
+	}
 	# Full films from the studio's Yandex Disk folder: the site's server answers with a 302 to a fresh Disk link.
 	@site_api path /api/watch
 	handle @site_api {
