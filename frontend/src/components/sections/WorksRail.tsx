@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { WorksTexts } from "@content/site";
 import type { Picture } from "@content/types";
 import { toggleOnBoard, useBoard } from "@/lib/board";
 import { ASK_EVENT } from "@/lib/clio";
-import { gsap, motionAllowed, useGSAP } from "@/lib/motion";
+import { motionAllowed } from "@/lib/motion";
 import { Reveal } from "../Reveal";
 import { VideoLightbox } from "./VideoLightbox";
-import { WorkPost } from "./WorkPost";
+import { splitTitle, WorkTile } from "./WorkTile";
 
 export interface RailItem {
   /** How the storyboard knows the work: its direction and name. */
@@ -20,43 +20,35 @@ export interface RailItem {
   frame: Picture;
   /** A work that has a page of its own. */
   slug?: string;
-  /** Its short silent preview: plays in the card under the pointer. */
+  /** Its short silent preview: plays in the tile while the tile is on screen. */
   clip?: string;
-  /** The name its full film is asked for by (see /api/watch). */
+  /** The name its full film is asked for by, when the film is in the studio's Disk folder (see /api/watch). */
   watch?: string;
+  /** The id of its full film in the studio's Google Drive portfolio: it plays in Drive's own player. */
+  drive?: string;
+  /** The full address of its film as a stream (HLS, three qualities): it plays in the site's own player, before Drive.
+   *  Only when the films' storage is set (NEXT_PUBLIC_VIDEO_BASE_URL, see lib/video.ts). */
+  hls?: string;
 }
 
 interface WorksRailProps {
   items: RailItem[];
-  /** The directions to choose from, in the order of the site: all seven, with or without works. */
-  groups?: { key: string; title: string }[];
-  /** How many more works the studio's archive holds; the last card of the rail says so. */
-  archive?: number;
-  /** On a direction's own page the same cards stand in a grid, with no filters. */
-  grid?: boolean;
   t: WorksTexts;
+  /** Read by screen readers as the name of the row. */
+  label: string;
+  /** The small line under each title: the direction (the home page, where all of them are mixed), or what the work is
+   *  (a row of one direction, where the title is then the name alone). */
+  note?: "group" | "what";
+  /** How many more works the studio's archive holds; the last tile of the row says so and leads to Clio. */
+  archive?: number;
+  /** "В раскадровке: 3" and what the plus is for, under the row (the home page, where the storyboard is). */
+  boardLine?: boolean;
+  /** Pixels a second the row drifts by itself. */
+  speed?: number;
+  className?: string;
 }
 
-/** The chosen direction lives in the address (`?dir=ai`), so a link to the page can carry it. */
-const DIR_EVENT = "c3:dir";
-const subscribeDir = (tell: () => void) => {
-  window.addEventListener("popstate", tell);
-  window.addEventListener(DIR_EVENT, tell);
-  return () => {
-    window.removeEventListener("popstate", tell);
-    window.removeEventListener(DIR_EVENT, tell);
-  };
-};
-const readDir = () => new URLSearchParams(window.location.search).get("dir");
-function writeDir(key: string | null) {
-  const url = new URL(window.location.href);
-  if (key) url.searchParams.set("dir", key);
-  else url.searchParams.delete("dir");
-  window.history.replaceState(window.history.state, "", url);
-  window.dispatchEvent(new Event(DIR_EVENT));
-}
-
-/** "ещё 34 работы": 1 работа, 2 работы, 5 работ. */
+/** "ещё 16 работ": 1 работа, 2 работы, 5 работ. */
 function worksWord(n: number): string {
   const tens = n % 100;
   const ones = n % 10;
@@ -64,404 +56,277 @@ function worksWord(n: number): string {
 }
 
 /**
- * The works as a rail of upright cards. It starts on the left margin and runs off the right edge of the screen:
- * the card cut by the edge says there is more. It drifts on slowly by itself, and stops for the visitor: it is pulled
- * with the mouse, swiped on a phone or moved with the keyboard, and a pull stops on a card; a thin red line under it shows how far along it is.
- * The chips above narrow it to one direction: the cards leave, the new ones come, the rail starts again.
- * A card plays its short film, without sound, under the pointer (on a phone, the card that stands whole on screen);
- * a click opens the player with the film in full. The plus puts the work on the storyboard for the visitor's own shoot.
+ * The works as a row of wide tiles on the field, running off the right edge of the screen (Sergey, 2026-10-26:
+ * «ролики… должны были смещаться влево по анимации и сразу проигрываться»). Every tile plays its short silent cut by
+ * itself while it is on screen, and the row drifts slowly to the left, without end: when it is longer than the screen
+ * it is drawn twice, one copy after the other, and when the first copy has gone by the row is set back by its length,
+ * which the eye cannot see. It slows to a stop under the pointer, under a finger, while a tile has the keyboard, while
+ * the player is open and while it is off screen, and picks up again softly. It can be pulled with the mouse, swiped,
+ * or moved with a sideways wheel; with "reduce motion" it never moves by itself. A click on a tile opens the player.
  */
-export function WorksRail({ items, groups, archive = 0, grid = false, t }: WorksRailProps) {
-  const dir = useSyncExternalStore(subscribeDir, readDir, () => null);
-  const group = groups?.some((item) => item.key === dir) ? dir : null;
-  const shown = useMemo(() => (group ? items.filter((item) => item.group === group) : items), [items, group]);
+export function WorksRail({ items, t, label, note = "group", archive = 0, boardLine = false, speed = 34, className = "" }: WorksRailProps) {
   const [open, setOpen] = useState<number | null>(null);
+  const [loop, setLoop] = useState(false);
   const marked = useBoard();
+  const view = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLUListElement>(null);
-  const bar = useRef<HTMLElement>(null);
+  // where the row stands and how it moves; kept out of React, it changes every frame
+  const at = useRef({ x: 0, v: 0, set: 0, pace: 0, quietUntil: 0, hover: false, touch: false, focus: false, drag: false, seen: false });
   const dragged = useRef(false);
-  const leaving = useRef(false);
-  // the chip pressed last, shown pressed at once while the cards are still leaving; a second press in that moment wins
-  const [picked, setPicked] = useState<{ key: string | null } | null>(null);
-  const chosen = picked ? picked.key : group;
-
-  /** Where each card starts, in the track's own scroll units. */
-  const starts = useCallback(() => {
-    const el = track.current;
-    if (!el) return [];
-    const origin = (el.firstElementChild as HTMLElement | null)?.offsetLeft ?? 0;
-    return Array.from(el.children, (card) => (card as HTMLElement).offsetLeft - origin);
-  }, []);
-
-  // A glide in progress, if any. While it runs the track does not snap to the cards: the two would fight.
-  const glide = useRef<gsap.core.Tween | null>(null);
-  const settle = useCallback(() => {
-    glide.current?.kill();
-    glide.current = null;
-    if (track.current) track.current.style.scrollSnapType = "";
-  }, []);
-  const glideTo = useCallback(
-    (left: number, seconds: number, ease: string) => {
-      const el = track.current;
-      if (!el) return;
-      const to = Math.max(0, Math.min(left, el.scrollWidth - el.clientWidth));
-      settle();
-      if (!motionAllowed()) return void el.scrollTo({ left: to, behavior: "auto" });
-      const at = { x: el.scrollLeft };
-      el.style.scrollSnapType = "none";
-      glide.current = gsap.to(at, { x: to, duration: seconds, ease, onUpdate: () => (el.scrollLeft = at.x), onComplete: settle });
-    },
-    [settle],
-  );
-  useEffect(() => settle, [settle]);
-
-  // The rail moves on by itself, slowly (Roma, 2026-10-16: «чтобы карточки сами прокручивались, не спеша»): a steady
-  // drift while it is on screen and nobody is busy with it. A pointer over it, a finger on it, a pull, the wheel, the
-  // keyboard or the open player stop it; it goes on a few seconds after the visitor lets go. At the end it waits a
-  // moment, fades out and comes back at the first card (a glide back across every card was a blur). While it drifts it does not snap to the cards (the two would fight);
-  // a pull still ends on a card. With "reduce motion" nothing moves by itself.
+  const opened = useRef(false);
   useEffect(() => {
+    opened.current = open !== null;
+  }, [open]);
+
+  const count = items.length + (archive > 0 ? 1 : 0);
+  // a row of upright works only (the vertical videos) is set taller, so its tiles are not slivers
+  const tallRow = items.length > 0 && items.every((item) => item.frame.width / item.frame.height < 1.2);
+
+  /** Puts the row at `x`, within one length of it when it loops, or within its own ends when it does not. */
+  const place = (x: number) => {
     const el = track.current;
-    if (!el || grid || open !== null || !motionAllowed()) return;
-    const speed = window.matchMedia("(hover: none)").matches ? 22 : 30; // px a second
+    const box = view.current;
+    if (!el || !box) return;
+    const s = at.current;
+    if (loop && s.set > 0) {
+      while (x > 0) x -= s.set;
+      while (x <= -s.set) x += s.set;
+    } else {
+      x = Math.min(0, Math.max(x, Math.min(0, box.clientWidth - el.scrollWidth)));
+    }
+    s.x = x;
+    el.style.transform = `translate3d(${x.toFixed(2)}px, 0, 0)`;
+  };
+
+  // How long one copy of the row is, and whether the row is longer than the screen at all.
+  useLayoutEffect(() => {
+    const el = track.current;
+    const box = view.current;
+    if (!el || !box) return;
+    const measure = () => {
+      const tiles = el.children;
+      if (tiles.length < count || count === 0) return;
+      const first = tiles[0] as HTMLElement;
+      const last = tiles[count - 1] as HTMLElement;
+      const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
+      const set = last.offsetLeft + last.offsetWidth - first.offsetLeft + gap;
+      at.current.set = set;
+      setLoop(count > 1 && first.offsetLeft + set - gap > box.clientWidth + 1);
+    };
+    measure();
+    const sizes = new ResizeObserver(measure);
+    sizes.observe(box);
+    return () => sizes.disconnect();
+  }, [count]);
+
+  // The drift, the glide after a swipe and the soft stops, one frame at a time.
+  useEffect(() => {
+    const box = view.current;
+    if (!box) return;
+    const s = at.current;
+    const drifts = loop && motionAllowed();
     let frame = 0;
     let last = 0;
-    let pos = el.scrollLeft; // kept as a fraction: the browser rounds scrollLeft, and a slow drift is less than a pixel a frame
-    let seen = false;
-    let hover = false;
-    let touch = false;
-    let focus = false;
-    let quietUntil = 0;
-    let endAt = 0;
-    let rewinding = false;
-    const rest = (ms: number) => (quietUntil = performance.now() + ms);
 
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
       const dt = Math.min(0.05, (now - (last || now)) / 1000);
       last = now;
-      if (!seen || hover || touch || focus || rewinding || leaving.current || glide.current || now < quietUntil) {
-        pos = el.scrollLeft;
-        return;
+      if (s.drag) return;
+      let move = 0;
+      // after a swipe the row glides on and slows down by itself
+      if (Math.abs(s.v) > 4) {
+        move += s.v * dt;
+        s.v *= Math.pow(0.03, dt);
+      } else s.v = 0;
+      const busy = !s.seen || s.hover || s.touch || s.focus || opened.current || now < s.quietUntil;
+      // the drift starts and stops softly: a quarter of a second to a stop, nearly a second back to its pace
+      s.pace = busy || !drifts ? Math.max(0, s.pace - dt / 0.25) : Math.min(1, s.pace + dt / 0.9);
+      move -= speed * s.pace * dt;
+      if (move !== 0) place(s.x + move);
+    };
+    const run = () => {
+      if (!frame) {
+        last = 0;
+        frame = requestAnimationFrame(tick);
       }
-      const max = el.scrollWidth - el.clientWidth;
-      if (max <= 0) return;
-      // moved by the visitor (wheel, trackpad, keys, a swipe still gliding): let it rest, then go on from there
-      if (Math.abs(el.scrollLeft - pos) > 2) {
-        pos = el.scrollLeft;
-        rest(3500);
-        return;
-      }
-      if (pos >= max - 1) {
-        endAt ||= now;
-        if (now - endAt > 2500) {
-          endAt = 0;
-          rewinding = true;
-          gsap.to(el, {
-            opacity: 0,
-            duration: 0.45,
-            ease: "power2.in",
-            onComplete: () => {
-              el.scrollLeft = pos = 0;
-              gsap.to(el, { opacity: 1, duration: 0.7, ease: "power2.out", clearProps: "opacity", onComplete: () => void (rewinding = false) });
-              rest(2000);
-            },
-          });
-        }
-        return;
-      }
-      el.style.scrollSnapType = "none";
-      pos = Math.min(max, pos + speed * dt);
-      el.scrollLeft = pos;
     };
-
-    const onEnter = (e: PointerEvent) => {
-      if (e.pointerType === "mouse") hover = true;
-    };
-    const onLeave = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse") return;
-      hover = false;
-      rest(1200);
-    };
-    const onDown = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse") touch = true;
-    };
-    const onUp = (e: PointerEvent) => {
-      if (e.pointerType === "mouse" || !touch) return;
-      touch = false;
-      rest(3500);
-    };
-    const onFocusIn = () => (focus = true);
-    const onFocusOut = (e: FocusEvent) => {
-      if (el.contains(e.relatedTarget as Node | null)) return;
-      focus = false;
-      rest(1200);
-    };
-    const watch = new IntersectionObserver(
-      ([entry]) => {
-        seen = entry.isIntersecting;
-        if (seen) rest(1200);
-      },
-      { threshold: 0.3 },
-    );
-    watch.observe(el);
-    el.addEventListener("pointerenter", onEnter);
-    el.addEventListener("pointerleave", onLeave);
-    el.addEventListener("pointerdown", onDown);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-    el.addEventListener("focusin", onFocusIn);
-    el.addEventListener("focusout", onFocusOut);
-    frame = requestAnimationFrame(tick);
-    return () => {
+    const halt = () => {
       cancelAnimationFrame(frame);
-      gsap.killTweensOf(el);
-      el.style.opacity = "";
-      watch.disconnect();
-      el.removeEventListener("pointerenter", onEnter);
-      el.removeEventListener("pointerleave", onLeave);
-      el.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      el.removeEventListener("focusin", onFocusIn);
-      el.removeEventListener("focusout", onFocusOut);
-      if (!glide.current) el.style.scrollSnapType = "";
-    };
-  }, [shown, grid, open]);
-
-  // The red line follows the track, however it was moved.
-  useEffect(() => {
-    const el = track.current;
-    if (!el) return;
-    let frame = 0;
-    const measure = () => {
       frame = 0;
-      bar.current?.style.setProperty("--at", String(Math.min(1, (el.scrollLeft + el.clientWidth) / Math.max(1, el.scrollWidth))));
     };
-    const onScroll = () => {
-      frame ||= requestAnimationFrame(measure);
+    // it starts once most of it is on screen, so it is not found already moved on
+    const seen = new IntersectionObserver(
+      ([entry]) => {
+        s.seen = entry.intersectionRatio >= 0.5;
+        if (s.seen) run();
+        else if (!entry.isIntersecting) halt();
+      },
+      { threshold: [0, 0.5] },
+    );
+    seen.observe(box);
+
+    const onEnter = (e: PointerEvent) => void (e.pointerType === "mouse" && (s.hover = true));
+    const onLeave = (e: PointerEvent) => void (e.pointerType === "mouse" && (s.hover = false));
+    const onWheel = (e: WheelEvent) => {
+      // only a sideways wheel (a trackpad, or Shift with a mouse) moves the row; an upright one scrolls the page
+      const dx = e.shiftKey && !e.deltaX ? e.deltaY : e.deltaX;
+      if (Math.abs(dx) <= Math.abs(e.shiftKey ? 0 : e.deltaY)) return;
+      e.preventDefault();
+      s.v = 0;
+      s.quietUntil = performance.now() + 2500;
+      place(s.x - dx);
     };
-    measure();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
+    // a tile reached with the keyboard is brought into sight
+    const onFocusIn = (e: FocusEvent) => {
+      s.focus = true;
+      const tile = (e.target as HTMLElement).closest("li");
+      if (!tile) return;
+      const r = tile.getBoundingClientRect();
+      const b = box.getBoundingClientRect();
+      const margin = Math.min(64, b.width * 0.06);
+      if (r.left < b.left + margin) place(s.x + (b.left + margin - r.left));
+      else if (r.right > b.right - margin) place(s.x - (r.right - (b.right - margin)));
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      if (box.contains(e.relatedTarget as Node | null)) return;
+      s.focus = false;
+      s.quietUntil = performance.now() + 1200;
+    };
+    box.addEventListener("pointerenter", onEnter);
+    box.addEventListener("pointerleave", onLeave);
+    box.addEventListener("wheel", onWheel, { passive: false });
+    box.addEventListener("focusin", onFocusIn);
+    box.addEventListener("focusout", onFocusOut);
     return () => {
-      el.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-      cancelAnimationFrame(frame);
+      halt();
+      seen.disconnect();
+      box.removeEventListener("pointerenter", onEnter);
+      box.removeEventListener("pointerleave", onLeave);
+      box.removeEventListener("wheel", onWheel);
+      box.removeEventListener("focusin", onFocusIn);
+      box.removeEventListener("focusout", onFocusOut);
     };
-  }, [shown, grid]);
+    // `place` reads `loop` from this render, and the effect starts again whenever it changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loop, speed]);
 
-  // Another direction: the new cards come in one after another, and the rail starts from its first card.
-  const first = useRef(true);
-  useGSAP(
-    () => {
-      const el = track.current;
-      if (first.current) {
-        first.current = false;
-        return;
-      }
-      leaving.current = false;
-      if (!el) return;
-      settle();
-      el.scrollTo({ left: 0, behavior: "auto" });
-      if (!motionAllowed()) return;
-      gsap.fromTo(el.children, { autoAlpha: 0, y: 12 }, { autoAlpha: 1, y: 0, duration: 0.5, ease: "power3.out", stagger: 0.03, clearProps: "opacity,visibility,transform" });
-    },
-    { dependencies: [group] },
-  );
-
-  /** The cards on screen leave, then the direction changes. Only the cards in sight take part: all thirty-odd one
-   *  after another kept the rail empty for over a second, and a second press in that time was lost. */
-  const next = useRef<string | null>(null);
-  const choose = (key: string | null) => {
-    if (key === chosen) return;
-    next.current = key;
-    setPicked({ key });
-    if (leaving.current) return;
-    const el = track.current;
-    const done = () => {
-      setPicked(null);
-      if (next.current !== group) return writeDir(next.current);
-      // pressed away and straight back: the direction stays, the cards come back
-      leaving.current = false;
-      if (el) gsap.to(el.children, { autoAlpha: 1, y: 0, duration: 0.3, ease: "power3.out", clearProps: "opacity,visibility,transform" });
-    };
-    if (!el || !motionAllowed() || el.children.length === 0) return done();
-    leaving.current = true;
-    const box = el.getBoundingClientRect();
-    const inSight = Array.from(el.children).filter((card) => {
-      const r = card.getBoundingClientRect();
-      return r.right > box.left && r.left < box.right;
-    });
-    gsap.to(inSight, { autoAlpha: 0, y: 12, duration: 0.22, ease: "power2.in", stagger: 0.03, onComplete: done });
-  };
-
-  // A mouse cannot swipe, so the rail can be taken and pulled; let go, it glides on to the next card that way.
-  const pull = (e: ReactPointerEvent<HTMLUListElement>) => {
-    const el = track.current;
-    if (!el || grid || e.pointerType !== "mouse" || e.button !== 0) return;
+  // A row as long as the screen or longer is taken in hand: pulled with the mouse, swiped with a finger.
+  // An upright swipe is left to the page (touch-action: pan-y), so the page still scrolls over the row.
+  const pull = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const box = view.current;
+    if (!box || (e.pointerType === "mouse" && e.button !== 0)) return;
+    const s = at.current;
     const fromX = e.clientX;
-    const fromLeft = el.scrollLeft;
+    const fromY = e.clientY;
+    const x0 = s.x;
+    let lastX = e.clientX;
+    let lastT = performance.now();
+    let v = 0;
     dragged.current = false;
+    if (e.pointerType !== "mouse") s.touch = true;
+    s.v = 0;
     const move = (ev: PointerEvent) => {
       const dx = ev.clientX - fromX;
-      if (!dragged.current && Math.abs(dx) < 5) return;
-      dragged.current = true;
-      settle();
-      el.style.scrollSnapType = "none";
-      el.scrollLeft = fromLeft - dx;
+      if (!s.drag) {
+        if (Math.abs(dx) < 6 || Math.abs(dx) < Math.abs(ev.clientY - fromY)) return;
+        s.drag = true;
+        dragged.current = true;
+      }
+      const now = performance.now();
+      const dt = Math.max(1, now - lastT) / 1000;
+      v = v * 0.6 + ((ev.clientX - lastX) / dt) * 0.4;
+      lastX = ev.clientX;
+      lastT = now;
+      place(x0 + dx);
     };
     const drop = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", drop);
       window.removeEventListener("pointercancel", drop);
-      if (!dragged.current) return;
-      // the snapping stays off until the glide has landed: switched on now, it would pull the track back first
-      const list = starts();
-      const forward = el.scrollLeft > fromLeft;
-      const ahead = list.find((left) => left >= el.scrollLeft - 1);
-      const behind = [...list].reverse().find((left) => left <= el.scrollLeft + 1);
-      glideTo((forward ? ahead : behind) ?? (forward ? el.scrollWidth : 0), 0.9, "power4.out");
+      s.touch = false;
+      if (s.drag) {
+        s.drag = false;
+        // a pull that stopped before it was let go does not glide on
+        s.v = performance.now() - lastT > 80 ? 0 : Math.max(-2600, Math.min(2600, v));
+        s.quietUntil = performance.now() + 2500;
+      } else if (e.pointerType !== "mouse") s.quietUntil = performance.now() + 1500;
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", drop);
     window.addEventListener("pointercancel", drop);
   };
 
-  // Under the pointer a card plays its short film; the film is fetched only then.
-  const play = (card: HTMLElement) => {
-    const video = card.querySelector("video");
-    if (!video || !motionAllowed()) return;
-    if (!video.getAttribute("src") && video.dataset.src) video.src = video.dataset.src;
-    video.currentTime = 0;
-    video
-      .play()
-      .then(() => (video.dataset.on = "true"))
-      .catch(() => {});
-  };
-  const stop = (card: HTMLElement) => {
-    const video = card.querySelector("video");
-    if (!video) return;
-    video.pause();
-    video.dataset.on = "false";
-  };
-
-  // A phone has no pointer to hover with: there the card that stands whole on screen plays, one at a time.
-  useEffect(() => {
-    const el = track.current;
-    if (!el || !motionAllowed() || !window.matchMedia("(hover: none)").matches) return;
-    const watch = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => (entry.isIntersecting ? play(entry.target as HTMLElement) : stop(entry.target as HTMLElement)));
-      },
-      { threshold: 0.9 },
-    );
-    Array.from(el.children).forEach((card) => watch.observe(card));
-    return () => watch.disconnect();
-  }, [shown]);
+  if (items.length === 0) return null;
 
   const ask = (phrase: string) => window.dispatchEvent(new CustomEvent<string>(ASK_EVENT, { detail: phrase }));
-  const empty = groups && group && shown.length === 0;
-
-  // every work as a post of the studio's carousel (see WorkPost)
-  const cards = shown.map((item, i) => (
-    <li key={item.id} className="card">
-      <WorkPost
-        item={item}
-        on={marked.includes(item.id)}
-        labels={{ watch: t.watch, add: t.add, remove: t.remove }}
-        onOpen={() => setOpen(i)}
-        onToggle={() => toggleOnBoard(item.id)}
-        onPointerEnter={(e) => e.pointerType === "mouse" && play(e.currentTarget)}
-        onPointerLeave={(e) => e.pointerType === "mouse" && stop(e.currentTarget)}
-      />
-    </li>
-  ));
+  const tiles = (copy: boolean) =>
+    items.map((item, i) => {
+      const [name, what] = splitTitle(item.title);
+      const on = marked.includes(item.id);
+      return (
+        <WorkTile
+          key={`${copy ? "copy" : "own"}:${item.id}`}
+          item={item}
+          copy={copy}
+          watch={t.watch}
+          title={note === "what" ? name : item.title}
+          note={note === "what" ? what : item.groupTitle}
+          onOpen={() => setOpen(i)}
+          board={{ on, onToggle: () => toggleOnBoard(item.id), add: t.add, remove: t.remove }}
+        />
+      );
+    });
+  const archiveTile = (copy: boolean) =>
+    archive > 0 ? (
+      <li key={copy ? "copy:archive" : "archive"} className="tile is-wide" aria-hidden={copy || undefined}>
+        {/* the last tile: how much more the archive holds; the way into it is a talk with Clio */}
+        <button type="button" tabIndex={copy ? -1 : undefined} onClick={() => ask(t.archiveAsk)} className="tile-media tile-archive focus-visible:-outline-offset-4">
+          <span className="caps">{t.archive}</span>
+          <span className="tile-archive-count">
+            {t.archiveMore} {archive} {worksWord(archive)}
+          </span>
+        </button>
+      </li>
+    ) : null;
 
   return (
     <>
-      {groups ? (
-        // no arrows beside the filters (Roma, 2026-10-16): the rail is pulled with the mouse or swiped, and the chips have the whole row
-        <Reveal className="mt-[clamp(2rem,6vh,3.5rem)]">
-          <ul aria-label={t.filter} className="chips caps">
-            <li>
-              <button type="button" aria-pressed={chosen === null} onClick={() => choose(null)} className="chip">
-                {t.all}
-              </button>
-            </li>
-            {groups.map((item) => (
-              <li key={item.key}>
-                <button type="button" aria-pressed={chosen === item.key} onClick={() => choose(item.key)} className="chip">
-                  {item.title}
-                </button>
-              </li>
-            ))}
+      <Reveal kind="clip" className={`rail ${className}`}>
+        <div
+          ref={view}
+          role="region"
+          aria-label={label}
+          data-cursor={loop ? t.drag : undefined}
+          data-tall={tallRow || undefined}
+          data-loop={loop || undefined}
+          className="rail-view"
+          onPointerDown={pull}
+          onDragStart={(e) => e.preventDefault()}
+          onClickCapture={(e) => {
+            // a pull that ends over a tile is not a click on it
+            if (!dragged.current) return;
+            dragged.current = false;
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+        >
+          <ul ref={track} className="rail-track">
+            {tiles(false)}
+            {archiveTile(false)}
+            {loop ? tiles(true) : null}
+            {loop ? archiveTile(true) : null}
           </ul>
+        </div>
+      </Reveal>
+
+      {boardLine ? (
+        <Reveal as="p" className="caps mt-6 opacity-80 tabular-nums">
+          {t.board}: {marked.length}. {t.hint}
         </Reveal>
       ) : null}
 
-      {empty ? (
-        // a direction that has no works to show yet: a red plate with the way to ask for them
-        <div className="theme-red field mt-7 flex min-h-[18rem] flex-col items-start justify-between gap-10 p-[clamp(1.5rem,3vw,2.75rem)]">
-          <p className="display-sm max-w-[20ch]">{t.empty}</p>
-          <button type="button" onClick={() => ask(t.emptyAsk)} className="caps pill bg-white text-red">
-            {t.emptyCta}
-          </button>
-        </div>
-      ) : grid ? (
-        <Reveal kind="clip">
-          <ul ref={track} className="card-grid">
-            {cards}
-          </ul>
-        </Reveal>
-      ) : (
-        <>
-          <Reveal kind="clip" className="rail mt-7">
-            <ul
-              ref={track}
-              tabIndex={0}
-              aria-label={t.title}
-              data-cursor={t.drag}
-              className="rail-track focus-visible:-outline-offset-2"
-              onPointerDown={pull}
-              onDragStart={(e) => e.preventDefault()}
-              onClickCapture={(e) => {
-                // a pull that ends over a card is not a click on it
-                if (!dragged.current) return;
-                dragged.current = false;
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-            >
-              {cards}
-              {archive > 0 && !group ? (
-                <li className="card">
-                  {/* the last post: the archive, the way into it is a talk with Clio */}
-                  <div className="post">
-                    <button type="button" onClick={() => ask(t.archiveAsk)} className="post-face post-archive focus-visible:-outline-offset-4">
-                      <span className="caps">{t.archive}</span>
-                      <span className="post-archive-count">
-                        {t.archiveMore} {archive} {worksWord(archive)}
-                      </span>
-                    </button>
-                  </div>
-                </li>
-              ) : null}
-            </ul>
-          </Reveal>
-          <Reveal>
-            <i ref={bar} aria-hidden="true" className="rail-bar mt-8 block">
-              <i />
-            </i>
-          </Reveal>
-        </>
-      )}
-
-      <Reveal as="p" className="caps mt-5 opacity-60 tabular-nums">
-        {t.board}: {marked.length}. {t.hint}
-      </Reveal>
-
-      {open !== null ? <VideoLightbox items={shown} at={open} onMove={setOpen} onClose={() => setOpen(null)} t={t} /> : null}
+      {open !== null ? <VideoLightbox items={items} at={open} onMove={setOpen} onClose={() => setOpen(null)} t={t} /> : null}
     </>
   );
 }

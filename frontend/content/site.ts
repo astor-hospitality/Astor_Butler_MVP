@@ -1,4 +1,4 @@
-import { media, work } from "./media";
+import { media } from "./media";
 import type { DirectionKey, Picture } from "./types";
 
 /**
@@ -40,6 +40,8 @@ export interface WorksTexts {
   all: string;
   /** Read by screen readers as the name of the row of directions. */
   filter: string;
+  /** The chip of the music videos, which are not one of the directions (see `clips` in catalog.ts). */
+  clips: string;
   prev: string;
   next: string;
   watch: string;
@@ -142,7 +144,7 @@ const links: ContactLink[] = [
  * There is no eighth: "Smart Solutions" of the old site is not a direction of this one.
  * Five are led by the brand's art: the chrome droid (AI, «c3 pio», «точно для AI раздела»), the parrot (reportage),
  * the burger (vertical clips for restaurants and bars), the glasses (advertising), the popcorn sheep (film: you need
- * something to munch on to watch one); the others by a frame from a work. The art and the reasons are Sergey's (2026-10-14),
+ * something to munch on to watch one); podcasts and weddings, which have no poster yet, by the chrome mark turning on red. The art and the reasons are Sergey's (2026-10-14),
  * the places are Roma's (2026-10-16).
  */
 const items: Direction[] = [
@@ -185,7 +187,7 @@ const items: Direction[] = [
     caption: "Запись видеоподкаста под ключ",
     audience: "Экспертам, продюсерам, предпринимателям",
     price: "45 000 ₽",
-    cover: work.podcast,
+    cover: media.markRed,
   },
   {
     key: "reclama",
@@ -215,7 +217,7 @@ const items: Direction[] = [
     caption: "Кинематографичная история вашего дня",
     audience: "Молодожёнам и организаторам свадеб",
     price: "от 60 000 ₽",
-    cover: work.wedding,
+    cover: media.markRed,
   },
 ];
 
@@ -226,8 +228,9 @@ const items: Direction[] = [
 const members: Member[] = [
   { num: "01", name: "Sergey Izyrow", role: "Основатель", photo: media.teamSergey },
   { num: "02", name: "Michael Welly", role: "Технический директор", photo: media.teamMichael },
-  { num: "03", name: "Финансы" },
-  { num: "04", name: "Производство" },
+  { num: "03", name: "Вячеслав Жуйков", role: "Оператор-постановщик, режиссёр монтажа", photo: media.teamVyacheslav },
+  // TODO: the name of the line producer (Sergey sent the photo and the role only, 2026-10-27).
+  { num: "04", name: "Линейный продюсер", role: "Оператор", photo: media.teamProducer },
 ];
 
 /**
@@ -268,6 +271,7 @@ export const site: SiteContent = {
     title: "Работы",
     all: "Все",
     filter: "Направление",
+    clips: "Клипы",
     prev: "Назад по ленте",
     next: "Вперёд по ленте",
     watch: "Смотреть",

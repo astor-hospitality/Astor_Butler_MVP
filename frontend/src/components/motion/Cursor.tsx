@@ -3,10 +3,18 @@
 import { useEffect, useRef } from "react";
 import { gsap, motionAllowed } from "@/lib/motion";
 
+/** The circle open, in px (the `[&.is-open]:size-[7.5rem]` below). */
+const OPEN = 120;
+/** How much of the circle's width the word may take: a word wider than that is set smaller until it fits. */
+const ROOM = 0.78;
+
 /**
  * A small dot instead of the pointer; over a case it opens into a circle with a word in it.
+ * The word always stays inside the circle (Sergey, 2026-10-26: «текст кнопки тоже вылазит за кружок»): a long one,
+ * «Подробнее» or «Смотреть», is set smaller, measured each time the word changes.
  * Only for a mouse, and only when motion is on: on touch screens and with "reduce motion" the system pointer stays.
- * What it reacts to is marked in the markup: `data-cursor="View"`.
+ * What it reacts to is marked in the markup: `data-cursor="View"`; `data-cursor=""` keeps the dot small there
+ * (Sergey, 2026-10-28: «Не наводится на плюсик», the open circle hid the plus on a tile).
  */
 export function Cursor() {
   const dot = useRef<HTMLDivElement>(null);
@@ -22,12 +30,23 @@ export function Cursor() {
     const x = gsap.quickTo(el, "x", { duration: 0.3, ease: "power3.out" });
     const y = gsap.quickTo(el, "y", { duration: 0.3, ease: "power3.out" });
 
+    // the word in its own size first; if it is wider than the room in the circle, smaller in proportion
+    const fit = (word: HTMLSpanElement, text: string) => {
+      if (word.textContent === text) return;
+      word.textContent = text;
+      word.style.fontSize = "";
+      const wide = word.offsetWidth;
+      const size = parseFloat(getComputedStyle(word).fontSize);
+      if (wide > OPEN * ROOM) word.style.fontSize = `${((size * OPEN * ROOM) / wide).toFixed(2)}px`;
+    };
+
     // what the pointer is over decides the word; the page can also move under a pointer that stands still
     const at = { x: -1, y: -1 };
     const read = (under: Element | null) => {
-      const target = under?.closest<HTMLElement>("[data-cursor]");
-      el.classList.toggle("is-open", Boolean(target));
-      if (target && label.current) label.current.textContent = target.dataset.cursor ?? "";
+      // an empty word keeps the dot small, so a small control inside a marked area stays visible (the plus on a tile)
+      const word = under?.closest<HTMLElement>("[data-cursor]")?.dataset.cursor;
+      el.classList.toggle("is-open", Boolean(word));
+      if (word && label.current) fit(label.current, word);
     };
     const move = (e: PointerEvent) => {
       at.x = e.clientX;
@@ -66,9 +85,9 @@ export function Cursor() {
     <div
       ref={dot}
       aria-hidden="true"
-      className="cursor group pointer-events-none fixed left-0 top-0 z-[70] size-2 place-items-center rounded-full bg-[color:var(--page-fg)] text-[color:var(--page-bg)] transition-[width,height] duration-500 ease-expo [&.is-open]:size-24"
+      className="cursor group pointer-events-none fixed left-0 top-0 z-[70] size-2 place-items-center rounded-full bg-[color:var(--page-fg)] text-[color:var(--page-bg)] transition-[width,height] duration-500 ease-expo [&.is-open]:size-[7.5rem]"
     >
-      <span ref={label} className="caps opacity-0 transition-opacity duration-300 group-[.is-open]:opacity-100" />
+      <span ref={label} className="caps whitespace-nowrap !tracking-[0.06em] opacity-0 transition-opacity duration-300 group-[.is-open]:opacity-100" />
     </div>
   );
 }

@@ -1,54 +1,66 @@
-import { ARCHIVE_TOTAL, catalog, type Work } from "@content/catalog";
-import type { Direction, SiteContent } from "@content/site";
+import { ARCHIVE_TOTAL, catalog, clips, type Work } from "@content/catalog";
+import type { SiteContent } from "@content/site";
 import { workMedia } from "@content/work-media";
 import { mediaUrl } from "@/lib/media";
+import { streamUrl } from "@/lib/video";
 import { Reveal } from "../Reveal";
 import { Screen } from "../Screen";
 import { WorksRail, type RailItem } from "./WorksRail";
 
-/** The short silent preview of a work, from the media root (S3), if one was cut. */
-const clipOf = (work: Work) => {
-  const clip = workMedia[work.file]?.clip;
-  return clip ? mediaUrl(clip) : undefined;
-};
+/** A group of the rail: a direction, or the music videos, which are not one. */
+interface Group {
+  key: string;
+  title: string;
+}
+
+/** The address of a work's short preview, which lives with the rest of the media (S3, see src/lib/media.ts). */
+const clipUrl = (clip: string | undefined) => (clip ? mediaUrl(clip) : undefined);
 
 /** A work as a card shows it. The storyboard knows it by its direction and name. */
-export const toRail = (work: Work, of: Direction): RailItem => ({
+export const toRail = (work: Work, of: Group): RailItem => ({
   id: `${of.key}: ${work.title}`,
   title: work.title,
   group: of.key,
   groupTitle: of.title,
   frame: work.frame,
   slug: work.slug,
-  clip: clipOf(work),
-  watch: workMedia[work.file] ? work.file : undefined,
+  clip: clipUrl(workMedia[work.file]?.clip),
+  watch: workMedia[work.file]?.source ? work.file : undefined,
+  drive: workMedia[work.file]?.drive,
+  hls: streamUrl(workMedia[work.file]?.hls),
 });
 
+/** The groups of the rail: the seven directions, then the music videos. */
+const railGroups = (t: SiteContent): (Group & { works: Work[] })[] => [
+  ...t.directions.items.map((item) => ({ key: item.key, title: item.title, works: catalog[item.key] })),
+  { key: "clips", title: t.works.clips, works: clips },
+];
+
 /**
- * Every work of the site. The directions take turns (one work from each, then the second from each, and so on),
- * so the rail shows all the studio does and not six films of one kind in a row. A direction with no works yet is left out.
+ * Every work of the site. The groups take turns (one work from each, then the second from each, and so on),
+ * so the rail shows all the studio does and not six films of one kind in a row. A group with no works yet is left out.
  */
 export function allWorks(t: SiteContent): RailItem[] {
-  const groups = t.directions.items.filter((item) => catalog[item.key].length > 0);
-  const longest = Math.max(...groups.map((item) => catalog[item.key].length));
-  return Array.from({ length: longest }).flatMap((_, i) => groups.flatMap((item) => (catalog[item.key][i] ? [toRail(catalog[item.key][i], item)] : [])));
+  const groups = railGroups(t).filter((group) => group.works.length > 0);
+  const longest = Math.max(...groups.map((group) => group.works.length));
+  return Array.from({ length: longest }).flatMap((_, i) => groups.flatMap((group) => (group.works[i] ? [toRail(group.works[i], group)] : [])));
 }
 
 /**
- * The works, on the light stage: the massive word on the left margin, the directions as chips, the rail of cards.
- * All seven directions are among the chips; one that has no works yet answers with a red plate (see WorksRail).
+ * The works, on the red screen (Sergey, 2026-10-26: «работы ролики на красном фоне», as the site had them before):
+ * the word on the left margin and the row of wide tiles under it, every one playing its short cut, the row drifting
+ * to the left by itself. All the directions are mixed in it (see `allWorks`), each tile says which one it is from.
+ * No filters: «переключение между блоками тоже не нравится… мелко, не информативно».
  */
 export function Works({ t }: { t: SiteContent }) {
   const items = allWorks(t);
 
   return (
-    <Screen theme="paper" id="catalog" label={t.works.title} className="wrap overflow-x-clip pb-[var(--air)] pt-[clamp(2rem,8vh,5rem)]">
+    <Screen theme="red" id="catalog" label={t.works.title} className="wrap overflow-x-clip py-[clamp(4rem,14vh,8rem)]">
       <Reveal kind="clip">
-        <h2 className="mass -ml-[0.03em]" style={{ fontSize: "calc(var(--w) * 0.178)" }}>
-          {t.works.title}
-        </h2>
+        <h2 className="mass works-head">{t.works.title}</h2>
       </Reveal>
-      <WorksRail items={items} groups={t.directions.items.map((item) => ({ key: item.key, title: item.title }))} archive={Math.max(0, ARCHIVE_TOTAL - items.length)} t={t.works} />
+      <WorksRail items={items} label={t.works.title} archive={Math.max(0, ARCHIVE_TOTAL - items.length)} boardLine t={t.works} className="mt-[clamp(1.75rem,5vh,3rem)]" />
     </Screen>
   );
 }

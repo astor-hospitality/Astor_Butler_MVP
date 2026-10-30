@@ -49,6 +49,23 @@ c3ag.ru, c3ag.176-123-165-162.nip.io {
 	# 		header_up X-Forwarded-Host {host}
 	# 	}
 	# }
+	# C3 site films (HLS) for the site's own player: /video/<work>/master.m3u8 from /opt/c3ag-video/hls (container c3ag-video).
+	handle_path /video/* {
+		reverse_proxy c3ag-video:80
+	}
+	# C3 site media (pictures, short clips, fonts) from /opt/c3ag-video/media, same container.
+	handle /media/* {
+		reverse_proxy c3ag-video:80
+	}
+	# Full films from the studio's Yandex Disk folder: the site's server answers with a 302 to a fresh Disk link.
+	@site_api path /api/watch
+	handle @site_api {
+		reverse_proxy c3ag-frontend:3000 {
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Forwarded-Host {host}
+		}
+	}
 	@closed_api path /api/* /actuator/*
 	handle @closed_api {
 		respond 404

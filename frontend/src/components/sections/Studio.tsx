@@ -14,14 +14,15 @@ interface StudioProps {
 }
 
 /**
- * The studio, on the light stage. The massive word stands behind the chrome gamepad (the picture in front, the type
+ * The studio, on the light stage, straight after the shoot's air (no second air of its own above: Sergey, 2026-10-26,
+ * «огромные пустоты между блоками»). The massive word stands behind the chrome gamepad (the picture in front, the type
  * behind it); under them the studio's own words about its films, and the four places of the team.
  * A portrait is black and white and turns red and black under the pointer; a place without a portrait holds the
  * chrome mark on red, never an empty frame.
  */
 export function Studio({ t, object, mark }: StudioProps) {
   return (
-    <Screen theme="paper" id="about" label={t.studio.label} className="wrap air">
+    <Screen theme="paper" id="about" label={t.studio.label} className="wrap pb-[var(--air)]">
       <div className="relative grid justify-items-center" style={{ fontSize: "calc(var(--w) * 0.18)" }}>
         <Reveal kind="clip" className="absolute left-1/2 top-0 -translate-x-1/2">
           <p className="mass text-[1em] !leading-[0.78]" aria-hidden="true">
