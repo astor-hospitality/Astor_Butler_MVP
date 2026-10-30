@@ -2,194 +2,240 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Astor Concierge — цифровой консьерж для событий</title>
-<meta name="description" content="Astor Concierge помогает фестивалям, деловым программам, городским событиям и площадкам работать с большим потоком гостей.">
-<meta property="og:title" content="Astor Concierge — цифровой консьерж для событий">
-<meta property="og:description" content="Расписание, карта, доступы, закрытые зоны, партнеры, обращения гостей и итоговая аналитика события.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Astor Concierge – гостевая часть теперь в приложении Astor, консьерж для событий</title>
+<meta name="description" content="Гостевая роль Astor Concierge теперь в приложении Astor в Telegram. Для фестивалей, деловых программ и городских событий Astor Concierge – консьерж под бренд события: программа, карта, доступы и обращения гостей.">
+<link rel="canonical" href="https://astor-ai.ru/astor_concierge/">
+<meta property="og:title" content="Astor Concierge – консьерж для гостей и событий">
+<meta property="og:description" content="Гостевая часть – в приложении Astor в Telegram. Для событий – расписание, карта, доступы, закрытые зоны, партнёры, обращения гостей и итоговый отчёт.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
-<meta property="og:image:secure_url" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
+<meta property="og:url" content="https://astor-ai.ru/astor_concierge/">
+<meta property="og:image" content="https://astor-ai.ru/assets/og-astor-assist.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Astor Concierge — консьерж для событий">
+<meta property="og:image:alt" content="Astor Concierge – консьерж для гостей и событий">
 <meta property="og:locale" content="ru_RU">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
+<meta name="twitter:image" content="https://astor-ai.ru/assets/og-astor-assist.png">
 <meta name="theme-color" content="#0b0f22">
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=20261023-star">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="../css/brand-typography.css">
-<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/story.css">
+<link rel="stylesheet" href="../css/product.css">
 </head>
 <body>
 
 <a class="skip-link" href="#main">Перейти к содержанию</a>
-<div class="letterbox letterbox-top" aria-hidden="true"></div>
-<div class="letterbox letterbox-bottom" aria-hidden="true"></div>
-<div class="grain" aria-hidden="true"></div>
-<div class="film-progress" aria-hidden="true"><span id="filmProgressBar"></span></div>
-<div class="cursor-key" id="cursorKey" aria-hidden="true">
-  <svg viewBox="0 0 48 48" width="34" height="34"><g fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round"><circle cx="15" cy="15" r="7.5"/><path d="M20.5 20.5 L38 38"/><path d="M31 31 L36 26"/><path d="M35 35 L40 30"/></g></svg>
-</div>
-<div class="ripple-layer" id="rippleLayer" aria-hidden="true"></div>
-<button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему" aria-pressed="false">
-  <span class="theme-toggle-icon" aria-hidden="true"></span>
-  <span class="theme-toggle-text">Светлая тема</span>
-</button>
 
-<header class="hero hero-concierge" id="hero">
-  <div class="hero-bg" aria-hidden="true"></div>
-  <canvas class="hero-dust" id="heroDust" aria-hidden="true"></canvas>
-  <div class="hero-inner">
-    <div class="hero-brand rise" style="--d:0" aria-label="Astor Concierge">
+<header class="top">
+  <div class="wrap top-row glass">
+    <a class="mark" href="../" aria-label="Astor&nbsp;– на главную">
       <svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg>
-      <span class="hero-brand-name">Astor Concierge</span>
-    </div>
-
-    <h1 class="hero-hook">
-      <span class="hook-line rise" style="--d:1">Когда гостей много,</span>
-      <span class="hook-line hook-accent rise" style="--d:2">сервису нужна спокойная навигация.</span>
-    </h1>
-
-    <p class="hero-sub rise" style="--d:3">Astor Concierge помогает организаторам вести поток гостей: программа, карта, доступы, проживание, закрытые зоны, обращения к команде и отчет после события.</p>
-
-    <div class="hero-cta rise" style="--d:4">
-      <a href="#event-flow" class="btn btn-quiet">Сценарии события</a>
-      <a href="#event-pricing" class="btn btn-quiet">Оценить проект</a>
-    </div>
+      <span>Astor</span>
+    </a>
+    <nav class="top-nav" aria-label="Разделы страницы">
+      <a href="#guests">Для гостей</a>
+      <a href="#events">Для событий</a>
+      <a href="#event-flow">Пиковые дни</a>
+      <a href="#event-pricing">Оценка проекта</a>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="https://t.me/Astorapp" target="_blank" rel="noopener">Открыть</a>
   </div>
-  <button class="hero-scroll-hint rise" style="--d:5" id="scrollHint" aria-label="Прокрутить вниз"><span>Для организаторов</span><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 9l6 6 6-6"/></svg></button>
 </header>
 
 <main id="main">
 
-<section class="section" id="what" aria-labelledby="what-title">
-  <p class="chapter">Для событий</p>
-  <h2 class="section-title" id="what-title">Консьерж для фестиваля, деловой программы или городского события.</h2>
-  <p class="lede">Организатору нужно провести гостя через расписание, локации, доступы, партнерские активности и обращения к команде без перегруза администраторов.</p>
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="crumbs"><a href="../">Astor</a> / Astor Concierge</p>
+      <p class="kicker">Консьерж гостя</p>
+      <h1 class="p-title" id="hero-title">Гостевая часть теперь в&nbsp;приложении Astor</h1>
+      <p class="hero-lead">Astor Concierge начинался как отдельный бот-помощник гостя. Теперь его роль выполняет приложение Astor в&nbsp;Telegram: подобрать место, посмотреть, что идёт в&nbsp;городе, забронировать стол и&nbsp;позвать друзей.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://t.me/Astorapp" target="_blank" rel="noopener">Открыть Astor в&nbsp;Telegram</a>
+        <a class="btn btn-quiet" href="#events">Для организаторов событий</a>
+      </div>
+      <p class="hero-note">Для фестивалей, деловых программ и&nbsp;городских событий Astor Concierge остаётся консьержем под бренд события.</p>
+    </div>
 
-  <div class="what-grid">
-    <div class="what-item reveal"><span class="what-num">01</span><p>Расписание и программа события</p></div>
-    <div class="what-item reveal"><span class="what-num">02</span><p>Карта площадки, зоны и навигация</p></div>
-    <div class="what-item reveal"><span class="what-num">03</span><p>Билеты, доступы, проживание и закрытые зоны</p></div>
-    <div class="what-item reveal"><span class="what-num">04</span><p>Обращения гостей к координаторам</p></div>
-    <div class="what-item reveal"><span class="what-num">05</span><p>Партнерские предложения, контакты и обращения</p></div>
+    <figure class="hero-shot">
+      <img class="shot" src="../assets/app/go-places.webp" width="600" height="1298" alt="Экран «Куда пойти» в приложении Astor: «Чего хочется?», ваши брони и подборка «ЕКБ: из Кольцово в центр»">
+    </figure>
+  </div>
+</section>
+
+<section class="section" id="guests" aria-labelledby="guests-title">
+  <div class="wrap">
+    <p class="kicker">Для гостей</p>
+    <h2 class="section-title" id="guests-title">Что раньше делал консьерж, теперь в&nbsp;приложении</h2>
+    <p class="lede">Помощник Astor в&nbsp;центре приложения: скажите своими словами, чего хочется. Бронь стола уходит команде заведения, подтверждает её ресторан.</p>
+    <ul class="trio">
+      <li>
+        <img class="shot" src="../assets/app/ai-chat.webp" width="600" height="1298" loading="lazy" alt="ИИ-помощник Astor отвечает на вопрос «Куда сходить вечером с друзьями?»">
+        <h3>Скажите, чего хочется</h3>
+        <p>Голосом или текстом: «куда сходить вечером с&nbsp;друзьями?». Помощник подберёт места и&nbsp;события рядом.</p>
+      </li>
+      <li>
+        <img class="shot" src="../assets/app/venue.webp" width="600" height="1298" loading="lazy" alt="Карточка гастробара AERIS в приложении Astor">
+        <h3>Карточка места</h3>
+        <p>Часы работы, адрес и&nbsp;маршрут. Подборка мест и&nbsp;афиша города&nbsp;– на&nbsp;вкладке «Куда пойти».</p>
+      </li>
+      <li>
+        <img class="shot" src="../assets/app/booking-done.webp" width="600" height="1298" loading="lazy" alt="Заявка на стол в AERIS отправлена: хостес подтвердит, ответ придёт в Telegram">
+        <h3>Бронь через команду ресторана</h3>
+        <p>День, время и&nbsp;число гостей. Заявку подтверждает хостес, ответ приходит в&nbsp;Telegram.</p>
+      </li>
+    </ul>
+    <div class="note">
+      <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg></span>
+      <div>
+        <h3>Лента «Куда пойти» на&nbsp;сайте</h3>
+        <p>Подборка заведений открывается и&nbsp;как обычная страница: выбор Astor идёт первым, у&nbsp;карточек&nbsp;– описание, адрес и&nbsp;ссылки на&nbsp;бизнес-ланч и&nbsp;сайт. Фото&nbsp;– только с&nbsp;разрешения заведения.</p>
+        <a class="btn btn-quiet btn-sm" href="feed/">Открыть ленту</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section section-alt" id="events" aria-labelledby="events-title">
+  <div class="wrap">
+    <p class="kicker">Для событий</p>
+    <h2 class="section-title" id="events-title">Консьерж для фестиваля, деловой программы или городского события</h2>
+    <p class="lede">Организатору нужно провести гостя через расписание, локации, доступы, партнёрские активности и&nbsp;обращения к&nbsp;команде без перегруза администраторов.</p>
+    <ul class="cards c3">
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></svg></span>
+        <h3>Расписание и&nbsp;программа</h3>
+        <p>Секции, спикеры, переносы и&nbsp;свободные места.</p>
+      </li>
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg></span>
+        <h3>Карта площадки</h3>
+        <p>Зоны, навигация и&nbsp;маршрут между ними.</p>
+      </li>
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7.5A1.5 1.5 0 0 1 5.5 6h13A1.5 1.5 0 0 1 20 7.5V10a2 2 0 0 0 0 4v2.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 16.5V14a2 2 0 0 0 0-4z"/></svg></span>
+        <h3>Билеты и&nbsp;доступы</h3>
+        <p>Проживание и&nbsp;закрытые зоны.</p>
+      </li>
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 6.5A2 2 0 0 1 6.5 4.5h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-4 3v-3h0.5a2 2 0 0 1-2-2z"/></svg></span>
+        <h3>Обращения к&nbsp;координаторам</h3>
+        <p>Сложный вопрос уходит ответственному человеку с&nbsp;контекстом: кто спрашивает, что уже уточнено и&nbsp;какое действие нужно.</p>
+      </li>
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M15.5 5.3a3.2 3.2 0 0 1 0 6.4M17.5 14.6c1.6.6 2.7 2.4 3 4.9"/></svg></span>
+        <h3>Партнёры</h3>
+        <p>Партнёрские предложения, контакты и&nbsp;обращения.</p>
+      </li>
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8.5"/></svg></span>
+        <h3>Отчёт после события</h3>
+        <p>Темы, обращения, контакты и&nbsp;проблемы навигации.</p>
+      </li>
+    </ul>
   </div>
 </section>
 
 <section class="section" id="event-flow" aria-labelledby="flow-title">
-  <p class="chapter">Пиковые дни</p>
-  <h2 class="section-title" id="flow-title">За 1-2 дня до события вопросы приходят волной.</h2>
-  <p class="lede">Astor Concierge отвечает на повторяющиеся вопросы, а сложные обращения передает ответственному человеку с контекстом: кто спрашивает, что уже уточнено и какое действие требуется.</p>
-
-  <div class="timeline-list">
-    <div class="timeline-item reveal"><strong>До события</strong><span>как добраться, где жить, что входит в билет, как изменить категорию, где программа</span></div>
-    <div class="timeline-item reveal"><strong>На входе</strong><span>доступы, регистрация, зоны, правила, карта, потерянные документы</span></div>
-    <div class="timeline-item reveal"><strong>В программе</strong><span>секции, спикеры, расписание, переносы, свободные места, партнерские активности</span></div>
-    <div class="timeline-item reveal"><strong>Для особых гостей и партнеров</strong><span>закрытые зоны, встречи, столы, ужины, контакты ответственных координаторов</span></div>
-    <div class="timeline-item reveal"><strong>После события</strong><span>итоги, материалы, обращения, контакты, отчет по повторяющимся вопросам</span></div>
-  </div>
-</section>
-
-<section class="section" aria-labelledby="brand-title">
-  <p class="chapter">Под бренд события</p>
-  <h2 class="section-title" id="brand-title">Гость общается с консьержем события.</h2>
-  <p class="lede">Astor остается внутри, а внешний слой получает имя и тон заказчика: например, Gastreet Concierge для фестиваля рестораторов или City Concierge для городской программы.</p>
-
-  <div class="identity-grid">
-    <div class="identity-card reveal">
-      <span>Gastreet Concierge</span>
-      <p>Программа, спикеры, зоны, отели, билеты, партнеры и закрытые активности.</p>
-    </div>
-    <div class="identity-card reveal">
-      <span>Forum Concierge</span>
-      <p>Деловая программа, участники, встречи, аккредитация и помощь координатора.</p>
-    </div>
-    <div class="identity-card reveal">
-      <span>City Concierge</span>
-      <p>Городской маршрут, площадки, расписание, транспорт и обращения жителей или гостей.</p>
+  <div class="wrap">
+    <p class="kicker">Пиковые дни</p>
+    <h2 class="section-title" id="flow-title">За&nbsp;1–2 дня до&nbsp;события вопросы приходят волной</h2>
+    <p class="lede">Astor Concierge отвечает на&nbsp;повторяющиеся вопросы, а&nbsp;сложные обращения передаёт ответственному человеку.</p>
+    <ol class="steps plain c3">
+      <li><div><h3>До&nbsp;события</h3><p>Как добраться, где жить, что входит в&nbsp;билет, как изменить категорию, где программа.</p></div></li>
+      <li><div><h3>На&nbsp;входе</h3><p>Доступы, регистрация, зоны, правила, карта, потерянные документы.</p></div></li>
+      <li><div><h3>В&nbsp;программе</h3><p>Секции, спикеры, расписание, переносы, свободные места, партнёрские активности.</p></div></li>
+      <li><div><h3>Для особых гостей и&nbsp;партнёров</h3><p>Закрытые зоны, встречи, столы, ужины, контакты ответственных координаторов.</p></div></li>
+      <li><div><h3>После события</h3><p>Итоги, материалы, обращения, контакты, отчёт по&nbsp;повторяющимся вопросам.</p></div></li>
+    </ol>
+    <div class="figures">
+      <div><b>до&nbsp;2000</b><span>гостей за&nbsp;короткий период&nbsp;– рабочий сценарий</span></div>
+      <div><b>1–2 дня</b><span>основная волна вопросов</span></div>
+      <div><b>отчёт</b><span>темы, обращения, контакты, проблемы навигации</span></div>
     </div>
   </div>
 </section>
 
-<section class="section" id="feed" aria-labelledby="feed-title">
-  <p class="chapter">Лента заведений</p>
-  <h2 class="section-title" id="feed-title">«Куда пойти» открывается прямо в Telegram.</h2>
-  <p class="lede">Astor Concierge работает и как Telegram Mini App: гость события или города открывает подборку заведений, смотрит карточки и бронирует стол через команду ресторана. Та же лента работает как обычная страница сайта.</p>
-
-  <div class="timeline-list">
-    <div class="timeline-item reveal"><strong>Выбор Astor</strong><span>закрепленные заведения идут первыми и помечены как выбор Astor</span></div>
-    <div class="timeline-item reveal"><strong>Подборка</strong><span>карточки заведений с описанием, адресом и ссылками на бизнес-ланч и сайт</span></div>
-    <div class="timeline-item reveal"><strong>Бронь</strong><span>«Забронировать» открывает Telegram-бот заведения, бронь подтверждает хостес</span></div>
-    <div class="timeline-item reveal"><strong>Фото</strong><span>только с разрешения заведения</span></div>
-  </div>
-
-  <div class="final-cta">
-    <a href="feed/" class="btn btn-quiet">Открыть ленту</a>
-  </div>
-</section>
-
-<section class="section" aria-labelledby="load-title">
-  <p class="chapter">Нагрузка</p>
-  <h2 class="section-title" id="load-title">До 2000 гостей за короткий период - рабочий сценарий.</h2>
-  <p class="lede">Для организатора важнее всего спокойный поток: гости получают ответы, команда видит важные обращения, а после события остается понятная картина спроса.</p>
-
-  <div class="pricing-band reveal">
-    <div><strong>2000</strong><span>гостей в пиковые дни</span></div>
-    <div><strong>1-2 дня</strong><span>основная волна вопросов</span></div>
-    <div><strong>отчет</strong><span>темы, обращения, контакты, проблемы навигации</span></div>
-  </div>
-</section>
-
-<section class="section" aria-labelledby="future-title">
-  <p class="chapter">Расширение</p>
-  <h2 class="section-title" id="future-title">Восемь направлений для событий и городской среды.</h2>
-  <p class="lede">Эти возможности помогают выстроить устойчивый контур гостеприимства вокруг события.</p>
-
-  <div class="axis-grid">
-    <div class="axis-card reveal"><strong>Расписание и временные окна</strong><span>программа, места, встречи, переносы, напоминания</span></div>
-    <div class="axis-card reveal"><strong>Профиль участника</strong><span>интересы, доступы, ограничения, выбранные активности</span></div>
-    <div class="axis-card reveal"><strong>Тихий гид</strong><span>маршруты, рекомендации, партнеры и полезные точки без перегруза</span></div>
-    <div class="axis-card reveal"><strong>Благодарность команде</strong><span>чаевые или благодарности сервисным командам, если формат это допускает</span></div>
-    <div class="axis-card reveal"><strong>Благотворительные взносы</strong><span>сборы на фонды, культурные программы или социальные инициативы</span></div>
-    <div class="axis-card reveal"><strong>Показатель вклада</strong><span>агрегированные итоги участия гостей, партнеров и площадок</span></div>
-    <div class="axis-card reveal"><strong>Безопасные активности</strong><span>контроль правил, возрастных ограничений и ответственных лиц</span></div>
-    <div class="axis-card reveal"><strong>Канал связи</strong><span>гость, организатор, партнер и служба поддержки в одном управляемом процессе</span></div>
+<section class="section section-alt" id="brand" aria-labelledby="brand-title">
+  <div class="wrap">
+    <p class="kicker">Под бренд события</p>
+    <h2 class="section-title" id="brand-title">Гость общается с&nbsp;консьержем события</h2>
+    <p class="lede">Astor остаётся внутри, а&nbsp;внешний слой получает имя и&nbsp;тон заказчика.</p>
+    <ul class="cards c3">
+      <li class="get"><h3>Gastreet Concierge</h3><p>Программа, спикеры, зоны, отели, билеты, партнёры и&nbsp;закрытые активности.</p></li>
+      <li class="get"><h3>Forum Concierge</h3><p>Деловая программа, участники, встречи, аккредитация и&nbsp;помощь координатора.</p></li>
+      <li class="get"><h3>City Concierge</h3><p>Городской маршрут, площадки, расписание, транспорт и&nbsp;обращения жителей или гостей.</p></li>
+    </ul>
+    <h3 class="sub-title">Что можно добавить под событие</h3>
+    <ul class="cards c4">
+      <li class="get small"><h3>Профиль участника</h3><p>Интересы, доступы, ограничения, выбранные активности.</p></li>
+      <li class="get small"><h3>Тихий гид</h3><p>Маршруты, рекомендации, партнёры и&nbsp;полезные точки без перегруза.</p></li>
+      <li class="get small"><h3>Благодарность команде</h3><p>Чаевые или благодарности сервисным командам, если формат это допускает.</p></li>
+      <li class="get small"><h3>Безопасные активности</h3><p>Контроль правил, возрастных ограничений и&nbsp;ответственных лиц.</p></li>
+    </ul>
   </div>
 </section>
 
 <section class="section" id="event-pricing" aria-labelledby="pricing-title">
-  <p class="chapter">Формат проекта</p>
-  <h2 class="section-title" id="pricing-title">Событие оценивается отдельно.</h2>
-  <p class="lede">Для фестиваля или деловой программы важны подготовка базы знаний, дежурство на пиковые дни, сценарии передачи команде и итоговая аналитика.</p>
-
-  <div class="pricing-band reveal">
-    <div><strong>от 250 000 ₽</strong><span>внедрение под событие</span></div>
-    <div><strong>от 30 000 ₽</strong><span>поддержка на событии</span></div>
-    <div><strong>отдельно</strong><span>сложные доступы и интеграции</span></div>
+  <div class="wrap split">
+    <div>
+      <p class="kicker">Формат проекта</p>
+      <h2 class="section-title" id="pricing-title">Событие оценивается отдельно</h2>
+      <p class="lede">Важны подготовка базы знаний, дежурство на&nbsp;пиковые дни, сценарии передачи команде и&nbsp;итоговая аналитика. Расскажите, где гости чаще всего теряются до&nbsp;и&nbsp;во&nbsp;время события: с&nbsp;этого удобно начинать настройку.</p>
+    </div>
+    <div class="connect">
+      <div class="figures">
+        <div><b>от&nbsp;250&nbsp;000&nbsp;₽</b><span>внедрение под событие</span></div>
+        <div><b>от&nbsp;30&nbsp;000&nbsp;₽</b><span>поддержка на&nbsp;событии</span></div>
+        <div><b>отдельно</b><span>сложные доступы и&nbsp;интеграции</span></div>
+      </div>
+      <a class="btn btn-primary" href="https://t.me/michael_welly" target="_blank" rel="noopener">Написать Михаилу в&nbsp;Telegram</a>
+      <p class="connect-note">или на&nbsp;почту <a href="mailto:michael.poedinenko.mxr@gmail.com">michael.poedinenko.mxr@gmail.com</a></p>
+    </div>
   </div>
-</section>
-
-<section class="section section-final" id="final" aria-labelledby="final-title">
-  <p class="chapter">Разговор о событии</p>
-  <h2 class="section-title" id="final-title">Расскажите, где гости чаще всего теряются до и во время события.</h2>
-  <p class="lede">Программа, карта, проживание, билеты, закрытые зоны, партнеры, обращения к координаторам - с этого удобно начинать настройку Astor Concierge.</p>
-  <div class="final-cta">
-    <a href="../" class="btn btn-quiet">Вернуться к Astor</a>
-    <a href="../astor_butler/" class="btn btn-quiet">Для заведений</a>
-    <a href="../astor_glass/" class="btn btn-quiet">Для команды</a>
-  </div>
-  <footer class="footer">
-    <div class="footer-logo"><svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg><span>ASTOR CONCIERGE</span></div>
-    <p>Консьерж для событий, фестивалей и городских программ · персонализируется под бренд заказчика</p>
-    <p><a class="footer-link" href="../policy.html">Политика конфиденциальности</a></p>
-  </footer>
 </section>
 
 </main>
 
-<script src="../js/main.js" defer></script>
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <a class="mark" href="../" aria-label="Astor&nbsp;– на главную">
+        <svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg>
+        <span>Astor</span>
+      </a>
+      <p>Astor Concierge: для гостей&nbsp;– приложение Astor в&nbsp;Telegram, для событий&nbsp;– консьерж под бренд заказчика.</p>
+    </div>
+    <div class="footer-col">
+      <h2>Telegram</h2>
+      <ul>
+        <li><a href="https://t.me/Astorapp" target="_blank" rel="noopener">@Astorapp</a><span>приложение Astor</span></li>
+        <li><a href="https://t.me/aeris_butler_bot" target="_blank" rel="noopener">@aeris_butler_bot</a><span>бот гастробара AERIS</span></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h2>Продукты</h2>
+      <ul>
+        <li><a href="../">Приложение Astor</a></li>
+        <li><a href="../astor_butler/">Astor Butler</a></li>
+        <li><a href="../astor_glass/">Astor Glass</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h2>Контакты</h2>
+      <ul>
+        <li><a href="https://t.me/michael_welly" target="_blank" rel="noopener">Михаил в&nbsp;Telegram</a><span>связаться с<span>подключение и&nbsp;события</span>nbsp;командой Astor</span></li>
+        <li><a href="mailto:michael.poedinenko.mxr@gmail.com">michael.poedinenko.mxr@gmail.com</a></li>
+        <li><a href="../policy.html">Политика конфиденциальности</a></li>
+      </ul>
+    </div>
+  </div>
+  <p class="wrap footer-copy">© 2026 Astor</p>
+</footer>
+
 </body>
 </html>

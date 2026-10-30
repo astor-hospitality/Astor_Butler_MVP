@@ -2,17 +2,18 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Astor Butler – бот ресторана: брони, бизнес-ланч, счёт и отзывы в Telegram</title>
 <meta name="description" content="Astor Butler отвечает гостям от имени ресторана: свободный стол, меню ланча и сумма по прайсу Saby. Заявка приходит карточкой в рабочую группу персонала, хостес подтверждает одним нажатием.">
+<link rel="canonical" href="https://astor-ai.ru/astor_butler/">
 <meta property="og:title" content="Astor Butler – бот ресторана в Telegram">
 <meta property="og:description" content="Брони, бизнес-ланч, счёт и отзывы гостей. Хостес только подтверждает, меню и цены из Saby.">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://astor-ai.ru/astor_butler/">
 <meta property="og:image" content="https://astor-ai.ru/assets/og-astor.png">
-<meta property="og:image:secure_url" content="https://astor-ai.ru/assets/og-astor.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Astor Butler — дворецкий для ресторана и отеля">
+<meta property="og:image:alt" content="Astor Butler – бот ресторана в Telegram">
 <meta property="og:locale" content="ru_RU">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://astor-ai.ru/assets/og-astor.png">
@@ -21,218 +22,238 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="../css/brand-typography.css">
-<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/story.css">
+<link rel="stylesheet" href="../css/product.css">
 </head>
 <body>
 
 <a class="skip-link" href="#main">Перейти к содержанию</a>
-<div class="letterbox letterbox-top" aria-hidden="true"></div>
-<div class="letterbox letterbox-bottom" aria-hidden="true"></div>
-<div class="grain" aria-hidden="true"></div>
-<div class="film-progress" aria-hidden="true"><span id="filmProgressBar"></span></div>
-<div class="cursor-key" id="cursorKey" aria-hidden="true">
-  <svg viewBox="0 0 48 48" width="34" height="34"><g fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round"><circle cx="15" cy="15" r="7.5"/><path d="M20.5 20.5 L38 38"/><path d="M31 31 L36 26"/><path d="M35 35 L40 30"/></g></svg>
-</div>
-<div class="ripple-layer" id="rippleLayer" aria-hidden="true"></div>
-<button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему" aria-pressed="false">
-  <span class="theme-toggle-icon" aria-hidden="true"></span>
-  <span class="theme-toggle-text">Светлая тема</span>
-</button>
 
-<header class="hero" id="hero">
-  <div class="hero-bg" aria-hidden="true"></div>
-  <canvas class="hero-dust" id="heroDust" aria-hidden="true"></canvas>
-  <div class="hero-inner">
-    <div class="hero-brand rise" style="--d:0" aria-label="Astor Butler">
+<header class="top">
+  <div class="wrap top-row glass">
+    <a class="mark" href="../" aria-label="Astor&nbsp;– на главную">
       <svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg>
-      <span class="hero-brand-name">Astor Butler</span>
-    </div>
-
-    <h1 class="hero-hook">
-      <span class="hook-line rise" style="--d:1">Бот ресторана в Telegram,</span>
-      <span class="hook-line hook-accent rise" style="--d:2">заявки приходят хостес готовыми.</span>
-    </h1>
-
-    <p class="hero-sub rise" style="--d:3">Astor Butler отвечает гостям от имени ресторана: свободный стол, меню бизнес-ланча и сумма по прайсу Saby. Готовая заявка приходит карточкой в рабочую группу персонала, хостес подтверждает одним нажатием.</p>
-
-    <div class="hero-cta rise" style="--d:4">
-      <a href="#implementation" class="btn btn-quiet">Как подключить</a>
-      <a href="#pricing" class="btn btn-quiet">Цена</a>
-    </div>
+      <span>Astor</span>
+    </a>
+    <nav class="top-nav" aria-label="Разделы страницы">
+      <a href="#what">Что делает</a>
+      <a href="#roles">Кто что видит</a>
+      <a href="#implementation">Подключение</a>
+      <a href="#pricing">Цена</a>
+    </nav>
+    <a class="btn btn-primary btn-sm" href="https://t.me/Astorapp" target="_blank" rel="noopener">Открыть</a>
   </div>
-  <button class="hero-scroll-hint rise" style="--d:5" id="scrollHint" aria-label="Прокрутить вниз"><span>Что делает</span><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 9l6 6 6-6"/></svg></button>
 </header>
 
 <main id="main">
 
-<section class="section" id="what" aria-labelledby="what-title">
-  <p class="chapter">Для заведений</p>
-  <h2 class="section-title" id="what-title">Что бот делает за ресторан.</h2>
-  <p class="lede">Гость пишет как привык: текстом или голосом, сам или через своего консьержа Astor Concierge. Бот уточняет день, время и число гостей и передаёт команде готовую заявку.</p>
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="crumbs"><a href="../">Astor</a> / Astor Butler</p>
+      <p class="kicker">Бот ресторана в&nbsp;Telegram</p>
+      <h1 class="p-title" id="hero-title">Заявки приходят хостес готовыми</h1>
+      <p class="hero-lead">Astor Butler отвечает гостям от&nbsp;имени ресторана: свободный стол, меню бизнес-ланча и&nbsp;сумма по&nbsp;прайсу Saby. Готовая заявка приходит карточкой в&nbsp;рабочую группу персонала, хостес подтверждает одним нажатием.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://t.me/aeris_butler_bot" target="_blank" rel="noopener">Написать @aeris_butler_bot</a>
+        <a class="btn btn-quiet" href="#implementation">Как подключить</a>
+      </div>
+      <p class="hero-note">AERIS Butler работает в&nbsp;гастробаре AERIS: напишите боту как гость, спросите стол или бизнес-ланч.</p>
+    </div>
 
-  <div class="what-grid">
-    <div class="what-item reveal"><span class="what-num">01</span><p>Бронь стола: свободный стол, время, число гостей</p></div>
-    <div class="what-item reveal"><span class="what-num">02</span><p>Бизнес-ланч: меню и сумма по прайсу Saby, заказ после «да» гостя</p></div>
-    <div class="what-item reveal"><span class="what-num">03</span><p>Счёт в чате: команда получает карточку, сумму называет касса</p></div>
-    <div class="what-item reveal"><span class="what-num">04</span><p>Отзыв после визита: оценка от 1 до 5 приходит команде</p></div>
-    <div class="what-item reveal"><span class="what-num">05</span><p>Переговоры с консьержем гостя в том же чате</p></div>
+    <div class="hero-panel">
+      <div class="panel" role="img" aria-label="Диалог гостя с ботом: бизнес-ланч на двоих в понедельник к 13:00, стол свободен, два ланча – 1 240 ₽, заявка передана хостес">
+        <p class="panel-head"><span class="astor-dot"></span><span><b>AERIS Butler</b><br>бот ресторана</span></p>
+        <div class="msgs">
+          <p class="msg msg-in">Бизнес-ланч на&nbsp;двоих в&nbsp;понедельник к&nbsp;13:00</p>
+          <p class="msg msg-out">Стол на&nbsp;двоих свободен, два ланча&nbsp;– 1&nbsp;240&nbsp;₽. Оформить?</p>
+          <p class="msg msg-in">Да</p>
+          <p class="msg msg-out">Передал хостес. Как подтвердит&nbsp;– напишу.</p>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
-<section class="section section-roles" aria-labelledby="roles-title">
-  <p class="chapter">Рабочий контур</p>
-  <h2 class="section-title" id="roles-title">Гость, хостес и менеджер видят своё.</h2>
-
-  <div class="roles-grid">
-    <div class="role-card reveal">
-      <h3>Гость</h3>
-      <p class="role-sub">видит простой диалог</p>
-      <div class="role-demo">
-        <div class="bubble guest small">Бизнес-ланч на двоих в понедельник к 13:00</div>
-        <div class="bubble butler-msg small">Стол на двоих свободен, два ланча – 1 240 ₽. Оформить?</div>
-        <div class="bubble guest small">Да</div>
-        <div class="bubble butler-msg small">Передал хостес. Как подтвердит – напишу.</div>
+<section class="section" id="what" aria-labelledby="what-title">
+  <div class="wrap">
+    <p class="kicker">Для заведений</p>
+    <h2 class="section-title" id="what-title">Что бот делает за&nbsp;ресторан</h2>
+    <p class="lede">Гость пишет как привык, текстом или голосом. Бот уточняет день, время и&nbsp;число гостей и&nbsp;передаёт команде готовую заявку.</p>
+    <ul class="cards c4">
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4M9 15l2 2 4-4"/></svg></span>
+        <h3>Бронь стола</h3>
+        <p>Свободный стол, время и&nbsp;число гостей.</p>
+      </li>
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg></span>
+        <h3>Бизнес-ланч</h3>
+        <p>Меню и&nbsp;сумма по&nbsp;прайсу Saby, заказ&nbsp;– после «да» гостя.</p>
+      </li>
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5z"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></svg></span>
+        <h3>Счёт в&nbsp;чате</h3>
+        <p>Команда получает карточку, сумму называет касса.</p>
+      </li>
+      <li class="get">
+        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m12 4 2.4 5 5.4.7-4 3.8 1 5.4-4.8-2.6-4.8 2.6 1-5.4-4-3.8 5.4-.7z"/></svg></span>
+        <h3>Отзыв после визита</h3>
+        <p>Оценка от&nbsp;1 до&nbsp;5 приходит команде.</p>
+      </li>
+    </ul>
+    <div class="note">
+      <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l1.8 5.2 5.2 1.8-5.2 1.8L12 17.5l-1.8-5.2L5 10.5l5.2-1.8z"/></svg></span>
+      <div>
+        <h3>Для гостей теперь есть приложение Astor</h3>
+        <p>Гость находит место, бронирует стол и&nbsp;собирает бизнес-ланч в&nbsp;приложении Astor в&nbsp;Telegram. Заявка приходит карточкой в&nbsp;тот же рабочий чат персонала, бронь подтверждает хостес.</p>
+        <a class="btn btn-quiet btn-sm" href="https://t.me/Astorapp" target="_blank" rel="noopener">Открыть Astor в&nbsp;Telegram</a>
       </div>
     </div>
+  </div>
+</section>
 
-    <div class="role-card reveal role-card-hostess">
-      <h3>Хостес</h3>
-      <p class="role-sub">видит карточку в рабочей группе</p>
-      <div class="hostess-card" role="img" aria-label="Карточка в теме «Брони» рабочей группы: гость, стол, время, число гостей и ланч, кнопки «Да» и «Нет»">
-        <div class="hc-head">Брони · новая заявка</div>
-        <div class="hc-row"><span>Гость</span><strong>Анна</strong></div>
-        <div class="hc-row"><span>Стол</span><strong>12 · понедельник 13:00–14:30</strong></div>
-        <div class="hc-row"><span>Гостей</span><strong>2</strong></div>
-        <div class="hc-row"><span>Ланч</span><strong>2 × бизнес-ланч</strong></div>
-        <div class="hc-actions"><span class="hc-btn hc-ok">Да</span><span class="hc-btn hc-no">Нет</span></div>
-      </div>
-    </div>
-
-    <div class="role-card reveal">
-      <h3>Менеджер смены</h3>
-      <p class="role-sub">видит день на табло</p>
-      <div class="role-demo manager-demo">
-        <div class="mgr-row"><span class="mgr-dot ok"></span>Сегодня: брони и ланчи дня</div>
-        <div class="mgr-row"><span class="mgr-dot warn"></span>Визиты по этапам: заявка, подтверждена, за столом, счёт, отзыв</div>
-        <div class="mgr-row"><span class="mgr-dot"></span>Время до подтверждения и оценки гостей</div>
-      </div>
-    </div>
+<section class="section section-alt" id="roles" aria-labelledby="roles-title">
+  <div class="wrap">
+    <p class="kicker">Рабочий контур</p>
+    <h2 class="section-title" id="roles-title">Гость, хостес и&nbsp;менеджер видят своё</h2>
+    <ul class="roles">
+      <li class="role">
+        <h3>Гость</h3>
+        <p class="role-sub">видит простой диалог</p>
+        <div class="panel">
+          <div class="msgs">
+            <p class="msg msg-in">Стол на&nbsp;четверых в&nbsp;пятницу к&nbsp;19:00</p>
+            <p class="msg msg-out">Передал хостес. Как подтвердит&nbsp;– напишу.</p>
+          </div>
+        </div>
+      </li>
+      <li class="role">
+        <h3>Хостес</h3>
+        <p class="role-sub">видит карточку в&nbsp;рабочей группе</p>
+        <div class="panel" role="img" aria-label="Карточка в теме «Брони» рабочей группы: гость, стол, время, число гостей и ланч, кнопки «Да» и «Нет»">
+          <p class="panel-head"><b>Брони</b>&nbsp;· новая заявка</p>
+          <div class="staff-rows">
+            <div><span>Гость</span><b>Анна</b></div>
+            <div><span>Стол</span><b>12 · пн 13:00–14:30</b></div>
+            <div><span>Гостей</span><b>2</b></div>
+            <div><span>Ланч</span><b>2 × бизнес-ланч</b></div>
+          </div>
+          <div class="staff-btns"><span class="ok">Да</span><span class="no">Нет</span></div>
+        </div>
+      </li>
+      <li class="role">
+        <h3>Менеджер смены</h3>
+        <p class="role-sub">видит день на&nbsp;табло</p>
+        <div class="panel">
+          <ul class="dots">
+            <li class="ok">Сегодня: брони и&nbsp;ланчи дня</li>
+            <li class="warn">Визиты по&nbsp;этапам: заявка, подтверждена, за&nbsp;столом, счёт, отзыв</li>
+            <li>Время до&nbsp;подтверждения и&nbsp;оценки гостей</li>
+          </ul>
+        </div>
+      </li>
+    </ul>
   </div>
 </section>
 
 <section class="section" id="implementation" aria-labelledby="impl-title">
-  <p class="chapter">Внедрение</p>
-  <h2 class="section-title" id="impl-title">Как подключить ресторан.</h2>
-  <p class="lede">Бот настраивается под ваше место: часы работы, столы, меню ланча, рабочая группа команды и касса.</p>
+  <div class="wrap">
+    <p class="kicker">Внедрение</p>
+    <h2 class="section-title" id="impl-title">Как подключить ресторан</h2>
+    <p class="lede">Бот настраивается под ваше место: часы работы, столы, меню ланча, рабочая группа команды и&nbsp;касса.</p>
+    <ol class="steps c4">
+      <li><div><h3>Бот под вашим именем</h3><p>Как AERIS Butler: часы работы, столы, правила брони и&nbsp;тон ответов.</p></div></li>
+      <li><div><h3>Рабочая группа</h3><p>Бот добавляется в&nbsp;Telegram-группу персонала с&nbsp;темами: брони, пожелания, обратная связь, график смен.</p></div></li>
+      <li><div><h3>Касса Saby</h3><p>Сервисное подключение: меню ланча и&nbsp;цены из&nbsp;прайса, брони с&nbsp;блюдами в&nbsp;Presto.</p></div></li>
+      <li><div><h3>Пилот</h3><p>Живые заявки гостей, правки формулировок, табло менеджера с&nbsp;первого дня.</p></div></li>
+    </ol>
 
-  <div class="timeline-list">
-    <div class="timeline-item reveal"><strong>1. Бот под вашим именем</strong><span>как AERIS Butler: часы работы, столы, правила брони и тон ответов</span></div>
-    <div class="timeline-item reveal"><strong>2. Рабочая группа</strong><span>бот добавляется в Telegram-группу персонала с темами: брони, пожелания, обратная связь, график смен</span></div>
-    <div class="timeline-item reveal"><strong>3. Касса Saby</strong><span>сервисное подключение: меню ланча и цены из прайса, брони с блюдами в Presto</span></div>
-    <div class="timeline-item reveal"><strong>4. Пилот</strong><span>живые заявки гостей, правки формулировок, табло менеджера с первого дня</span></div>
+    <h3 class="sub-title">Уже в&nbsp;коде, включается по&nbsp;решению ресторана</h3>
+    <ul class="cards c4">
+      <li class="get small"><h3>Оплата по&nbsp;СБП</h3><p>Гость оплачивает счёт из&nbsp;чата через Saby.</p></li>
+      <li class="get small"><h3>Мессенджер MAX</h3><p>Второй канал для гостей рядом с&nbsp;Telegram.</p></li>
+      <li class="get small"><h3>Голосовые сообщения</h3><p>Гость наговаривает заявку, бот понимает речь.</p></li>
+      <li class="get small"><h3>Чаевые</h3><p>Благодарность команде после явного подтверждения гостя, в&nbsp;работе.</p></li>
+    </ul>
   </div>
 </section>
 
-<section class="section" aria-labelledby="future-title">
-  <p class="chapter">Развитие</p>
-  <h2 class="section-title" id="future-title">Что уже готово к включению.</h2>
-  <p class="lede">Эти функции уже в коде и включаются по решению ресторана.</p>
-
-  <div class="axis-grid">
-    <div class="axis-card reveal"><strong>Оплата по СБП</strong><span>гость оплачивает счёт из чата через Saby</span></div>
-    <div class="axis-card reveal"><strong>Мессенджер MAX</strong><span>второй канал для гостей рядом с Telegram</span></div>
-    <div class="axis-card reveal"><strong>Голосовые сообщения</strong><span>гость наговаривает заявку, бот понимает речь</span></div>
-    <div class="axis-card reveal"><strong>Чаевые</strong><span>благодарность команде после явного подтверждения гостя, в работе</span></div>
-  </div>
-</section>
-
-<section class="section" id="how-it-works" aria-labelledby="how-title">
-  <p class="chapter">Как работает</p>
-  <h2 class="section-title" id="how-title">ИИ ведёт разговор, обязательства держит ресторан.</h2>
-  <p class="lede">Бот понимает живую речь и собирает заявку, а решения остаются за людьми и кассой. Модели и серверы работают в России.</p>
-
-  <div class="features-list compact-features">
-    <div class="feature reveal">
-      <h3>Каналы гостя</h3>
-      <p>Бот ресторана в Telegram, приложение Astor Mini App и консьерж гостя Astor Concierge, который сам договаривается с ботом ресторана в одном чате.</p>
-    </div>
-    <div class="feature reveal">
-      <h3>Бронь подтверждает человек</h3>
-      <p>Бот собирает заявку, статус «подтверждена» ставит хостес или касса. Гость сразу получает ответ ресторана.</p>
-    </div>
-    <div class="feature reveal">
-      <h3>Сумму называет касса</h3>
-      <p>Меню ланча, цены и счёт берутся из Saby. Бот не придумывает цифры, заказ оформляется только после «да» гостя.</p>
-    </div>
-    <div class="feature reveal">
-      <h3>Данные в России</h3>
-      <p>Серверы Cloud.ru, языковые модели GigaChat. На табло телефоны гостей скрыты, согласие гость даёт один раз.</p>
-    </div>
-  </div>
-</section>
-
-<section class="section" id="telegram-demo" aria-labelledby="telegram-demo-title">
-  <p class="chapter">Живой пример</p>
-  <h2 class="section-title" id="telegram-demo-title">AERIS Butler работает в гастробаре AERIS.</h2>
-  <p class="lede">Напишите боту как гость: спросите стол или бизнес-ланч, и он ответит от имени ресторана.</p>
-  <div class="final-cta">
-    <a href="https://t.me/aeris_butler_bot" class="btn btn-telegram" target="_blank" rel="noopener">Открыть @aeris_butler_bot</a>
+<section class="section section-alt" id="how-it-works" aria-labelledby="how-title">
+  <div class="wrap">
+    <p class="kicker">Как работает</p>
+    <h2 class="section-title" id="how-title">ИИ ведёт разговор, обязательства держит ресторан</h2>
+    <p class="lede">Бот понимает живую речь и&nbsp;собирает заявку, а&nbsp;решения остаются за&nbsp;людьми и&nbsp;кассой.</p>
+    <ul class="rules">
+      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5.5 12.5 4 4 9-9"/></svg></span><div><h3>Бронь подтверждает человек</h3><p>Бот собирает заявку, статус «подтверждена» ставит хостес или касса. Гость сразу получает ответ ресторана.</p></div></li>
+      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3.5h12v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5-2 1.5z"/><path d="M9 8.5h6M9 12h6"/></svg></span><div><h3>Сумму называет касса</h3><p>Меню ланча, цены и&nbsp;счёт берутся из&nbsp;Saby. Бот не&nbsp;придумывает цифры, заказ оформляется только после «да» гостя.</p></div></li>
+      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 6.5A2 2 0 0 1 6.5 4.5h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-4 3v-3h0.5a2 2 0 0 1-2-2z"/></svg></span><div><h3>Каналы гостя</h3><p>Бот ресторана в&nbsp;Telegram и&nbsp;приложение Astor. Заявки из&nbsp;обоих приходят в&nbsp;рабочий чат персонала.</p></div></li>
+      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.3 2.4 3.5 5.2 3.5 8.5s-1.2 6.1-3.5 8.5c-2.3-2.4-3.5-5.2-3.5-8.5s1.2-6.1 3.5-8.5z"/></svg></span><div><h3>Данные в&nbsp;России</h3><p>Серверы Cloud.ru, языковые модели GigaChat. На&nbsp;табло телефоны гостей скрыты, согласие гость даёт один раз.</p></div></li>
+    </ul>
   </div>
 </section>
 
 <section class="section" id="pricing" aria-labelledby="pricing-title">
-  <p class="chapter">Формат работы</p>
-  <h2 class="section-title" id="pricing-title">Подписка с поддержкой.</h2>
-  <p class="lede">Модель простая: ресторан платит подписку, настройка под его процессы и поддержка входят в неё.</p>
-
-  <div class="pricing-band reveal">
-    <div><strong>30 000 ₽/мес</strong><span>подписка для ресторана</span></div>
-    <div><strong>включено</strong><span>поддержка, мониторинг, обновления</span></div>
-    <div><strong>отдельно</strong><span>сложные интеграции и доработки</span></div>
+  <div class="wrap split">
+    <div>
+      <p class="kicker">Формат работы</p>
+      <h2 class="section-title" id="pricing-title">Подписка с&nbsp;поддержкой</h2>
+      <p class="lede">Ресторан платит подписку, настройка под его процессы и&nbsp;поддержка входят в&nbsp;неё. Расскажите, где у&nbsp;вас теряются заявки гостей: брони по&nbsp;телефону, ланчи в&nbsp;переписке, пожелания между сменами&nbsp;– с&nbsp;этого удобно начинать.</p>
+      <nav class="doc-links" aria-label="Коммерческий пакет">
+        <a href="../docs/offer.html">Коммерческое предложение</a>
+        <a href="../docs/comparison.html">Сравнение с&nbsp;аналогами</a>
+        <a href="../docs/brand.html">Бренд-гайд</a>
+      </nav>
+    </div>
+    <div class="connect">
+      <div class="figures">
+        <div><b>30&nbsp;000&nbsp;₽ в&nbsp;месяц</b><span>подписка для ресторана</span></div>
+        <div><b>включено</b><span>поддержка, мониторинг, обновления</span></div>
+        <div><b>отдельно</b><span>сложные интеграции и&nbsp;доработки</span></div>
+      </div>
+      <a class="btn btn-primary" href="https://t.me/michael_welly" target="_blank" rel="noopener">Написать Михаилу в&nbsp;Telegram</a>
+      <p class="connect-note">или на&nbsp;почту <a href="mailto:michael.poedinenko.mxr@gmail.com?subject=%D0%9F%D0%BE%D0%B4%D0%BA%D0%BB%D1%8E%D1%87%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%BA%20Astor%20Butler">michael.poedinenko.mxr@gmail.com</a></p>
+    </div>
   </div>
-</section>
-
-<section class="section section-final" id="final" aria-labelledby="final-title">
-  <p class="chapter">Разговор о заведении</p>
-  <h2 class="section-title" id="final-title">Расскажите, где у вас теряются заявки гостей.</h2>
-  <p class="lede">Брони по телефону, ланчи в переписке, пожелания между сменами: с этого удобно начинать.</p>
-  <div class="final-cta">
-    <a href="https://t.me/michael_welly" class="btn btn-telegram" target="_blank" rel="noopener">Написать Михаилу в Telegram</a>
-    <button type="button" id="openChatBtn" class="btn btn-quiet">Спросить Astor здесь</button>
-    <a href="#telegram-demo" class="btn btn-quiet">Посмотреть Telegram-демо</a>
-    <a href="../" class="btn btn-quiet">Вернуться к Astor</a>
-    <a href="../astor_concierge/" class="btn btn-quiet">Для событий</a>
-    <a href="../astor_glass/" class="btn btn-quiet">Для команды</a>
-  </div>
-  <nav class="doc-links" aria-label="Коммерческий пакет">
-    <a href="../docs/offer.html">Коммерческое предложение</a>
-    <a href="../docs/comparison.html">Сравнение с аналогами</a>
-    <a href="../docs/brand.html">Бренд-гайд</a>
-  </nav>
-  <footer class="footer">
-    <div class="footer-logo"><svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg><span>ASTOR BUTLER</span></div>
-    <p>Бот ресторана в Telegram · брони, бизнес-ланч, счёт и отзывы</p>
-    <p><a class="footer-link" href="../policy.html">Политика конфиденциальности</a></p>
-  </footer>
 </section>
 
 </main>
 
-<div class="chat-widget" id="chatWidget" aria-hidden="true">
-  <button type="button" class="chat-fab" id="chatFab" aria-label="Открыть чат Astor"><svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg></button>
-  <section class="chat-panel" aria-label="Чат Astor">
-    <div class="chat-head">
-      <div class="chat-head-title"><strong>Astor Butler</strong><span class="chat-status">Вопросы о внедрении</span></div>
-      <button type="button" class="chat-close" id="chatCloseBtn" aria-label="Закрыть чат">×</button>
+<footer class="footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <a class="mark" href="../" aria-label="Astor&nbsp;– на главную">
+        <svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg>
+        <span>Astor</span>
+      </a>
+      <p>Astor Butler&nbsp;– бот ресторана в&nbsp;Telegram: брони, бизнес-ланч, счёт и&nbsp;отзывы.</p>
     </div>
-    <div class="chat-log" id="chatLog" role="log" aria-live="polite" aria-label="Сообщения"></div>
-    <form class="chat-form" id="chatForm">
-      <input id="chatInput" type="text" maxlength="4000" autocomplete="off" aria-label="Сообщение Astor" placeholder="Ваш вопрос о внедрении" required>
-      <button type="submit" aria-label="Отправить сообщение">Отправить</button>
-    </form>
-  </section>
-</div>
-<script src="../js/widget.js" defer></script>
-<script src="../js/main.js" defer></script>
+    <div class="footer-col">
+      <h2>Telegram</h2>
+      <ul>
+        <li><a href="https://t.me/Astorapp" target="_blank" rel="noopener">@Astorapp</a><span>приложение Astor</span></li>
+        <li><a href="https://t.me/aeris_butler_bot" target="_blank" rel="noopener">@aeris_butler_bot</a><span>бот гастробара AERIS</span></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h2>Продукты</h2>
+      <ul>
+        <li><a href="../">Приложение Astor</a></li>
+        <li><a href="../astor_concierge/">Astor Concierge</a></li>
+        <li><a href="../astor_glass/">Astor Glass</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h2>Контакты</h2>
+      <ul>
+        <li><a href="https://t.me/michael_welly" target="_blank" rel="noopener">Михаил в&nbsp;Telegram</a><span>подключение заведения</span></li>
+        <li><a href="mailto:michael.poedinenko.mxr@gmail.com">michael.poedinenko.mxr@gmail.com</a></li>
+        <li><a href="../policy.html">Политика конфиденциальности</a></li>
+      </ul>
+    </div>
+  </div>
+  <p class="wrap footer-copy">© 2026 Astor</p>
+</footer>
+
 </body>
 </html>

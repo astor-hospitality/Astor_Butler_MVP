@@ -22,7 +22,7 @@ function htmlPages(dir) {
 }
 
 const pages = htmlPages(site);
-const stylesheets = ['css/style.css', 'css/story.css', 'css/feed.css', 'css/staff.css', 'docs/docs.css'].map(p => join(site, p));
+const stylesheets = ['css/style.css', 'css/story.css', 'css/product.css', 'css/feed.css', 'css/staff.css', 'docs/docs.css'].map(p => join(site, p));
 
 test('static copy matches design-system/brand/typography.css byte for byte', () => {
   assert.equal(readFileSync(copy, 'utf8'), readFileSync(source, 'utf8'),
