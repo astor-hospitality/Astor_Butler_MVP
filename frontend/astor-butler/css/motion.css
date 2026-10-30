@@ -1,0 +1,44 @@
+/* ============================================================
+   Анимации главной – те же, что на страницах Butler / Concierge / Glass
+   (style.css + js/main.js): первый экран поднимается по очереди,
+   заголовки разделов проявляются по словам, блоки въезжают при прокрутке
+   с лёгким размытием. Работают только с js/motion.js (класс .motion на <html>):
+   без скрипта страница видна целиком.
+   ============================================================ */
+:root { --ease-lux: cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* первый экран: по очереди, как .rise на старых страницах */
+.motion .m-rise {
+  opacity: 0;
+  transform: translateY(18px);
+  animation: m-rise 0.95s var(--ease-lux) forwards;
+  animation-delay: calc(var(--d, 0) * 130ms + 120ms);
+}
+@keyframes m-rise { to { opacity: 1; transform: none; } }
+
+/* заголовки разделов – по словам */
+.motion .title-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.55em);
+  filter: blur(8px);
+  transition: opacity 0.8s var(--ease-lux), transform 0.8s var(--ease-lux), filter 0.8s var(--ease-lux);
+  transition-delay: calc(var(--w, 0) * 90ms);
+}
+.motion .words-in .title-word { opacity: 1; transform: none; filter: blur(0); }
+
+/* блоки при прокрутке – как .reveal */
+.motion .m-reveal {
+  opacity: 0;
+  transform: translateY(42px) scale(0.985);
+  filter: blur(10px);
+  transition: opacity 1.05s var(--ease-lux), transform 1.05s var(--ease-lux), filter 1.05s var(--ease-lux);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+.motion .m-reveal.in { opacity: 1; transform: none; filter: blur(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .motion .m-rise, .motion .title-word, .motion .m-reveal {
+    opacity: 1; transform: none; filter: none; animation: none; transition: none;
+  }
+}

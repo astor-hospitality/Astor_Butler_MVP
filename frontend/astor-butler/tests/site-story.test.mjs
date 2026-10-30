@@ -81,9 +81,10 @@ test('copy speaks to the reader as «вы», with en dashes and no promise that 
   assert.match(body, /Бронь подтверждает ресторан/);
 });
 
-test('the page stays light: no video, no scripts, only small WebP app screens', () => {
+test('the page stays light: no video, one small local animation script, only small WebP app screens', () => {
   assert.doesNotMatch(html, /<video|<iframe|\.mp4|\.webm/i);
-  assert.doesNotMatch(html, /<script/i);
+  const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map(m => m[0]);
+  assert.deepEqual(scripts, ['<script src="js/motion.js" defer>'], 'only the local animation script');
   const imgs = [...html.matchAll(/<img\b[^>]*>/g)].map(m => m[0]);
   assert.ok(imgs.length > 0);
   const files = new Set();
