@@ -2,249 +2,197 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Astor Glass – умные очки для команды заведения</title>
-<meta name="description" content="Astor Glass – приложение для сотрудников ресторана: iPhone и умные очки с микрофоном и камерой. Вопрос голосом или фото стола, ответ текстом и голосом Астора. Продукт проходит пилот.">
-<link rel="canonical" href="https://astor-ai.ru/astor_glass/">
-<meta property="og:title" content="Astor Glass – умные очки для команды заведения">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Astor Glass — умные очки для команды заведения</title>
+<meta name="description" content="Astor Glass - приложение для сотрудников ресторана: iPhone и умные очки с микрофоном и камерой. Вопрос голосом или фото стола, ответ текстом и голосом Астора. Продукт проходит пилот.">
+<meta property="og:title" content="Astor Glass — умные очки для команды заведения">
 <meta property="og:description" content="Вопрос голосом, фото сервировки, служебные сообщения в очки и журнал смены. Подсказка для сотрудника, решения остаются за людьми.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://astor-ai.ru/astor_glass/">
-<meta property="og:image" content="https://astor-ai.ru/assets/og-astor-assist.png">
+<meta property="og:image" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
+<meta property="og:image:secure_url" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Astor Glass – умные очки для команды заведения">
+<meta property="og:image:alt" content="Astor Glass — умные очки для команды заведения">
 <meta property="og:locale" content="ru_RU">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://astor-ai.ru/assets/og-astor-assist.png">
-<meta name="theme-color" content="#0b0f22">
+<meta name="twitter:image" content="https://astor-assist.vercel.app/assets/og-astor-assist.png">
+<meta name="theme-color" content="#0b0a08">
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg?v=20261023-star">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="../css/brand-typography.css">
-<link rel="stylesheet" href="../css/story.css">
-<link rel="stylesheet" href="../css/product.css">
+<link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
 
 <a class="skip-link" href="#main">Перейти к содержанию</a>
+<div class="letterbox letterbox-top" aria-hidden="true"></div>
+<div class="letterbox letterbox-bottom" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="film-progress" aria-hidden="true"><span id="filmProgressBar"></span></div>
+<div class="cursor-key" id="cursorKey" aria-hidden="true">
+  <svg viewBox="0 0 48 48" width="34" height="34"><g fill="none" stroke="var(--gold)" stroke-width="2.2" stroke-linecap="round"><circle cx="15" cy="15" r="7.5"/><path d="M20.5 20.5 L38 38"/><path d="M31 31 L36 26"/><path d="M35 35 L40 30"/></g></svg>
+</div>
+<div class="ripple-layer" id="rippleLayer" aria-hidden="true"></div>
+<button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему" aria-pressed="false">
+  <span class="theme-toggle-icon" aria-hidden="true"></span>
+  <span class="theme-toggle-text">Светлая тема</span>
+</button>
 
-<header class="top">
-  <div class="wrap top-row glass">
-    <a class="mark" href="../" aria-label="Astor&nbsp;– на главную">
+<header class="hero hero-glass" id="hero">
+  <div class="hero-bg" aria-hidden="true"></div>
+  <canvas class="hero-dust" id="heroDust" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <div class="hero-brand rise" style="--d:0" aria-label="Astor Glass">
       <svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg>
-      <span>Astor</span>
-    </a>
-    <nav class="top-nav" aria-label="Разделы страницы">
-      <a href="#what">Что умеет</a>
-      <a href="#how">Как работает</a>
-      <a href="#roles">Кто что видит</a>
-      <a href="#limits">Границы</a>
-    </nav>
-    <a class="btn btn-primary btn-sm" href="https://t.me/Astorapp" target="_blank" rel="noopener">Открыть</a>
+      <span class="hero-brand-name">Astor Glass</span>
+    </div>
+
+    <h1 class="hero-hook">
+      <span class="hook-line rise" style="--d:1">Руки заняты сервисом,</span>
+      <span class="hook-line hook-accent rise" style="--d:2">подсказка - в очках.</span>
+    </h1>
+
+    <p class="hero-sub rise" style="--d:3">Astor Glass - приложение для сотрудников заведения: iPhone и умные очки с микрофоном и камерой. Сотрудник задает вопрос голосом или показывает стол на фото, Astor отвечает текстом и голосом. Продукт проходит пилот.</p>
+
+    <div class="hero-cta rise" style="--d:4">
+      <a href="#how" class="btn btn-quiet">Как работает</a>
+      <a href="#limits" class="btn btn-quiet">Что остается за людьми</a>
+    </div>
   </div>
+  <button class="hero-scroll-hint rise" style="--d:5" id="scrollHint" aria-label="Прокрутить вниз"><span>Для команды</span><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 9l6 6 6-6"/></svg></button>
 </header>
 
 <main id="main">
 
-<section class="hero" aria-labelledby="hero-title">
-  <div class="wrap hero-grid">
-    <div class="hero-copy">
-      <p class="crumbs"><a href="../">Astor</a> / Astor Glass</p>
-      <p class="kicker">Для команды в&nbsp;смене · пилот</p>
-      <h1 class="p-title" id="hero-title">Руки заняты сервисом, подсказка&nbsp;– в&nbsp;очках</h1>
-      <p class="hero-lead">Astor Glass&nbsp;– приложение для сотрудников заведения: iPhone и&nbsp;умные очки с&nbsp;микрофоном и&nbsp;камерой. Сотрудник задаёт вопрос голосом или показывает стол на&nbsp;фото, Astor отвечает текстом и&nbsp;голосом.</p>
-      <div class="cta">
-        <a class="btn btn-primary" href="#how">Как это работает</a>
-        <a class="btn btn-quiet" href="#limits">Что остаётся за&nbsp;людьми</a>
-      </div>
-      <p class="hero-note">Продукт проходит пилот. Публичного релиза в&nbsp;магазинах приложений пока нет.</p>
-    </div>
-
-    <div class="hero-panel">
-      <span class="orb " data-state="idle" aria-hidden="true" style="width: 120px; height: 120px; --lv: 0;"><span class="orb-aura"></span><span class="orb-lift"><svg viewBox="0 0 200 200" class="orb-svg"><defs><radialGradient id="orbGlassh" cx="50%" cy="50%" r="50%"><stop offset="0" stop-opacity="1" style="stop-color: var(--orb-mist);"></stop><stop offset="0.4" stop-opacity="0.7" style="stop-color: var(--orb-deep);"></stop><stop offset="0.74" stop-opacity="0.22" style="stop-color: var(--orb-navy);"></stop><stop offset="1" stop-opacity="0" style="stop-color: var(--orb-navy);"></stop></radialGradient><radialGradient id="orbGlassc" cx="50%" cy="50%" r="50%"><stop offset="0" stop-opacity="1" style="stop-color: var(--orb-white);"></stop><stop offset="0.5" stop-opacity="0.8" style="stop-color: var(--orb-white);"></stop><stop offset="1" stop-opacity="0" style="stop-color: var(--orb-mist);"></stop></radialGradient><linearGradient id="orbGlassg0" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-opacity="1" style="stop-color: var(--orb-sky);"></stop><stop offset="0.55" stop-opacity="1" style="stop-color: var(--orb-ink);"></stop><stop offset="1" stop-opacity="0.2" style="stop-color: var(--orb-sky);"></stop></linearGradient><linearGradient id="orbGlassg1" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-opacity="1" style="stop-color: var(--orb-indigo);"></stop><stop offset="0.55" stop-opacity="1" style="stop-color: var(--orb-navy);"></stop><stop offset="1" stop-opacity="0.2" style="stop-color: var(--orb-indigo);"></stop></linearGradient><linearGradient id="orbGlassg2" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-opacity="1" style="stop-color: var(--orb-mist);"></stop><stop offset="0.55" stop-opacity="1" style="stop-color: var(--orb-berry);"></stop><stop offset="1" stop-opacity="0.2" style="stop-color: var(--orb-mist);"></stop></linearGradient><linearGradient id="orbGlassg3" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-opacity="1" style="stop-color: var(--orb-blue);"></stop><stop offset="0.55" stop-opacity="1" style="stop-color: var(--orb-night);"></stop><stop offset="1" stop-opacity="0.2" style="stop-color: var(--orb-blue);"></stop></linearGradient><filter id="orbGlasssoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.8"></feGaussianBlur></filter><filter id="orbGlassglow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="5"></feGaussianBlur></filter></defs><circle cx="100" cy="100" r="96" fill="url(#orbGlassh)"></circle></svg><span class="orb-lay" data-i="0"><span class="orb-boost"><span class="orb-rush"><span class="orb-morph"><svg viewBox="0 0 200 200" class="orb-svg" style="transform: rotate(0deg);"><g filter="url(#orbGlasssoft)"><ellipse cx="100" cy="100" rx="70" ry="27" fill="none" stroke="url(#orbGlassg0)" stroke-width="20" stroke-linecap="round" stroke-dasharray="223.9 319.9" stroke-dashoffset="0" transform="rotate(0 100 100)"></ellipse><ellipse cx="100" cy="100" rx="64" ry="25" fill="none" stroke="url(#orbGlassg1)" stroke-width="17" stroke-linecap="round" stroke-dasharray="181.8 293.2" stroke-dashoffset="73.3" transform="rotate(58 100 100)"></ellipse><ellipse cx="100" cy="100" rx="60" ry="22" fill="none" stroke="url(#orbGlassg2)" stroke-width="14" stroke-linecap="round" stroke-dasharray="157.5 271.6" stroke-dashoffset="150.9" transform="rotate(118 100 100)"></ellipse><ellipse cx="100" cy="100" rx="74" ry="31" fill="none" stroke="url(#orbGlassg3)" stroke-width="12" stroke-linecap="round" stroke-dasharray="171.9 343.8" stroke-dashoffset="286.5" transform="rotate(160 100 100)"></ellipse></g></svg></span></span></span></span><span class="orb-lay" data-i="1"><span class="orb-boost"><span class="orb-rush"><span class="orb-morph"><svg viewBox="0 0 200 200" class="orb-svg" style="transform: rotate(40deg);"><g filter="url(#orbGlasssoft)"><ellipse cx="100" cy="100" rx="74.2" ry="25.4" fill="none" stroke="url(#orbGlassg0)" stroke-width="20" stroke-linecap="round" stroke-dasharray="232.4 331.9" stroke-dashoffset="73.8" transform="rotate(-24 100 100)"></ellipse><ellipse cx="100" cy="100" rx="67.8" ry="23.5" fill="none" stroke="url(#orbGlassg1)" stroke-width="17" stroke-linecap="round" stroke-dasharray="188.6 304.1" stroke-dashoffset="177.4" transform="rotate(96 100 100)"></ellipse><ellipse cx="100" cy="100" rx="63.6" ry="20.7" fill="none" stroke="url(#orbGlassg2)" stroke-width="14" stroke-linecap="round" stroke-dasharray="163.7 282.2" stroke-dashoffset="0" transform="rotate(66 100 100)"></ellipse><ellipse cx="100" cy="100" rx="78.4" ry="29.1" fill="none" stroke="url(#orbGlassg3)" stroke-width="12" stroke-linecap="round" stroke-dasharray="178 356" stroke-dashoffset="138.4" transform="rotate(226 100 100)"></ellipse></g></svg></span></span></span></span><span class="orb-lay" data-i="2"><span class="orb-boost"><span class="orb-rush"><span class="orb-morph"><svg viewBox="0 0 200 200" class="orb-svg" style="transform: rotate(130deg);"><g filter="url(#orbGlasssoft)"><ellipse cx="100" cy="100" rx="66.5" ry="28.4" fill="none" stroke="url(#orbGlassg0)" stroke-width="20" stroke-linecap="round" stroke-dasharray="217.1 310.2" stroke-dashoffset="146.5" transform="rotate(-51 100 100)"></ellipse><ellipse cx="100" cy="100" rx="60.8" ry="26.2" fill="none" stroke="url(#orbGlassg1)" stroke-width="17" stroke-linecap="round" stroke-dasharray="176.3 284.4" stroke-dashoffset="272.5" transform="rotate(138.8 100 100)"></ellipse><ellipse cx="100" cy="100" rx="57" ry="23.1" fill="none" stroke="url(#orbGlassg2)" stroke-width="14" stroke-linecap="round" stroke-dasharray="152.6 263" stroke-dashoffset="131.5" transform="rotate(7.5 100 100)"></ellipse><ellipse cx="100" cy="100" rx="70.3" ry="32.6" fill="none" stroke="url(#orbGlassg3)" stroke-width="12" stroke-linecap="round" stroke-dasharray="167 334.1" stroke-dashoffset="4.6" transform="rotate(300.2 100 100)"></ellipse></g></svg></span></span></span></span><svg viewBox="0 0 200 200" class="orb-svg orb-star"><circle cx="100" cy="100" r="34" fill="url(#orbGlassc)"></circle><path d="M100 60 Q104.28 95.72 140 100 Q104.28 104.28 100 140 Q95.72 104.28 60 100 Q95.72 95.72 100 60Z" opacity=".9" filter="url(#orbGlassglow)" style="fill: var(--orb-sky);"></path><path d="M100 66 Q103.638 96.362 134 100 Q103.638 103.638 100 134 Q96.362 103.638 66 100 Q96.362 96.362 100 66Z" style="fill: var(--orb-white);"></path></svg><span class="orb-core"></span></span></span>
-      <div class="panel" role="img" aria-label="Вопрос сотрудника и ответ Astor в очках: что входит в бизнес-ланч на двоих">
-        <p class="panel-head"><span class="astor-dot"></span><span><b>Astor в&nbsp;очках</b><br>ответ текстом и&nbsp;голосом</span></p>
-        <div class="msgs">
-          <p class="msg msg-in">Что входит в&nbsp;бизнес-ланч на&nbsp;двоих?</p>
-          <p class="msg msg-out">Суп дня, горячее на&nbsp;выбор и&nbsp;напиток. Подача&nbsp;– после проверки сервировки.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
 <section class="section" id="what" aria-labelledby="what-title">
-  <div class="wrap">
-    <p class="kicker">Для команды в&nbsp;смене</p>
-    <h2 class="section-title" id="what-title">Официант спрашивает, не&nbsp;отходя от&nbsp;стола</h2>
-    <p class="lede">В&nbsp;смене нет времени открывать телефон и&nbsp;искать ответ. Astor Glass отвечает в&nbsp;очки по&nbsp;справочным материалам, загруженным для заведения, пока руки заняты.</p>
-    <ul class="cards c3">
-      <li class="get">
-        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/></svg></span>
-        <h3>Вопрос голосом</h3>
-        <p>Ответ&nbsp;– голосом Астора и&nbsp;текстом в&nbsp;очках.</p>
-      </li>
-      <li class="get">
-        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.3"/></svg></span>
-        <h3>Фото стола</h3>
-        <p>Проверка сервировки по&nbsp;шагам.</p>
-      </li>
-      <li class="get">
-        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 6.5A2 2 0 0 1 6.5 4.5h11a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-4 3v-3h0.5a2 2 0 0 1-2-2z"/></svg></span>
-        <h3>Служебные сообщения</h3>
-        <p>Сообщения заведения приходят в&nbsp;очки.</p>
-      </li>
-      <li class="get">
-        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 4.5h10.5L19 8v11.5H5z"/><path d="M8.5 11h7M8.5 14.5h7"/></svg></span>
-        <h3>Справочные материалы</h3>
-        <p>Загружаются отдельно для каждого заведения.</p>
-      </li>
-      <li class="get">
-        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8.5"/></svg></span>
-        <h3>Журнал смены</h3>
-        <p>Отчёт для менеджера после смены.</p>
-      </li>
-      <li class="get">
-        <span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5.5 12.5 4 4 9-9"/></svg></span>
-        <h3>Решения за&nbsp;людьми</h3>
-        <p>Подсказка не&nbsp;подтверждает поручения и&nbsp;не&nbsp;меняет бронь.</p>
-      </li>
-    </ul>
+  <p class="chapter">Для команды в смене</p>
+  <h2 class="section-title" id="what-title">Официант спрашивает, не отходя от стола.</h2>
+  <p class="lede">В смене нет времени открывать телефон и искать ответ. Astor Glass отвечает в очки по справочным материалам, загруженным для заведения, пока руки заняты.</p>
+
+  <div class="what-grid">
+    <div class="what-item reveal"><span class="what-num">01</span><p>Вопрос голосом - ответ голосом Астора</p></div>
+    <div class="what-item reveal"><span class="what-num">02</span><p>Фото стола и проверка сервировки по шагам</p></div>
+    <div class="what-item reveal"><span class="what-num">03</span><p>Служебные сообщения заведения - в очки</p></div>
+    <div class="what-item reveal"><span class="what-num">04</span><p>Справочные материалы, загруженные для заведения</p></div>
+    <div class="what-item reveal"><span class="what-num">05</span><p>Журнал смены и отчет для менеджера</p></div>
   </div>
 </section>
 
-<section class="section section-alt" id="how" aria-labelledby="how-title">
-  <div class="wrap">
-    <p class="kicker">Как работает</p>
-    <h2 class="section-title" id="how-title">Кнопка, вопрос, ответ. Без постоянного прослушивания</h2>
-    <p class="lede">Микрофон и&nbsp;камера включаются только действием сотрудника. Один вопрос&nbsp;– один ответ, одна фотография&nbsp;– одна проверка.</p>
-    <ol class="steps c3">
-      <li><div><h3>Сотрудник включает</h3><p>Нажатие на&nbsp;очках. Пока его нет, Astor ничего не&nbsp;слушает и&nbsp;не&nbsp;снимает.</p></div></li>
-      <li><div><h3>Вопрос становится текстом</h3><p>Голос распознаётся, Astor отвечает по&nbsp;справочным материалам заведения. Запись хранится в&nbsp;закрытом хранилище не&nbsp;дольше суток.</p></div></li>
-      <li><div><h3>Ответ в&nbsp;очки</h3><p>Текстом и&nbsp;голосом Астора&nbsp;– одним премиальным голосом, выбранным для заведения.</p></div></li>
-      <li><div><h3>Фото по&nbsp;команде</h3><p>Снимок стола проверяется по&nbsp;шагам сервировки: подготовка стола, приборы и&nbsp;бокалы, вода и&nbsp;меню, финальная проверка.</p></div></li>
-      <li><div><h3>Сообщения заведения</h3><p>Менеджер отправляет короткое сообщение, телефон читает его в&nbsp;очки в&nbsp;паузе, когда сотрудник свободен.</p></div></li>
-      <li><div><h3>Журнал смены</h3><p>После смены менеджер видит, что ответил Astor, где была ошибка и&nbsp;сколько это заняло.</p></div></li>
-    </ol>
+<section class="section" id="how" aria-labelledby="how-title">
+  <p class="chapter">Как работает</p>
+  <h2 class="section-title" id="how-title">Кнопка, вопрос, ответ. Без постоянного прослушивания.</h2>
+  <p class="lede">Микрофон и камера включаются только действием сотрудника. Один вопрос - один ответ, одна фотография - одна проверка.</p>
+
+  <div class="timeline-list">
+    <div class="timeline-item reveal"><strong>1. Сотрудник включает</strong><span>нажатие на очках; пока его нет, Astor ничего не слушает и не снимает</span></div>
+    <div class="timeline-item reveal"><strong>2. Вопрос становится текстом</strong><span>голос распознается, Astor отвечает по справочным материалам заведения; запись хранится в закрытом хранилище не дольше суток</span></div>
+    <div class="timeline-item reveal"><strong>3. Ответ в очки</strong><span>текстом и голосом Астора - одним премиальным голосом, выбранным для заведения</span></div>
+    <div class="timeline-item reveal"><strong>4. Фото по команде</strong><span>снимок стола проверяется по шагам сервировки: подготовка стола, приборы и бокалы, вода и меню, финальная проверка</span></div>
+    <div class="timeline-item reveal"><strong>5. Сообщения заведения</strong><span>менеджер отправляет короткое сообщение, телефон читает его в очки в паузе, когда сотрудник свободен</span></div>
+    <div class="timeline-item reveal"><strong>6. Журнал смены</strong><span>после смены менеджер видит, что ответил Astor, где была ошибка и сколько заняло</span></div>
   </div>
 </section>
 
-<section class="section" id="roles" aria-labelledby="roles-title">
-  <div class="wrap">
-    <p class="kicker">Рабочий контур</p>
-    <h2 class="section-title" id="roles-title">Сотрудник, менеджер и&nbsp;гость видят своё</h2>
-    <ul class="roles">
-      <li class="role">
-        <h3>Сотрудник</h3>
-        <p class="role-sub">слышит ответ в&nbsp;очках</p>
-        <div class="panel">
-          <div class="msgs">
-            <p class="msg msg-in">Что входит в&nbsp;бизнес-ланч на&nbsp;двоих?</p>
-            <p class="msg msg-out">Суп дня, горячее на&nbsp;выбор и&nbsp;напиток.</p>
-          </div>
+<section class="section section-roles" aria-labelledby="roles-title">
+  <p class="chapter">Рабочий контур</p>
+  <h2 class="section-title" id="roles-title">Сотрудник, менеджер и гость видят свое.</h2>
+
+  <div class="roles-grid">
+    <div class="role-card reveal">
+      <h3>Сотрудник</h3>
+      <p class="role-sub">слышит ответ в очках</p>
+      <div class="role-demo">
+        <div class="bubble guest small">Что входит в бизнес-ланч на двоих?</div>
+        <div class="bubble butler-msg small">Суп дня, горячее на выбор и напиток. Подача - после проверки сервировки.</div>
+      </div>
+    </div>
+
+    <div class="role-card reveal role-card-hostess">
+      <h3>Менеджер</h3>
+      <p class="role-sub">видит журнал смены</p>
+      <div class="hostess-card" role="img" aria-label="Журнал смены: шаги сервировки, вопросы и ответы">
+        <div class="hc-head">Смена · бизнес-ланч на двоих</div>
+        <div class="hc-row"><span>Подготовка стола</span><strong>готово</strong></div>
+        <div class="hc-row"><span>Приборы и бокалы</span><strong>фото проверено</strong></div>
+        <div class="hc-row"><span>Вода и меню</span><strong>готово</strong></div>
+        <div class="hc-msgs">
+          <div class="hc-msg">ответ Astor: уточните у кухни, подсказка - не подтверждение</div>
+          <div class="hc-msg">ошибок за смену: нет</div>
         </div>
-      </li>
-      <li class="role">
-        <h3>Менеджер</h3>
-        <p class="role-sub">видит журнал смены</p>
-        <div class="panel" role="img" aria-label="Журнал смены: шаги сервировки, ответы Astor и ошибки за смену">
-          <p class="panel-head"><b>Смена</b>&nbsp;· бизнес-ланч на&nbsp;двоих</p>
-          <div class="staff-rows">
-            <div><span>Подготовка стола</span><b>готово</b></div>
-            <div><span>Приборы и&nbsp;бокалы</span><b>фото проверено</b></div>
-            <div><span>Вода и&nbsp;меню</span><b>готово</b></div>
-          </div>
-          <ul class="staff-notes">
-            <li>Ответ Astor: уточните у&nbsp;кухни, подсказка&nbsp;– не&nbsp;подтверждение</li>
-            <li>Ошибок за&nbsp;смену: нет</li>
-          </ul>
-        </div>
-      </li>
-      <li class="role">
-        <h3>Гость</h3>
-        <p class="role-sub">не&nbsp;замечает технологию</p>
-        <div class="panel">
-          <ul class="dots">
-            <li class="ok">Официант остаётся рядом и&nbsp;отвечает сразу</li>
-            <li>Камера и&nbsp;микрофон не&nbsp;направлены на&nbsp;гостя без необходимости</li>
-            <li>Бронь и&nbsp;заказ по-прежнему подтверждают люди</li>
-          </ul>
-        </div>
-      </li>
-    </ul>
+        <div class="hc-actions"><span class="hc-btn hc-ok">Финальная проверка</span><span class="hc-btn hc-no">Отчет смены</span></div>
+      </div>
+    </div>
+
+    <div class="role-card reveal">
+      <h3>Гость</h3>
+      <p class="role-sub">не замечает технологию</p>
+      <div class="role-demo manager-demo">
+        <div class="mgr-row"><span class="mgr-dot ok"></span>Официант остается рядом и отвечает сразу</div>
+        <div class="mgr-row"><span class="mgr-dot"></span>Камера и микрофон не направлены на гостя без необходимости</div>
+        <div class="mgr-row"><span class="mgr-dot"></span>Бронь и заказ по-прежнему подтверждают люди</div>
+      </div>
+    </div>
   </div>
 </section>
 
-<section class="section section-alt" id="limits" aria-labelledby="limits-title">
-  <div class="wrap">
-    <p class="kicker">Границы</p>
-    <h2 class="section-title" id="limits-title">Astor Glass подсказывает, но&nbsp;не&nbsp;решает</h2>
-    <p class="lede">Подсказка в&nbsp;очках&nbsp;– информационная. Она не&nbsp;подтверждает выполнение поручения, не&nbsp;меняет бронь и&nbsp;не&nbsp;отправляет сообщение гостю. Это делают люди.</p>
-    <ul class="rules">
-      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v2.5"/></svg></span><div><h3>Нет постоянного прослушивания</h3><p>Микрофон включается только по&nbsp;нажатию сотрудника. Запись превращается в&nbsp;текст и&nbsp;хранится в&nbsp;закрытом хранилище не&nbsp;дольше суток.</p></div></li>
-      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.5-2h6l1.5 2h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.3"/></svg></span><div><h3>Фото и&nbsp;запись&nbsp;– не&nbsp;дольше суток</h3><p>Снимок и&nbsp;запись вопроса делаются только по&nbsp;команде сотрудника, обрабатываются по&nbsp;его задаче и&nbsp;хранятся в&nbsp;закрытом хранилище не&nbsp;дольше суток.</p></div></li>
-      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5.5 12.5 4 4 9-9"/></svg></span><div><h3>Ответ без подтверждения</h3><p>Astor не&nbsp;ставит отметку о&nbsp;выполнении и&nbsp;не&nbsp;меняет статус брони. Поручения подтверждает сам сотрудник, бронь&nbsp;– хостес.</p></div></li>
-      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="8.5" cy="12" r="4"/><path d="M12.5 12h8M17.5 12v3M20.5 12v2.5"/></svg></span><div><h3>Ключи только на&nbsp;сервере</h3><p>Доступ к&nbsp;облачным моделям и&nbsp;хранилищу живёт на&nbsp;сервере заведения. В&nbsp;приложение и&nbsp;чаты ключи не&nbsp;попадают.</p></div></li>
-      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 4.5h10.5L19 8v11.5H5z"/><path d="M8.5 11h7M8.5 14.5h7"/></svg></span><div><h3>Журнал без лишнего</h3><p>В&nbsp;журнале смены&nbsp;– ответы Astor, шаги, время и&nbsp;задержки. Сырого аудио, расшифровок вопросов и&nbsp;ключей в&nbsp;нём нет.</p></div></li>
-      <li><span class="tile"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/></svg></span><div><h3>Отдельно от&nbsp;броней гостей</h3><p>Очки&nbsp;– отдельный контур для сотрудников: справочные материалы загружаются для заведения отдельно, а&nbsp;брони гостей идут своим путём и&nbsp;подтверждаются хостес.</p></div></li>
-    </ul>
+<section class="section" id="limits" aria-labelledby="limits-title">
+  <p class="chapter">Границы</p>
+  <h2 class="section-title" id="limits-title">Astor Glass подсказывает, но не решает.</h2>
+  <p class="lede">Подсказка в очках - информационная. Она не подтверждает выполнение поручения, не меняет бронь и не отправляет сообщение гостю. Это делают люди.</p>
+
+  <div class="features-list compact-features">
+    <div class="feature reveal">
+      <h3>Нет постоянного прослушивания</h3>
+      <p>Микрофон включается только по нажатию сотрудника. Запись превращается в текст и хранится в закрытом хранилище не дольше суток.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Фото и запись - не дольше суток</h3>
+      <p>Снимок и запись вопроса делаются только по команде сотрудника, обрабатываются по его задаче и хранятся в закрытом хранилище не дольше суток.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Ответ без подтверждения</h3>
+      <p>Astor не ставит отметку о выполнении и не меняет статус брони. Поручения подтверждает сам сотрудник, бронь - хостес.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Ключи только на сервере</h3>
+      <p>Доступ к облачным моделям и хранилищу живет на сервере заведения. В приложение и чаты ключи не попадают.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Журнал без лишнего</h3>
+      <p>В журнале смены - ответы Astor, шаги, время и задержки. Сырого аудио, расшифровок вопросов и ключей в нем нет.</p>
+    </div>
+    <div class="feature reveal">
+      <h3>Рядом с Astor Butler</h3>
+      <p>Очки - отдельный контур для сотрудников: справочные материалы загружаются для заведения отдельно, а брони и сценарии гостей остаются в Astor Butler.</p>
+    </div>
   </div>
 </section>
 
 <section class="section" id="status" aria-labelledby="status-title">
-  <div class="wrap split">
-    <div>
-      <p class="kicker">Статус</p>
-      <h2 class="section-title" id="status-title">Пилот</h2>
-      <p class="lede">Astor Glass проходит пилот. Публичного релиза в&nbsp;магазинах приложений пока нет: приложение ставится на&nbsp;iPhone команды заведения в&nbsp;рамках пилота. Подробно о&nbsp;данных, голосе и&nbsp;камере&nbsp;– в&nbsp;<a class="text-link" href="../policy.html">политике конфиденциальности</a>.</p>
-    </div>
-    <div class="connect">
-      <h3>Расскажите, какие вопросы сотрудники задают чаще всего</h3>
-      <p class="connect-lead">Состав блюда, аллергены, правила подачи, кто за&nbsp;что отвечает в&nbsp;смене&nbsp;– с&nbsp;этого удобно начинать справочные материалы для очков.</p>
-      <a class="btn btn-primary" href="https://t.me/michael_welly" target="_blank" rel="noopener">Написать Михаилу в&nbsp;Telegram</a>
-      <p class="connect-note">или на&nbsp;почту <a href="mailto:michael.poedinenko.mxr@gmail.com">michael.poedinenko.mxr@gmail.com</a></p>
-    </div>
+  <p class="chapter">Статус</p>
+  <h2 class="section-title" id="status-title">Пилот.</h2>
+  <p class="lede">Astor Glass проходит пилот. Публичного релиза в магазинах приложений пока нет: приложение ставится на iPhone команды заведения в рамках пилота. Подробно о данных, голосе и камере - в <a class="text-link" href="../policy.html">политике конфиденциальности</a>.</p>
+</section>
+
+<section class="section section-final" id="final" aria-labelledby="final-title">
+  <p class="chapter">Разговор о команде</p>
+  <h2 class="section-title" id="final-title">Расскажите, какие вопросы сотрудники задают чаще всего.</h2>
+  <p class="lede">Состав блюда, аллергены, правила подачи, кто за что отвечает в смене - с этого удобно начинать справочные материалы для очков.</p>
+  <div class="final-cta">
+    <a href="../" class="btn btn-quiet">Вернуться к Astor</a>
+    <a href="../astor_butler/" class="btn btn-quiet">Для заведений</a>
+    <a href="../astor_concierge/" class="btn btn-quiet">Для событий</a>
   </div>
+  <footer class="footer">
+    <div class="footer-logo"><svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg><span>ASTOR GLASS</span></div>
+    <p>Умные очки для команды заведения · пилот</p>
+    <p><a class="footer-link" href="../policy.html">Политика конфиденциальности</a></p>
+  </footer>
 </section>
 
 </main>
 
-<footer class="footer">
-  <div class="wrap footer-grid">
-    <div class="footer-brand">
-      <a class="mark" href="../" aria-label="Astor&nbsp;– на главную">
-        <svg class="astor-mark" viewBox="116 113 400 400" fill="currentColor" aria-hidden="true" focusable="false"><path d="M320 140L449 470H383L301 219Z"/><path d="M319 143L173 470H183L308 196Z"/><path d="M128 486H238V481C214 481 194 477 186 462H175C168 477 150 481 128 481Z"/><path d="M365 486H505V481C479 481 456 476 447 460H381C380 474 373 481 365 481Z"/><path d="M303 299Q309 349 350 355Q309 361 303 411Q297 361 256 355Q297 349 303 299Z"/></svg>
-        <span>Astor</span>
-      </a>
-      <p>Astor Glass&nbsp;– умные очки для команды заведения. Пилот.</p>
-    </div>
-    <div class="footer-col">
-      <h2>Telegram</h2>
-      <ul>
-        <li><a href="https://t.me/Astorapp" target="_blank" rel="noopener">@Astorapp</a><span>приложение Astor</span></li>
-        <li><a href="https://t.me/aeris_butler_bot" target="_blank" rel="noopener">@aeris_butler_bot</a><span>бот гастробара AERIS</span></li>
-      </ul>
-    </div>
-    <div class="footer-col">
-      <h2>Продукты</h2>
-      <ul>
-        <li><a href="../">Приложение Astor</a></li>
-        <li><a href="../astor_butler/">Astor Butler</a></li>
-        <li><a href="../astor_concierge/">Astor Concierge</a></li>
-      </ul>
-    </div>
-    <div class="footer-col">
-      <h2>Контакты</h2>
-      <ul>
-        <li><a href="https://t.me/michael_welly" target="_blank" rel="noopener">Михаил в&nbsp;Telegram</a><span>пилот и&nbsp;подключение</span></li>
-        <li><a href="mailto:michael.poedinenko.mxr@gmail.com">michael.poedinenko.mxr@gmail.com</a></li>
-        <li><a href="../policy.html">Политика конфиденциальности</a></li>
-      </ul>
-    </div>
-  </div>
-  <p class="wrap footer-copy">© 2026 Astor</p>
-</footer>
-
+<script src="../js/main.js" defer></script>
 </body>
 </html>

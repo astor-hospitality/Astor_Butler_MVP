@@ -12,7 +12,7 @@ const marksOf = html => [...html.matchAll(/<svg class="astor-mark"[^>]*>([\s\S]*
 const master = pathsOf(read('assets/astor-mark.svg'));
 const withMark = {
   'index.html': 2, // шапка и подвал: экраны на титульной – снимки, без нарисованных чатов
-  'astor_butler/index.html': 2, // шапка и подвал: чат-виджет на странице больше нет, демо – живой бот в Telegram
+  'astor_butler/index.html': 3, // шапка, подвал, кнопка чата
   'astor_concierge/index.html': 2,
   'astor_glass/index.html': 2,
   'board/index.html': 2, // вход и шапка табло
