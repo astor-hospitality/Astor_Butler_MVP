@@ -2,22 +2,27 @@
    Astor – титульная страница (index.html): одна история продукта.
    Сначала телефон 375 px, затем планшет и десктоп.
    Шрифт, веса и трекинги – из css/brand-typography.css (--brand-*),
-   цвета – те же, что у продуктовых страниц в css/style.css (графит + серебро).
-   Без JS, без картинок: экраны нарисованы разметкой.
+   цвета – как в приложении Astor в Telegram: ночной синий, кремовые кнопки, стекло.
+   Без JS. Экраны приложения – настоящие снимки, чаты ботов нарисованы разметкой.
    ============================================================ */
 
 :root {
-  --ink: #080a0d;
-  --ink-2: #10141a;
-  --ink-3: #171d24;
-  --paper: #f4f7f9;
-  --paper-dim: #a8b0b8;
-  --silver: #9fa9b3;
-  --metal: #c8d0d8;
-  --line: rgba(226, 232, 238, 0.14);
-  --surface: rgba(244, 247, 249, 0.045);
-  --surface-strong: rgba(244, 247, 249, 0.09);
-  --guest: rgba(42, 171, 238, 0.2);
+  /* цвета приложения Astor в Telegram, тёмная тема (astor/frontend globals.css) */
+  --ink: #0b0f22;
+  --ink-2: #10152e;
+  --ink-3: #161c38;
+  --paper: #f2f3fa;
+  --paper-dim: #aeb4cf;
+  --silver: #9aa1c0;
+  --metal: #e8e1d4;
+  --cream: #e8e1d4;
+  --navy: #131936;
+  --line: rgba(242, 243, 250, 0.1);
+  --surface: rgba(30, 38, 80, 0.42);
+  --surface-strong: rgba(46, 58, 112, 0.55);
+  --glass-edge: rgba(255, 255, 255, 0.13);
+  --guest: rgba(111, 130, 200, 0.32);
+  --glow: rgba(61, 79, 140, 0.55);
   --font-body: var(--brand-font-family);
   --font-display: var(--brand-font-heading);
   --wrap: 1120px;
@@ -95,10 +100,10 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
   text-decoration: none; text-align: center;
   transition: background 0.25s var(--ease), border-color 0.25s var(--ease), transform 0.25s var(--ease);
 }
-.btn-primary { background: var(--paper); color: var(--ink); border-color: var(--paper); }
-.btn-primary:hover { background: var(--metal); border-color: var(--metal); }
-.btn-quiet { background: var(--surface); color: var(--paper); border-color: rgba(244, 247, 249, 0.22); }
-.btn-quiet:hover { background: var(--surface-strong); border-color: rgba(244, 247, 249, 0.36); }
+.btn-primary { background: var(--cream); color: var(--navy); border-color: var(--cream); }
+.btn-primary:hover { background: #f4efe6; border-color: #f4efe6; }
+.btn-quiet { background: var(--surface); color: var(--paper); border-color: var(--glass-edge); backdrop-filter: blur(14px); }
+.btn-quiet:hover { background: var(--surface-strong); border-color: rgba(255, 255, 255, 0.26); }
 
 /* ---------- шапка ---------- */
 .top-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 60px; }
@@ -117,7 +122,10 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 
 /* ---------- первый экран ---------- */
 /* Ширины текста в em, а не в ch: ch зависит от шрифта, и при подмене запасного шрифта на Inter строки переносились бы иначе (сдвиг макета). */
-.hero { padding: 28px 0 56px; }
+.hero {
+  padding: 28px 0 56px;
+  background: radial-gradient(70% 60% at 78% 38%, #1e2a55 0%, rgba(13, 18, 48, 0.6) 45%, transparent 75%);
+}
 .hero-grid { display: grid; gap: 40px; }
 
 .hero h1 {
@@ -147,11 +155,11 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 .avatar {
   display: inline-grid; place-items: center; flex: none;
   width: 32px; height: 32px; border-radius: 50%;
-  background: radial-gradient(circle at 38% 32%, #5c6670, var(--ink));
-  border: 1px solid rgba(200, 208, 216, 0.4);
+  background: radial-gradient(circle at 38% 32%, #6f82c8, var(--navy));
+  border: 1px solid rgba(201, 211, 245, 0.4);
   font-size: 0.8rem; font-weight: var(--brand-weight-semibold);
 }
-.avatar-group { background: radial-gradient(circle at 38% 32%, #3b424b, var(--ink)); font-size: 0.68rem; }
+.avatar-group { background: radial-gradient(circle at 38% 32%, #3d4f8c, var(--navy)); font-size: 0.68rem; }
 .avatar .astor-mark { width: 20px; height: 20px; }
 .phone-title { display: grid; font-weight: var(--brand-weight-semibold); line-height: 1.25; }
 .phone-title small { font-size: 0.72rem; font-weight: var(--brand-weight-regular); color: var(--silver); }
@@ -200,7 +208,6 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 .key.on { background: rgba(244, 247, 249, 0.2); box-shadow: inset 0 0 0 1px rgba(244, 247, 249, 0.4); }
 .sys { align-self: center; font-size: 0.72rem; color: var(--silver); }
 
-.hero-shot .phone { max-width: 340px; }
 
 /* ---------- как это работает ---------- */
 .steps { display: grid; gap: 56px; margin-top: 36px; }
@@ -213,30 +220,31 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 }
 .step-num span {
   display: inline-grid; place-items: center; width: 28px; height: 28px;
-  border-radius: 50%; border: 1px solid rgba(200, 208, 216, 0.45);
+  border-radius: 50%; border: 1px solid rgba(201, 211, 245, 0.45);
   color: var(--paper); font-weight: var(--brand-weight-semibold); letter-spacing: 0;
 }
 
-/* шаг 0: Astor Mini App, экран приложения нарисован разметкой */
+/* настоящие экраны приложения Astor (скриншоты 600×1298) */
+.shot {
+  display: block; width: 100%; max-width: 300px; height: auto; margin: 0 auto;
+  border: 1px solid var(--line); border-radius: 34px; background: var(--ink-2);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.hero-shot .shot { max-width: 320px; }
 .step-link { margin-top: 18px; }
 .step-entry .step-text p:not(.step-num) { color: var(--paper-dim); max-width: 30em; }
-.app-body { display: grid; gap: 10px; padding: 14px 4px 2px; }
-.app-q { font-family: var(--font-display); font-weight: var(--brand-heading-weight); font-size: 1.05rem; letter-spacing: var(--brand-subhead-tracking); }
-.app-field {
-  padding: 10px 12px; border-radius: 12px;
-  border: 1px solid var(--line); background: rgba(244, 247, 249, 0.05); color: var(--paper-dim);
+
+.screens {
+  display: flex; gap: 20px; margin-top: 12px;
+  padding: 24px max(var(--gutter), calc((100vw - var(--wrap)) / 2 + var(--gutter))) 12px;
+  overflow-x: auto; scroll-snap-type: x mandatory;
+  scroll-padding-inline: max(var(--gutter), calc((100vw - var(--wrap)) / 2 + var(--gutter)));
+  scrollbar-width: thin; scrollbar-color: rgba(244, 247, 249, 0.25) transparent;
 }
-.app-venue {
-  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
-  padding: 10px 12px; border-radius: 12px; background: var(--surface-strong);
-}
-.app-venue span { font-size: 0.72rem; color: var(--silver); }
-.app-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.app-tiles li {
-  padding: 10px; border-radius: 10px; background: rgba(244, 247, 249, 0.07);
-  font-size: 0.78rem; font-weight: var(--brand-weight-medium);
-}
-.app-tiles .on { background: var(--guest); }
+.screens li { flex: 0 0 min(236px, 64vw); scroll-snap-align: start; }
+.screens .shot { max-width: none; border-radius: 30px; }
+.screens h3 { margin-top: 16px; font-size: 1.1rem; letter-spacing: var(--brand-subhead-tracking); }
+.screens p { margin-top: 4px; font-size: 0.92rem; color: var(--paper-dim); }
 
 /* ---------- для ресторанов ---------- */
 .venue-grid { display: grid; gap: 32px; }
@@ -254,8 +262,8 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 
 .connect {
   padding: 24px 20px; border-radius: var(--radius);
-  border: 1px solid rgba(200, 208, 216, 0.3);
-  background: linear-gradient(160deg, rgba(200, 208, 216, 0.1), transparent 70%);
+  border: 1px solid rgba(201, 211, 245, 0.28);
+  background: linear-gradient(160deg, rgba(111, 130, 200, 0.16), transparent 70%);
 }
 .connect h3 { font-size: 1.25rem; margin-bottom: 12px; }
 .connect-steps { counter-reset: c; display: grid; gap: 8px; margin-bottom: 22px; color: var(--paper-dim); }
@@ -323,12 +331,12 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
   .section { padding: 96px 0; }
   .hero { padding: 72px 0 96px; }
   .hero-grid { grid-template-columns: 1.15fr 0.85fr; align-items: center; gap: 56px; }
-  .hero-shot .phone { margin-right: 0; }
+  .hero-shot .shot { margin-right: 0; }
   .steps { grid-template-columns: repeat(4, 1fr); gap: 28px; }
   .step { grid-row: span 2; grid-template-rows: subgrid; gap: 24px; }
   .step .phone { max-width: none; font-size: 0.78rem; }
   .step-entry { grid-row: auto; grid-template-rows: none; grid-template-columns: 1.15fr 0.85fr; gap: 56px; padding-bottom: 16px; }
-  .step-entry .phone { max-width: 340px; margin: 0 0 0 auto; font-size: 0.84rem; }
+  .step-entry .shot { max-width: 300px; margin: 0 0 0 auto; }
   .venue-grid { grid-template-columns: 0.9fr 1.1fr; column-gap: 56px; row-gap: 24px; }
   .venue-head { grid-column: 1; grid-row: 1; }
   .gets { grid-column: 2; grid-row: 1 / span 2; }

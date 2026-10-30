@@ -4,20 +4,20 @@
    ============================================================ */
 
 :root {
-  --ink: #080a0d;
-  --ink-2: #10141a;
-  --ink-3: #171d24;
-  --paper: #f4f7f9;
-  --paper-dim: #a8b0b8;
-  --gold: #9fa9b3;
-  --gold-soft: #e3e8ed;
-  --gold-deep: #5c6670;
-  --metal: #c8d0d8;
-  --metal-deep: #3b424b;
-  --line: rgba(226,232,238,0.14);
-  --surface: rgba(244,247,249,0.055);
-  --surface-strong: rgba(244,247,249,0.09);
-  --dust-rgb: 214, 222, 230;
+  --ink: #0b0f22;
+  --ink-2: #10152e;
+  --ink-3: #161c38;
+  --paper: #f2f3fa;
+  --paper-dim: #aeb4cf;
+  --gold: #9aa1c0;
+  --gold-soft: #e8e1d4;
+  --gold-deep: #3d4f8c;
+  --metal: #e8e1d4;
+  --metal-deep: #1e2a55;
+  --line: rgba(242,243,250,0.1);
+  --surface: rgba(30,38,80,0.42);
+  --surface-strong: rgba(46,58,112,0.55);
+  --dust-rgb: 201, 211, 245;
   --telegram: #2aabee;
   --font-display: var(--brand-font-heading);
   --font-body: var(--brand-font-family);
