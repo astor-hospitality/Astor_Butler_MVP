@@ -224,7 +224,7 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 .get p { color: var(--paper-dim); font-size: 0.95rem; }
 
 .connect {
-  padding: 24px 20px; border-radius: 28px;
+  padding: 24px 20px; border-radius: 24px;
   background: radial-gradient(90% 70% at 20% 0%, #1e2a55 0%, var(--ink-3) 70%);
 }
 .connect h3 { font-size: 1.25rem; margin-bottom: 12px; }
@@ -298,7 +298,10 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
     overflow: visible; scroll-snap-type: none;
   }
   .leg .shot { max-width: none; }
-  .venue-grid { grid-template-columns: 1.15fr 0.85fr; gap: 40px; align-items: start; }
+  /* «Как подключиться» – такая же плитка, как четыре карточки слева: тот же отступ, высота во всю сетку */
+  .venue-grid { grid-template-columns: 1.15fr 0.85fr; gap: 12px; align-items: stretch; }
+  .connect { display: flex; flex-direction: column; padding: 24px; }
+  .connect-price { margin-top: auto; }
   .footer-grid { grid-template-columns: 1.4fr 1fr 0.8fr 1.2fr; }
 }
 
