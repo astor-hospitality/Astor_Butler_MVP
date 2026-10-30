@@ -44,7 +44,7 @@ export const workMedia: Record<string, WorkMedia> = {
   "ev-14": { clip: "/videos/work/ev-14.mp4", drive: "1Mxb3tcWj2gRqO7O3JihXkKmHNBfiZkTN", hls: "/ev-14/master.m3u8" },
   "ev-15": { clip: "/videos/work/ev-15.mp4", drive: "1lcyWCURW0Kdv0SXqCzxwIR5_22J2Smws", hls: "/ev-15/master.m3u8" },
   "ev-16": { clip: "/videos/work/ev-16.mp4", drive: "1HxZ1pC7M9T4uKtAOCjKmT2c2RqQM301f", hls: "/ev-16/master.m3u8" },
-  "ev-17": { drive: "13-4tr4gZQnu6TtPWvhiDiCXfhJK6fQJa" },
+  "ev-17": { drive: "13-4tr4gZQnu6TtPWvhiDiCXfhJK6fQJa", hls: "/ev-17/master.m3u8" },
   "ev-18": { clip: "/videos/work/ev-18.mp4", drive: "1z51jmD1JKN7d8oFkPRVUtHe0yKr5SSpn" },
   "ev-2": { clip: "/videos/work/ev-2.mp4", drive: "1psM1peE5XVDKqzNSWlpYAn_LtczloyD0", hls: "/ev-2/master.m3u8" },
   "ev-3a": { clip: "/videos/work/ev-3a.mp4", drive: "15XdcmkBUk54Dn_RRUXWBQxPjZqj73KPC", hls: "/ev-3a/master.m3u8" },
