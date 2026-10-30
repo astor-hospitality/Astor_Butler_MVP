@@ -18,7 +18,7 @@ test('the first screen tells what the Astor app does and opens it in Telegram', 
   const heroLinks = [...hero.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => [m[1], text(m[2])]);
   assert.deepEqual(heroLinks, [
     ['https://t.me/Astorapp', 'Открыть Astor в Telegram'],
-    ['#restaurants', 'Для ресторанов'],
+    ['#venues', 'Для заведений'],
   ]);
 });
 
@@ -26,15 +26,27 @@ test('the app section shows the real app screens, each with a title', () => {
   const app = /<section class="section" id="app"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
   const titles = [...app.matchAll(/<h3>([\s\S]*?)<\/h3>/g)].map(m => text(m[1]));
   assert.deepEqual(titles, ['Карта', 'Куда пойти', 'События', 'Бронь стола', 'Мои планы', 'Друзья', 'ИИ-помощник Astor']);
-  for (const [, src] of app.matchAll(/<img[^>]+src="([^"]+)"/g)) assert.ok(existsSync(asset(src)), `missing ${src}`);
 });
 
-test('the guest path starts at step 0, the Astor app in Telegram', () => {
-  const how = /<section class="section" id="how"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
-  const first = /<li class="step[^"]*">[\s\S]*?<\/li>\s*<li class="step"/.exec(how)?.[0] ?? '';
-  assert.match(text(first), /^0\s*вход гостя\s*Приложение Astor/);
-  assert.ok(first.includes('href="https://t.me/Astorapp"'), 'step 0 opens the Astor app');
-  assert.match(text(first), /зовёт друзей/);
+test('the guest path is four steps from a wish to a meetup, each with a real screen', () => {
+  const how = /<section class="section section-alt" id="how"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
+  const legs = [...how.matchAll(/<li class="leg">([\s\S]*?)<\/li>/g)].map(m => m[1]);
+  assert.deepEqual(legs.map(l => text(/<h3>([\s\S]*?)<\/h3>/.exec(l)[1])),
+    ['Скажите, чего хочется', 'Выберите место или событие', 'Забронируйте стол', 'Позовите друзей']);
+  for (const leg of legs) assert.match(leg, /<img class="shot" src="assets\/app\//);
+  assert.ok(how.includes('href="https://t.me/Astorapp"'), 'the path ends with a way to try it');
+});
+
+test('venues see the Astor Business cabinet, the price and how to connect', () => {
+  const venues = /<section class="section" id="venues"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
+  assert.match(venues, /src="assets\/app\/biz-today\.webp"/);
+  assert.match(text(venues), /Astor Бизнес/);
+  assert.match(text(venues), /30 000 ₽ в месяц/);
+  assert.ok(venues.includes('id="connect"') && venues.includes('href="https://t.me/michael_welly"'));
+});
+
+test('every image on the page exists', () => {
+  for (const [, src] of html.matchAll(/<img[^>]+src="([^"]+)"/g)) assert.ok(existsSync(asset(src)), `missing ${src}`);
 });
 
 test('every in-page anchor has its target', () => {
@@ -43,17 +55,17 @@ test('every in-page anchor has its target', () => {
   }
 });
 
-test('the footer links the app, both bots and the policy', () => {
+test('the footer links the app, the AERIS bot and the policy', () => {
   const footer = /<footer[\s\S]*?<\/footer>/.exec(html)?.[0] ?? '';
-  for (const href of ['https://t.me/Astorapp', 'https://t.me/astor_concierge_bot', 'https://t.me/aeris_butler_bot', 'policy.html']) {
+  for (const href of ['https://t.me/Astorapp', 'https://t.me/aeris_butler_bot', 'policy.html']) {
     assert.ok(footer.includes(`href="${href}"`), `footer: no link to ${href}`);
   }
 });
 
-test('Telegram links open only the Astor app, the two known bots and Mikhail for venues', () => {
+test('Telegram links open only the Astor app, the AERIS bot and Mikhail for venues', () => {
   const tg = links.filter(l => l.href.includes('t.me/')).map(l => new URL(l.href).pathname);
   assert.ok(tg.length >= 3);
-  for (const path of tg) assert.ok(['/Astorapp', '/astor_concierge_bot', '/aeris_butler_bot', '/michael_welly'].includes(path), `unknown Telegram link ${path}`);
+  for (const path of tg) assert.ok(['/Astorapp', '/aeris_butler_bot', '/michael_welly'].includes(path), `unknown Telegram link ${path}`);
 });
 
 test('copy speaks to the reader as «вы», with en dashes and no promise that the bot confirms', () => {
@@ -77,5 +89,5 @@ test('the page stays light: no video, no scripts, only small WebP app screens', 
     files.add(src);
   }
   const total = [...files].reduce((sum, src) => sum + statSync(asset(src)).size, 0);
-  assert.ok(total < 600_000, `app screens weigh ${total} bytes`);
+  assert.ok(total < 1_000_000, `app screens weigh ${total} bytes`);
 });
