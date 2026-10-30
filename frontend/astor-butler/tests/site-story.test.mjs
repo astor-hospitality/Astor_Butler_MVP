@@ -15,17 +15,23 @@ test('the first screen tells what the Astor app does and opens it in Telegram', 
   const hero = /<section class="hero"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
   assert.match(text(hero), /Идеи и желания превращаются в планы/);
   assert.match(text(hero), /места и события, собирать друзей и организовывать встречи/);
-  const heroLinks = [...hero.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => [m[1], text(m[2])]);
-  assert.deepEqual(heroLinks, [
+  const cta = /<div class="cta">[\s\S]*?<\/div>/.exec(hero)?.[0] ?? '';
+  const ctaLinks = [...cta.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g)].map(m => [m[1], text(m[2])]);
+  assert.deepEqual(ctaLinks, [
     ['https://t.me/Astorapp', 'Открыть Astor в Telegram'],
     ['#venues', 'Для заведений'],
   ]);
+  // Чипы похожи на кнопки приложения – значит, это ссылки в приложение, а не мёртвые плашки.
+  for (const chip of hero.matchAll(/<ul class="chips"[\s\S]*?<\/ul>/g)) {
+    assert.doesNotMatch(chip[0], /<li class=/, 'chips must be links');
+    assert.match(chip[0], /<a class="glass" href="https:\/\/t\.me\/Astorapp"/);
+  }
 });
 
 test('the app section shows the real app screens, each with a title', () => {
   const app = /<section class="section" id="app"[\s\S]*?<\/section>/.exec(html)?.[0] ?? '';
   const titles = [...app.matchAll(/<h3>([\s\S]*?)<\/h3>/g)].map(m => text(m[1]));
-  assert.deepEqual(titles, ['Карта', 'Куда пойти', 'События', 'Бронь стола', 'Мои планы', 'Друзья', 'ИИ-помощник Astor']);
+  assert.deepEqual(titles, ['Карта', 'Бизнес-ланч', 'События', 'Бронь стола', 'Мои планы', 'Друзья', 'ИИ-помощник Astor']);
 });
 
 test('the guest path is four steps from a wish to a meetup, each with a real screen', () => {
@@ -55,17 +61,17 @@ test('every in-page anchor has its target', () => {
   }
 });
 
-test('the footer links the app, the AERIS bot and the policy', () => {
+test('the footer links the app, the cabinet, the earlier products and the policy', () => {
   const footer = /<footer[\s\S]*?<\/footer>/.exec(html)?.[0] ?? '';
-  for (const href of ['https://t.me/Astorapp', 'https://t.me/aeris_butler_bot', 'policy.html']) {
+  for (const href of ['https://t.me/Astorapp', '#venues', 'astor_butler/', 'astor_glass/', 'astor_concierge/', 'policy.html']) {
     assert.ok(footer.includes(`href="${href}"`), `footer: no link to ${href}`);
   }
 });
 
-test('Telegram links open only the Astor app, the AERIS bot and Mikhail for venues', () => {
+test('Telegram links open only the Astor app and Mikhail for venues', () => {
   const tg = links.filter(l => l.href.includes('t.me/')).map(l => new URL(l.href).pathname);
   assert.ok(tg.length >= 3);
-  for (const path of tg) assert.ok(['/Astorapp', '/aeris_butler_bot', '/michael_welly'].includes(path), `unknown Telegram link ${path}`);
+  for (const path of tg) assert.ok(['/Astorapp', '/michael_welly'].includes(path), `unknown Telegram link ${path}`);
 });
 
 test('copy speaks to the reader as «вы», with en dashes and no promise that the bot confirms', () => {

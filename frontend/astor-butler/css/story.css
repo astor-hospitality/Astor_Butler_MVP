@@ -125,6 +125,9 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   width: calc(100% - 2 * var(--gutter)); min-height: 56px; padding: 0 8px 0 18px; border-radius: 999px;
 }
+/* Под шапкой не должен читаться текст страницы: стекло плотнее, сверху – полоса фона. */
+.top { background: linear-gradient(var(--ink) 55%, transparent); }
+.top-row.glass { background: rgba(16, 21, 46, 0.82); -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%); }
 
 .mark {
   display: inline-flex; align-items: center; gap: 10px;
@@ -159,17 +162,15 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 
 /* Чипы – те же, что над картой в приложении: «Всё» выбран кремовым. */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
-.chips li {
-  display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 16px;
-  border-radius: 999px; font-size: 0.95rem; font-weight: var(--brand-weight-medium);
+.chips a {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 16px;
+  border-radius: 999px; font-size: 0.95rem; font-weight: var(--brand-weight-medium); text-decoration: none;
+  transition: background 0.2s var(--ease);
 }
-.chips .on { background: var(--cream); color: var(--navy); box-shadow: none; }
+.chips a:hover { background: var(--surface-strong); }
 .ic-s { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Astor у телефона – как кнопка Astor в нижней панели приложения. */
-.hero-shot { position: relative; }
-.hero-shot .orb { position: absolute; left: calc(50% - 230px); top: 34%; }
-@media (max-width: 959px) { .hero-shot .orb { display: none; } }
+
 .hero-note { margin-top: 18px; max-width: 23em; font-size: 0.88rem; color: var(--silver); }
 
 /* ---------- как это работает: четыре шага, у каждого настоящий экран ---------- */
@@ -290,6 +291,12 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
   .hero-grid { grid-template-columns: 1.15fr 0.85fr; align-items: center; gap: 56px; }
   .hero-shot .shot { margin-right: 0; }
   .journey { grid-template-columns: repeat(4, 1fr); gap: 28px; }
+  /* Экраны приложения на десктопе – сеткой 4 + 3, без прокрутки вбок. */
+  .screens:not(.biz) {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px 28px;
+    max-width: var(--wrap); margin: 12px auto 0; padding: 24px var(--gutter) 0;
+    overflow: visible; scroll-snap-type: none;
+  }
   .leg .shot { max-width: none; }
   .venue-grid { grid-template-columns: 1.15fr 0.85fr; gap: 40px; align-items: start; }
   .footer-grid { grid-template-columns: 1.4fr 1fr 0.8fr 1.2fr; }
