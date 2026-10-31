@@ -1,0 +1,86 @@
+/* ============================================================
+   Анимации главной – те же, что на страницах Butler / Concierge / Glass
+   (style.css + js/main.js): первый экран поднимается по очереди,
+   заголовки разделов проявляются по словам, блоки въезжают при прокрутке
+   с лёгким размытием. Работают только с js/motion.js (класс .motion на <html>):
+   без скрипта страница видна целиком.
+   ============================================================ */
+:root { --ease-lux: cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* первый экран: по очереди, как .rise на старых страницах */
+.motion .m-rise {
+  opacity: 0;
+  transform: translateY(18px);
+  animation: m-rise 0.95s var(--ease-lux) forwards;
+  animation-delay: calc(var(--d, 0) * 130ms + 120ms);
+}
+@keyframes m-rise { to { opacity: 1; transform: none; } }
+
+/* заголовки разделов – по словам */
+.motion .title-word {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.55em);
+  filter: blur(8px);
+  transition: opacity 0.8s var(--ease-lux), transform 0.8s var(--ease-lux), filter 0.8s var(--ease-lux);
+  transition-delay: calc(var(--w, 0) * 90ms);
+}
+.motion .words-in .title-word { opacity: 1; transform: none; filter: blur(0); }
+
+/* блоки при прокрутке – как .reveal */
+.motion .m-reveal {
+  opacity: 0;
+  transform: translateY(42px) scale(0.985);
+  filter: blur(10px);
+  transition: opacity 1.05s var(--ease-lux), transform 1.05s var(--ease-lux), filter 1.05s var(--ease-lux);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+.motion .m-reveal.in { opacity: 1; transform: none; filter: blur(0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .motion .m-rise, .motion .title-word, .motion .m-reveal {
+    opacity: 1; transform: none; filter: none; animation: none; transition: none;
+  }
+}
+
+/* ---------- кино-оболочка, как на Butler / Concierge / Glass ---------- */
+/* шторки кадра открываются после загрузки */
+.m-letterbox {
+  position: fixed; left: 0; right: 0; height: 11vh; z-index: 140; pointer-events: none;
+  background: #05071a;
+  transition: transform 1.5s var(--ease-lux) 0.25s;
+}
+.m-letterbox.top { top: 0; transform-origin: top; }
+.m-letterbox.bottom { bottom: 0; transform-origin: bottom; }
+.film-open .m-letterbox { transform: scaleY(0); }
+
+/* полоса прогресса прокрутки */
+.m-progress { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 145; pointer-events: none; background: rgba(242, 243, 250, 0.05); }
+.m-progress span {
+  display: block; height: 100%; transform-origin: left; transform: scaleX(var(--p, 0));
+  background: linear-gradient(90deg, #8fa0e0, #e8e1d4);
+}
+
+/* пыль в свете первого экрана и параллакс */
+.motion .hero { position: relative; overflow: hidden; }
+.motion .hero > .wrap { position: relative; z-index: 2; }
+.m-dust { position: absolute; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: screen; }
+.motion .hero-copy { transform: translateY(var(--copy-shift, 0px)); opacity: var(--copy-fade, 1); }
+.motion .hero-shot { transform: translateY(var(--shot-shift, 0px)); }
+/* телефон чуть парит, как карточки в кадре старых страниц */
+.motion .hero-shot .shot { animation: m-float 6s ease-in-out 1.6s infinite; }
+@keyframes m-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+/* подсказка «листайте» внизу первого экрана */
+.m-hint {
+  position: absolute; left: 50%; bottom: 18px; z-index: 3; transform: translateX(-50%);
+  display: inline-flex; flex-direction: column; align-items: center; gap: 0.6em;
+  background: none; border: 0; cursor: pointer; color: var(--paper-dim);
+  font: inherit; font-size: 0.74rem; letter-spacing: 0.18em; text-transform: uppercase;
+  opacity: 0; animation: m-hint-in 0.95s var(--ease-lux) 1.1s forwards;
+}
+.m-hint svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; animation: m-hint-float 2.4s ease-in-out infinite; }
+@keyframes m-hint-in { to { opacity: 1; } }
+@keyframes m-hint-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
+@media (max-width: 959px) { .m-hint, .m-letterbox { display: none; } }
+@media (max-width: 600px) { .m-letterbox { height: 7vh; } }
