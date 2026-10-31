@@ -193,7 +193,9 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 /* настоящие экраны приложения Astor (скриншоты 600×1298) */
 .shot {
   display: block; width: 100%; max-width: 300px; height: auto; margin: 0 auto;
-  border: 1px solid var(--line); border-radius: 34px; background: var(--ink-2);
+  border: 1px solid var(--line); border-radius: 34px;
+  /* поле экрана вокруг снимка, как полоса статуса: заголовок не упирается в скругление рамки */
+  padding: 22px 0 12px; background: #0b0f22;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 .hero-shot .shot { max-width: 320px; }
