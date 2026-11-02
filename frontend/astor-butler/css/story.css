@@ -307,6 +307,79 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
   .footer-grid { grid-template-columns: 1.4fr 1fr 0.8fr 1.2fr; }
 }
 
+/* ---------- ленты экранов на телефоне и планшете ---------- */
+/* Листаются по одному экрану: активный – по центру, соседи выглядывают с обеих сторон.
+   Под лентой – стрелки и точки (js/rails.js); без скрипта лента так же листается пальцем. */
+.rail-pager { display: none; }
+@media (max-width: 959px) {
+  .screens {
+    --rail-card: min(256px, 66vw);
+    gap: 16px;
+    /* поля по половине «пустого» места: первый и последний экран тоже встают по центру */
+    padding-inline: calc((100% - var(--rail-card)) / 2);
+    scroll-padding-inline: 0;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .screens.has-pager { scrollbar-width: none; }
+  .screens.has-pager::-webkit-scrollbar { display: none; }
+  .screens li { flex: 0 0 var(--rail-card); scroll-snap-align: center; scroll-snap-stop: always; text-align: center; }
+  /* Въезд блоков (motion.css) прятал экраны за краем ленты – прозрачные, размытые и сдвинутые,
+     пока каждый сам не попадёт в кадр: при свайпе лента выглядела пустой, будто кончилась.
+     В ленте экраны видны сразу; лента въезжает целиком вместе с разделом. */
+  .motion .screens > li.m-reveal { opacity: 1; transform: none; filter: none; transition: none; }
+  /* подписи соседей обрезаны краем экрана – приглушаем их, читается подпись экрана по центру */
+  .screens.has-pager li > :is(h3, p) { transition: opacity 0.3s var(--ease); }
+  .screens.has-pager li:not(.is-active) > :is(h3, p) { opacity: 0.3; }
+
+  .rail-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 10px; padding: 0 var(--gutter); }
+  .rail-pager[hidden] { display: none; }
+  .rail-btn {
+    display: grid; place-items: center; width: 44px; height: 44px; padding: 0;
+    border: 0; border-radius: 50%; cursor: pointer;
+    transition: opacity 0.2s var(--ease), background 0.2s var(--ease);
+  }
+  .rail-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .rail-btn:disabled { opacity: 0.35; cursor: default; }
+  .rail-btn:focus-visible, .rail-dots button:focus-visible { outline: 2px solid var(--metal); outline-offset: 2px; }
+  .rail-dots { display: flex; align-items: center; }
+  /* кнопка-точка 22×32 для пальца, видимая точка – 7 px, активная вытягивается в кремовую черту */
+  .rail-dots button {
+    display: grid; place-items: center; width: 22px; height: 32px; padding: 0;
+    border: 0; background: none; cursor: pointer;
+  }
+  .rail-dots button::before {
+    content: ""; width: 7px; height: 7px; border-radius: 999px;
+    background: rgba(242, 243, 250, 0.28);
+    transition: width 0.3s var(--ease), background 0.3s var(--ease);
+  }
+  .rail-dots button[aria-current="true"]::before { width: 20px; background: var(--cream); }
+  .rail-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+
+/* ---------- телефон: всё по центру ---------- */
+@media (max-width: 639px) {
+  .hero-copy { text-align: center; }
+  .hero h1, .hero-lead, .hero-note { margin-inline: auto; }
+  .hero .chips { justify-content: center; }
+
+  .section .wrap { text-align: center; }
+  .section-title, .lede { margin-inline: auto; }
+
+  .leg .shot { margin: 0 auto; }
+  .leg-text p:last-child { margin-inline: auto; }
+
+  .get .tile { margin-inline: auto; }
+  .connect-steps li { display: block; }
+  .connect-steps li::before { content: counter(c) ".\00a0"; }
+
+  .rules li { grid-template-columns: 1fr; justify-items: center; gap: 10px; }
+
+  .footer-grid, .footer-copy { text-align: center; }
+  .footer-brand p { margin-inline: auto; }
+  .footer-col li { justify-items: center; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .btn { transition: none; }
