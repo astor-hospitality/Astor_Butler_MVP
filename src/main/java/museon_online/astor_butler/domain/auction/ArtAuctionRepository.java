@@ -46,6 +46,23 @@ public class ArtAuctionRepository {
         return result.stream().findFirst();
     }
 
+    public Optional<ArtAuctionLot> findBiddableLot(Long id) {
+        List<ArtAuctionLot> result = jdbcTemplate.query("""
+                SELECT l.*
+                FROM art_auction_lots l
+                JOIN art_auction_events e ON e.id = l.auction_event_id
+                WHERE l.id = ?
+                  AND e.status = 'ACTIVE'
+                  AND l.status = 'ACTIVE'
+                  AND (e.starts_at IS NULL OR e.starts_at <= CURRENT_TIMESTAMP)
+                  AND (e.ends_at IS NULL OR e.ends_at >= CURRENT_TIMESTAMP)
+                """,
+                lotMapper(),
+                id
+        );
+        return result.stream().findFirst();
+    }
+
     public Optional<ArtAuctionLot> findDefaultActiveLot(String venueCode) {
         List<ArtAuctionLot> result = jdbcTemplate.query("""
                 SELECT l.*

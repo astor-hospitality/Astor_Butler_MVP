@@ -1,0 +1,7 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-11-03-art-auction-welly-doha-lot
+      author: astor-butler
+      changes:
+        - sqlFile:
+            path: db/changelog/2026-11-03-art-auction-welly-doha-lot.sql

@@ -66,12 +66,21 @@ public class ArtAuctionService {
 
     private ArtAuctionLot resolveLot(ArtAuctionBidCommand command) {
         if (command.lotId() != null) {
-            return repository.findLot(command.lotId())
+            ArtAuctionLot lot = repository.findLot(command.lotId())
                     .orElseThrow(() -> new ApiException(
                             HttpStatus.NOT_FOUND,
                             ErrorCode.NOT_FOUND,
                             "Art auction lot was not found",
                             Map.of("lotId", command.lotId())
+                    ));
+            // A lot prepared as DRAFT (or under a DRAFT/closed event) must not take bids
+            // until a manager opens it, even when a guest knows its id.
+            return repository.findBiddableLot(lot.id())
+                    .orElseThrow(() -> new ApiException(
+                            HttpStatus.CONFLICT,
+                            ErrorCode.CONFLICT,
+                            "Art auction lot is not open for bids",
+                            Map.of("lotId", lot.id(), "status", lot.status())
                     ));
         }
         return repository.findDefaultActiveLot(command.venueCode())
