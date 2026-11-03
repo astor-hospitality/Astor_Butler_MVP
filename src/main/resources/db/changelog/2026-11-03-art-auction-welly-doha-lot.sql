@@ -47,7 +47,8 @@ SELECT
       "public": false,
       "pending": ["final_title", "starting_price", "min_step", "currency", "owner_approval", "media_asset_upload"],
       "evidence": {
-        "finished_photo": "canvas_finished_2023-01-04_144355UTC_110.jpeg",
+        "finished_photo": "astor-series/proofs/canvas_finished_restored_2023-01-04.jpg",
+        "lot_label": "LOT 001",
         "sketch_photo": "astor-series/proofs/easel_doha_2023-01-02.jpg",
         "reference_photo": "astor-series/proofs/painting_doha_2022-08-24.jpg"
       },
