@@ -10,8 +10,9 @@ const SPEED = 21;
 const BREATH = 0.45;
 
 /**
- * Who we are and what we do, under the first screen: the only black screen of the home page, and on it nothing but
- * white words. The sentences type themselves out, letter by letter behind a thin caret, once the screen comes into
+ * Who we are and what we do, under the first screen: the light stage, and on it nothing but words. It stood on black,
+ * in white words, until Sergey took black off the site (2026-10-26: «черные фоны табу»). Light, because the screens take
+ * turns: the film lies on red, the works under these words are on red again. The sentences type themselves out, letter by letter behind a thin caret, once the screen comes into
  * view (the way the phrase on bbx.media's first screen does; Roma's reference). Nothing depends on the scroll:
  * the visitor may read or move on.
  * Every letter is in the page from the start, hidden, so the lines keep their places and a word never breaks in the
@@ -66,7 +67,7 @@ export function About({ t }: { t: SiteContent["about"] }) {
   const said = t.sentences.join(" ");
 
   return (
-    <section ref={root} id="manifesto" aria-label={t.label} data-poster="ink" className="about poster theme-ink relative wrap">
+    <section ref={root} id="manifesto" aria-label={t.label} data-poster="paper" className="about poster theme-paper relative wrap">
       <div className="about-stage">
         <div>
           <p className="caps opacity-60">{t.label}</p>

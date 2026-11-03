@@ -46,6 +46,10 @@ services:
     logging: *default-logging
     mem_limit: ${C3AG_FRONTEND_MEMORY_LIMIT:-512m}
     cpus: ${C3AG_FRONTEND_CPUS:-1.0}
+    # The site's media live on this VM (https://c3ag.ru/media, /opt/c3ag-video). next/image fetches them server-side,
+    # and the VM cannot reach its own public address: c3ag.ru goes to the host, where the edge Caddy listens on 443.
+    extra_hosts:
+      - "c3ag.ru:host-gateway"
     environment:
       PORT: 3000
     build:

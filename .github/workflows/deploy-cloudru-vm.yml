@@ -102,11 +102,13 @@ jobs:
             ${{ needs.validate.outputs.image_ns }}/c3ag-frontend:sha-${{ github.sha }}
             ${{ needs.validate.outputs.image_ns }}/c3ag-frontend:main
           # NEXT_PUBLIC_* values are baked into the bundle at build time; all are public.
+          # Media and films live on the VM (/opt/c3ag-video, container c3ag-video): c3ag.ru/media and c3ag.ru/video.
+          # api.c3ag.ru has no DNS record: the chat posts to the site's own domain, which Caddy passes to Butler.
           build-args: |
             NEXT_PUBLIC_SITE_URL=${{ vars.C3AG_PUBLIC_URL || 'https://c3ag.ru' }}
             NEXT_PUBLIC_API_BASE_URL=${{ vars.C3AG_API_BASE_URL || 'https://api.c3ag.ru' }}
-            NEXT_PUBLIC_WEB_CHAT_ENDPOINT=${{ vars.C3AG_WEB_CHAT_ENDPOINT || 'https://api.c3ag.ru/api/messages' }}
-            NEXT_PUBLIC_MEDIA_BASE_URL=${{ vars.C3AG_MEDIA_BASE_URL || 'https://storage.yandexcloud.net/c3ag-media' }}
+            NEXT_PUBLIC_WEB_CHAT_ENDPOINT=${{ vars.C3AG_WEB_CHAT_ENDPOINT || 'https://c3ag.ru/api/messages' }}
+            NEXT_PUBLIC_MEDIA_BASE_URL=${{ vars.C3AG_MEDIA_BASE_URL || 'https://c3ag.ru/media' }}
             NEXT_PUBLIC_BRAND_LOGO_URL=${{ vars.C3AG_BRAND_LOGO_URL || 'https://storage.yandexcloud.net/c3ag-media/brand/c3ag-logo.svg' }}
           cache-from: type=gha,scope=c3ag-frontend
           cache-to: type=gha,scope=c3ag-frontend,mode=max

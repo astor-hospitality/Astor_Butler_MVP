@@ -26,8 +26,9 @@
      so a word that fills the width on a wide screen fills it on a phone too and is never cut. */
   --m: clamp(1.25rem, 7vw, 8.5rem);
   --w: calc(100vw - 2 * var(--m));
-  /* The air above and below what a screen holds. */
-  --air: clamp(5rem, 22vh, 12.5rem);
+  /* The air above and below what a screen holds. Half of what it was: Sergey saw «огромные пустоты между блоками»
+     (2026-10-26), so two screens now stand about a fifth of a window apart, never a half-empty window. */
+  --air: clamp(3.5rem, 11vh, 6.5rem);
   /* The three sizes of type, and no others (Roma's word, 2026-10-11): the small capitals, the reading text,
      the heading. Everything larger is a giant word or a phrase fitted to the width of the page (see `mass`). */
   --fs-s: 0.75rem;
@@ -52,12 +53,19 @@
   inherits: true;
   initial-value: #b80314;
 }
+/* what stands on a plate of the line colour: white on red plates, red on the white plate of a red screen */
+@property --page-on-line {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
 
 @layer base {
   html {
     --page-bg: var(--color-paper);
     --page-fg: var(--color-ink);
     --page-line: var(--color-red);
+    --page-on-line: var(--color-white);
     /* which of Clio's two stars shows: the one made for red, or the plain one for the light and the dark screens */
     --on-red: 0;
     font-family: var(--font-text);
@@ -70,6 +78,7 @@
     --page-bg: var(--color-red);
     --page-fg: var(--color-white);
     --page-line: var(--color-white);
+    --page-on-line: var(--color-red);
     --on-red: 1;
   }
   html[data-theme="ink"],
@@ -82,7 +91,8 @@
     transition:
       --page-bg 0.9s var(--ease-power3),
       --page-fg 0.9s var(--ease-power3),
-      --page-line 0.9s var(--ease-power3);
+      --page-line 0.9s var(--ease-power3),
+      --page-on-line 0.9s var(--ease-power3);
   }
   /* While a link carries the page to another part (see SmoothScroll) the colour is simply set: the sheet covers the change. */
   html.motion.jumping {
@@ -218,6 +228,30 @@
   html.nav-away .nav:not(:focus-within) {
     transform: translate3d(0, -110%, 0);
   }
+  /* The call of the header, «Обсудить проект»: a filled pill, so it reads as the one button of the header. It is in the
+     colour of the lines with the page's colour on it, red with white words on the light stage and white with red words
+     on a red screen (and over the film, which lies on red), and it changes with the page. */
+  /* Always the brand red with white words (Sergey, 2026-10-27: on a phone the white pill over the red screen looked weak);
+     a white ring keeps its edge on red screens and over red pictures. */
+  .nav-cta {
+    border-radius: 999px;
+    padding: 0.8rem 1.35rem;
+    background-color: var(--color-red);
+    color: #fff;
+    box-shadow: 0 0 0 1.5px #fff;
+    transition: opacity 0.3s var(--ease-power3);
+  }
+  .nav-cta:hover {
+    opacity: 0.85;
+  }
+  .nav-cta:active {
+    opacity: 0.7;
+  }
+  @media (width < 24rem) {
+    .nav-cta {
+      padding-inline: 1rem;
+    }
+  }
 
   /* The first second and a half of a full load: the red screen with the chrome mark and a counter (see Preloader). */
   .preloader {
@@ -279,11 +313,12 @@
     height: auto;
     overflow: visible;
   }
+  /* red under the film, like the preloader before it: no black ever shows around it (Sergey, 2026-10-26) */
   .hero-film {
     position: absolute;
     inset: 0;
     overflow: hidden;
-    background-color: var(--color-ink);
+    background-color: var(--color-red);
   }
   /* taller than its window by what it travels */
   .hero-film-in {
@@ -317,14 +352,17 @@
     display: block;
   }
 
-  /* ── Who we are and what we do (see About): the one black screen of the home page, white words on it.
+  /* ── Who we are and what we do (see About): the light stage, the words in the colour of the text
+        (white on black until 2026-10-26).
         The sentences type themselves out letter by letter; every letter is there from the start, hidden,
         so the lines keep their places, and a word never breaks in the middle. ── */
-  /* a little lower than the window, so the pause between these words and the services under them is not too long */
+  /* The air around the two sentences, and a little more than half a window in all: the page takes the colour of the
+     screen under the line at 55 % of the window (see ThemeWatcher), and a shorter light screen between two red ones
+     would turn red while it is still being read. No more than that, so the works are not a half-empty window away. */
   .about-stage {
     display: grid;
     align-items: center;
-    min-height: 84svh;
+    min-height: 60svh;
     padding-block: var(--air);
   }
   .about-text {
@@ -426,35 +464,52 @@
     color: var(--color-red);
   }
 
-  /* ── The seven directions, one screen after another (see Directions). The name is the massive word of its screen
-        and gives the measure of it: the picture stands in front of the name, over the lower part of its letters. ── */
-  .dir-pic {
-    position: relative;
-    z-index: 1;
-    display: block;
-    /* up into the name: only a little on a phone, where the letters are small and must stay whole to the eye */
-    margin-top: -0.1em;
-  }
-  .dir-text {
-    margin-top: 0;
-  }
+  /* ═══ Works and directions: the work tile, the drifting rows, the direction screens of the home page and the first
+        screen of a direction's page (WorkTile, WorksRail, Works, Directions, [direction]/page). Sergey, 2026-10-26:
+        no black, the works as wide films on red playing by themselves, a direction read as cover → text → works. ═══ */
+
+  /* ── A direction on the home page: its cover and, next to it, one block of text (the name, one line, who it is for,
+        the price), then the row of its works under both. On a phone the text stands under the cover. ── */
   .dir-rule {
     border-top: 1px solid color-mix(in srgb, var(--fg) 16%, transparent);
   }
-  /* The line about a direction on the home page: quiet reading text, so that the name and the picture do the talking. */
+  .dir-set {
+    --cover-w: min(72%, 18rem);
+    --gap: 1.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: var(--gap);
+  }
+  .dir-pic {
+    display: block;
+    flex: none;
+    width: var(--cover-w);
+  }
+  .dir-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  /* the name is as large as its column lets it be (`--share` is counted from its longest line, see Directions) */
+  .dir-name {
+    font-size: min(calc(var(--w) * var(--share)), 5.5rem);
+  }
   .dir-line {
+    margin-top: 1.25rem;
     font-family: var(--font-text);
     font-size: var(--fs-t);
     line-height: 1.4;
     max-width: 24em;
-    opacity: 0.7;
     text-wrap: pretty;
   }
-  /* Where the prices start, which is also the way to the direction's page: heavy capitals in the heading size,
-     on a phone under the line, on a wide screen at the foot of the screen (Roma, 2026-10-16: the phone takes the same
-     heavy price as the desktop). Set a little tighter on a phone, "Смета под проект" fits 280 px, the text column of a 320 px phone. */
-  .dir-price {
+  .dir-who {
     margin-top: 0.75rem;
+    opacity: 0.7;
+  }
+  /* Where the prices start, which is also the way to the direction's page: heavy capitals in the heading size,
+     underlined in red, no arrow (Roma's drawing, 2026-10-11). "Смета под проект" fits the text column of a 320 px phone. */
+  .dir-price {
+    margin-top: 1.25rem;
     font-family: var(--font-display);
     font-size: var(--fs-m);
     font-weight: 900;
@@ -464,11 +519,8 @@
     text-transform: uppercase;
     white-space: nowrap;
   }
-  /* The red line under it says it is a link; there is no arrow (Roma's drawing, 2026-10-11).
-     One unbroken line, also under the feet of "Д" and "Ц". */
   .dir-more {
     display: inline-block;
-    /* a finger-sized target on a phone; on a wide screen the line stands level with the picture (see below) */
     padding-block: 0.5rem 0.65rem;
     text-decoration: underline var(--color-red);
     text-decoration-thickness: max(1.5px, 0.1em);
@@ -481,8 +533,45 @@
       color: var(--color-red);
     }
   }
-  /* The line about a direction on its own page: heavy capitals in the size of the reading text, so its longest word
-     ("кинематографичная", 16.3 em) stays whole on a phone too. */
+  @media (min-width: 48rem) {
+    /* the cover under half the window tall, so cover, text and the row of works make one screen; the text block level with the cover's lower edge */
+    .dir-set {
+      --cover-w: min(calc(var(--w) * 0.36), 44svh * 0.8);
+      --gap: clamp(2rem, 4vw, 4.5rem);
+      flex-direction: row;
+      align-items: flex-end;
+    }
+    .dir-text {
+      flex: 1;
+    }
+    .dir-name {
+      font-size: min(calc((var(--w) - var(--cover-w) - var(--gap)) * var(--share)), 8.5rem);
+    }
+    .dir-line {
+      font-size: var(--fs-m);
+      line-height: 1.1;
+      letter-spacing: -0.01em;
+      max-width: 15em;
+      text-wrap: balance;
+    }
+    .dir-who {
+      margin-top: 1rem;
+    }
+    .dir-price {
+      margin-top: clamp(1.25rem, 4vh, 2.25rem);
+      letter-spacing: -0.015em;
+    }
+    .dir-more {
+      padding-block: 0 0.16em;
+    }
+  }
+
+  /* ── The first screen of a direction's page: its name in white on red, as wide as the page. ── */
+  .page-name {
+    font-size: min(calc(var(--w) * var(--share)), 12rem);
+  }
+  /* the line about a direction on its page: heavy capitals in the size of the reading text, so its longest word
+     ("кинематографичная") stays whole on a phone too */
   .dir-caption {
     font-family: var(--font-display);
     font-weight: 900;
@@ -494,173 +583,93 @@
     max-width: 26em;
   }
   @media (min-width: 48rem) {
-    .dir-pic {
-      margin-top: calc(-0.3em - var(--more, 0) * 0.85em);
-    }
-    /* the left half of a wide screen: the line under the name, the price at the foot, level with the lower edge of the picture */
-    .dir-text {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 2.5rem;
-      margin-top: clamp(1.5rem, 5vh, 3rem);
-    }
-    /* on a wide screen the line is set in the heading size (Roma: the desktop looked empty, the phone is right as it is) */
-    .dir-line {
+    .dir-caption {
       font-size: var(--fs-m);
-      line-height: 1.08;
-      letter-spacing: -0.01em;
-      max-width: 15em;
-      opacity: 0.9;
-      /* lines of even length: in this size a last line of one word («ролике», «фильмы») hung alone */
-      text-wrap: balance;
-    }
-    /* large enough to hold the corner; the longest, "смета под проект", still fits its half of the screen in one line */
-    .dir-price {
-      margin-top: 0;
-      letter-spacing: -0.015em;
-    }
-    /* the line, not the letters, stands level with the lower edge of the picture */
-    .dir-more {
-      padding-block: 0 0.16em;
+      line-height: 1.05;
+      max-width: 16em;
     }
   }
 
-  /* ── The works (see WorksRail): a rail of upright cards that starts on the margin and runs off the right edge. ── */
-  .chip {
-    border: 1px solid var(--color-red);
-    /* narrow enough that all eight stand in one row down to a 1140 px window */
-    padding: 0.65rem 0.8rem;
-    white-space: nowrap;
-    transition:
-      background-color 0.3s var(--ease-power3),
-      color 0.3s var(--ease-power3);
+  /* ── The works screen of the home page: its word on the left margin, the size of a heading row, not of a poster. ── */
+  .works-head {
+    font-size: calc(var(--w) * 0.1);
   }
-  .chip[aria-pressed="true"],
-  .chip:hover {
-    background-color: var(--color-red);
-    color: var(--color-white);
-  }
-  .chips {
-    display: flex;
-    gap: 0.375rem;
-    overflow-x: auto;
-    scrollbar-width: none;
-    /* a row that does not fit fades out on the right: there is more to pull */
-    -webkit-mask: linear-gradient(90deg, #000 calc(100% - 3rem), transparent);
-    mask: linear-gradient(90deg, #000 calc(100% - 3rem), transparent);
-    padding-right: 3rem;
-  }
-  .chips::-webkit-scrollbar {
-    display: none;
-  }
-  /* On a wide screen every direction stands whole: a row that does not fit goes on to a second line instead of fading
-     out (a chip cut by the fade showed as a red smudge, Roma 2026-10-16). */
-  @media (min-width: 48rem) {
-    .chips {
-      flex-wrap: wrap;
-      overflow: visible;
-      -webkit-mask: none;
-      mask: none;
-      padding-right: 0;
-    }
-  }
+
+  /* ── A row of works (see WorksRail): it starts on the margin and runs off the right edge of the screen; the track is
+        moved by a transform, one frame at a time. Every tile has the row's height: a wide work fills 16:9, an upright
+        one stands 4:5 among wide ones, and a row of upright works only is set taller, in their own 9:16. ── */
   .rail {
     margin-inline: calc(-1 * var(--m));
+  }
+  .rail-view {
+    --tile-h: calc(82vw * 9 / 16);
+    --tall-r: 4 / 5;
+    overflow: hidden;
+    touch-action: pan-y;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .rail-view[data-tall] {
+    --tile-h: min(104vw, 60svh);
+    --tall-r: 9 / 16;
+  }
+  @media (min-width: 48rem) {
+    .rail-view {
+      --tile-h: calc(32vw * 9 / 16);
+    }
+    .rail-view[data-tall] {
+      --tile-h: min(28vw, 50svh);
+    }
   }
   .rail-track {
     display: flex;
     align-items: flex-start;
-    gap: 0.875rem;
-    overflow-x: auto;
+    gap: clamp(0.75rem, 1.4vw, 1.5rem);
+    width: max-content;
     padding-inline: var(--m);
-    scroll-padding-inline: var(--m);
-    scroll-snap-type: x mandatory;
-    scrollbar-width: none;
-    overscroll-behavior-x: contain;
+    will-change: transform;
   }
-  .rail-track::-webkit-scrollbar {
-    display: none;
-  }
-  .rail-track > li {
-    flex: none;
-    width: 78vw;
-    scroll-snap-align: start;
-  }
-  @media (min-width: 48rem) {
-    .rail-track > li {
-      width: clamp(16rem, 25vw, 26rem);
-    }
-  }
-  /* The works of one direction on its own page: the same posts, in a grid. */
-  .card-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.875rem;
-  }
-  @media (min-width: 40rem) {
-    .card-grid {
-      grid-template-columns: repeat(auto-fill, minmax(clamp(16rem, 25vw, 26rem), 1fr));
-    }
+  /* a row that loops has no end, so no margin after its last tile: the copy follows at one gap */
+  .rail-view[data-loop] .rail-track {
+    padding-inline-end: 0;
   }
 
-  /* ── A work as a post of the studio's Instagram carousel (see WorkPost): a red 4:5 field, the work's name large in
-        white, the direction and what the work is in small capitals, and the work itself: a wide one along the foot
-        of the post in its own shape, an upright one whole on the right. Sizes inside are shares of the post's width. ── */
-  .post {
-    position: relative;
-    container-type: inline-size;
+  /* ── A work (see WorkTile): its film in the tile, the caption under it. ── */
+  .tile {
+    flex: none;
+    width: calc(var(--tile-h) * 16 / 9);
   }
-  .post-face {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    aspect-ratio: 4 / 5;
-    overflow: hidden;
-    background-color: var(--color-red);
-    color: var(--color-white);
-    text-align: left;
+  .tile.is-tall {
+    width: calc(var(--tile-h) * var(--tall-r));
   }
-  .post-text {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 3cqi;
-    padding: 6cqi;
+  /* among wide tiles an upright one would be a sliver with its title broken in the middle of a word: it is
+     given room for a title (on every screen, not only on phones), and its film is cut a little closer */
+  .rail-view:not([data-tall]) .tile.is-tall {
+    width: max(calc(var(--tile-h) * var(--tall-r)), 15rem);
   }
-  .post-dir {
-    opacity: 0.8;
-    /* clear of the plus in the corner, also on a 320 px phone */
-    padding-right: clamp(2.75rem, 13cqi, 3.375rem);
+  @media (width < 48rem) {
+    .rail-view:not([data-tall]) .tile.is-tall {
+      width: max(calc(var(--tile-h) * var(--tall-r)), 12.5rem);
+    }
   }
-  .post-name {
-    margin-top: 5cqi;
-    font-family: var(--font-display);
-    font-weight: 900;
-    font-synthesis: none;
-    text-transform: uppercase;
-    line-height: 1.05;
-    letter-spacing: 0;
-    /* one size for every name, the size of the reading text in its heaviest weight: the heading size does not fit
-       a post next to names like «Электросетьстрой», and names shrunk one by one gave a row of different sizes */
-    font-size: var(--fs-t);
-    text-wrap: balance;
-    max-width: 80cqi;
-    /* «Электросетьстрой» is wider than a post on a 320 px phone */
-    overflow-wrap: anywhere;
-  }
-  .post-what {
-    max-width: 34ch;
-  }
-  .post-media {
+  .tile-media {
     position: relative;
     display: block;
+    width: 100%;
+    height: var(--tile-h);
     overflow: hidden;
-    background-color: var(--color-ink);
+    /* where the frame has not come yet: a quiet shade of the field, never black */
+    background-color: color-mix(in srgb, var(--fg) 10%, transparent);
   }
-  .post-media img,
-  .post-media video {
+  .tile-open {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .tile-open img,
+  .tile-open video {
     position: absolute;
     inset: 0;
     width: 100%;
@@ -668,104 +677,94 @@
     object-fit: cover;
     transition: scale 1.2s var(--ease-expo);
   }
-  .post-media video {
+  .tile-open video {
     opacity: 0;
     transition:
-      opacity 0.5s var(--ease-power3),
+      opacity 0.6s var(--ease-power3),
       scale 1.2s var(--ease-expo);
   }
-  .post-media video[data-on="true"] {
+  .tile-open video[data-on="true"] {
     opacity: 1;
   }
-  .post:hover .post-media img,
-  .post:hover .post-media video {
-    scale: 1.04;
+  @media (hover: hover) {
+    .tile-open:hover img,
+    .tile-open:hover video {
+      scale: 1.035;
+    }
   }
-  /* a wide work: along the foot of the post, as in the studio's carousel; the name stands in the middle of the red above the work */
-  .is-wide .post-media {
-    width: 100%;
-  }
-  .is-wide .post-name {
-    margin-top: auto;
-  }
-  .is-wide .post-text > :last-child {
-    margin-bottom: auto;
-  }
-  /* an upright work: whole, on the right; what the work is stands at the foot on the left */
-  .is-tall .post-what {
-    margin-top: auto;
-    max-width: 42cqi;
-  }
-  .is-tall .post-media {
-    position: absolute;
-    right: 6cqi;
-    bottom: 6cqi;
-    width: 40cqi;
-    aspect-ratio: 9 / 16;
-  }
-  .post-plus {
+  /* the plus that puts the work on the storyboard: a small white square in the corner of the film */
+  .tile-plus {
     position: absolute;
     right: 0;
     top: 0;
-    z-index: 2;
+    z-index: 1;
     display: grid;
     place-items: center;
-    width: clamp(2.75rem, 13cqi, 3.375rem);
-    height: clamp(2.75rem, 13cqi, 3.375rem);
+    width: 2.5rem;
+    height: 2.5rem;
     background-color: var(--color-white);
     color: var(--color-red);
+    transition:
+      background-color 0.3s var(--ease-power3),
+      color 0.3s var(--ease-power3);
   }
-  .post-plus[aria-pressed="true"] {
-    background-color: var(--color-ink);
-    color: var(--color-white);
-  }
-  .post-plus svg {
+  .tile-plus svg {
+    width: 1rem;
+    height: 1rem;
     transition: rotate 0.6s var(--ease-expo);
   }
-  .post:hover .post-plus svg {
-    rotate: 90deg;
+  .tile-plus[aria-pressed="true"] {
+    background-color: var(--color-red);
+    color: var(--color-white);
   }
-  /* a glossy band of light runs across the post when the pointer comes */
-  .sheen::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(112deg, rgb(255 255 255 / 0) 36%, rgb(255 255 255 / 0.34) 48%, rgb(255 255 255 / 0) 60%);
-    mix-blend-mode: screen;
-    translate: -120% 0;
-    pointer-events: none;
+  @media (hover: hover) {
+    .tile-plus:hover svg {
+      rotate: 90deg;
+    }
   }
-  .card:hover .sheen::after {
-    translate: 120% 0;
-    transition: translate 0.9s var(--ease-power4);
+  .tile-title {
+    margin-top: 0.9rem;
+    font-family: var(--font-display);
+    font-size: var(--fs-t);
+    font-weight: 800;
+    font-synthesis: none;
+    line-height: 1.25;
+    letter-spacing: 0;
+    text-transform: uppercase;
+    text-wrap: balance;
+    overflow-wrap: break-word;
   }
-  /* the last post of the rail: the archive, its count in heavy capitals */
-  .post-archive {
+  .tile-note {
+    margin-top: 0.25rem;
+    opacity: 0.75;
+  }
+  /* the last tile of the works screen: the archive, its count in heavy capitals, in a thin frame of the line colour */
+  .tile-archive {
+    display: flex;
+    flex-direction: column;
     justify-content: space-between;
-    padding: 6cqi;
+    padding: clamp(1rem, 2vw, 1.75rem);
+    border: 1.5px solid var(--line);
+    background-color: transparent;
+    text-align: left;
+    transition:
+      background-color 0.4s var(--ease-power3),
+      color 0.4s var(--ease-power3);
   }
-  .post-archive-count {
+  .tile-archive:hover {
+    background-color: var(--line);
+    color: var(--on-line);
+  }
+  .tile-archive-count {
     font-family: var(--font-display);
     font-weight: 900;
     font-synthesis: none;
     text-transform: uppercase;
     line-height: 0.92;
     letter-spacing: -0.02em;
-    /* the heading size */
     font-size: var(--fs-m);
   }
-  .rail-bar {
-    height: 2px;
-    background-color: color-mix(in srgb, var(--fg) 16%, transparent);
-  }
-  .rail-bar > i {
-    display: block;
-    height: 100%;
-    background-color: var(--color-red);
-    transform-origin: left;
-    transform: scaleX(var(--at, 0.1));
-    transition: transform 0.3s var(--ease-power3);
-  }
+  /* ═══ end of works and directions ═══ */
 
   /* The player: a dark sheet over the whole window. */
   .lightbox {
@@ -788,6 +787,303 @@
     height: auto;
     object-fit: contain;
   }
+  /* Drive's player: as large as the box allows in the film's own shape (`--shape`, width over height), like the video */
+  .lightbox-drive {
+    container-type: size;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+  }
+  .lightbox-drive iframe {
+    width: min(100cqw, 100cqh * var(--shape));
+    aspect-ratio: var(--shape);
+    border: 0;
+    background-color: #000;
+  }
+
+  /* ── The film player (FilmPlayer.tsx): the site's own player for a streamed film. Begin. ──
+     The box takes the film's shape (`--shape`) as large as the sheet allows, like Drive's player did. The controls
+     lie over the foot of the picture on a soft shade, no bar: white lines and small capitals, the played part red.
+     While the film plays and nothing moves they fade, and the pointer with them. */
+  .film {
+    container-type: size;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+  }
+  .film-box {
+    position: relative;
+    width: min(100cqw, 100cqh * var(--shape));
+    aspect-ratio: var(--shape);
+    background-color: var(--color-ink);
+    color: var(--color-white);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+  .lightbox .film video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    object-fit: contain;
+  }
+  /* full screen: the box is the whole screen, and the system pointer is back (the site's dot stays outside it) */
+  .film-box:fullscreen {
+    width: 100%;
+    height: 100%;
+    aspect-ratio: auto;
+    cursor: default;
+  }
+  .film-box:fullscreen button,
+  .film-box:fullscreen .film-scrub {
+    cursor: pointer;
+  }
+  .film-box[data-hidden],
+  .film-box[data-hidden] button {
+    cursor: none;
+  }
+  .film-ui {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    padding: 3.5rem clamp(0.75rem, 2.5cqw, 1.5rem) clamp(0.25rem, 1cqw, 0.75rem);
+    background: linear-gradient(to top, rgb(10 10 10 / 0.6), rgb(10 10 10 / 0.25) 55%, transparent);
+    transition: opacity 0.4s var(--ease-power3);
+  }
+  /* a low strip of film on a phone: the controls under it, on the sheet, with no shade */
+  .film-box[data-under] .film-ui {
+    top: 100%;
+    bottom: auto;
+    padding: 0.25rem 0 0;
+    background: none;
+  }
+  .film-box[data-under] .film-row {
+    margin-inline: -0.6rem;
+  }
+  .film-box[data-hidden] .film-ui {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .film-row {
+    display: flex;
+    align-items: center;
+    gap: clamp(0.25rem, 1.2cqw, 1rem);
+  }
+  .film-time {
+    white-space: nowrap;
+    padding-inline: 0.25rem;
+  }
+  /* narrow, over the picture: the length of the film gives way, the place in it stays */
+  @container (max-width: 26rem) {
+    .film-box:not([data-under]) .film-total {
+      display: none;
+    }
+    .film-btn {
+      min-width: 2.5rem;
+    }
+  }
+  .film-btn {
+    display: grid;
+    place-items: center;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    transition: opacity 0.3s var(--ease-power3);
+  }
+  .film-btn:hover {
+    opacity: 0.75;
+  }
+  .film-btn svg {
+    width: 1.25rem;
+    height: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+  }
+  .film-btn .film-fill {
+    fill: currentColor;
+  }
+  .film-quality {
+    padding-inline: 0.5rem;
+  }
+  /* the scrub bar: a hairline that thickens under the pointer; loaded part in white, played part in red */
+  .film-scrub {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 1.5rem;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .film-track {
+    position: relative;
+    width: 100%;
+    height: 2px;
+    background-color: rgb(255 255 255 / 0.25);
+    transition: height 0.2s var(--ease-power3);
+  }
+  .film-scrub:hover .film-track,
+  .film-scrub[data-scrubbing] .film-track {
+    height: 5px;
+  }
+  .film-buffered,
+  .film-played {
+    position: absolute;
+    inset-block: 0;
+    left: 0;
+  }
+  .film-buffered {
+    width: calc(var(--buffered) * 100%);
+    background-color: rgb(255 255 255 / 0.45);
+  }
+  .film-played {
+    width: calc(var(--played) * 100%);
+    background-color: var(--color-red);
+  }
+  .film-knob {
+    position: absolute;
+    left: calc(var(--played) * 100%);
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 50%;
+    background-color: var(--color-white);
+    translate: -50% 0;
+    scale: 0;
+    transition: scale 0.2s var(--ease-power3);
+  }
+  .film-scrub:hover .film-knob,
+  .film-scrub[data-scrubbing] .film-knob {
+    scale: 1;
+  }
+  .film-at {
+    position: absolute;
+    bottom: 100%;
+    left: clamp(1.25rem, calc(var(--hover) * 100%), calc(100% - 1.25rem));
+    translate: -50% 0;
+    padding: 0.1rem 0.45rem;
+    background-color: var(--color-red);
+    pointer-events: none;
+  }
+  /* the quality menu: a red plate above its button */
+  .film-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.5rem);
+    display: grid;
+    min-width: 11rem;
+    padding-block: 0.35rem;
+    background-color: var(--color-red);
+    color: var(--color-white);
+  }
+  .film-menu button {
+    white-space: nowrap;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 1rem 0.55rem 1.75rem;
+    text-align: left;
+    position: relative;
+  }
+  .film-menu button:hover {
+    background-color: rgb(255 255 255 / 0.14);
+  }
+  .film-menu button[aria-checked="true"]::before {
+    content: "";
+    position: absolute;
+    left: 0.85rem;
+    top: 50%;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 50%;
+    background-color: currentColor;
+    translate: 0 -50%;
+  }
+  .film-menu :focus-visible {
+    outline-offset: -3px;
+  }
+  .film-sound {
+    display: flex;
+    align-items: center;
+  }
+  /* the volume: a hairline like the scrub bar; on a phone the buttons of the phone itself do it */
+  .film-volume {
+    appearance: none;
+    width: 4.5rem;
+    height: 1.5rem;
+    background: linear-gradient(var(--color-white), var(--color-white)) left center / var(--v) 2px no-repeat,
+      linear-gradient(rgb(255 255 255 / 0.3), rgb(255 255 255 / 0.3)) center / 100% 2px no-repeat;
+    cursor: pointer;
+  }
+  .film-volume::-webkit-slider-thumb {
+    appearance: none;
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 50%;
+    background-color: var(--color-white);
+  }
+  .film-volume::-moz-range-thumb {
+    width: 0.7rem;
+    height: 0.7rem;
+    border: 0;
+    border-radius: 50%;
+    background-color: var(--color-white);
+  }
+  @media (pointer: coarse), (max-width: 47.99rem) {
+    .film-volume {
+      display: none;
+    }
+  }
+  /* the big chrome play over a film that stands */
+  .film-big {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 9rem;
+    height: 9rem;
+    display: grid;
+    place-items: center;
+    filter: drop-shadow(0 0.5rem 1.5rem rgb(10 10 10 / 0.45));
+  }
+  .film-big img {
+    transition: scale 0.4s var(--ease-expo);
+  }
+  .film-big:hover img {
+    scale: 1.06;
+  }
+  .film-unmute {
+    position: absolute;
+    top: clamp(0.75rem, 2cqw, 1.25rem);
+    left: clamp(0.75rem, 2cqw, 1.25rem);
+    padding: 0.5rem 0.9rem;
+    background-color: var(--color-red);
+    color: var(--color-white);
+  }
+  /* waiting for the stream: a red ring, still with "reduce motion" */
+  .film-wait {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 2.75rem;
+    height: 2.75rem;
+    border-radius: 50%;
+    border: 2px solid rgb(255 255 255 / 0.2);
+    border-top-color: var(--color-red);
+    pointer-events: none;
+  }
+  html.motion .film-wait {
+    animation: film-spin 0.9s linear infinite;
+  }
+  @keyframes film-spin {
+    to {
+      rotate: 1turn;
+    }
+  }
+  /* ── The film player. End. ── */
 
   .pill {
     display: inline-block;
@@ -806,8 +1102,8 @@
     overflow: hidden;
     display: grid;
     place-items: center;
-    background-color: var(--color-ink);
-    transition: background-color 0.5s var(--ease-power3);
+    /* red, not black, while a portrait is still on its way (no black on the site: Sergey, 2026-10-26) */
+    background-color: var(--color-red);
   }
   .face-tile img.face {
     position: absolute;
@@ -816,10 +1112,6 @@
     height: 100%;
     object-fit: cover;
     filter: grayscale(1) contrast(1.08);
-  }
-  .face-tile:hover,
-  .face-tile.is-sign {
-    background-color: var(--color-red);
   }
   .face-tile:hover img.face {
     mix-blend-mode: multiply;

@@ -1,8 +1,6 @@
-"use client";
-
 import type { SiteContent } from "@content/site";
-import { ASK_EVENT } from "@/lib/clio";
 import { inkWidth } from "@/lib/travels";
+import { AskClio } from "../assistant/AskClio";
 import { Reveal } from "../Reveal";
 import { Screen } from "../Screen";
 
@@ -36,9 +34,7 @@ export function Final({ t }: { t: SiteContent }) {
 
         <div className="flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
           <Reveal as="p" className="caps">
-            <button type="button" onClick={() => window.dispatchEvent(new CustomEvent<string>(ASK_EVENT, { detail: "" }))} className="caps pill bg-white text-red max-md:w-full">
-              {t.final.cta}
-            </button>
+            <AskClio label={t.final.cta} className="caps pill bg-white text-red max-md:w-full" />
           </Reveal>
           <Reveal as="div" className="md:min-w-[21rem]">
             <ul className="caps">

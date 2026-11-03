@@ -9,9 +9,11 @@
  * The bucket, the folder inside it, the S3 endpoint and the site origin come from the operator's environment
  * (or are left as <placeholders> in the commands):
  *   C3_MEDIA_BUCKET    e.g. c3ag-media
- *   C3_MEDIA_PREFIX    e.g. site       (the folder; NEXT_PUBLIC_MEDIA_BASE_URL then ends with /site)
- *   C3_S3_ENDPOINT     e.g. https://storage.yandexcloud.net
+ *   C3_MEDIA_PREFIX    e.g. site       (the folder; NEXT_PUBLIC_MEDIA_BASE_URL then ends with /site); '' = the root
+ *   C3_S3_ENDPOINT     e.g. https://s3.cloud.ru               (the S3 API, for the upload)
+ *   C3_MEDIA_PUBLIC    e.g. https://c3ag-media.s3.cloud.ru    (how a browser reads the bucket: not always endpoint/bucket)
  *   C3_SITE_ORIGIN     e.g. https://c3ag.ru   (for CORS)
+ * c3ag.ru today (2026-10-29): Cloud.ru, bucket c3ag-media, files in its root, see DEPLOY_C3_SITE.md.
  */
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve, sep } from "node:path";
@@ -52,6 +54,7 @@ const bucket = process.env.C3_MEDIA_BUCKET || "<bucket>";
 const prefix = (process.env.C3_MEDIA_PREFIX ?? "<prefix>").replace(/^\/+|\/+$/g, "");
 const endpoint = process.env.C3_S3_ENDPOINT || "<s3-endpoint>";
 const origin = process.env.C3_SITE_ORIGIN || "https://c3ag.ru";
+const publicBase = (process.env.C3_MEDIA_PUBLIC || "<public address of the bucket>").replace(/\/+$/, "");
 const target = `s3://${bucket}${prefix ? `/${prefix}` : ""}/`;
 
 const root = resolve(opts.dir);
@@ -98,10 +101,11 @@ const cors = {
   CORSRules: [{ AllowedOrigins: [origin, origin.replace("://", "://www.")], AllowedMethods: ["GET", "HEAD"], AllowedHeaders: ["*"], MaxAgeSeconds: 86400 }],
 };
 console.log("\n# CORS of the bucket: the fonts (and the mask of the Clio star) are read by the browser in CORS mode.");
+console.log("# put-bucket-cors replaces every rule of the bucket: read the current ones first (get-bucket-cors) and add this one.");
 console.log(`# cors.json:\n${JSON.stringify(cors, null, 2)}`);
 if (opts.tool === "s3cmd") {
   console.log("# s3cmd takes the same rules as XML: s3cmd setcors cors.xml s3://" + bucket);
 } else {
   console.log(`aws s3api put-bucket-cors --bucket ${bucket} --cors-configuration file://cors.json --endpoint-url ${endpoint}`);
 }
-console.log(`\n# Then build with NEXT_PUBLIC_MEDIA_BASE_URL=${endpoint === "<s3-endpoint>" ? "https://<s3-host>" : endpoint}/${bucket}${prefix ? `/${prefix}` : ""}`);
+console.log(`\n# Then build with NEXT_PUBLIC_MEDIA_BASE_URL=${publicBase}${prefix ? `/${prefix}` : ""}`);

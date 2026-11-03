@@ -1,10 +1,13 @@
 import Link from "next/link";
 import type { SiteContent } from "@content/site";
+import { AskClio } from "./assistant/AskClio";
 
 /**
  * The header, small and fixed: the mark on the left, three links on the centre line, the call on the right.
- * It takes the colour of the page, so it reads on red, on the dark stage and on the light one alike; the call is in the
- * colour of the lines (red, or white on a red screen) and underlined. On the way down the page it hides, on the way up
+ * It takes the colour of the page, so it reads on red and on the light stage alike. The call, «Обсудить проект», is a
+ * filled pill that opens Clio's window (Sergey, 2026-10-26: a click on it «ничего не происходит», it has to stand out
+ * and start the assistant's chat): always red with white words and a thin white ring, so it stands out on every
+ * stage and on a phone (Sergey, 2026-10-27; see `.nav-cta`). On the way down the page it hides, on the way up
  * it returns (see SmoothScroll). On a phone and a narrow tablet only the mark and the call stay: the page is one road, and the footer has the links.
  */
 export function Nav({ t }: { t: SiteContent["nav"] }) {
@@ -31,9 +34,7 @@ export function Nav({ t }: { t: SiteContent["nav"] }) {
           ))}
         </ul>
       </nav>
-      <Link href="/#contact" className="caps whitespace-nowrap py-3 text-[color:var(--page-line)] underline underline-offset-[6px]">
-        {t.cta}
-      </Link>
+      <AskClio label={t.cta} className="nav-cta caps whitespace-nowrap" />
     </header>
   );
 }

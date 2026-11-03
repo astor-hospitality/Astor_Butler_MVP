@@ -17,6 +17,10 @@ const row = (on: boolean) =>
     on ? "bg-[color:var(--line)] text-[color:var(--on-line)]" : "hover:bg-[color:var(--line)] hover:text-[color:var(--on-line)]"
   }`;
 
+/** Not a whole window with the frame in its middle: it follows the lollipop poster after the page's usual air, and
+ *  no more (Sergey, 2026-10-26: «огромные пустоты между блоками», the space before this block first of all). */
+const tight = "!min-h-0 !pt-0 !pb-[var(--air)]";
+
 /**
  * "Соберите съёмку за три шага": the visitor says what is to be shot, picks a package and gathers references,
  * and the result goes to Clio as one message.
@@ -49,7 +53,7 @@ export function Shoot({ works }: { works: RailItem[] }) {
 
   if (choice.sent) {
     return (
-      <PosterSection theme="paper" id="shoot" label={t.title} className="items-center">
+      <PosterSection theme="paper" id="shoot" label={t.title} className={`${tight} items-center`}>
         <div className="hairline flex w-full max-w-[52rem] flex-col items-center px-[8%] py-[clamp(3rem,12vh,7rem)] text-center">
           <span className="mark w-14 text-[color:var(--line)]" aria-hidden="true" />
           <h2 className="hero-type mt-6">{t.done.word}</h2>
@@ -66,7 +70,7 @@ export function Shoot({ works }: { works: RailItem[] }) {
   const chosen = [need?.label, pack?.name, pack?.price, refs.length > 0 ? frames(refs.length) : undefined].filter((part): part is string => Boolean(part));
 
   return (
-    <PosterSection theme="paper" id="shoot" label={t.title}>
+    <PosterSection theme="paper" id="shoot" label={t.title} className={tight}>
       <Reveal>
         <h2 className="display max-w-[16ch]">{t.title}</h2>
       </Reveal>
