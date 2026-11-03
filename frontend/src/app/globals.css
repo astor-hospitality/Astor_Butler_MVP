@@ -37,7 +37,7 @@
 }
 
 /* ── The page has one colour at a time and passes from one to the other softly.
-      Registered properties let the colours themselves animate, so text and lines follow the field. ── */
+      The colours are registered properties, so a change of them can be timed (see `html.motion` below). ── */
 @property --page-bg {
   syntax: "<color>";
   inherits: true;
@@ -87,15 +87,21 @@
     --page-fg: var(--color-paper);
     --page-line: var(--color-red);
   }
+  /* Only the field fades. The colours are inherited by every element, so animating them restyled the whole page in every
+     frame of the fade (17 ms at 1920 wide) and the scroll stuttered (Roma, 2026-11-04: «подергивается экран»).
+     Text and lines change once, a moment into the fade, when the field is already on its way. */
   html.motion {
     transition:
-      --page-bg 0.9s var(--ease-power3),
-      --page-fg 0.9s var(--ease-power3),
-      --page-line 0.9s var(--ease-power3),
-      --page-on-line 0.9s var(--ease-power3);
+      --page-fg 0s linear 0.15s,
+      --page-line 0s linear 0.15s,
+      --page-on-line 0s linear 0.15s;
+  }
+  html.motion body {
+    transition: background-color 0.9s var(--ease-power3);
   }
   /* While a link carries the page to another part (see SmoothScroll) the colour is simply set: the sheet covers the change. */
-  html.motion.jumping {
+  html.motion.jumping,
+  html.motion.jumping body {
     transition: none;
   }
   body {
