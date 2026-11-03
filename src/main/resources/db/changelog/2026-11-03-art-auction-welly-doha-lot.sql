@@ -38,15 +38,16 @@ SELECT
     'WELLY_DOHA_PAINTING_01',
     'Доха (рабочее название)',
     'Michael Welly',
-    'Холст, начатый в Дохе: эскиз на мольберте снят 02.01.2023. Отсылает к ар-деко полотну, которое Михаил сфотографировал 24.08.2022, работая head bartender в Дохе в сезон Чемпионата мира 2022.',
+    'Холст, написанный в Дохе 2–4 января 2023: эскиз на мольберте снят 02.01.2023, готовая работа 04.01.2023. Отсылает к ар-деко полотну, которое Михаил сфотографировал 24.08.2022, работая head bartender в Дохе в сезон Чемпионата мира 2022.',
     'DRAFT',
     NULL,
     NULL,
     'RUB',
     '{
       "public": false,
-      "pending": ["final_title", "final_photo", "starting_price", "min_step", "currency", "owner_approval"],
+      "pending": ["final_title", "starting_price", "min_step", "currency", "owner_approval", "media_asset_upload"],
       "evidence": {
+        "finished_photo": "canvas_finished_2023-01-04_144355UTC_110.jpeg",
         "sketch_photo": "astor-series/proofs/easel_doha_2023-01-02.jpg",
         "reference_photo": "astor-series/proofs/painting_doha_2022-08-24.jpg"
       },
