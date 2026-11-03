@@ -84,6 +84,12 @@ export function ThemeWatcher() {
     const marks = new MutationObserver(soon);
     marks.observe(document.body, { subtree: true, attributes: true, attributeFilter: ["data-poster", "data-poster-now"] });
     marks.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
+    // The screens in the window say so (`data-near`): only they fade from one colour to the next (see globals.css),
+    // a fade over the whole page made the scroll stutter.
+    const near = new IntersectionObserver((entries) => {
+      for (const entry of entries) (entry.target as HTMLElement).toggleAttribute("data-near", entry.isIntersecting);
+    });
+    document.querySelectorAll("[data-poster]").forEach((poster) => near.observe(poster));
 
     return () => {
       gone = true;
@@ -96,6 +102,7 @@ export function ThemeWatcher() {
       ScrollTrigger.removeEventListener("scrollEnd", soon);
       sizes.disconnect();
       marks.disconnect();
+      near.disconnect();
       // the next page starts from the colour of its own first poster (see globals.css); a page without a watcher keeps that
       delete root.dataset.theme;
     };
