@@ -11,7 +11,7 @@ const marksOf = html => [...html.matchAll(/<svg class="astor-mark"[^>]*>([\s\S]*
 
 const master = pathsOf(read('assets/astor-mark.svg'));
 const withMark = {
-  'index.html': 7, // шапка, подвал и пять аватаров Astor в макетах чатов
+  'index.html': 2, // шапка и подвал: экраны на титульной – снимки, без нарисованных чатов
   'astor_butler/index.html': 3, // шапка, подвал, кнопка чата
   'astor_concierge/index.html': 2,
   'astor_glass/index.html': 2,

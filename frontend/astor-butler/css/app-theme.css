@@ -1,0 +1,111 @@
+/* ============================================================
+   Цвета и карточки Telegram-приложения Astor поверх style.css.
+   Подключается только на страницах Butler / Concierge / Glass.
+   Разметка, скрипты, скролл и анимации страниц не меняются –
+   здесь только токены цвета, фон, карточки и кнопки.
+   ============================================================ */
+
+/* Тёмная тема – как в приложении: Neon Navy, карточки #161c38, кремовый акцент */
+:root {
+  --ink: #0b0f22;
+  --ink-2: #10152e;
+  --ink-3: #161c38;
+  --paper: #f2f3fa;
+  --paper-dim: #9aa1c0;
+  --gold: #e8e1d4;
+  --gold-soft: #f3efe8;
+  --gold-deep: #9a8f7c;
+  --metal: #c9d3f5;
+  --metal-deep: #2a3260;
+  --line: rgba(242, 243, 250, 0.1);
+  --surface: rgba(30, 38, 80, 0.42);
+  --surface-strong: rgba(242, 243, 250, 0.08);
+  --dust-rgb: 201, 211, 245;
+  --app-card: #161c38;
+  --app-primary: #e8e1d4;
+  --app-on-primary: #131936;
+  --app-glass: rgba(30, 38, 80, 0.42);
+  --app-glass-edge: rgba(255, 255, 255, 0.13);
+  --app-glass-hi: rgba(255, 255, 255, 0.42);
+}
+
+/* Светлая тема – кремовый фон, белые карточки, navy текст и кнопки */
+body.light-theme {
+  --ink: #f3efe8;
+  --ink-2: #ece6dc;
+  --ink-3: #ffffff;
+  --paper: #131936;
+  --paper-dim: #5e6378;
+  --gold: #131936;
+  --gold-soft: #131936;
+  --gold-deep: #74685a;
+  --metal: #131936;
+  --metal-deep: #e6e0d6;
+  --line: #e6e0d6;
+  --surface: rgba(255, 255, 255, 0.6);
+  --surface-strong: rgba(19, 25, 54, 0.06);
+  --dust-rgb: 19, 25, 54;
+  --app-card: #ffffff;
+  --app-primary: #131936;
+  --app-on-primary: #ffffff;
+  --app-glass: rgba(255, 255, 255, 0.42);
+  --app-glass-edge: rgba(19, 25, 54, 0.1);
+  --app-glass-hi: rgba(255, 255, 255, 0.8);
+}
+
+/* Фон без металлической сетки – мягкое navy-свечение, как за экранами приложения */
+body::before {
+  opacity: 1;
+  mix-blend-mode: normal;
+  background: radial-gradient(90% 60% at 70% 0%, rgba(42, 59, 120, 0.45), transparent 60%);
+  background-size: cover;
+}
+body.light-theme::before { background: radial-gradient(90% 60% at 70% 0%, rgba(255, 255, 255, 0.7), transparent 60%); }
+
+/* Карточки – сплошная плитка приложения: без рамки и тени, скругление 24 */
+.product-panel,
+.identity-card,
+.axis-card,
+.timeline-item,
+.role-card,
+.hostess-card {
+  background: var(--app-card);
+  border: 0;
+  border-radius: 24px;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.hostess-card { background: var(--ink-2); border-radius: 18px; }
+body.light-theme .hostess-card { background: var(--ink); }
+.role-card-hostess { box-shadow: inset 0 0 0 1px var(--line); }
+
+/* Сетка «что делает» – отдельные карточки вместо таблицы с линиями */
+.what-grid { gap: 12px; background: none; border: 0; }
+.what-item { background: var(--app-card); border-radius: 24px; }
+.what-num {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--app-primary); color: var(--app-on-primary); font-weight: 700;
+}
+
+/* Цены – три плитки */
+.pricing-band { gap: 12px; background: none; border: 0; box-shadow: none; backdrop-filter: none; overflow: visible; }
+.pricing-band > * { background: var(--app-card); border-radius: 24px; }
+
+.feature { border-top-color: var(--line); }
+.wide-visual { border-color: var(--line); border-radius: 24px; }
+
+/* Кнопки – капсулы: главная кремовая (navy в светлой), остальные – стекло */
+.btn { border-radius: 999px; }
+.btn-telegram {
+  background: var(--app-primary); color: var(--app-on-primary); border-color: transparent;
+}
+.btn-telegram:hover { background: var(--app-primary); filter: brightness(1.05); }
+.btn-quiet,
+.theme-toggle {
+  background: var(--app-glass);
+  color: var(--paper);
+  border-color: transparent;
+  -webkit-backdrop-filter: blur(9px) saturate(185%);
+  backdrop-filter: blur(9px) saturate(185%);
+  box-shadow: inset 0 0 0 0.75px var(--app-glass-edge), inset 1.4px 1.4px 1px -0.6px var(--app-glass-hi);
+}

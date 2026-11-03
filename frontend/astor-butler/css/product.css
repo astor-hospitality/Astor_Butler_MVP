@@ -1,0 +1,149 @@
+/* ============================================================
+   Astor – страницы продуктов (astor_butler/, astor_concierge/, astor_glass/).
+   Подключается после css/story.css и берёт оттуда токены, шапку, кнопки, чипы,
+   карточки (.get, .rules, .connect), «шарик» Astor и подвал. Здесь – только то,
+   чего нет на титульной: нарисованные чаты и карточки персонала, шаги, цифры.
+   Сначала телефон 375 px, затем планшет и десктоп. Без JS.
+   ============================================================ */
+
+/* Первый экран продукта: строка «Astor / продукт» над чипом. */
+.crumbs { margin-bottom: 18px; font-size: 0.88rem; color: var(--silver); }
+.crumbs a { color: var(--paper-dim); text-decoration-color: rgba(244, 247, 249, 0.3); text-underline-offset: 3px; }
+.crumbs a:hover { color: var(--paper); }
+.hero h1.p-title { max-width: 11em; font-size: clamp(2.1rem, 8.6vw, 3.8rem); }
+
+/* Нарисованный экран: чат или карточка, как панели в приложении (фон --ink-3, скругление 28). */
+.panel {
+  width: 100%; max-width: 380px; margin: 0 auto; padding: 18px;
+  border-radius: 28px; background: var(--ink-3);
+  box-shadow: inset 0 0 0 1px var(--line), 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.panel-head {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 14px; padding-bottom: 12px;
+  border-bottom: 1px solid var(--line); font-size: 0.9rem; color: var(--paper-dim);
+}
+.panel-head b { color: var(--paper); }
+.panel-head .astor-dot { width: 28px; height: 28px; border-radius: 50%; flex: none; background: radial-gradient(circle at 35% 35%, #c9d3f5, #4a5ba8 60%, #1e2a55); }
+
+.msgs { display: grid; gap: 8px; font-family: var(--brand-font-family); }
+.msg { max-width: 86%; padding: 9px 13px; border-radius: 18px; font-size: 0.93rem; line-height: 1.45; }
+.msg-in { justify-self: end; background: var(--guest); border-bottom-right-radius: 6px; }
+.msg-out { justify-self: start; background: var(--surface-strong); border-bottom-left-radius: 6px; }
+
+/* Карточка в рабочем чате персонала: строки и две кнопки. */
+.staff-rows { display: grid; gap: 0; }
+.staff-rows div { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; font-size: 0.92rem; }
+.staff-rows div + div { border-top: 1px solid var(--line); }
+.staff-rows span { color: var(--paper-dim); }
+.staff-rows b { text-align: right; }
+.staff-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+.staff-btns span {
+  display: grid; place-items: center; min-height: 40px; padding: 6px 10px; border-radius: 999px;
+  font-size: 0.9rem; font-weight: var(--brand-weight-semibold); text-align: center;
+}
+.staff-btns .ok { background: var(--cream); color: var(--navy); }
+.staff-btns .no { background: var(--surface-strong); color: var(--paper); }
+.staff-notes { display: grid; gap: 6px; margin-top: 12px; font-size: 0.85rem; color: var(--paper-dim); }
+.staff-notes li { padding: 8px 12px; border-radius: 14px; background: rgba(242, 243, 250, 0.05); }
+
+/* Строки табло: точка состояния и текст. */
+.dots { display: grid; gap: 10px; font-size: 0.93rem; color: var(--paper-dim); }
+.dots li { display: grid; grid-template-columns: 10px 1fr; gap: 12px; align-items: baseline; }
+.dots li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--silver); transform: translateY(-1px); }
+.dots .ok::before { background: #7fd1a8; }
+.dots .warn::before { background: var(--cream); }
+
+/* Сетки карточек: на титульной .gets в две колонки, здесь – и в три-четыре. */
+.cards { display: grid; gap: 12px; margin-top: 28px; }
+.get.small { padding: 16px 18px; }
+.get.small h3 { font-size: 1rem; }
+
+/* Роли: у каждой – заголовок, подпись и нарисованный экран. */
+.roles { display: grid; gap: 16px; margin-top: 28px; }
+.role { display: grid; gap: 14px; align-content: start; padding: 18px; border-radius: 24px; background: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
+.section-alt .role { background: var(--ink); }
+.role h3 { font-size: 1.15rem; letter-spacing: var(--brand-subhead-tracking); }
+.role-sub { margin-top: -10px; font-size: 0.88rem; color: var(--silver); }
+.role .panel { max-width: none; padding: 14px; box-shadow: inset 0 0 0 1px var(--line); }
+
+/* Шаги: номер – кремовый кружок, как выбранный день в брони. */
+.steps { display: grid; gap: 12px; margin-top: 28px; counter-reset: s; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 36px 1fr; gap: 14px; padding: 18px; border-radius: 24px; background: var(--ink-3); }
+.steps li::before {
+  content: counter(s); display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--cream); color: var(--navy); font-weight: var(--brand-weight-bold); font-size: 0.95rem;
+}
+.steps h3 { font-size: 1.05rem; letter-spacing: var(--brand-subhead-tracking); margin: 4px 0 4px; }
+.steps p { color: var(--paper-dim); font-size: 0.95rem; }
+.steps.plain li { grid-template-columns: 1fr; }
+.steps.plain li::before { display: none; }
+
+/* Цифры: три значения в одной карточке. */
+.figures { display: grid; margin-top: 28px; padding: 4px 20px; border-radius: 24px; background: var(--ink-3); }
+.figures div { padding: 18px 0; }
+.figures div + div { border-top: 1px solid var(--line); }
+.figures b { display: block; font-size: 1.6rem; font-weight: var(--brand-weight-bold); letter-spacing: -0.02em; line-height: 1.15; }
+.figures span { color: var(--paper-dim); font-size: 0.95rem; }
+
+/* Заметка: стеклянная плашка с иконкой и ссылкой. */
+.note {
+  display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: start;
+  margin-top: 28px; padding: 18px; border-radius: 24px;
+  background: radial-gradient(90% 90% at 0% 0%, #1e2a55 0%, var(--ink-3) 70%);
+  box-shadow: inset 0 0 0 1px var(--glass-edge);
+}
+.note .tile { margin: 0; }
+.note h3 { font-size: 1.1rem; letter-spacing: var(--brand-subhead-tracking); margin: 2px 0 6px; }
+.note p { color: var(--paper-dim); }
+.note .btn { margin-top: 16px; }
+.text-link { color: var(--paper); text-decoration-color: rgba(244, 247, 249, 0.4); text-underline-offset: 3px; }
+
+/* Экраны приложения в ряд – как на титульной, но без прокрутки: три снимка. */
+.trio { display: grid; gap: 32px; margin-top: 32px; }
+.trio li { display: grid; gap: 14px; align-content: start; }
+.trio .shot { max-width: 260px; margin: 0; }
+.trio h3 { font-size: 1.15rem; letter-spacing: var(--brand-subhead-tracking); }
+.trio p { color: var(--paper-dim); font-size: 0.95rem; max-width: 24em; }
+
+/* Контакт и цена: карточка .connect титульной, с цифрами в столбик. */
+.connect .figures { margin: 0 0 20px; padding: 0; background: none; }
+.connect .figures div { padding: 12px 0; }
+.connect .figures b { font-size: 1.3rem; }
+.connect-lead { margin-bottom: 18px; color: var(--paper-dim); }
+.connect .btn + .btn { margin-top: 10px; }
+.doc-links { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 18px; font-size: 0.9rem; }
+.doc-links a { color: var(--paper-dim); text-decoration-color: rgba(244, 247, 249, 0.3); text-underline-offset: 3px; }
+.doc-links a:hover { color: var(--paper); }
+
+.split { display: grid; gap: 32px; margin-top: 28px; }
+
+/* Astor над нарисованным экраном – как на экране «Чем помочь?» в приложении. */
+.hero-panel { display: grid; justify-items: center; }
+.hero-panel .orb { margin-bottom: 28px; }
+@media (max-width: 959px) { .hero-panel .orb { display: none; } }
+
+@media (min-width: 640px) {
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  .steps { grid-template-columns: repeat(2, 1fr); }
+  .figures { grid-template-columns: repeat(3, 1fr); column-gap: 24px; }
+  .figures div + div { border-top: 0; }
+  .connect .figures { grid-template-columns: 1fr; }
+  .connect .figures div + div { border-top: 1px solid var(--line); }
+  .trio { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .trio .shot { max-width: none; }
+  .connect .btn + .btn { margin: 0 0 0 10px; }
+}
+
+@media (min-width: 960px) {
+  .cards.c3 { grid-template-columns: repeat(3, 1fr); }
+  .cards.c4 { grid-template-columns: repeat(4, 1fr); }
+  .steps.c3 { grid-template-columns: repeat(3, 1fr); }
+  .steps.c4 { grid-template-columns: repeat(4, 1fr); }
+  .roles { grid-template-columns: repeat(3, 1fr); }
+  .split { grid-template-columns: 1.1fr 0.9fr; gap: 40px; align-items: start; }
+  .trio { gap: 40px; }
+}
+
+.sub-title { margin-top: 48px; font-size: 1.2rem; letter-spacing: var(--brand-subhead-tracking); }
+.sub-title + .cards { margin-top: 16px; }
+.connect h3 + .connect-lead { margin-top: -4px; }

@@ -6,38 +6,40 @@
   --font-body: var(--brand-font-family);
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   /* dark operations room — the default look */
-  --bg: #0e1216;
-  --panel: #151b21;
-  --panel-2: #1c242b;
-  --line: #232a31;
-  --fg: #e8edf1;
-  --muted: #8d98a3;
-  --gold: #c8b071;
-  --guest: #7fb3e6;
-  --agents: #b89bdc;
-  --staff: #8ac7a6;
+  /* цвета Telegram-приложения Astor: Neon Navy, кремовый акцент; карточки заметно светлее фона */
+  --bg: #090c1c;
+  --panel: #1b2246;
+  --panel-2: #242c56;
+  --line: #2e3768;
+  --fg: #f2f3fa;
+  --muted: #a3aacb;
+  --gold: #e8e1d4;
+  /* три дорожки разговора – три разных тона, чтобы полосы не сливались */
+  --guest: #6fc3f0;
+  --agents: #c79be8;
+  --staff: #7fd0a4;
   --good: #6fc48e;
   --warn: #e0b55a;
   --bad: #ea8f80;
-  --idle: #5c6670;
+  --idle: #5e6378;
   color-scheme: dark;
 }
 
 :root[data-theme="light"] {
-  --bg: #f5f7f8;
+  --bg: #f3efe8;
   --panel: #ffffff;
-  --panel-2: #eef2f5;
-  --line: #d6dee6;
-  --fg: #080a0d;
-  --muted: #5c6670;
-  --gold: #9a8450;
-  --guest: #2a6ea8;
-  --agents: #7a5aa6;
-  --staff: #3f7f5f;
+  --panel-2: #ece6dc;
+  --line: #e2dbcf;
+  --fg: #131936;
+  --muted: #5e6378;
+  --gold: #74685a;
+  --guest: #1f6fb2;
+  --agents: #7a4fb0;
+  --staff: #2f7d55;
   --good: #2f7d4a;
   --warn: #b7791f;
   --bad: #a93c2d;
-  --idle: #9fa9b3;
+  --idle: #9a9fb3;
   color-scheme: light;
 }
 
