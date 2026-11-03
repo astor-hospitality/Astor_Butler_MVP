@@ -22,8 +22,14 @@ const remotePatterns: RemotePatterns = mediaOrigin
     ]
   : [];
 
-/** Only for a check on one machine, where a local server stands in for S3: Next refuses local addresses otherwise. */
-const mediaIsLocal = mediaOrigin !== null && ["localhost", "127.0.0.1", "[::1]"].includes(mediaOrigin.hostname);
+/**
+ * Next refuses to fetch a picture from a private address. Two cases need it: a check on one machine, where a local
+ * server stands in for S3, and media served by the site's own host (c3ag.ru/media on the VM), which the container
+ * reaches through the docker host (`c3ag.ru:host-gateway` in docker-compose.cloudru.yml). remotePatterns above still
+ * limit the fetch to the media path.
+ */
+const siteHost = new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://c3ag.ru").hostname;
+const mediaIsLocal = mediaOrigin !== null && ["localhost", "127.0.0.1", "[::1]", siteHost].includes(mediaOrigin.hostname);
 
 /** An old public file of the previous site, now in the media: its address leads to the new file. */
 const toMedia = (path: keyof typeof mediaManifest) => (mediaBase ? `${mediaBase}/${path}?v=${mediaManifest[path].v}` : `/media/${path}`);
