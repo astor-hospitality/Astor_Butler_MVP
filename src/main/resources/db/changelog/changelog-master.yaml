@@ -105,3 +105,5 @@ databaseChangeLog:
       file: db/changelog/2026-10-16-staff-shift-schedule.yaml
   - include:
       file: db/changelog/2026-10-16-waiter-zones.yaml
+  - include:
+      file: db/changelog/2026-11-03-art-auction-welly-doha-lot.yaml
