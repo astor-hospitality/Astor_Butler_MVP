@@ -114,6 +114,10 @@ a:focus-visible, .btn:focus-visible { outline: 2px solid var(--metal); outline-o
 .top-nav { display: none; gap: 28px; font-size: 0.92rem; color: var(--paper-dim); }
 .top-nav a { text-decoration: none; }
 .top-nav a:hover { color: var(--paper); }
+/* Переключатель языка виден и на телефоне, где разделы скрыты. */
+.top-end { display: flex; align-items: center; gap: 28px; }
+.lang-switch { font-size: 0.85rem; letter-spacing: 0.08em; color: var(--paper-dim); text-decoration: none; padding: 6px 10px; border: 1px solid rgba(244, 247, 249, 0.22); border-radius: 999px; }
+.lang-switch:hover { color: var(--paper); border-color: rgba(244, 247, 249, 0.36); }
 
 /* ---------- первый экран ---------- */
 /* Ширины текста в em, а не в ch: ch зависит от шрифта, и при подмене запасного шрифта на Inter строки переносились бы иначе (сдвиг макета). */
